@@ -27,9 +27,9 @@ import { logger } from "../lib/logger";
  * Optional:
  *   FIREBASE_DATABASE_URL          RTDB instance URL
  *                                  (defaults to the vee RTDB instance)
- *   USDT_DIAMOND_RATE              Diamonds credited per 1 USDT (default "240").
+ *   USDT_DIAMOND_RATE              Diamonds credited per 1 USDT (default "200").
  *                                  Server-owned: clients never send amounts.
- *                                  1 USDT ≈ 120 BDT (P2P) × 2 diamonds/BDT.
+ *                                  1 USDT = 200 diamonds (business rate).
  *   ADMIN_UIDS                     Comma-separated Firebase uids allowed to
  *                                  approve/reject bKash claims and list pending
  *                                  claims. Empty = no admin access.
@@ -44,7 +44,7 @@ import { logger } from "../lib/logger";
  *   server-validated against [100, 500, 1000, 5000] diamonds; the BDT amount
  *   is derived as diamonds / 2 and never trusted from the client. USDT
  *   packages use USDT_DIAMOND_RATE so the same rule holds:
- *   1 USDT ≈ 120 BDT → 240 diamonds.
+ *   1 USDT = 200 diamonds (business rate; VPS env overrides).
  *
  * Response contract:
  *   POST /init
@@ -410,12 +410,11 @@ function getDepositAddress(): string | null {
 /**
  * Diamonds credited per 1 USDT (server-owned rate).
  *
- * Default 240: 1 USDT ≈ 120 BDT on P2P × 2 diamonds/BDT. Override with the
- * USDT_DIAMOND_RATE env var if the P2P rate moves materially.
+ * Default 200: 1 USDT = 200 diamonds (business rate; VPS env overrides).
  */
 function getDiamondRate(): number {
-  const rate = Number((process.env["USDT_DIAMOND_RATE"] ?? "240").trim());
-  return Number.isFinite(rate) && rate > 0 ? rate : 240;
+  const rate = Number((process.env["USDT_DIAMOND_RATE"] ?? "200").trim());
+  return Number.isFinite(rate) && rate > 0 ? rate : 200;
 }
 
 export type TopupPackage = { id: string; diamonds: number; usdt: number };

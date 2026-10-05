@@ -15,6 +15,10 @@
  *  USDT tab (TRC20, automated):
  *   - Deposit address + EXACT USDT amounts come from the server-owned
  *     GET /api/wallet/topup-config (never hardcoded, never client-computed).
+ *   - A currency selector (free FX API, 12h localStorage cache) shows each
+ *     package's price converted into any world currency — INDICATIVE only;
+ *     payment is always in USDT (TRC20) at the server's rate. On FX failure
+ *     the selector hides and USDT prices remain.
  *   - The tx hash is submitted to POST /api/wallet/topup-crypto, which
  *     verifies everything on-chain via the Tronscan public API (confirmed,
  *     ≥19 confirmations, recipient === our address, amount ≥ package) and
@@ -31,6 +35,11 @@ import {
   topupCrypto,
   type TopupConfig,
 } from '../features/wallet/walletService';
+import {
+  formatFiat,
+  sortedCurrencyCodes,
+  useFxRates,
+} from '../features/wallet/useFxRates';
 
 const BKASH_NUMBER: string = (import.meta.env.VITE_BKASH_NUMBER as string | undefined)?.trim() ?? '';
 
@@ -203,6 +212,9 @@ function UsdtTab(): React.JSX.Element {
   const [txHash, setTxHash] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Indicative FX conversion for the currency selector (null = hide selector).
+  const fxRates = useFxRates();
+  const [currency, setCurrency] = useState('USD');
 
   useEffect(() => {
     if (!user) {
@@ -287,6 +299,13 @@ function UsdtTab(): React.JSX.Element {
   }
 
   const pkg = config.packages.find((p) => p.id === pkgId);
+  const currencyCodes = fxRates ? sortedCurrencyCodes(fxRates) : [];
+  // Per-diamond price in the selected currency, derived from the
+  // server-owned package amounts (1 USDT ≈ 1 USD for conversion).
+  const perDiamondLocal =
+    fxRates && pkg && pkg.diamonds > 0
+      ? (pkg.usdt / pkg.diamonds) * (fxRates[currency] ?? 1)
+      : null;
 
   return (
     <div className="card">
@@ -300,6 +319,30 @@ function UsdtTab(): React.JSX.Element {
       </div>
       <CopyButton text={config.usdtTrc20Address} label="Copy address" />
 
+      {fxRates && (
+        <label className="field">
+          <span>💱 Show prices in your currency</span>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            aria-label="Display currency"
+          >
+            {currencyCodes.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {perDiamondLocal !== null && (
+        <p className="muted small">
+          💎1 ≈ {formatFiat(perDiamondLocal, currency, 4)} — indicative rate.
+          You always pay in <strong>USDT (TRC20)</strong> at the server&apos;s
+          rate, or BDT via bKash.
+        </p>
+      )}
+
       <h2>2️⃣ Choose a package</h2>
       <div className="pkg-grid">
         {config.packages.map((p) => (
@@ -311,6 +354,11 @@ function UsdtTab(): React.JSX.Element {
           >
             <span className="pkg-diamonds">💎{p.diamonds.toLocaleString()}</span>
             <span className="pkg-price">${p.usdt} USDT</span>
+            {fxRates && currency !== 'USD' && (
+              <span className="muted small">
+                ≈ {formatFiat(p.usdt * (fxRates[currency] ?? 1), currency)}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -346,7 +394,10 @@ function UsdtTab(): React.JSX.Element {
 }
 
 export default function TopUpPage(): React.JSX.Element {
-  const [tab, setTab] = useState<'bkash' | 'usdt'>('bkash');
+  // bKash rail is hidden for now (user request 2026-10-05). The BkashTab
+  // code above is kept intact — flip this flag to re-enable the tab.
+  const SHOW_BKASH_TAB = false;
+  const [tab, setTab] = useState<'bkash' | 'usdt'>('usdt');
 
   return (
     <div className="page">
@@ -355,24 +406,26 @@ export default function TopUpPage(): React.JSX.Element {
         <p className="muted">Add diamonds to your wallet.</p>
       </header>
 
-      <div className="tab-switch">
-        <button
-          type="button"
-          className={`tab-switch-btn ${tab === 'bkash' ? 'tab-switch-active' : ''}`}
-          onClick={() => setTab('bkash')}
-        >
-          📱 bKash
-        </button>
-        <button
-          type="button"
-          className={`tab-switch-btn ${tab === 'usdt' ? 'tab-switch-active' : ''}`}
-          onClick={() => setTab('usdt')}
-        >
-          🪙 USDT (TRC20)
-        </button>
-      </div>
+      {SHOW_BKASH_TAB && (
+        <div className="tab-switch">
+          <button
+            type="button"
+            className={`tab-switch-btn ${tab === 'bkash' ? 'tab-switch-active' : ''}`}
+            onClick={() => setTab('bkash')}
+          >
+            📱 bKash
+          </button>
+          <button
+            type="button"
+            className={`tab-switch-btn ${tab === 'usdt' ? 'tab-switch-active' : ''}`}
+            onClick={() => setTab('usdt')}
+          >
+            🪙 USDT (TRC20)
+          </button>
+        </div>
+      )}
 
-      {tab === 'bkash' ? <BkashTab /> : <UsdtTab />}
+      {SHOW_BKASH_TAB && tab === 'bkash' ? <BkashTab /> : <UsdtTab />}
 
       <Link className="btn btn-ghost" to="/wallet">
         ← Back to wallet
