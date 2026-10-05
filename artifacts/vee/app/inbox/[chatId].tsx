@@ -1,0 +1,33 @@
+import { useEffect } from 'react';
+import { Alert } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import InboxScreen from '@/src/features/chat/screens/InboxScreen';
+
+export default function InboxRoute() {
+  const { t } = useTranslation();
+  const { chatId, participantId, participantName } = useLocalSearchParams<{
+    chatId: string;
+    participantId: string;
+    participantName: string;
+  }>();
+
+  // Guard: a deep link without a chatId would subscribe to an empty chat path.
+  useEffect(() => {
+    if (!chatId) {
+      Alert.alert(t('chat.error'), t('chat.chatNotFound'), [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    }
+  }, [chatId, t]);
+
+  if (!chatId) return null;
+
+  return (
+    <InboxScreen
+      chatId={chatId}
+      participantId={participantId ?? ''}
+      participantName={decodeURIComponent(participantName ?? t('chat.unknownUser'))}
+    />
+  );
+}
