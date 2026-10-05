@@ -12,7 +12,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "vee",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
@@ -27,7 +27,8 @@
         "NSPhotoLibraryUsageDescription": "Vee accesses your photo library to upload profile photos and stories.",
         "NSPhotoLibraryAddUsageDescription": "Vee saves media to your photo library."
       },
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "bitcode": false
     },
     "android": {
       "backgroundColor": "#07020F",
@@ -52,7 +53,9 @@
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK"
       ],
       "versionCode": 1,
       "intentFilters": [
@@ -116,7 +119,10 @@
       "router": {
         "origin": "https://vee.app"
       },
-      "eas": {}
-    }
+      "eas": {
+        "projectId": "85455cf1-e27f-4bdc-a729-cc442146d327"
+      }
+    },
+    "owner": "wexoc20175s-team"
   }
 }
