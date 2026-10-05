@@ -60,6 +60,10 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
       (isJson && payload && typeof payload === 'object' && 'message' in payload && typeof (payload as { message?: unknown }).message === 'string'
         ? (payload as { message: string }).message
         : undefined) ??
+      // The api-server reports errors as { ok: false, error: "..." }.
+      (isJson && payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : undefined) ??
       (typeof payload === 'string' && payload.length > 0 ? payload : undefined) ??
       `Request failed with status ${response.status}`;
     throw new ApiError(response.status, message, payload);

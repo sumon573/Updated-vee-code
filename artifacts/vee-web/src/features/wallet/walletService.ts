@@ -143,7 +143,7 @@ export async function getTopupConfig(): Promise<TopupConfig> {
 }
 
 /**
- * Submit a USDT (TRC20) top-up for server-side on-chain verification.
+ * Submit a bKash top-up for server-side on-chain verification.
  * Throws ApiError with the server's message on 400 (underpaid, unconfirmed,
  * wrong recipient, already used, …).
  */
@@ -151,5 +151,24 @@ export async function topupCrypto(txHash: string, packageId: string): Promise<To
   return apiFetch<TopupCryptoResult>('/api/wallet/topup-crypto', {
     method: 'POST',
     body: { txHash: txHash.trim(), network: 'TRC20', packageId },
+  });
+}
+
+export type SubmitBkashClaimResult = {
+  ok: true;
+  status: 'pending';
+};
+
+/**
+ * Submit a bKash payment claim. The server validates the TrxID format and the
+ * package, dedupes by TrxID, and stores the claim as pending — an admin
+ * verifies the payment manually before any diamonds are credited.
+ * Throws ApiError on 400 (invalid TrxID / unknown package) or 409 (this TrxID
+ * was already submitted).
+ */
+export async function submitBkashClaim(trxId: string, diamonds: number): Promise<SubmitBkashClaimResult> {
+  return apiFetch<SubmitBkashClaimResult>('/api/wallet/topup-bkash', {
+    method: 'POST',
+    body: { trxId: trxId.trim(), diamonds },
   });
 }

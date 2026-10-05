@@ -27,14 +27,24 @@ import { logger } from "../lib/logger";
  * Optional:
  *   FIREBASE_DATABASE_URL          RTDB instance URL
  *                                  (defaults to the vee RTDB instance)
- *   USDT_DIAMOND_RATE              Diamonds credited per 1 USDT (default "100").
+ *   USDT_DIAMOND_RATE              Diamonds credited per 1 USDT (default "240").
  *                                  Server-owned: clients never send amounts.
+ *                                  1 USDT ≈ 120 BDT (P2P) × 2 diamonds/BDT.
+ *   ADMIN_UIDS                     Comma-separated Firebase uids allowed to
+ *                                  approve/reject bKash claims and list pending
+ *                                  claims. Empty = no admin access.
  *   TRONSCAN_API_BASE              Tronscan public API base URL
  *                                  (default "https://api.tronscan.org"). No API
  *                                  key is needed for transaction-info lookups.
  *   TRONSCAN_API_BASE_FALLBACK     Fallback Tronscan base tried once when the
  *                                  primary base is unreachable
  *                                  (default "https://apilist.tronscan.org").
+ *
+ * Business rule (both rails): 1 BDT = 2 diamonds. bKash packages are
+ *   server-validated against [100, 500, 1000, 5000] diamonds; the BDT amount
+ *   is derived as diamonds / 2 and never trusted from the client. USDT
+ *   packages use USDT_DIAMOND_RATE so the same rule holds:
+ *   1 USDT ≈ 120 BDT → 240 diamonds.
  *
  * Response contract:
  *   POST /init
@@ -76,6 +86,33 @@ import { logger } from "../lib/logger";
  *     401                                    missing or invalid Firebase ID token
  *     429                                    too many attempts (rate limited)
  *     503                                    USDT_TRC20_DEPOSIT_ADDRESS unset
+ *     500                                    server misconfigured / unhandled error
+ *   POST /topup-bkash
+ *     200 { ok: true, status: 'pending' }    claim recorded for manual admin
+ *                                          verification (bKash exposes no
+ *                                          public TrxID API)
+ *     400                                    invalid trxId / unknown package
+ *     401                                    missing or invalid Firebase ID token
+ *     409                                    this TrxID was already submitted
+ *     429                                    too many attempts (rate limited)
+ *     500                                    server misconfigured / unhandled error
+ *   POST /topup-bkash/approve  (admin only)
+ *     200 { ok: true, diamonds, newBalance }  claim credited via the existing
+ *                                          creditWalletDiamonds() path
+ *     401 / 403                              not signed in / not an admin
+ *     404                                    unknown TrxID
+ *     409                                    claim is not pending
+ *     500                                    server misconfigured / unhandled error
+ *   POST /topup-bkash/reject  (admin only)
+ *     200 { ok: true }                       claim marked rejected
+ *     401 / 403                              not signed in / not an admin
+ *     404                                    unknown TrxID
+ *     409                                    claim is not pending
+ *     500                                    server misconfigured / unhandled error
+ *   GET /topup-bkash/pending  (admin only)
+ *     200 { claims: [{ trxId, uid, diamonds, bdt, createdAt }] }
+ *                                          newest first, max 100
+ *     401 / 403                              not signed in / not an admin
  *     500                                    server misconfigured / unhandled error
  */
 
@@ -370,10 +407,15 @@ function getDepositAddress(): string | null {
   return addr;
 }
 
-/** Diamonds credited per 1 USDT (server-owned rate). */
+/**
+ * Diamonds credited per 1 USDT (server-owned rate).
+ *
+ * Default 240: 1 USDT ≈ 120 BDT on P2P × 2 diamonds/BDT. Override with the
+ * USDT_DIAMOND_RATE env var if the P2P rate moves materially.
+ */
 function getDiamondRate(): number {
-  const rate = Number((process.env["USDT_DIAMOND_RATE"] ?? "100").trim());
-  return Number.isFinite(rate) && rate > 0 ? rate : 100;
+  const rate = Number((process.env["USDT_DIAMOND_RATE"] ?? "240").trim());
+  return Number.isFinite(rate) && rate > 0 ? rate : 240;
 }
 
 export type TopupPackage = { id: string; diamonds: number; usdt: number };
@@ -745,6 +787,297 @@ router.post("/topup-crypto", async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, diamonds: pkg.diamonds, newBalance });
   } catch (err) {
     logger.error({ err }, "Unhandled error in POST /api/wallet/topup-crypto");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+/* ─── bKash top-up — manual claim + admin verification ──────────────────
+ *
+ * bKash exposes no public TrxID verification API, so automation stops at the
+ * claim: the user submits { trxId, diamonds }, the server stores a pending
+ * claim at `topupClaims/bkash/{trxId}` (deduped — a TrxID can be submitted
+ * only once, by anyone), and an admin approves/rejects after checking the
+ * payment in the bKash app. Approval credits through the existing
+ * creditWalletDiamonds() path — the same code the gift flow and crypto
+ * top-up use.
+ *
+ * Anti-fraud notes:
+ *  - TrxID is normalized (trim + uppercase) and must match /^[0-9A-Z]{10}$/,
+ *    which also makes path traversal impossible (no `. $ # [ ] /` possible).
+ *  - Diamonds must be one of the server-owned packages; the BDT amount is
+ *    derived (diamonds / 2) and never trusted from the client.
+ *  - Claims live under a server-only RTDB node: Admin SDK bypasses rules,
+ *    clients cannot read or forge claims directly.
+ *  - Admin routes require the caller's uid in ADMIN_UIDS (env).
+ */
+
+/** Server-owned bKash diamond packages. BDT is always diamonds / 2. */
+const BKASH_DIAMOND_PACKAGES = [100, 500, 1000, 5000];
+
+/** bKash TrxID format: 10 uppercase alphanumerics (e.g. 9HXK2L8M1Q). */
+const BKASH_TRXID_RE = /^[0-9A-Z]{10}$/;
+
+/** Admin uids from the ADMIN_UIDS env var (comma-separated). */
+function getAdminUids(): Set<string> {
+  return new Set(
+    (process.env["ADMIN_UIDS"] ?? "")
+      .split(",")
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0),
+  );
+}
+
+/**
+ * Fail-closed admin gate: verified caller whose uid is in ADMIN_UIDS,
+ * or null after sending 401/403.
+ */
+async function verifyAdmin(req: Request, res: Response): Promise<string | null> {
+  const uid = await verifyCaller(req, res);
+  if (!uid) return null;
+  if (!getAdminUids().has(uid)) {
+    logger.warn({ uid }, "wallet: non-admin attempted admin route");
+    res.status(403).json({ ok: false, error: "Forbidden" });
+    return null;
+  }
+  return uid;
+}
+
+type BkashClaim = {
+  uid?: unknown;
+  trxId?: unknown;
+  diamonds?: unknown;
+  bdt?: unknown;
+  status?: unknown;
+  createdAt?: unknown;
+};
+
+/**
+ * POST /api/wallet/topup-bkash — submit a bKash payment claim.
+ *
+ * Body: `{ trxId, diamonds }`. The claim is stored as pending; an admin
+ * verifies the payment manually and approves it.
+ */
+router.post("/topup-bkash", async (req: Request, res: Response) => {
+  try {
+    const uid = await verifyCaller(req, res);
+    if (!uid) return;
+
+    if (topupRateLimited(uid)) {
+      logger.warn({ uid }, "topup-bkash: rate limited");
+      return res
+        .status(429)
+        .json({ ok: false, error: "Too many attempts. Please wait and try again later." });
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const rawTrxId = body["trxId"];
+    const diamonds = body["diamonds"];
+
+    const trxId =
+      typeof rawTrxId === "string" ? rawTrxId.trim().toUpperCase() : "";
+    if (!BKASH_TRXID_RE.test(trxId)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid TrxID. Use the 10-character TrxID from your bKash payment SMS.",
+      });
+    }
+
+    if (typeof diamonds !== "number" || !BKASH_DIAMOND_PACKAGES.includes(diamonds)) {
+      return res.status(400).json({ ok: false, error: "Unknown package" });
+    }
+
+    const db = adminDatabase();
+    const claimRef = db.ref(`topupClaims/bkash/${trxId}`);
+
+    // Dedupe: a TrxID can be submitted only once, by anyone. A second
+    // submission (same user retrying, or someone else's TrxID) is rejected.
+    const priorSnap = await claimRef.get();
+    if (priorSnap.exists()) {
+      logger.warn({ uid, trxId }, "topup-bkash: duplicate TrxID submission");
+      return res.status(409).json({
+        ok: false,
+        error: "This TrxID has already been submitted.",
+      });
+    }
+
+    await claimRef.set({
+      uid,
+      trxId,
+      diamonds,
+      bdt: diamonds / 2,
+      status: "pending",
+      createdAt: ServerValue.TIMESTAMP,
+    });
+
+    logger.info({ uid, trxId, diamonds }, "topup-bkash: claim recorded");
+    return res.status(200).json({ ok: true, status: "pending" });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/wallet/topup-bkash");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/wallet/topup-bkash/approve — admin: verify + credit a claim.
+ *
+ * Body: `{ trxId }`. Credits through the existing creditWalletDiamonds()
+ * path, then marks the claim approved. Not idempotent by design: a second
+ * approve is rejected (409) so a double-click can never double-credit.
+ */
+router.post("/topup-bkash/approve", async (req: Request, res: Response) => {
+  try {
+    const adminUid = await verifyAdmin(req, res);
+    if (!adminUid) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const trxId =
+      typeof body["trxId"] === "string"
+        ? body["trxId"].trim().toUpperCase()
+        : "";
+    if (!BKASH_TRXID_RE.test(trxId)) {
+      return res.status(400).json({ ok: false, error: "Invalid TrxID" });
+    }
+
+    const db = adminDatabase();
+    const claimRef = db.ref(`topupClaims/bkash/${trxId}`);
+    const snap = await claimRef.get();
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, error: "Claim not found" });
+    }
+    const claim = (snap.val() ?? {}) as BkashClaim;
+    if (claim.status !== "pending") {
+      return res.status(409).json({
+        ok: false,
+        error: `Claim is already ${typeof claim.status === "string" ? claim.status : "processed"}.`,
+      });
+    }
+    const diamonds =
+      typeof claim.diamonds === "number" &&
+      BKASH_DIAMOND_PACKAGES.includes(claim.diamonds)
+        ? claim.diamonds
+        : 0;
+    const claimUid = typeof claim.uid === "string" ? claim.uid : "";
+    if (!diamonds || !claimUid) {
+      return res.status(500).json({ ok: false, error: "Claim is malformed" });
+    }
+
+    // Credit through the EXISTING wallet credit path (same as gift/crypto).
+    await creditWalletDiamonds(db, claimUid, diamonds);
+
+    await claimRef.update({
+      status: "approved",
+      approvedAt: ServerValue.TIMESTAMP,
+      approvedBy: adminUid,
+    });
+
+    const balanceSnap = await db.ref(`wallets/${claimUid}/balance`).get();
+    const newBalance =
+      typeof balanceSnap.val() === "number" ? balanceSnap.val() : diamonds;
+
+    logger.info(
+      { adminUid, trxId, uid: claimUid, diamonds },
+      "topup-bkash: claim approved and credited",
+    );
+    return res.status(200).json({ ok: true, diamonds, newBalance });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/wallet/topup-bkash/approve");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/wallet/topup-bkash/reject — admin: reject a pending claim.
+ *
+ * Body: `{ trxId, reason? }`. Nothing is credited; the claim is kept as a
+ * permanent record so the same TrxID cannot be resubmitted.
+ */
+router.post("/topup-bkash/reject", async (req: Request, res: Response) => {
+  try {
+    const adminUid = await verifyAdmin(req, res);
+    if (!adminUid) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const trxId =
+      typeof body["trxId"] === "string"
+        ? body["trxId"].trim().toUpperCase()
+        : "";
+    if (!BKASH_TRXID_RE.test(trxId)) {
+      return res.status(400).json({ ok: false, error: "Invalid TrxID" });
+    }
+    const reason =
+      typeof body["reason"] === "string" ? body["reason"].slice(0, 280) : "";
+
+    const db = adminDatabase();
+    const claimRef = db.ref(`topupClaims/bkash/${trxId}`);
+    const snap = await claimRef.get();
+    if (!snap.exists()) {
+      return res.status(404).json({ ok: false, error: "Claim not found" });
+    }
+    const claim = (snap.val() ?? {}) as BkashClaim;
+    if (claim.status !== "pending") {
+      return res.status(409).json({
+        ok: false,
+        error: `Claim is already ${typeof claim.status === "string" ? claim.status : "processed"}.`,
+      });
+    }
+
+    await claimRef.update({
+      status: "rejected",
+      reason,
+      rejectedAt: ServerValue.TIMESTAMP,
+      rejectedBy: adminUid,
+    });
+
+    logger.info({ adminUid, trxId, reason }, "topup-bkash: claim rejected");
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/wallet/topup-bkash/reject");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/wallet/topup-bkash/pending — admin: list pending claims.
+ *
+ * Returns newest first, capped at 100. The admin checks each payment in the
+ * bKash app, then calls /approve or /reject with the TrxID.
+ */
+router.get("/topup-bkash/pending", async (req: Request, res: Response) => {
+  try {
+    const adminUid = await verifyAdmin(req, res);
+    if (!adminUid) return;
+
+    const db = adminDatabase();
+    const snap = await db
+      .ref("topupClaims/bkash")
+      .orderByChild("createdAt")
+      .limitToLast(100)
+      .get();
+
+    const claims: Array<{
+      trxId: string;
+      uid: string;
+      diamonds: number;
+      bdt: number;
+      createdAt: number | null;
+    }> = [];
+    snap.forEach((child) => {
+      const c = (child.val() ?? {}) as BkashClaim;
+      if (c.status !== "pending") return;
+      claims.push({
+        trxId: typeof c.trxId === "string" ? c.trxId : (child.key ?? ""),
+        uid: typeof c.uid === "string" ? c.uid : "",
+        diamonds: typeof c.diamonds === "number" ? c.diamonds : 0,
+        bdt: typeof c.bdt === "number" ? c.bdt : 0,
+        createdAt: typeof c.createdAt === "number" ? c.createdAt : null,
+      });
+    });
+    // limitToLast returns ascending — reverse for newest first.
+    claims.reverse();
+
+    return res.status(200).json({ claims });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in GET /api/wallet/topup-bkash/pending");
     return res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });

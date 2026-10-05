@@ -3,13 +3,14 @@
  *
  *  bKash tab (manual):
  *   - Shows our bKash number (VITE_BKASH_NUMBER), 4 diamond packages with BDT
- *     prices (display only), and a TrxID input.
- *   - MVP has NO backend verification (bKash exposes no public TrxID API) and
- *     the client CANNOT store the claim in RTDB: database.rules.json sets
- *     root `.read: false, .write: false` and defines NO `topups` node, so any
- *     client write is denied. The page therefore stores NOTHING and says so
- *     honestly — the user is told to send the TrxID to our bKash number via
- *     WhatsApp/SMS so an admin can verify and credit manually.
+ *     prices at 1 BDT = 2 diamonds, and a TrxID input.
+ *   - Claims go to POST /api/wallet/topup-bkash, which validates the TrxID
+ *     format and package, dedupes by TrxID (409 on resubmission), and stores
+ *     a pending claim. An admin verifies each payment in the bKash app and
+ *     approves/rejects it (POST /api/wallet/topup-bkash/approve|reject);
+ *     approval credits through the server's existing wallet credit path.
+ *   - bKash exposes no public TrxID verification API, so the credit step
+ *     stays manual by design.
  *
  *  USDT tab (TRC20, automated):
  *   - Deposit address + EXACT USDT amounts come from the server-owned
@@ -26,19 +27,26 @@ import { ApiError } from '../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 import {
   getTopupConfig,
+  submitBkashClaim,
   topupCrypto,
   type TopupConfig,
 } from '../features/wallet/walletService';
 
 const BKASH_NUMBER: string = (import.meta.env.VITE_BKASH_NUMBER as string | undefined)?.trim() ?? '';
 
-/** Display-only bKash packages (BDT prices are indicative; admin confirms). */
+/**
+ * bKash packages at the business rate 1 BDT = 2 diamonds.
+ * Display only — the server re-validates the diamond amount.
+ */
 const BKASH_PACKAGES = [
-  { diamonds: 100, bdt: 120 },
-  { diamonds: 500, bdt: 550 },
-  { diamonds: 1000, bdt: 1050 },
-  { diamonds: 5000, bdt: 5000 },
+  { diamonds: 100, bdt: 50 },
+  { diamonds: 500, bdt: 250 },
+  { diamonds: 1000, bdt: 500 },
+  { diamonds: 5000, bdt: 2500 },
 ];
+
+/** bKash TrxID: 10 uppercase alphanumerics (mirrors the server check). */
+const BKASH_TRXID_RE = /^[0-9A-Z]{10}$/;
 
 const TX_HASH_RE = /^[0-9a-fA-F]{64}$/;
 
@@ -66,24 +74,46 @@ function CopyButton({ text, label }: { text: string; label: string }): React.JSX
 }
 
 function BkashTab(): React.JSX.Element {
+  const { user } = useAuth();
   const [pkgIdx, setPkgIdx] = useState(1);
   const [trxId, setTrxId] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<{ trxId: string; diamonds: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const pkg = BKASH_PACKAGES[pkgIdx] as { diamonds: number; bdt: number };
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!trxId.trim()) {
-      setError('Please paste the bKash TrxID from your payment SMS.');
+    const normalized = trxId.trim().toUpperCase();
+    if (!BKASH_TRXID_RE.test(normalized)) {
+      setError('Enter the 10-character TrxID from your bKash payment SMS (e.g. 9HXK2L8M1Q).');
       return;
     }
     setError(null);
-    // Nothing is written anywhere: RTDB rules deny client writes to any
-    // top-up path, and there is no bKash verification API. The confirmation
-    // below tells the user exactly what to do next.
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      await submitBkashClaim(normalized, pkg.diamonds);
+      setSubmitted({ trxId: normalized, diamonds: pkg.diamonds });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setError('This TrxID has already been submitted. Each payment can be claimed only once.');
+      } else {
+        setError(e instanceof ApiError ? e.message : 'Could not submit the claim. Try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!user) {
+    return (
+      <div className="card">
+        <p>
+          Sign in to top up with bKash. <Link to="/">Go to sign-in</Link>
+        </p>
+      </div>
+    );
   }
 
   if (!BKASH_NUMBER) {
@@ -100,32 +130,17 @@ function BkashTab(): React.JSX.Element {
   if (submitted) {
     return (
       <div className="card">
-        <h2>📝 Next step — manual verification</h2>
+        <h2>✅ Claim received!</h2>
         <p>
-          <strong>Your claim was NOT recorded automatically.</strong> The server
-          does not accept top-up claims from the app yet, so nothing was sent
-          anywhere.
+          An admin will verify your bKash payment and credit{' '}
+          <strong>💎{submitted.diamonds.toLocaleString()}</strong>. This usually
+          takes a few minutes.
         </p>
-        <p>
-          To complete your top-up of <strong>💎{pkg.diamonds}</strong>, send
-          your TrxID to our bKash number on <strong>WhatsApp/SMS</strong> — an
-          admin will verify the payment and credit your diamonds.
+        <p className="muted small">
+          Your TrxID: <code>{submitted.trxId}</code> — keep your bKash payment
+          SMS until the diamonds arrive.
         </p>
-        <label className="field">
-          <span>bKash number</span>
-          <div className="copy-row">
-            <code>{BKASH_NUMBER}</code>
-            <CopyButton text={BKASH_NUMBER} label="Copy" />
-          </div>
-        </label>
-        <label className="field">
-          <span>Your TrxID</span>
-          <div className="copy-row">
-            <code>{trxId.trim()}</code>
-            <CopyButton text={trxId.trim()} label="Copy" />
-          </div>
-        </label>
-        <button type="button" className="btn btn-ghost" onClick={() => setSubmitted(false)}>
+        <button type="button" className="btn btn-ghost" onClick={() => { setSubmitted(null); setTrxId(''); }}>
           ← Submit a different TrxID
         </button>
       </div>
@@ -133,8 +148,8 @@ function BkashTab(): React.JSX.Element {
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit}>
-      <h2>1️⃣ Send BDT to our bKash</h2>
+    <form className="card" onSubmit={(e) => void handleSubmit(e)}>
+      <h2>1️⃣ Send ৳{pkg.bdt.toLocaleString()} to our bKash</h2>
       <div className="copy-row">
         <code className="big-code">{BKASH_NUMBER}</code>
         <CopyButton text={BKASH_NUMBER} label="Copy number" />
@@ -163,15 +178,17 @@ function BkashTab(): React.JSX.Element {
           onChange={(e) => setTrxId(e.target.value)}
           placeholder="e.g. 9HXK2L8M1Q"
           autoComplete="off"
+          spellCheck={false}
         />
       </label>
-      <button type="submit" className="btn btn-primary">
-        Submit TrxID
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
+        {submitting ? 'Submitting…' : `Submit for 💎${pkg.diamonds.toLocaleString()}`}
       </button>
       {error && <p className="error-text">{error}</p>}
       <p className="muted small">
-        bKash has no public TrxID verification API, so an admin verifies each
-        payment manually before crediting. Prices shown are indicative.
+        Send exactly ৳{pkg.bdt.toLocaleString()} for 💎{pkg.diamonds.toLocaleString()} (1 BDT
+        = 2 diamonds). bKash has no public TrxID verification API, so an admin
+        verifies each payment manually before crediting.
       </p>
     </form>
   );
