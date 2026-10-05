@@ -42,7 +42,7 @@ import {
   MediaStream,
   mediaDevices,
   registerGlobals,
-} from 'react-native-webrtc';
+} from '@livekit/react-native-webrtc';
 import {
   ref,
   set,
