@@ -70,7 +70,10 @@ function RoleBadge({ role }: { role: UserRole }) {
 function RoomCard({
   room, role,
 }: { room: RoomInfo; role: UserRole }) {
-  const isActive = room.active === true;
+  // Backward compatible: rooms created before the `active` flag existed
+  // (or with a missing field) are treated as active. Only an explicit
+  // `active: false` means closed.
+  const isActive = room.active !== false;
 
   const handlePress = () => {
     if (!isActive) {

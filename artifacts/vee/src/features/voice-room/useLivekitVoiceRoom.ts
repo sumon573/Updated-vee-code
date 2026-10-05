@@ -767,20 +767,34 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // subscription events after a restore — only new tracks trigger them.
       setWasRestored(true);
     } else {
-      if (_persistedRoom) {
-        // Stale persisted room for a different room — destroy it so its
-        // audio can't leak into this room, then join fresh below.
-        const stale = _persistedRoom;
-        _persistedRoom = null;
-        _isMinimized = false;
-        stale.engine.leave().catch(() => {
-          // non-critical — stale room teardown
-        });
-      }
-      // ── Normal init ──────────────────────────────────────────────────────
+      // ── Normal init (async IIFE so we can await the stale teardown) ──────
       (async () => {
+        if (_persistedRoom) {
+          // Stale persisted room for a different room — destroy it so its
+          // audio can't leak into this room, then join fresh below.
+          // CRITICAL: await the teardown. The old fire-and-forget
+          // `leave().catch()` raced the new engine's native WebRTC/audio init
+          // (room.disconnect + AudioSession.stop vs start + Room.connect),
+          // a classic SIGSEGV source on Android.
+          const stale = _persistedRoom;
+          _persistedRoom = null;
+          _isMinimized = false;
+          try {
+            await stale.engine.leave();
+          } catch {
+            // non-critical — stale room teardown
+          }
+          if (!mountedRef.current) return;
+        }
+
         // Skip entirely in Expo Go — native WebRTC modules not available
         if (isExpoGo()) return;
+
+        // Don't burn a mic-permission prompt (or a doomed token fetch) when
+        // the identity isn't real yet — AuthContext starts with user: null
+        // and VoiceRoomScreen passes userID 'anonymous' / empty roomID.
+        // The effect re-runs when the real userID/roomID arrive.
+        if (!roomID || userID === 'anonymous') return;
 
         const hasMic = await requestMicPermission({
           title: t('voiceRoom.screen.micPermissionTitle'),

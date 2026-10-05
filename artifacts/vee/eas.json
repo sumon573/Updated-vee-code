@@ -25,7 +25,7 @@
         "simulator": false
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://207.180.253.22:3001"
+        "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
       }
     },
     "production": {

@@ -179,6 +179,27 @@ export default function WalletScreen() {
             <Text style={{ color: C.glow, fontSize: 18, fontWeight: '800', marginTop: 2 }}>
               💎 {t('wallet.diamondsLabel')}
             </Text>
+
+            {/* Top-up button */}
+            <Pressable
+              onPress={() => router.push('/profile/topup' as never)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: C.primary,
+                borderRadius: 14,
+                paddingVertical: 13,
+                paddingHorizontal: 32,
+                marginTop: 16,
+                gap: 8,
+              }}
+            >
+              <Feather name="plus-circle" size={18} color="#fff" />
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
+                {t('wallet.topUp')}
+              </Text>
+            </Pressable>
           </View>
 
           {/* Stats row */}
