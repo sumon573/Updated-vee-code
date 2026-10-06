@@ -280,6 +280,9 @@ router.post("/send-gift", async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: "Invalid request" });
     }
     // Self-gifting is allowed: debit + credit the same account (net-zero).
+    // C1 fix: self-gifts must DEDUCT (not net-zero). When toUid === fromUid,
+    // debit only — skip the credit so diamonds actually decrease.
+    const isSelfGift = toUid === fromUid;
 
     if (
       typeof idempotencyKey !== "string" ||
@@ -333,7 +336,10 @@ router.post("/send-gift", async (req: Request, res: Response) => {
 
     // Credit the recipient through the shared credit path (creates the
     // wallet node when absent, increments balance + weeklyEarned).
-    await creditWalletDiamonds(db, toUid, coins);
+    // C1: skip credit for self-gifts (deduct-only).
+    if (!isSelfGift) {
+      await creditWalletDiamonds(db, toUid, coins);
+    }
 
     const receipt = {
       fromUid,

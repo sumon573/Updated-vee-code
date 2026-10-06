@@ -124,9 +124,10 @@ export default function TopUpScreen() {
     }
     setSubmitting(true);
     try {
+      // L2 fix: server requires `network` field (was missing → 400 "Unsupported network").
       const res = (await authedFetch('/api/wallet/topup-crypto', {
         method: 'POST',
-        body: JSON.stringify({ txHash: hash, packageId: pkgId }),
+        body: JSON.stringify({ txHash: hash, packageId: pkgId, network: 'trc20' }),
       })) as { diamonds?: number; newBalance?: number };
       const credited = res.diamonds ?? 0;
       const balance = res.newBalance ?? 0;

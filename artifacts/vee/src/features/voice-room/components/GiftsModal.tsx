@@ -8,7 +8,7 @@ import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
-import { sendGift, getBalance, getWalletBalance, debitOwnWallet, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { sendGift, getBalance, getWalletBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -153,6 +153,9 @@ export function GiftsModal({
     }
 
     setSending(true);
+    // C2 fix: track success so finally doesn't re-enable the Send button
+    // during the 1.6s success animation (would allow double-charge).
+    let didSucceed = false;
     try {
       // Idempotency: ONE key per (recipient, gift) ATTEMPT, generated up-front
       // and reused across retries of this send action. A retry with the same
@@ -169,20 +172,17 @@ export function GiftsModal({
         const key = keys.get(r.id)!;
         let lastErr: unknown = null;
         let charged = false;
-        // SELF-GIFT: deduct diamonds normally via Firebase transaction.
-        // The user pays for the gift even when sending to themselves.
+        // SELF-GIFT: route through server /send-gift (deduct-only).
+        // C1 fix: client-side debitOwnWallet fails (rules .write:false),
+        // so self-gifts go through the server like normal gifts.
         if (r.id === myUid) {
+          // Fall through to the normal server path below (sends to self,
+          // server debits without crediting).
+        }
+        // Retry once on network errors only, with the SAME idempotency key —
+        // safe because the server dedupes on the key.
+        for (let attempt = 0; attempt < 2 && !charged; attempt++) {
           try {
-            await debitOwnWallet(myUid, g.coins);
-            charged = true;
-          } catch (e) {
-            lastErr = e;
-          }
-        } else {
-          // Retry once on network errors only, with the SAME idempotency key —
-          // safe because the server dedupes on the key.
-          for (let attempt = 0; attempt < 2 && !charged; attempt++) {
-            try {
               await sendGift({ toUid: r.id, giftId: g.id, idempotencyKey: key });
               charged = true;
             } catch (e) {
@@ -190,7 +190,6 @@ export function GiftsModal({
               if (!(e instanceof NetworkError)) break;
             }
           }
-        }
         if (!charged) {
           failed.push({ name: r.name, insufficient: lastErr instanceof InsufficientFundsError });
           continue;
@@ -241,6 +240,7 @@ export function GiftsModal({
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSent(g.emoji);
+      didSucceed = true; // C2: keep sending=true until modal closes
       onGiftSent({
         giftId: g.id,
         emoji: g.emoji,
@@ -250,11 +250,15 @@ export function GiftsModal({
         senderAvatar,
         recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
       });
-      setTimeout(() => { setSent(null); onClose(); }, 1600);
+      setTimeout(() => { setSent(null); setSending(false); onClose(); }, 1600);
     } finally {
       // A throw anywhere above (e.g. inside the loop) must never leave the
       // spinner stuck or produce an unhandled rejection.
-      setSending(false);
+      // C2 fix: on success, keep sending=true until onClose (prevents
+      // double-tap double-charge during the 1.6s animation).
+      if (!didSucceed) {
+        setSending(false);
+      }
     }
   };
 
