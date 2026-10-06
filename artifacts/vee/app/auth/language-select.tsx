@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import {
-  View, Text, ScrollView, ActivityIndicator, Platform,
+  View, Text, ScrollView, ActivityIndicator, Platform, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,6 +58,9 @@ export default function LanguageSelectScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await markLanguageSelected();
       router.replace('/auth/login');
+    } catch {
+      // #6 fix: don't leave user stuck on first launch with no feedback.
+      Alert.alert('Error', 'Could not save. Please try again.');
     } finally {
       setSaving(false);
     }

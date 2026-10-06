@@ -98,24 +98,29 @@ export default function SignupScreen() {
   // ─── Avatar picker ────────────────────────────────────────────────────────
 
   async function handlePickAvatar() {
-    const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      const title = t('auth.signup.photoUploadTitle');
-      const msg = t('auth.signup.permissionDenied', 'Gallery access is required to upload a photo.');
-      // Permanently denied ("Don't ask again") — re-requesting will never show
-      // the system dialog, so point at Settings instead of a dead-end retry.
-      if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
-      else Alert.alert(title, msg);
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoLocalUri(result.assets[0].uri);
+    // #4 fix: wrap in try/catch to avoid unhandled rejection if picker throws.
+    try {
+      const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        const title = t('auth.signup.photoUploadTitle');
+        const msg = t('auth.signup.permissionDenied', 'Gallery access is required to upload a photo.');
+        // Permanently denied ("Don't ask again") — re-requesting will never show
+        // the system dialog, so point at Settings instead of a dead-end retry.
+        if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
+        else Alert.alert(title, msg);
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setPhotoLocalUri(result.assets[0].uri);
+      }
+    } catch {
+      // Silently ignore — user can retry or skip the photo.
     }
   }
 
@@ -164,7 +169,12 @@ export default function SignupScreen() {
           const uploaded = await uploadImage(photoLocalUri, { folder: 'vee/avatars', transformation: 'c_fill,w_400,h_400,q_auto' });
           photoURL = uploaded.url;
         } catch {
-          // Non-fatal — continue without avatar
+          // #5 fix: tell the user the photo failed so they don't think it was set.
+          // Non-blocking — account creation continues.
+          Alert.alert(
+            t('auth.signup.photoUploadTitle'),
+            t('auth.signup.photoUploadFailed', 'Photo upload failed. You can add it later in Edit Profile.'),
+          );
         } finally {
           setPhotoUploading(false);
         }
@@ -283,9 +293,11 @@ export default function SignupScreen() {
             </View>
             <Text style={{ color: C.muted, fontSize: 13, flex: 1 }}>
               {t('auth.signup.termsPrefix')}
-              <Text style={{ color: C.glow, fontWeight: '700' }}>{t('auth.signup.termsLink')}</Text>
+              {/* #3 fix: terms/privacy links were dead (no onPress). Render as
+                  plain text instead of fake links. */}
+              <Text style={{ color: C.muted }}>{t('auth.signup.termsLink')}</Text>
               {t('auth.signup.termsAnd')}
-              <Text style={{ color: C.glow, fontWeight: '700' }}>{t('auth.signup.privacyLink')}</Text>
+              <Text style={{ color: C.muted }}>{t('auth.signup.privacyLink')}</Text>
               {t('auth.signup.termsSuffix')}
             </Text>
           </Pressable>

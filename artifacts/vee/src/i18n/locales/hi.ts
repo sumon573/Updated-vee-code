@@ -53,6 +53,7 @@ const hi = {
       errorNoTerms: 'कृपया नियम और शर्तों से सहमत हों।',
       photoUploadTitle: 'फ़ोटो अपलोड',
       photoUploadMessage: 'प्रोफ़ाइल फ़ोटो अपलोड अगले चरण में जोड़ी जाएगी।',
+      photoUploadFailed: 'फ़ोटो अपलोड विफल। आप इसे बाद में Edit Profile से जोड़ सकते हैं।',
     },
     forgotPassword: {
       headerTitle: 'पासवर्ड रीसेट',
@@ -751,6 +752,12 @@ const hi = {
   userProfile: {
     online: 'ऑनलाइन',
     offline: 'ऑफलाइन',
+    blockTitle: 'उपयोगकर्ता को ब्लॉक करें',
+    blockMsg: '{{name}} को ब्लॉक करें? वे आपको संदेश या कॉल नहीं कर पाएंगे।',
+    blockConfirm: 'ब्लॉक करें',
+    unblockTitle: 'अनब्लॉक करें',
+    unblockMsg: '{{name}} को ब्लॉक सूची से हटाएं?',
+    unblockConfirm: 'अनब्लॉक',
     statFollowers: 'फ़ॉलोअर',
     statFollowing: 'फ़ॉलोइंग',
     follow: 'फ़ॉलो',

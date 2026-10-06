@@ -53,6 +53,7 @@ const en = {
       errorNoTerms: 'Please agree to the Terms & Conditions.',
       photoUploadTitle: 'Photo Upload',
       photoUploadMessage: 'Profile photo upload will be added in the next step.',
+      photoUploadFailed: 'Photo upload failed. You can add it later in Edit Profile.',
     },
     forgotPassword: {
       headerTitle: 'Reset Password',
@@ -741,6 +742,12 @@ const en = {
   userProfile: {
     online: 'Online',
     offline: 'Offline',
+    blockTitle: 'Block User',
+    blockMsg: 'Block {{name}}? They won\'t be able to send you messages or call you.',
+    blockConfirm: 'Block',
+    unblockTitle: 'Unblock User',
+    unblockMsg: 'Remove {{name}} from your blocked list?',
+    unblockConfirm: 'Unblock',
     statFollowers: 'Followers',
     statFollowing: 'Following',
     follow: 'Follow',

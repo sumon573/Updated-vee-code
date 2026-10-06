@@ -53,6 +53,7 @@ const ar = {
       errorNoTerms: 'يرجى الموافقة على الشروط والأحكام.',
       photoUploadTitle: 'رفع الصورة',
       photoUploadMessage: 'سيتم إضافة رفع صورة الملف الشخصي في الخطوة التالية.',
+      photoUploadFailed: 'فشل رفع الصورة. يمكنك إضافتها لاحقًا من تعديل الملف الشخصي.',
     },
     forgotPassword: {
       headerTitle: 'إعادة تعيين كلمة المرور',
@@ -750,6 +751,12 @@ const ar = {
   userProfile: {
     online: 'متصل',
     offline: 'غير متصل',
+    blockTitle: 'حظر المستخدم',
+    blockMsg: 'حظر {{name}}؟ لن يتمكن من إرسال رسائل أو الاتصال بك.',
+    blockConfirm: 'حظر',
+    unblockTitle: 'إلغاء الحظر',
+    unblockMsg: 'إزالة {{name}} من قائمة المحظورين؟',
+    unblockConfirm: 'إلغاء الحظر',
     statFollowers: 'متابعون',
     statFollowing: 'يتابع',
     follow: 'متابعة',

@@ -53,6 +53,7 @@ const bn = {
       errorNoTerms: 'শর্তাবলীতে সম্মত হন।',
       photoUploadTitle: 'ছবি আপলোড',
       photoUploadMessage: 'প্রোফাইল ছবি আপলোড পরবর্তী ধাপে যোগ হবে।',
+      photoUploadFailed: 'ছবি আপলোড ব্যর্থ। পরে Edit Profile থেকে যোগ করতে পারবেন।',
     },
     forgotPassword: {
       headerTitle: 'পাসওয়ার্ড রিসেট',
@@ -751,6 +752,12 @@ const bn = {
   userProfile: {
     online: 'অনলাইন',
     offline: 'অফলাইন',
+    blockTitle: 'ব্যবহারকারী ব্লক করুন',
+    blockMsg: '{{name}}-কে ব্লক করবেন? তারা আপনাকে মেসেজ বা কল করতে পারবে না।',
+    blockConfirm: 'ব্লক',
+    unblockTitle: 'আনব্লক করুন',
+    unblockMsg: '{{name}}-কে ব্লক তালিকা থেকে সরাবেন?',
+    unblockConfirm: 'আনব্লক',
     statFollowers: 'ফলোয়ার',
     statFollowing: 'ফলোয়িং',
     follow: 'ফলো',

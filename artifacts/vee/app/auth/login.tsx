@@ -88,6 +88,12 @@ export default function LoginScreen() {
       setErrorMsg(t('auth.login.errorEmptyFields'));
       return;
     }
+    // #7 fix: validate email format client-side (like signup/forgot-password)
+    // to avoid a wasted network round-trip on typos.
+    if (!/\S+@\S+\.\S+/.test(email.trim())) {
+      setErrorMsg(t('auth.errors.invalidEmail'));
+      return;
+    }
     try {
       setLoading(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

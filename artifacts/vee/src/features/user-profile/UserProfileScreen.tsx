@@ -166,12 +166,12 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
     if (!myUid || myUid === uid || !profile) return;
     if (isBlocked) {
       Alert.alert(
-        'Unblock User',
-        `Remove ${profile.name} from your blocked list?`,
+        t('userProfile.unblockTitle'),
+        t('userProfile.unblockMsg', { name: profile.name }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('chat.cancel'), style: 'cancel' },
           {
-            text: 'Unblock',
+            text: t('userProfile.unblockConfirm'),
             onPress: async () => {
               setBlockLoading(true);
               try {
@@ -189,12 +189,12 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
       );
     } else {
       Alert.alert(
-        'Block User',
-        `Block ${profile.name}? They won't be able to send you messages.`,
+        t('userProfile.blockTitle'),
+        t('userProfile.blockMsg', { name: profile.name }),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('chat.cancel'), style: 'cancel' },
           {
-            text: 'Block',
+            text: t('userProfile.blockConfirm'),
             style: 'destructive',
             onPress: async () => {
               setBlockLoading(true);
