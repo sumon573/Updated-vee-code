@@ -96,7 +96,9 @@ export function setupPresence(uid: string): void {
   onDisconnect(userRef).update({
     online: false,
     lastSeen: serverTimestamp(),
-  });
+    // M2 fix: registration can fail when offline at login — swallow to avoid
+    // unhandled rejection on every app start.
+  }).catch(() => {});
 
   // Mark as online now (fire-and-forget — non-critical if it fails)
   update(userRef, {

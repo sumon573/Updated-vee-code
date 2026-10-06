@@ -105,7 +105,9 @@ export function GiftsModal({
         {
           text: t('voiceRoom.gifts.send'),
           style: 'default',
-          onPress: () => handleSend(g),
+          // M3 fix: guard against unexpected throws after diamonds may have
+          // been charged (e.g. Crypto.randomUUID, onGiftSent callback).
+          onPress: () => { handleSend(g).catch(() => {}); },
         },
       ],
     );

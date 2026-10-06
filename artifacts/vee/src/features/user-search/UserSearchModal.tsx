@@ -91,6 +91,11 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // H2 fix: cache users snapshot per modal-open instead of re-downloading
+  // the entire users node on every keystroke.
+  const usersCacheRef = useRef<VeeUser[] | null>(null);
+  // H3 fix: ignore stale search completions (race condition guard).
+  const searchIdRef = useRef(0);
 
   // My full VeeUser profile (needed for sendFriendRequest)
   const [myProfile, setMyProfile] = useState<VeeUser | null>(null);
@@ -117,25 +122,39 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
       setSearched(false);
       return;
     }
+    // H3: capture search id; ignore if a newer search started.
+    const searchId = ++searchIdRef.current;
     setLoading(true);
     setSearched(true);
     try {
-      const snap = await get(ref(database, 'users'));
-      if (!snap.exists()) { setResults([]); setLoading(false); return; }
+      // H2: use cached users list (fetched once per modal-open).
+      let allUsers = usersCacheRef.current;
+      if (!allUsers) {
+        const snap = await get(ref(database, 'users'));
+        if (searchId !== searchIdRef.current) return; // stale
+        allUsers = [];
+        if (snap.exists()) {
+          snap.forEach((child) => {
+            allUsers!.push({ ...(child.val() as VeeUser), uid: child.key! });
+          });
+        }
+        usersCacheRef.current = allUsers;
+      }
+      if (searchId !== searchIdRef.current) return; // stale
 
       const q = text.trim().toLowerCase();
       const found: VeeUser[] = [];
-      snap.forEach((child) => {
+      for (const u of allUsers) {
         // FIX: always use child.key as uid — guarantees uid is never undefined
-        const u = { ...(child.val() as VeeUser), uid: child.key! };
-        if (u.uid === me?.uid) return;
+        if (u.uid === me?.uid) continue;
         const nameMatch        = u.name?.toLowerCase().includes(q);
         const displayNameMatch = (u as any).displayName?.toLowerCase().includes(q);
         const vidMatch         = u.vId?.toLowerCase().includes(q);
         if (nameMatch || displayNameMatch || vidMatch) found.push(u);
-      });
+      }
 
       const slice = found.slice(0, 20);
+      if (searchId !== searchIdRef.current) return; // stale
       setResults(slice);
 
       // Load initial statuses for each result in the background
@@ -145,13 +164,16 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
             getFriendStatus(me.uid!, u.uid),
             checkIsFollowing(me.uid!, u.uid),
           ]);
-          updateAction(u.uid, { friendStatus: fStatus, isFollowing: following });
+          // H3: only update if this search is still the latest
+          if (searchId === searchIdRef.current) {
+            updateAction(u.uid, { friendStatus: fStatus, isFollowing: following });
+          }
         });
       }
     } catch {
-      setResults([]);
+      if (searchId === searchIdRef.current) setResults([]);
     } finally {
-      setLoading(false);
+      if (searchId === searchIdRef.current) setLoading(false);
     }
   }, [me?.uid, updateAction]);
 
@@ -167,6 +189,8 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
       setResults([]);
       setSearched(false);
       setUserActions({});
+      // H2: clear users cache when modal closes so next open gets fresh data.
+      usersCacheRef.current = null;
     }
   }, [visible]);
 

@@ -51,6 +51,7 @@ import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 // RC8-A: actual block user implementation
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
+import { canViewOnlineStatus, canViewLastSeen } from '@/src/services/privacyService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
 const { width, height } = Dimensions.get('window');
@@ -258,14 +259,29 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     return unsub;
   }, [chatId, participantId]);
 
-  // ── Subscribe to presence ────────────────────────────────────────────────
+  // ── Subscribe to presence (respects target's privacy settings) ────────────
   useEffect(() => {
     if (!participantId) return;
-    const unsub = subscribePresence(participantId, (online, seen) => {
-      setIsOnline(online);
-      setLastSeen(seen);
-    });
-    return unsub;
+    let unsub: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      const [showOnline, showSeen] = await Promise.all([
+        canViewOnlineStatus(participantId).catch(() => true),
+        canViewLastSeen(participantId).catch(() => true),
+      ]);
+      if (cancelled) return;
+      if (!showOnline && !showSeen) {
+        // Privacy: hide both — don't subscribe at all.
+        setIsOnline(false);
+        setLastSeen(null);
+        return;
+      }
+      unsub = subscribePresence(participantId, (online, seen) => {
+        setIsOnline(showOnline ? online : false);
+        setLastSeen(showSeen ? seen : null);
+      });
+    })();
+    return () => { cancelled = true; unsub?.(); };
   }, [participantId]);
 
   // RC6 fix Issue 5: subscribe to participant's RTDB profile for live photoURL.
@@ -756,6 +772,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 }}>
                 <Feather name="phone" size={22} color={C.onlineGreen} />
               </Pressable>
+              {/* Video call hidden until implemented — the "coming soon" alert
+                  failed the flawless bar. Re-enable when video calling ships. */}
+              {/*
               <Pressable
                 hitSlop={12}
                 onPress={() => Alert.alert(t('chat.videoCallTitle'), t('chat.videoCallMsg'))}
@@ -768,6 +787,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               >
                 <Feather name="video" size={22} color={C.glow} />
               </Pressable>
+              */}
               {/* "..." More options — block is now fully functional */}
               <Pressable hitSlop={12} onPress={handleMoreOptions}
                 style={{

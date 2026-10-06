@@ -283,6 +283,9 @@ export default function AudioCallScreen({
                 t('audioCall.callEndedTitle'),
                 message,
                 [{ text: t('audioCall.ok'), onPress: () => endCall(true) }],
+                // M1 fix: Android back-button/tap-outside dismisses without
+                // onPress — ensure the call actually ends and mic releases.
+                { onDismiss: () => endCall(true) },
               );
             }
           } else {
@@ -321,7 +324,8 @@ export default function AudioCallScreen({
           endCall(true);
         }
       }, 45_000);
-    })();
+      // M4 fix: never-throws contract could regress — guard the IIFE.
+    })().catch(() => {});
 
     return () => {
       if (!cleaningUpRef.current) endCall(false);

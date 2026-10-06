@@ -25,7 +25,6 @@ import {
   subscribeFriendStatus, FriendStatus,
 } from '@/src/services/friendRequestService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
-import { canSendMessage } from '@/src/services/privacyService';
 import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
 import { useTranslation } from 'react-i18next';
 
@@ -214,57 +213,6 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
       );
     }
   }, [myUid, uid, profile, isBlocked, t]);
-
-  const handleMessage = useCallback(async () => {
-    if (!me?.uid || !profile) return;
-    // Privacy check — respect the target user's messaging preference.
-    if (profile.privacy?.allowMessageFromAll === false) {
-      Alert.alert(t('userProfile.messagingBlocked'), t('userProfile.messagingBlockedMsg'));
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const chatId = buildChatId(me.uid, uid);
-    // FIX: the two userChats writes are network writes — a rejection here
-    // previously escaped as an unhandled promise rejection from this press
-    // handler. Surface it with a user-visible error instead.
-    try {
-      await Promise.all([
-        update(ref(database, `userChats/${me.uid}/${chatId}`), {
-          id: chatId,
-          participantId: uid,
-          participantName: profile.name,
-          participantAvatar: profile.photoURL || '',
-          lastMessage: '',
-          lastMessageType: 'text',
-          lastMessageTime: Date.now(),
-          unreadCount: 0,
-          isOnline: profile.online ?? false,
-          hasStory: false,
-          storySeen: false,
-          isPinned: false,
-        }),
-        update(ref(database, `userChats/${uid}/${chatId}`), {
-          id: chatId,
-          participantId: me.uid,
-          participantName: me.displayName || 'Vee User',
-          participantAvatar: me.photoURL || '',
-          lastMessage: '',
-          lastMessageType: 'text',
-          lastMessageTime: Date.now(),
-          unreadCount: 0,
-          isOnline: true,
-          hasStory: false,
-          storySeen: false,
-          isPinned: false,
-        }),
-      ]);
-      router.push(
-        `/inbox/${chatId}?participantId=${encodeURIComponent(uid)}&participantName=${encodeURIComponent(profile.name)}` as never,
-      );
-    } catch {
-      Alert.alert(t('userProfile.error'), t('userProfile.tryAgain'));
-    }
-  }, [me, uid, profile, t]);
 
   if (loading) {
     return (

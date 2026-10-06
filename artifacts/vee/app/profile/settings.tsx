@@ -27,7 +27,6 @@ import {
 } from 'firebase/auth';
 import { auth, database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
-import { useTheme } from '@/src/context/ThemeContext';
 
 const C = {
   bg: '#07020F',
@@ -42,13 +41,11 @@ const C = {
 } as const;
 
 type AppSettings = {
-  darkMode: boolean;
   autoPlayMedia: boolean;
   dataSaver: boolean;
 };
 
 const DEFAULTS: AppSettings = {
-  darkMode: false, // Issue 7: default to Light Mode; users opt in to Dark Mode
   autoPlayMedia: true,
   dataSaver: false,
 };
@@ -132,7 +129,6 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const { user } = useAuth();
   // Issue 7: dark mode is managed by ThemeContext (persists to Firebase + app-wide)
-  const { darkMode, setDarkMode } = useTheme();
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULTS);
@@ -295,14 +291,9 @@ export default function SettingsScreen() {
           }}>
             {t('settings.sectionAppearance')}
           </Text>
-          {/* Issue 7: dark mode toggle now wired to ThemeContext (app-wide + persisted) */}
-          <SettingToggle
-            icon="moon"
-            label={t('settings.darkMode')}
-            subtitle={t('settings.darkModeSub')}
-            value={darkMode}
-            onChange={(v) => setDarkMode(v)}
-          />
+          {/* Dark mode toggle removed — the app is dark-first by design and no
+              light theme exists. A non-functional toggle is worse than none.
+              Re-add when a full light theme ships. */}
 
           {/* Media */}
           <Text style={{

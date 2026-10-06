@@ -6,7 +6,7 @@
  * Pin/Unpin: Long-press on chat item।
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, Pressable,
   FlatList, Platform, ActivityIndicator, Alert,
@@ -192,6 +192,28 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     );
   }, [user?.uid, t, router]);
 
+  // H4 fix: stable id-based handlers so renderItem doesn't create fresh
+  // closures per row (which defeats ChatListItem's memo).
+  const handleChatPressById = useCallback((chatId: string) => {
+    const chat = regularChatsRef.current.find((c: Chat) => c.id === chatId)
+      ?? pinnedChatsRef.current.find((c: Chat) => c.id === chatId);
+    if (chat) handleChatPress(chat);
+  }, [handleChatPress]);
+
+  const handleChatLongPressById = useCallback((chatId: string) => {
+    const chat = regularChatsRef.current.find((c: Chat) => c.id === chatId)
+      ?? pinnedChatsRef.current.find((c: Chat) => c.id === chatId);
+    if (chat) handleChatLongPress(chat);
+  }, [handleChatLongPress]);
+
+  const renderChatItem = useCallback(({ item }: { item: Chat }) => (
+    <ChatListItem
+      chat={item}
+      onPress={handleChatPressById}
+      onLongPress={handleChatLongPressById}
+    />
+  ), [handleChatPressById, handleChatLongPressById]);
+
   /** Called when user selects someone from UserSearchModal */
   const handleUserSelected = useCallback((selectedUser: VeeUser, chatId: string) => {
     setSearchModalOpen(false);
@@ -209,6 +231,12 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
 
   const pinnedChats  = filteredChats.filter(c => c.isPinned);
   const regularChats = filteredChats.filter(c => !c.isPinned);
+
+  // H4: refs so stable id-based handlers can find the chat object.
+  const pinnedChatsRef = useRef(pinnedChats);
+  const regularChatsRef = useRef(regularChats);
+  pinnedChatsRef.current = pinnedChats;
+  regularChatsRef.current = regularChats;
 
   // ── Empty state ─────────────────────────────────────────────────────────────
   function EmptyState() {
@@ -270,8 +298,8 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               <ChatListItem
                 key={item.id}
                 chat={item}
-                onPress={() => handleChatPress(item)}
-                onLongPress={() => handleChatLongPress(item)}
+                onPress={handleChatPressById}
+                onLongPress={handleChatLongPressById}
               />
             ))}
             {regularChats.length > 0 && (
@@ -368,13 +396,9 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
             <FlatList
               data={regularChats}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <ChatListItem
-                  chat={item}
-                  onPress={() => handleChatPress(item)}
-                  onLongPress={() => handleChatLongPress(item)}
-                />
-              )}
+              renderItem={renderChatItem}
+              // H4: fixed row height (~76) enables getItemLayout for smooth scroll.
+              getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })}
               ListHeaderComponent={ListHeader}
               ListEmptyComponent={pinnedChats.length === 0 ? <EmptyState /> : null}
               contentContainerStyle={{ paddingBottom: 120 }}

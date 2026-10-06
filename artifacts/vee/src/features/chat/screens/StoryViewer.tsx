@@ -311,6 +311,10 @@ function StoryCard({
                 <Text style={{ color: C.muted, fontSize: 11 }}>{t('chat.storyComment')}</Text>
               </Pressable>
 
+              {/* Share-to-inbox hidden — the previous implementation faked a
+                  success message without sending anything. Re-enable when a
+                  real chat-picker share flow is implemented. */}
+              {/*
               <Pressable onPress={shareToInbox} style={{ alignItems: 'center', gap: 4 }}>
                 <View style={{
                   width: 44, height: 44, borderRadius: 22,
@@ -321,6 +325,7 @@ function StoryCard({
                 </View>
                 <Text style={{ color: C.muted, fontSize: 11 }}>{t('chat.storyShare')}</Text>
               </Pressable>
+              */}
 
               <View style={{ alignItems: 'center', gap: 4 }}>
                 <View style={{

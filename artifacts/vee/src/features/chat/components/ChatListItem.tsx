@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useState, useCallback } from 'react';
 import { View, Text, Image } from 'react-native';
 import ScalePress from '@/components/ScalePress';
 import { Feather } from '@expo/vector-icons';
@@ -43,13 +43,16 @@ function initials(name: string): string {
 
 type Props = {
   chat: Chat;
-  onPress: () => void;
-  onLongPress?: () => void;
+  onPress: (chatId: string) => void;
+  onLongPress?: (chatId: string) => void;
 };
 
 function ChatListItem({ chat, onPress, onLongPress }: Props) {
   const { t } = useTranslation();
   const hasUnread = chat.unreadCount > 0;
+  // H4: stable callbacks so memo() isn't defeated by fresh closures.
+  const handlePress = useCallback(() => onPress(chat.id), [onPress, chat.id]);
+  const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
   const isPinned  = chat.isPinned === true;
 
   // RC6 fix Issue 5: fetch the participant's live photoURL from RTDB so the
@@ -88,7 +91,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
   const preview = messagePreview(chat);
 
   return (
-    <ScalePress onPress={onPress} onLongPress={onLongPress} scaleTo={0.97}>
+    <ScalePress onPress={handlePress} onLongPress={handleLongPress} scaleTo={0.97}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: isPinned ? C.cardPinned : hasUnread ? C.cardUnread : C.card,

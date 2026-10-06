@@ -317,14 +317,23 @@ export default function VoiceRoomScreen() {
           {
             text: t('voiceRoom.screen.accept'),
             onPress: async () => {
-              await removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup; takeSeat result is checked below */});
-              const result = await takeSeat(roomId, invite.seatIdx, {
-                userId: myUid, userName: myName,
-                initials: myInitials, color: myColor,
-                muted: true, role: 'member',
-                ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-              });
+              // H1 fix: take the seat FIRST, only delete the invite on success.
+              // If takeSeat throws (offline/rules), the invite stays so the
+              // user can retry instead of losing it silently.
+              let result: { success: boolean };
+              try {
+                result = await takeSeat(roomId, invite.seatIdx, {
+                  userId: myUid, userName: myName,
+                  initials: myInitials, color: myColor,
+                  muted: true, role: 'member',
+                  ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+                });
+              } catch {
+                Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
+                return;
+              }
               if (result.success) {
+                removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup after successful seat take */});
                 startPublishing();
                 sendRoomChatMsg(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
