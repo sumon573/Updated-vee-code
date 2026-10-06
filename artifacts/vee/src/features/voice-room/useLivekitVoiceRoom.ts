@@ -419,16 +419,20 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
     try {
       // Lazy SDK load — keeps this module import-safe in Expo Go.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const lk = require('livekit-client') as LivekitClientModule;
+      // CRITICAL: registerGlobals() MUST run before livekit-client is loaded.
+      // LiveKit's own docs warn that importing livekit-client before
+      // registerGlobals() "breaks apps at runtime on Hermes" (native crash).
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const rnSdk = require('@livekit/react-native') as LivekitRnModule;
-      this.lk = lk;
       this.rnSdk = rnSdk;
       if (!_globalsRegistered) {
         rnSdk.registerGlobals();
         _globalsRegistered = true;
       }
+      // Now safe to load livekit-client (WebRTC globals are registered).
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const lk = require('livekit-client') as LivekitClientModule;
+      this.lk = lk;
       // Crash breadcrumb: native WebRTC globals are now loaded.
       markVoiceStage('sdk_loaded', roomId);
 
