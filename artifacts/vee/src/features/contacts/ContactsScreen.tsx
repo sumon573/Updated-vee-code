@@ -19,6 +19,7 @@ import { VeeUser } from '@/src/services/userService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
+import { getBlockDirection, BlockDirection } from '@/src/services/blockService';
 import {
   FriendRequest, subscribeIncomingRequests, subscribeFriendUids,
   acceptFriendRequest, rejectFriendRequest, removeFriend,
@@ -300,8 +301,19 @@ export default function ContactsScreen() {
   }, [me, router]);
 
   /** Audio call — navigate to the 1-to-1 audio call screen as caller. */
-  const handleCall = useCallback((targetUser: VeeUser) => {
+  const handleCall = useCallback(async (targetUser: VeeUser) => {
     if (!me?.uid) return;
+    // Block enforcement: cannot call if blocked either way.
+    const direction = await getBlockDirection(me.uid, targetUser.uid).catch(() => 'none' as BlockDirection);
+    if (direction !== 'none') {
+      Alert.alert(
+        'Blocked',
+        direction === 'byMe' || direction === 'mutual'
+          ? `You blocked ${targetUser.name}. Unblock them to call.`
+          : `${targetUser.name} has blocked you.`,
+      );
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const callRoomId = [me.uid, targetUser.uid].sort().join('_');
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(targetUser.uid)}&remoteName=${encodeURIComponent(targetUser.name)}&calleeUid=${encodeURIComponent(targetUser.uid)}&myUid=${encodeURIComponent(me.uid)}&myName=${encodeURIComponent(me.displayName ?? 'Vee User')}`;

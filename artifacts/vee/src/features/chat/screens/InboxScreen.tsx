@@ -50,7 +50,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 // RC8-A: actual block user implementation
-import { blockUser } from '@/src/services/blockService';
+import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
 const { width, height } = Dimensions.get('window');
@@ -199,6 +199,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [oldestRecentKey, setOldestRecentKey] = useState<string | null>(null);
   const [hasMoreOlder, setHasMoreOlder]       = useState(false);
   const [loadingOlder, setLoadingOlder]       = useState(false);
+  const [blockDirection, setBlockDirection]   = useState<BlockDirection>('none');
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -282,6 +283,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       markAllSeen(chatId, myUid).catch(() => {});
     }
   }, [chatId, myUid, messages.length]);
+
+  // ── Block status: check on open and refresh when returning ────────────────
+  useEffect(() => {
+    let cancelled = false;
+    getBlockDirection(myUid, participantId)
+      .then((d) => { if (!cancelled) setBlockDirection(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [myUid, participantId]);
 
   // ── Timers cleanup on unmount ─────────────────────────────────────────────
   useEffect(() => () => {
@@ -367,11 +377,22 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
     try {
       await sendMessage(chatId, myUid, participantId, text, 'text', replyPreview, undefined, user?.displayName ?? undefined);
-    } catch {
+    } catch (e) {
       // Restore the typed text on failure (only if the user hasn't typed
       // something new meanwhile) so a failed send doesn't eat the message.
       setInputText((prev) => (prev ? prev : text));
-      Alert.alert(t('chat.error'), t('chat.sendError'));
+      if (e instanceof BlockedInteractionError) {
+        const d = await getBlockDirection(myUid, participantId).catch(() => 'none' as BlockDirection);
+        setBlockDirection(d);
+        Alert.alert(
+          t('chat.blockedTitle') ?? 'Blocked',
+          d === 'byMe'
+            ? (t('chat.blockedByMeMsg', { name: participantName }) ?? `You blocked ${participantName}. Unblock to send messages.`)
+            : (t('chat.blockedByThemMsg', { name: participantName }) ?? `${participantName} has blocked you.`),
+        );
+      } else {
+        Alert.alert(t('chat.error'), t('chat.sendError'));
+      }
     }
   }, [inputText, chatId, myUid, participantId, replyTarget, participantName, t, user]);
 
@@ -583,8 +604,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const keyExtractor = useCallback((item: DmMessage) => item.id, []);
 
   // RC6 fix Issue 8: navigate to real audio-call screen instead of Alert
-  const handleVoiceCall = useCallback(() => {
+  const handleVoiceCall = useCallback(async () => {
     if (!user) return;
+    // Block enforcement: cannot call if blocked either way.
+    const direction = await getBlockDirection(myUid, participantId).catch(() => 'none' as BlockDirection);
+    if (direction !== 'none') {
+      setBlockDirection(direction);
+      Alert.alert(
+        t('chat.blockedTitle'),
+        direction === 'byMe' || direction === 'mutual'
+          ? t('chat.blockedByMeMsg', { name: participantName })
+          : t('chat.blockedByThemMsg', { name: participantName }),
+      );
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const callRoomId = buildCallRoomId(myUid, participantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(participantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(participantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
@@ -798,12 +831,29 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               </View>
             )}
 
+            {/* ── Blocked banner ───────────────────────────────────────────── */}
+            {blockDirection !== 'none' && (
+              <View style={{
+                paddingHorizontal: 16, paddingVertical: 10,
+                backgroundColor: 'rgba(239,68,68,0.12)',
+                borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.3)',
+                alignItems: 'center',
+              }}>
+                <Text style={{ color: '#FCA5A5', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                  {blockDirection === 'byMe' || blockDirection === 'mutual'
+                    ? t('chat.blockedBannerByMe', { name: participantName })
+                    : t('chat.blockedBannerByThem', { name: participantName })}
+                </Text>
+              </View>
+            )}
+
             {/* ── Input bar ──────────────────────────────────────────────── */}
             <View style={{
               flexDirection: 'row', alignItems: 'flex-end',
               paddingHorizontal: 12, paddingVertical: 10,
               borderTopWidth: 1, borderTopColor: C.border,
               backgroundColor: C.headerBg, gap: 10,
+              opacity: blockDirection !== 'none' ? 0.4 : 1,
             }}>
               {/* Attachment */}
               <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia}>
@@ -820,6 +870,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               {/* Text input */}
               <TextInput
                 ref={inputRef}
+                editable={blockDirection === 'none'}
                 style={{
                   flex: 1, minHeight: 40, maxHeight: 110,
                   backgroundColor: C.inputBg,
@@ -827,7 +878,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   color: '#fff', fontSize: 15,
                   borderWidth: 1, borderColor: C.border,
                 }}
-                placeholder={t('chat.messagePlaceholder')}
+                placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
                 placeholderTextColor={C.muted}
                 multiline
                 value={inputText}
@@ -838,7 +889,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               />
 
               {/* Send */}
-              <Pressable onPress={handleSend} disabled={!inputText.trim()}>
+              <Pressable onPress={handleSend} disabled={!inputText.trim() || blockDirection !== 'none'}>
                 <View style={{
                   width: 42, height: 42, borderRadius: 21,
                   backgroundColor: inputText.trim() ? C.primary : 'rgba(124,58,237,0.2)',

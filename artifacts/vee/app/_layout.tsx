@@ -38,6 +38,7 @@ import {
   removeCallSignal,
   type IncomingCall,
 } from '@/src/features/audio-call/services/firebaseCallService';
+import { isInteractionBlocked } from '@/src/services/blockService';
 import { tryGetApiBase } from '@/src/utils/platform';
 
 // Expo can reject this call when the native splash screen has already been
@@ -221,7 +222,7 @@ function IncomingCallListener({
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
 
   useEffect(() => {
-    return subscribeIncomingCall(uid, (call) => {
+    return subscribeIncomingCall(uid, async (call) => {
       // Ignore incoming calls while already on the audio-call screen (avoids
       // stacking modals when both devices are active in the same call).
       const segs = segmentsRef.current;
@@ -229,6 +230,14 @@ function IncomingCallListener({
         // background: safe to swallow — signaling cleanup
         if (call) removeCallSignal(uid).catch(() => {});
         return;
+      }
+      // Block enforcement: auto-decline calls from blocked users (either way).
+      if (call) {
+        const blocked = await isInteractionBlocked(uid, call.callerId).catch(() => false);
+        if (blocked) {
+          removeCallSignal(uid).catch(() => {});
+          return;
+        }
       }
       setIncoming(call);
     });

@@ -25,6 +25,7 @@ import { database } from '@/src/config/firebase';
 import { DmMessage, DmReplyPreview } from '../types/dm';
 import { Chat } from '../types';
 import { sendPushNotification } from '@/src/services/notifyService';
+import { getBlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -153,6 +154,12 @@ export async function sendMessage(
   cloudinaryId?: string,
   senderName?: string,
 ): Promise<void> {
+  // Block enforcement: neither side can message if blocked either way.
+  const direction = await getBlockDirection(myUid, participantUid);
+  if (direction !== 'none') {
+    throw new BlockedInteractionError(direction);
+  }
+
   const msgsRef = ref(database, `chats/${chatId}/messages`);
   const newMsgRef = push(msgsRef);
 

@@ -64,3 +64,42 @@ export function subscribeBlockedUsers(
     () => { callback([]); },
   );
 }
+
+/** Check if the other user blocked me. */
+export async function isBlockedByThem(myUid: string, targetUid: string): Promise<boolean> {
+  const snap = await get(ref(database, `userBlocks/${targetUid}/${myUid}`));
+  return snap.exists();
+}
+
+export type BlockDirection = 'none' | 'byMe' | 'byThem' | 'mutual';
+
+/**
+ * Check block status in both directions.
+ * Returns 'byMe' if I blocked them, 'byThem' if they blocked me,
+ * 'mutual' if both, 'none' if neither.
+ */
+export async function getBlockDirection(myUid: string, targetUid: string): Promise<BlockDirection> {
+  const [byMe, byThem] = await Promise.all([
+    isBlockedByMe(myUid, targetUid),
+    isBlockedByThem(myUid, targetUid),
+  ]);
+  if (byMe && byThem) return 'mutual';
+  if (byMe) return 'byMe';
+  if (byThem) return 'byThem';
+  return 'none';
+}
+
+/** True if messaging/calling is forbidden in either direction. */
+export async function isInteractionBlocked(myUid: string, targetUid: string): Promise<boolean> {
+  return (await getBlockDirection(myUid, targetUid)) !== 'none';
+}
+
+/** Error thrown when trying to interact with a blocked user. */
+export class BlockedInteractionError extends Error {
+  direction: BlockDirection;
+  constructor(direction: BlockDirection) {
+    super(direction === 'byMe' ? 'You have blocked this user' : 'This user has blocked you');
+    this.name = 'BlockedInteractionError';
+    this.direction = direction;
+  }
+}
