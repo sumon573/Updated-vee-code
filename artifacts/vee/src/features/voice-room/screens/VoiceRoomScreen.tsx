@@ -34,6 +34,7 @@ import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
 import { AudienceModal } from '../components/AudienceModal';
 import { GiftsModal } from '../components/GiftsModal';
+import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { EmojiPanel } from '../components/EmojiPanel';
 import { ExitModal } from '../components/ExitModal';
@@ -124,6 +125,8 @@ export default function VoiceRoomScreen() {
   // Fix 4: Remove hardcoded ROOM_META.id fallback — roomId must come from route param
   const roomId = paramRoomId ?? '';
   const myUid  = user?.uid ?? 'anonymous';
+  const myUidRef = useRef(myUid);
+  useEffect(() => { myUidRef.current = myUid; }, [myUid]);
 
   // CRITICAL-6/7 fix: Firebase Auth user.displayName / photoURL are NOT updated
   // when the user edits their profile inside Vee (those writes go to RTDB only).
@@ -383,6 +386,8 @@ export default function VoiceRoomScreen() {
   const [roomName,      setRoomName]     = useState(ROOM_META.name);
   const [roomImageUri, setRoomImageUri] = useState<string | null>(null);
   const [activeThemeId, setActiveThemeId] = useState('cosmic');
+  /** Tracks the last Firebase-synced theme to avoid echo loops. */
+  const activeThemeIdRef = useRef('cosmic');
   /** Persisted room visibility — synced from Firebase via subscribeRoomInfo. */
   const [roomIsPublic,  setRoomIsPublic]  = useState(true);
   /** Persisted room lock state — synced from Firebase via subscribeRoomInfo. */
@@ -505,10 +510,27 @@ export default function VoiceRoomScreen() {
       setRoomName(info.name);
       setRoomTopic(info.topic);
       setOwnerId(info.ownerId);
+      // Self-heal: if WE are the owner but our seat says 'member'/'admin'
+      // (e.g. seated before ownerId loaded), correct it in Firebase.
+      // Runs on every info update but only writes when actually wrong.
+      if (info.ownerId && info.ownerId === myUidRef.current) {
+        const mySeatIdxNow = seatsRef.current.findIndex(
+          (s: Participant | null) => s?.id === myUidRef.current,
+        );
+        const mySeatNow = mySeatIdxNow >= 0 ? seatsRef.current[mySeatIdxNow] : null;
+        if (mySeatNow && mySeatNow.role !== 'host') {
+          setSeatRole(roomId, mySeatIdxNow, 'host').catch(() => {});
+        }
+      }
       setRoomImageUri(info.coverImageUrl ?? null);
       setRoomIsPublic(info.isPublic);
       setRoomIsLocked(info.isLocked ?? false);
       setRoomDescription(info.description ?? '');
+      // Theme sync: owner/admin changes propagate to ALL users via Firebase.
+      if (info.themeId && info.themeId !== activeThemeIdRef.current) {
+        activeThemeIdRef.current = info.themeId;
+        setActiveThemeId(info.themeId);
+      }
       // Room is live — begin the staged native voice init.
       handleRoomInfoOk();
     });
@@ -803,16 +825,14 @@ export default function VoiceRoomScreen() {
       return;
     }
 
-    const newMuted = !muted;
-    // Toggle real audio via the voice engine
-    engineToggleMic();
+    const newMuted = engineToggleMic(); // single source of truth — never `!muted`
     // Optimistically update local seat indicator (no wait for Firebase round-trip)
     setSeats(prev => prev.map((s, i) =>
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
     // Persist mute state so other clients see the mic indicator change
     setSeatMute(roomId, mySeatIdx, newMuted).catch(() => {});
-  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, muted, roomId]);
+  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId]);
 
   const toggleSpeaker = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -920,10 +940,11 @@ export default function VoiceRoomScreen() {
       return;
     }
 
-    // role: always use myRole — it already computes 'host' for the owner even
-    // when they have no seat (the ownerId fallback in the myRole useMemo).
-    // The previous `mySeatIdx >= 0 ? myRole : 'member'` was wrong: an owner
-    // joining from the audience was seated as 'member'.
+    // role: the owner MUST always be seated as 'host', even if room info
+    // (ownerId) hasn't finished loading yet — otherwise a race seats the
+    // owner as 'member' and they lose host powers + see the wrong badge.
+    // Belt-and-braces: check ownerId directly, not just the myRole memo.
+    const seatRole: Role = (ownerId && ownerId === myUid) ? 'host' : myRole;
     const seatData: NonNullable<RoomSeat> = {
       userId: myUid,
       userName: myName,
@@ -933,7 +954,7 @@ export default function VoiceRoomScreen() {
       // CRITICAL-4 fix: preserve current mute state when moving between seats;
       // start muted only on first join from audience (mySeatIdx < 0).
       muted: mySeatIdx >= 0 ? muted : true,
-      role: myRole,
+      role: seatRole,
     };
 
     // RACE FIX: await the takeSeat transaction BEFORE vacating the old seat.
@@ -1289,12 +1310,9 @@ export default function VoiceRoomScreen() {
   /* ═══ RENDER ═══ */
   return (
     <View style={{ flex: 1, backgroundColor: themeBg }}>
-      {/* Theme accent gradient — subtle glow from the top matching the active theme */}
-      <LinearGradient
-        colors={[accentColor + '28', accentColor + '00']}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 200, zIndex: 0 }}
-        pointerEvents="none"
-      />
+      {/* Animated theme background — breathing glow + floating particles.
+          Theme is Firebase-synced so every user sees the same animation. */}
+      <AnimatedThemeBackground accentColor={accentColor} />
       <SafeAreaView edges={['top']}>
         {/* ═══ HEADER ═══ */}
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 10, paddingBottom: 8 }}>
@@ -1533,8 +1551,8 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Seat grid ── */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+        {/* ── Seat grid — clean 5-column professional layout ── */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
           {seats.map((member: Participant | null, idx: number) => (
             /* Track 3: wrapper measured on demand (measureInWindow) so gift fly
                animations can target this seat's screen center. collapsable={false}
@@ -1542,6 +1560,7 @@ export default function VoiceRoomScreen() {
             <View
               key={idx}
               collapsable={false}
+              style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
               ref={(v) => {
                 const id = member?.id;
                 if (!id) return;
@@ -1879,7 +1898,14 @@ export default function VoiceRoomScreen() {
           });
         }}
         activeThemeId={activeThemeId}
-        onThemeChange={setActiveThemeId}
+        onThemeChange={(newThemeId) => {
+          // Optimistic local update + Firebase sync so ALL users see the change.
+          activeThemeIdRef.current = newThemeId;
+          setActiveThemeId(newThemeId);
+          updateRoomSettings(roomId, { themeId: newThemeId }).catch(() => {
+            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
+          });
+        }}
         onOpenHistory={() => { setSettingsOpen(false); setOpHistOpen(true); }}
         accent={accentColor}
         roomIsPublic={roomIsPublic}
@@ -1891,6 +1917,7 @@ export default function VoiceRoomScreen() {
             Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
           });
         }}
+        roomId={roomId}
       />
       <SeatActionSheet
         visible={seatActionOpen}

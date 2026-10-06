@@ -83,6 +83,8 @@ export type RoomInfo = {
   closedAt?: number;
   /** Optional geolocation of the room creator — stored at creation time. */
   location?: { lat: number; lng: number };
+  /** Synced room theme id (e.g. 'cosmic'). Changed by owner/admin, visible to all. */
+  themeId?: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -548,7 +550,7 @@ export async function setSeatMute(
 export async function setSeatRole(
   roomId: string,
   seatIndex: number,
-  role: 'admin' | 'member',
+  role: 'host' | 'admin' | 'member',
 ): Promise<void> {
   await update(ref(database, `rooms/${roomId}/seats/${seatIndex}`), { role });
 }
@@ -666,7 +668,7 @@ export async function disbandRoom(roomId: string): Promise<void> {
 /** Update room settings (name, topic, isPublic, isLocked, coverImageUrl). */
 export async function updateRoomSettings(
   roomId: string,
-  data: { name?: string; topic?: string; isPublic?: boolean; isLocked?: boolean; coverImageUrl?: string },
+  data: { name?: string; topic?: string; isPublic?: boolean; isLocked?: boolean; coverImageUrl?: string; themeId?: string; hashedPin?: string },
 ): Promise<void> {
   await update(ref(database, `rooms/${roomId}/info`), data);
 }

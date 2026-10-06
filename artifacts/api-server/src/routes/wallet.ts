@@ -275,11 +275,11 @@ router.post("/send-gift", async (req: Request, res: Response) => {
       typeof toUid !== "string" ||
       toUid.length === 0 ||
       toUid.length > MAX_UID_LENGTH ||
-      INVALID_PATH_CHARS.test(toUid) ||
-      toUid === fromUid
+      INVALID_PATH_CHARS.test(toUid)
     ) {
       return res.status(400).json({ ok: false, error: "Invalid request" });
     }
+    // Self-gifting is allowed: debit + credit the same account (net-zero).
 
     if (
       typeof idempotencyKey !== "string" ||

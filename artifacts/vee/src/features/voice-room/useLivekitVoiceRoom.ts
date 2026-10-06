@@ -88,7 +88,10 @@ export type LivekitRoomReturn = {
   wasRestored: boolean;
   startPublishing: () => void;
   stopPublishing: () => void;
-  toggleMic: () => void;
+  /** Toggles mic and RETURNS the new muted state (single source of truth).
+   *  Callers must use the return value — never compute `!muted` from React
+   *  state, which can be stale in the closure and cause double-toggle bugs. */
+  toggleMic: () => boolean;
   toggleSpeaker: () => void;
   /** Directly set the mic muted state (used for host-driven remote mute). */
   setMicMuted: (muted: boolean) => void;
@@ -921,17 +924,21 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
      MIC / SPEAKER
   ══════════════════════════════════════════════ */
 
-  const toggleMic = useCallback(() => {
+  const toggleMic = useCallback((): boolean => {
     const engine = engineRef.current;
-    if (!engine) return;
+    if (!engine) return mutedRef.current;
     // Call the engine OUTSIDE the state setter: if the native call throws,
     // the exception must not propagate through React's reconciler.
     // Use the ref for synchronous current-value tracking.
+    // RETURNS the new muted value so callers use a single source of truth
+    // (fixes stale-closure double-toggle where screen computed `!muted`
+    // from outdated React state while the engine toggled its own ref).
     const newMuted = !mutedRef.current;
     mutedRef.current = newMuted;
     engine.setMuted(newMuted).catch(() => {
       // non-critical — authoritative state arrives via onLocalStateChange
     });
+    return newMuted;
   }, []);
 
   const toggleSpeaker = useCallback(() => {

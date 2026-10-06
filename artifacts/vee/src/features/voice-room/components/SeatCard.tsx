@@ -34,7 +34,7 @@ export const SeatCard = memo(function SeatCard({
   return (
     <Pressable
       onPress={onPress}
-      style={{ alignItems: 'center', width: '20%', paddingVertical: 10, paddingHorizontal: 2 }}
+      style={{ alignItems: 'center', width: '100%', paddingVertical: 4, paddingHorizontal: 2 }}
     >
       {/* ── Seat number badge ── */}
       <View style={{
@@ -160,7 +160,8 @@ export const SeatCard = memo(function SeatCard({
           <Text style={{
             color: locked ? C.gold : accent + 'AA',
             fontSize: 10, marginTop: 5, fontWeight: '600',
-          }}>
+            textAlign: 'center',
+          }} numberOfLines={1}>
             {locked ? t('voiceRoom.seatCard.locked') : t('voiceRoom.seatCard.empty')}
           </Text>
         </>

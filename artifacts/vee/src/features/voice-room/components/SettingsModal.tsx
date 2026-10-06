@@ -3,8 +3,10 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Alert, Pressable, Modal, TextInput, Switch } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Crypto from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
 import { C, ROOM_THEMES } from '../constants/theme';
+import { storeRoomPin } from '../services/firebaseRoomService';
 
 /* ─────────────────────────── Settings Modal ─────────────────────────── */
 
@@ -22,7 +24,7 @@ export function SettingsModal({
   activeThemeId, onThemeChange,
   onOpenHistory, accent,
   roomIsPublic, roomIsLocked,
-  onSaveSettings,
+  onSaveSettings, roomId,
 }: {
   visible: boolean; onClose: () => void; isOwnerOrAdmin: boolean;
   topic: string; setTopic: (t: string) => void;
@@ -34,12 +36,17 @@ export function SettingsModal({
   roomIsLocked: boolean;
   /** Called on Save with the new (isPublic, isLocked) pair to persist to Firebase. */
   onSaveSettings: (isPublic: boolean, isLocked: boolean) => void;
+  /** Room id — needed to store a new PIN for private rooms. */
+  roomId: string;
 }) {
   const { t } = useTranslation();
   const [localTopic, setLocalTopic] = useState(topic);
   const [isPublic,   setIsPublic]   = useState(roomIsPublic);
   const [lockRoom,   setLockRoom]   = useState(roomIsLocked);
   const [showThemes, setShowThemes] = useState(false);
+  /** New 4-digit PIN input (private rooms only). Empty = don't change. */
+  const [newPin, setNewPin] = useState('');
+  const [pinSaving, setPinSaving] = useState(false);
 
   // Sync local state from props whenever the modal opens (or props change while open)
   useEffect(() => {
@@ -47,6 +54,7 @@ export function SettingsModal({
       setLocalTopic(topic);
       setIsPublic(roomIsPublic);
       setLockRoom(roomIsLocked);
+      setNewPin('');
     }
   }, [visible, topic, roomIsPublic, roomIsLocked]);
 
@@ -56,6 +64,33 @@ export function SettingsModal({
     onSaveSettings(isPublic, lockRoom);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();
+  };
+
+  /** Change the 4-digit PIN for a private room (owner/admin only). */
+  const handleChangePin = async () => {
+    const pin = newPin.trim();
+    if (!/^\d{4}$/.test(pin)) {
+      Alert.alert(
+        t('voiceRoom.settings.pinInvalidTitle'),
+        t('voiceRoom.settings.pinInvalidMsg'),
+      );
+      return;
+    }
+    setPinSaving(true);
+    try {
+      const hashed = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pin);
+      await storeRoomPin(roomId, hashed);
+      setNewPin('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        t('voiceRoom.settings.pinChangedTitle'),
+        t('voiceRoom.settings.pinChangedMsg'),
+      );
+    } catch {
+      Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
+    } finally {
+      setPinSaving(false);
+    }
   };
 
   const toggleRows = [
@@ -118,6 +153,48 @@ export function SettingsModal({
               />
             </View>
           ))}
+
+          {/* Room PIN — private rooms only, owner/admin can change the 4-digit password */}
+          {!isPublic && isOwnerOrAdmin && (
+            <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                {t('voiceRoom.settings.pinLabel')}
+              </Text>
+              <Text style={{ color: C.muted, fontSize: 12, marginTop: 2, marginBottom: 10 }}>
+                {t('voiceRoom.settings.pinSub')}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TextInput
+                  value={newPin}
+                  onChangeText={(v) => setNewPin(v.replace(/[^0-9]/g, '').slice(0, 4))}
+                  placeholder="••••"
+                  placeholderTextColor={C.muted}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  secureTextEntry
+                  style={{
+                    flex: 1, backgroundColor: C.card, borderRadius: 14,
+                    paddingHorizontal: 16, paddingVertical: 12,
+                    color: C.text, fontSize: 16, fontWeight: '800',
+                    borderWidth: 1, borderColor: accent + '55',
+                    letterSpacing: 8, textAlign: 'center',
+                  }}
+                />
+                <Pressable
+                  onPress={handleChangePin}
+                  disabled={pinSaving || newPin.length !== 4}
+                  style={{
+                    backgroundColor: pinSaving || newPin.length !== 4 ? C.muted : accent,
+                    borderRadius: 14, paddingHorizontal: 20,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>
+                    {pinSaving ? '…' : t('voiceRoom.settings.pinChange')}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
 
           {/* Room Themes */}
           <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>

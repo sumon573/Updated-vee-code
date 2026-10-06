@@ -204,11 +204,9 @@ export async function sendGift({
   giftId,
   idempotencyKey,
 }: SendGiftArgs): Promise<SendGiftResult> {
-  const senderUid = auth.currentUser?.uid;
-  if (senderUid && toUid === senderUid) {
-    throw new SelfGiftError();
-  }
-
+  // Self-gifting is ALLOWED (per product requirement): the server debits and
+  // credits the same account (net-zero), so the gift animation and history
+  // still work for testing/showcase.
   const key = idempotencyKey ?? Crypto.randomUUID();
 
   let res: Response;
