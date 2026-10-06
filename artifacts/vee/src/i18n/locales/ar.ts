@@ -353,7 +353,7 @@ const ar = {
       confirmMsg: 'إرسال {{emoji}} {{name}} ({{total}} 💎) إلى {{names}}؟',
       send: 'إرسال',
       cancel: 'إلغاء',
-      notEnoughCoinsMsg: 'تحتاج {{total}} 💎',
+      notEnoughCoinsMsg: 'لا يوجد ألماس كافٍ. تحتاج {{total}} 💎 — يرجى الشحن.',
       sendFailed: 'تعذّر إرسال الهدية. حاول مرة أخرى.',
       // TODO i18n: English fallbacks — need proper Arabic translations
       partialSendTitle: 'Some gifts not sent',

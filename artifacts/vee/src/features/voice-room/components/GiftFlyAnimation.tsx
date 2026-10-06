@@ -55,9 +55,9 @@ export function giftTier(coins: number): 'small' | 'medium' | 'large' {
 }
 
 const TIER_STYLE = {
-  small:  { emojiSize: 52, flyMs: 900,  bannerScale: 0.85 },
+  small:  { emojiSize: 40, flyMs: 700,  bannerScale: 0.75 },
   medium: { emojiSize: 80, flyMs: 1200, bannerScale: 1 },
-  large:  { emojiSize: 112, flyMs: 1600, bannerScale: 1.15 },
+  large:  { emojiSize: 130, flyMs: 1800, bannerScale: 1.25 },
 } as const;
 
 /** Deterministic pastel-ish color from a name (avatar fallback). */
@@ -168,13 +168,24 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* flying gift emoji */}
+      {/* flying gift emoji — large tier gets a premium golden glow */}
       <Animated.View style={{
         position: 'absolute',
         left: start.x - 40, top: start.y - 40,
         opacity: emojiOp,
         transform: [{ translateX }, { translateY }, { rotate }, { scale }],
       }}>
+        {tier === 'large' && (
+          <View style={{
+            position: 'absolute',
+            width: tierStyle.emojiSize * 1.6, height: tierStyle.emojiSize * 1.6,
+            borderRadius: tierStyle.emojiSize * 0.8,
+            backgroundColor: 'rgba(255,215,0,0.25)',
+            shadowColor: '#FFD700', shadowOpacity: 0.8, shadowRadius: 30,
+            shadowOffset: { width: 0, height: 0 },
+            left: -tierStyle.emojiSize * 0.3, top: -tierStyle.emojiSize * 0.3,
+          }} />
+        )}
         <Text style={{ fontSize: tierStyle.emojiSize }}>{event.emoji}</Text>
       </Animated.View>
       {/* follow-up banner: sender → gift → recipient */}

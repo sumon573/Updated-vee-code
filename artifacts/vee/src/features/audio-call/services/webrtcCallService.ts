@@ -139,7 +139,6 @@ export class WebRTCCallSession {
   private ended = false;
   private signalingNodeRemoved = false;
   private muted = false;
-  private speakerWarningSent = false;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -318,20 +317,12 @@ export class WebRTCCallSession {
    * Speakerphone routing.
    *
    * LIMITATION: react-native-webrtc exposes no JS API for audio-route
-   * switching; honoring this requires the `react-native-incall-manager`
-   * native module (follow-up). Until then the OS default route is used and a
-   * one-time non-fatal warning is reported via onError so the UI layer can
-   * decide how to surface it. Never throws.
+   * switching without the `react-native-incall-manager` native module.
+   * The toggle updates UI state; audio follows the OS default route.
+   * Silent — no user-facing warning (was showing a debug alert).
    */
   setSpeakerphone(_on: boolean): void {
-    if (!this.speakerWarningSent) {
-      this.speakerWarningSent = true;
-      this.fail(
-        false,
-        'Speakerphone routing is not wired yet (needs react-native-incall-manager); ' +
-          'audio follows the OS default route.',
-      );
-    }
+    // Intentionally silent: audio follows OS default route.
   }
 
   /**

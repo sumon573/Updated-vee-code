@@ -8,7 +8,7 @@ import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
-import { sendGift, getBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { sendGift, getBalance, getWalletBalance, debitOwnWallet, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -116,17 +116,21 @@ export function GiftsModal({
 
     const totalCost = g.coins * selectedMembers.length;
 
-    // Balance pre-check uses the LIVE server balance, not the Firebase-
-    // subscribed prop (which can be stale/zero on slow networks, causing
-    // false "Not enough coins" alerts). If the live check fails, skip the
-    // pre-check and let the server's InsufficientFundsError decide.
-    let liveBalance: number | null = null;
+    // Balance pre-check: use Firebase (same source as the UI display).
+    // Try a fresh one-shot read first; fall back to the subscribed prop;
+    // fall back to server balance last. If all fail, skip the pre-check
+    // and let the server's InsufficientFundsError decide.
+    let effectiveBalance: number | null = null;
     try {
-      liveBalance = await getBalance();
-    } catch {
-      liveBalance = null;
+      effectiveBalance = await getWalletBalance(myUid);
+    } catch { /* try next */ }
+    if (effectiveBalance === null || effectiveBalance === 0) {
+      try {
+        const serverBal = await getBalance();
+        if (serverBal > 0) effectiveBalance = serverBal;
+      } catch { /* use prop */ }
     }
-    const effectiveBalance = liveBalance ?? walletBalance;
+    if (effectiveBalance === null) effectiveBalance = walletBalance;
     if (effectiveBalance < totalCost) {
       Alert.alert(
         t('voiceRoom.gifts.notEnoughCoins'),
@@ -163,16 +167,15 @@ export function GiftsModal({
         const key = keys.get(r.id)!;
         let lastErr: unknown = null;
         let charged = false;
-        // SELF-GIFT: net-zero, handled fully client-side. Verify balance
-        // covers the gift (same rule as server), then record the feed entry
-        // and animation without touching the wallet. No server call needed
-        // because debit + credit of the same account = no balance change.
+        // SELF-GIFT: deduct diamonds normally via Firebase transaction.
+        // The user pays for the gift even when sending to themselves.
         if (r.id === myUid) {
-          if (effectiveBalance < g.coins) {
-            failed.push({ name: r.name, insufficient: true });
-            continue;
+          try {
+            await debitOwnWallet(myUid, g.coins);
+            charged = true;
+          } catch (e) {
+            lastErr = e;
           }
-          charged = true;
         } else {
           // Retry once on network errors only, with the SAME idempotency key —
           // safe because the server dedupes on the key.

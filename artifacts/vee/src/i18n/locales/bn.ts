@@ -353,7 +353,7 @@ const bn = {
       confirmMsg: '{{names}}-কে {{emoji}} {{name}} ({{total}} 💎) পাঠাবেন?',
       send: 'পাঠান',
       cancel: 'বাতিল',
-      notEnoughCoinsMsg: '{{total}} 💎 দরকার',
+      notEnoughCoinsMsg: 'যথেষ্ট ডায়মন্ড নেই। {{total}} 💎 দরকার — রিচার্জ করুন।',
       // TODO i18n: English fallback — need proper Bengali translation
       sendFailed: 'Could not send gift. Please try again.',
       // TODO i18n: English fallbacks — need proper Bengali translations

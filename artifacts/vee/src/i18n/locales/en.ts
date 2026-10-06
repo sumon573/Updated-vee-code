@@ -343,7 +343,7 @@ const en = {
       selectFirst: 'Select someone first',
       close: 'Close',
       notEnoughCoins: 'Not enough coins',
-      notEnoughCoinsMsg: 'Need {{total}} 💎',
+      notEnoughCoinsMsg: 'Not enough diamonds. Need {{total}} 💎 — please recharge.',
       confirmTitle: 'Send Gift?',
       confirmMsg: 'Send {{emoji}} {{name}} ({{total}} 💎) to {{names}}?',
       send: 'Send',

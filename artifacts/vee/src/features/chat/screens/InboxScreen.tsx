@@ -662,8 +662,16 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               <Feather name="arrow-left" size={22} color="#fff" />
             </Pressable>
 
-            {/* Avatar — RC6 fix Issue 5: show RTDB photo if available */}
-            <View style={{ position: 'relative', marginRight: 10 }}>
+            {/* Avatar — tap to visit profile */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(
+                  `/user-profile?uid=${encodeURIComponent(participantId)}&name=${encodeURIComponent(participantName)}` as never,
+                );
+              }}
+              style={{ position: 'relative', marginRight: 10 }}
+            >
               <View style={{
                 width: 42, height: 42, borderRadius: 21,
                 backgroundColor: 'rgba(124,58,237,0.25)',
@@ -688,7 +696,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 backgroundColor: isOnline ? C.onlineGreen : C.offlineGray,
                 borderWidth: 2, borderColor: C.bg,
               }} />
-            </View>
+            </Pressable>
 
             {/* Name + status */}
             <View style={{ flex: 1 }}>
@@ -703,21 +711,37 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               </View>
             </View>
 
-            {/* Actions */}
-            <View style={{ flexDirection: 'row', gap: 14 }}>
+            {/* Actions — bigger touch targets for easy tapping */}
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               {/* RC6 fix Issue 8: navigate to real 1-to-1 audio call */}
-              <Pressable hitSlop={10} onPress={handleVoiceCall}>
-                <Feather name="phone" size={20} color={C.muted} />
+              <Pressable hitSlop={12} onPress={handleVoiceCall}
+                style={{
+                  width: 44, height: 44, borderRadius: 22,
+                  backgroundColor: 'rgba(34,197,94,0.15)',
+                  borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                <Feather name="phone" size={22} color={C.onlineGreen} />
               </Pressable>
               <Pressable
-                hitSlop={10}
+                hitSlop={12}
                 onPress={() => Alert.alert(t('chat.videoCallTitle'), t('chat.videoCallMsg'))}
+                style={{
+                  width: 44, height: 44, borderRadius: 22,
+                  backgroundColor: 'rgba(139,92,246,0.12)',
+                  borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)',
+                  alignItems: 'center', justifyContent: 'center',
+                }}
               >
-                <Feather name="video" size={20} color={C.muted} />
+                <Feather name="video" size={22} color={C.glow} />
               </Pressable>
               {/* "..." More options — block is now fully functional */}
-              <Pressable hitSlop={10} onPress={handleMoreOptions}>
-                <Feather name="more-vertical" size={20} color={C.muted} />
+              <Pressable hitSlop={12} onPress={handleMoreOptions}
+                style={{
+                  width: 44, height: 44, borderRadius: 22,
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                <Feather name="more-vertical" size={22} color={C.muted} />
               </Pressable>
             </View>
           </View>

@@ -353,7 +353,7 @@ const hi = {
       confirmMsg: 'क्या {{names}} को {{emoji}} {{name}} ({{total}} 💎) भेजें?',
       send: 'भेजें',
       cancel: 'रद्द करें',
-      notEnoughCoinsMsg: '{{total}} 💎 चाहिए',
+      notEnoughCoinsMsg: 'पर्याप्त डायमंड नहीं। {{total}} 💎 चाहिए — कृपया रिचार्ज करें।',
       // TODO i18n: English fallback — need proper Hindi translation
       sendFailed: 'Could not send gift. Please try again.',
       // TODO i18n: English fallbacks — need proper Hindi translations

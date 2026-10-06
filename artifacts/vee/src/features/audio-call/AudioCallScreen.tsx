@@ -133,6 +133,9 @@ export default function AudioCallScreen({
   const [muted,     setMuted]     = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [elapsed,   setElapsed]   = useState(0);
+  /** Remote user's photo — fetched from Firebase as fallback if the nav
+   *  param is missing/stale, so the callee's DP always shows. */
+  const [remotePhoto, setRemotePhoto] = useState<string | undefined>(remotePhotoURL);
 
   // ── Safe state setters (guard on mountedRef) ──────────────────────────────
   const updateCallState = useCallback((state: CallState) => {
@@ -177,6 +180,23 @@ export default function AudioCallScreen({
       router.back();
     }
   }, [role, calleeUid, roomId, router]);
+
+  // ── Fetch remote user's DP from Firebase (fallback if nav param missing) ──
+  useEffect(() => {
+    if (remotePhotoURL || !remoteUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${remoteUid}/photoURL`));
+        if (!cancelled && snap.exists() && typeof snap.val() === 'string') {
+          setRemotePhoto(snap.val() as string);
+        }
+      } catch { /* non-critical — initial letter fallback remains */ }
+    })();
+    return () => { cancelled = true; };
+  }, [remoteUid, remotePhotoURL]);
 
   // ── WebRTC P2P engine init ──────────────────────────────────────────────
   useEffect(() => {
@@ -379,9 +399,9 @@ export default function AudioCallScreen({
             shadowRadius: 28, shadowOffset: { width: 0, height: 8 },
             elevation: 12,
           }}>
-            {remotePhotoURL ? (
+            {remotePhoto ? (
               <Image
-                source={{ uri: remotePhotoURL }}
+                source={{ uri: remotePhoto }}
                 style={{ width: 120, height: 120, borderRadius: 60 }}
               />
             ) : (
