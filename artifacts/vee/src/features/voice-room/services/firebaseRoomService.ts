@@ -30,6 +30,7 @@ import {
   limitToLast,
 } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
+import { tryGetApiBase } from '@/src/utils/platform';
 import { getApiBase } from '@/src/utils/platform';
 import { MemberPreview, VoiceRoom } from '../types/room';
 import { sendPushNotification } from '@/src/services/notifyService';
@@ -546,7 +547,10 @@ export async function setSeatMute(
   seatIndex: number,
   muted: boolean,
 ): Promise<void> {
-  await update(ref(database, `rooms/${roomId}/seats/${seatIndex}`), { muted });
+  const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
+  const snap = await get(seatRef).catch(() => null);
+  if (!snap?.exists()) return; // Don't create phantom seats
+  await update(seatRef, { muted });
 }
 
 /** Update role in a seat. */
@@ -555,7 +559,10 @@ export async function setSeatRole(
   seatIndex: number,
   role: 'host' | 'admin' | 'member',
 ): Promise<void> {
-  await update(ref(database, `rooms/${roomId}/seats/${seatIndex}`), { role });
+  const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
+  const snap = await get(seatRef).catch(() => null);
+  if (!snap?.exists()) return; // Don't create phantom seats
+  await update(seatRef, { role });
 }
 
 /** Remove a member from a seat (kick). */
@@ -1039,17 +1046,25 @@ export async function storeRoomPin(roomId: string, hashedPin: string): Promise<v
  * Verify a hashed PIN for a private room.
  * Returns true when the PIN hash matches, false otherwise.
  *
- * NOTE (2026-10-06): Server-side verification via /api/rooms/verify-pin is
- * implemented in the API source but NOT YET DEPLOYED to the VPS. Until the
- * API is deployed AND Firebase rules are hardened, use direct Firebase read
- * (works with current deployed rules which allow public PIN hash read).
- * TODO: Switch to API verification after deployment.
+ * Uses server-side verification via /api/rooms/verify-pin (deployed 2026-10-06).
+ * Direct Firebase read no longer works for non-owners (rules hardened).
  */
 export async function verifyRoomPin(roomId: string, hashedPin: string): Promise<boolean> {
-  const snap = await get(ref(database, `roomPins/${roomId}`));
-  if (!snap.exists()) return false;
-  const stored = snap.val() as { hashedPin: string };
-  return stored.hashedPin === hashedPin;
+  try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+    const apiBase = tryGetApiBase();
+    if (!idToken || !apiBase) return false;
+    const res = await fetch(`${apiBase}/api/rooms/verify-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ roomId, hashedPin }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data?.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 /**

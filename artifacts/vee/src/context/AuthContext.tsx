@@ -14,6 +14,7 @@ import React, {
 } from 'react';
 import { User } from 'firebase/auth';
 import { onUserStateChanged, logout as firebaseLogout } from '../services/authService';
+import { withTimeout } from '../utils/withTimeout';
 import {
   setupPresence, setUserOffline, getUser, setUserVId, generateAndReserveVId,
 } from '../services/userService';
@@ -108,8 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (user) {
-      // Mark offline before signing out
-      await setUserOffline(user.uid).catch(() => {/* background: safe to swallow — onDisconnect hook marks offline anyway */});
+      // Mark offline before signing out — with timeout so offline hang doesn't block logout
+      await withTimeout(setUserOffline(user.uid), 3000).catch(() => {/* background: safe to swallow — onDisconnect hook marks offline anyway */});
     }
     await firebaseLogout();
   }, [user]);

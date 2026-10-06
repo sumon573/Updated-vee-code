@@ -225,7 +225,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
 
   const filteredChats = search.trim()
     ? chats.filter((c) =>
-        c.participantName.toLowerCase().includes(search.toLowerCase()),
+        (c.participantName || '').toLowerCase().includes(search.toLowerCase()),
       )
     : chats;
 

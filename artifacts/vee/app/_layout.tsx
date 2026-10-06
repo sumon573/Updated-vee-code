@@ -147,10 +147,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       (chatId) => router.push(`/inbox/${chatId}` as any),
       (roomId) => router.push({ pathname: '/voice-room', params: { roomId } } as any),
       () => router.push('/chat' as any),
-      (callerUid, callerName) => router.push({
-        pathname: '/audio-call',
-        params: { callerUid, callerName, incoming: '1' },
-      } as any),
+      // Incoming call: just bring app to foreground; the call UI is driven by
+      // the live call listener (app/_layout.tsx handleIncomingCall), not by params.
+      // Pushing /audio-call with partial params would hit the invalid-call guard.
+      () => router.push('/chat' as any),
     ).then((unsub) => {
       if (cancelled) {
         unsub();

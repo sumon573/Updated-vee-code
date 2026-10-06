@@ -54,7 +54,7 @@ const ROLE_CONFIG: Record<UserRole, { color: string; bg: string; border: string;
 };
 
 function RoleBadge({ role }: { role: UserRole }) {
-  const cfg = ROLE_CONFIG[role];
+  const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.member; // Fallback for unexpected roles
   return (
     <View style={{
       paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,

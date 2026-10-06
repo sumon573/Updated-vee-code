@@ -96,6 +96,10 @@ router.post("/verify-pin", async (req: Request, res: Response) => {
     if (typeof roomId !== "string" || roomId.length === 0 || roomId.length > 128) {
       return res.status(400).json({ ok: false, error: "Invalid roomId" });
     }
+    // Prevent path traversal: reject Firebase path special chars
+    if (/[\/\\.\#\$\[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
     if (typeof hashedPin !== "string" || hashedPin.length !== 64) {
       // SHA-256 hex is 64 chars
       return res.status(400).json({ ok: false, error: "Invalid hashedPin" });
@@ -128,6 +132,104 @@ router.post("/verify-pin", async (req: Request, res: Response) => {
     return res.json({ ok: true, valid });
   } catch (err) {
     logger.error({ err }, "POST /api/rooms/verify-pin: unhandled error");
+    return res.status(500).json({ ok: false, error: "Internal error" });
+  }
+});
+
+/**
+ * POST /api/rooms/sync-counts — server-side room count recomputation.
+ *
+ * The client calls this after seat/audience changes. The server uses Admin SDK
+ * to read the actual seats/audience and update memberCount, listenerCount,
+ * and memberPreviews. This bypasses client-side rule restrictions.
+ *
+ * Request (JSON): { roomId: string }
+ * Response: 200 { ok: true } | 400 | 401 | 500
+ */
+router.post("/sync-counts", async (req: Request, res: Response) => {
+  try {
+    if (!isAdminReady()) {
+      const err = getAdminInitError();
+      logger.error({ err }, "POST /api/rooms/sync-counts: Admin SDK not ready");
+      return res.status(500).json({ ok: false, error: "Server misconfigured" });
+    }
+
+    // Auth
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "Missing auth token" });
+    }
+    const idToken = authHeader.slice(7);
+    let userId: string;
+    try {
+      const decoded = await verifyIdToken(idToken);
+      userId = decoded.uid;
+    } catch {
+      return res.status(401).json({ ok: false, error: "Invalid auth token" });
+    }
+
+    const { roomId } = req.body as { roomId?: string };
+    if (!roomId || typeof roomId !== "string" || roomId.length === 0 || roomId.length > 128) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+    if (/[\/\\.\#\$\[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+
+    const db = adminDatabase();
+    const roomRef = db.ref(`rooms/${roomId}`);
+    const [seatsSnap, audienceSnap, infoSnap] = await Promise.all([
+      roomRef.child("seats").get(),
+      roomRef.child("audience").get(),
+      roomRef.child("info").get(),
+    ]);
+
+    if (!infoSnap.exists()) {
+      return res.status(404).json({ ok: false, error: "Room not found" });
+    }
+
+    // Count seats (occupied) and audience
+    let memberCount = 0;
+    const memberPreviews: Array<{ userId: string; userName: string; photoURL?: string }> = [];
+    if (seatsSnap.exists()) {
+      seatsSnap.forEach((child) => {
+        const seat = child.val() as { userId?: string; userName?: string; photoURL?: string } | null;
+        if (seat?.userId) {
+          memberCount++;
+          if (memberPreviews.length < 5) {
+            memberPreviews.push({
+              userId: seat.userId,
+              userName: seat.userName || "User",
+              ...(seat.photoURL ? { photoURL: seat.photoURL } : {}),
+            });
+          }
+        }
+        return false;
+      });
+    }
+    // Cap at 20 (rule max)
+    memberCount = Math.min(memberCount, 20);
+
+    let listenerCount = 0;
+    if (audienceSnap.exists()) {
+      audienceSnap.forEach(() => {
+        listenerCount++;
+        return false;
+      });
+    }
+
+    // Update counts (Admin SDK bypasses rules)
+    await roomRef.child("info").update({
+      memberCount,
+      listenerCount,
+      memberPreviews,
+      isTrending: memberCount >= 10,
+    });
+
+    logger.info({ userId, roomId, memberCount, listenerCount }, "Room counts synced");
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "POST /api/rooms/sync-counts: unhandled error");
     return res.status(500).json({ ok: false, error: "Internal error" });
   }
 });

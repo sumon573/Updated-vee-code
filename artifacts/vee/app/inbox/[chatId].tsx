@@ -23,11 +23,19 @@ export default function InboxRoute() {
 
   if (!chatId) return null;
 
+  // Safe decode: expo-router params are already decoded, and names with % would throw URIError
+  let safeName = participantName ?? t('chat.unknownUser');
+  try {
+    // Only decode if it looks encoded (contains %)
+    if (safeName.includes('%')) safeName = decodeURIComponent(safeName);
+  } catch {
+    // Keep original on decode failure
+  }
   return (
     <InboxScreen
       chatId={chatId}
       participantId={participantId ?? ''}
-      participantName={decodeURIComponent(participantName ?? t('chat.unknownUser'))}
+      participantName={safeName}
     />
   );
 }

@@ -61,7 +61,11 @@ export function subscribeBlockedUsers(
       records.sort((a, b) => b.blockedAt - a.blockedAt);
       callback(records);
     },
-    () => { callback([]); },
+    (error) => {
+      // Fail-closed: on read error, do NOT clear the block list (would unblock everyone).
+      // Keep the last known state; log the error for diagnostics.
+      console.warn('[blockService] subscribeBlockedUsers read failed:', error?.message);
+    },
   );
 }
 

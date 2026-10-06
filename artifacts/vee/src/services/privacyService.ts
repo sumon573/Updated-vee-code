@@ -31,6 +31,15 @@ const DEFAULT_PRIVACY: PrivacySettings = {
   profileVisibility: 'everyone',
 };
 
+// Fail-closed defaults: on DB error, restrict rather than expose
+const SAFE_PRIVACY: PrivacySettings = {
+  showOnlineStatus: false,
+  showLastSeen: false,
+  allowMessageFromAll: false,
+  allowRoomInvites: false,
+  profileVisibility: 'contacts',
+};
+
 /**
  * Fetch the privacy settings for a user. Returns defaults on any error or
  * when the node doesn't exist (new users start fully open).
@@ -42,7 +51,8 @@ export async function getUserPrivacy(uid: string): Promise<PrivacySettings> {
     const raw = snap.val() as Partial<PrivacySettings>;
     return { ...DEFAULT_PRIVACY, ...raw };
   } catch {
-    return { ...DEFAULT_PRIVACY };
+    // Fail-closed: on error, return restrictive defaults (not permissive)
+    return { ...SAFE_PRIVACY };
   }
 }
 

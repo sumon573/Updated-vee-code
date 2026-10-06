@@ -106,7 +106,7 @@ export default function RoomListItem({ room, onPress }: Props) {
                   marginLeft: i === 0 ? 0 : -6,
                 }}>
                   <Text style={{ color: '#fff', fontSize: 7, fontWeight: '900' }}>
-                    {p.initials.charAt(0)}
+                    {(p.initials || '?').charAt(0)}
                   </Text>
                 </View>
               ))}

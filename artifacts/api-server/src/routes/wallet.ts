@@ -318,6 +318,11 @@ router.post("/send-gift", async (req: Request, res: Response) => {
       // without re-charging. If the prior request is still processing, wait
       // briefly and re-check (simple spin with timeout).
       let stored = (claimResult.snapshot.val() ?? {}) as Record<string, unknown>;
+      // SECURITY: Verify the stored receipt belongs to this caller
+      if (stored["fromUid"] && stored["fromUid"] !== fromUid) {
+        logger.warn({ fromUid, idempotencyKey }, "Idempotency key belongs to different user");
+        return res.status(403).json({ ok: false, error: "Invalid idempotency key" });
+      }
       if (stored["status"] === "processing") {
         // Wait up to 5 seconds for the processing request to complete
         for (let i = 0; i < 10; i++) {
@@ -326,6 +331,15 @@ router.post("/send-gift", async (req: Request, res: Response) => {
           stored = (recheck.val() ?? {}) as Record<string, unknown>;
           if (stored["status"] !== "processing") break;
         }
+      }
+      // If still processing after wait, do NOT return ok:true — the gift may not be delivered
+      if (stored["status"] === "processing") {
+        logger.warn({ fromUid, idempotencyKey }, "Gift still processing after wait");
+        return res.status(202).json({
+          ok: false,
+          error: "Gift still processing, please retry",
+          retryable: true,
+        });
       }
       const balanceSnap = await db.ref(`wallets/${fromUid}/balance`).get();
       const newBalance =
