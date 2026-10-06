@@ -320,6 +320,18 @@ export default function VoiceRoomScreen() {
               // H1 fix: take the seat FIRST, only delete the invite on success.
               // If takeSeat throws (offline/rules), the invite stays so the
               // user can retry instead of losing it silently.
+              // H3 fix: vacate current seat first to avoid double occupancy.
+              const currentIdx = mySeatIdxRef.current;
+              if (currentIdx >= 0 && currentIdx !== invite.seatIdx) {
+                try {
+                  await fbLeaveSeat(roomId, currentIdx, myUid);
+                } catch {
+                  // If vacate fails, don't proceed — better to keep the
+                  // current seat than risk double occupancy.
+                  Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
+                  return;
+                }
+              }
               let result: { success: boolean };
               try {
                 result = await takeSeat(roomId, invite.seatIdx, {

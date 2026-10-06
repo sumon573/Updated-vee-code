@@ -526,13 +526,18 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     const room = this.room;
     if (!room || !this.lk) return;
     if (this.publishing) return; // idempotent
+    // C1 fix: claim publishing SYNCHRONOUSLY before the await. Otherwise,
+    // if unpublish() runs while setMicrophoneEnabled is in flight, it
+    // early-returns (publishing still false), then publish completes leaving
+    // the mic live with nothing tracking it.
+    this.publishing = true;
     try {
       // DTX enabled on the mic publish path (matches getCapabilities()).
       await room.localParticipant.setMicrophoneEnabled(true, undefined, { dtx: true });
-      this.publishing = true;
       // Start muted — the user unmutes explicitly (mirrors previous behavior).
       await this.applyTrackMute(this.muted);
     } catch (err) {
+      this.publishing = false;
       this.error = err instanceof Error ? err.message : 'Failed to enable microphone';
     }
     this.emitLocal();
@@ -860,10 +865,16 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
       // Minimize path: save the room to module-level persist instead of leaving
       if (_isMinimized && engineRef.current) {
+        // C8 fix: mute before persisting — otherwise the mic stays hot in
+        // background indefinitely with no AppState listener to mute it.
+        const eng = engineRef.current;
+        if (eng && typeof eng.setMuted === 'function') {
+          eng.setMuted(true).catch(() => {});
+        }
         _persistedRoom = {
-          engine:    engineRef.current,
+          engine:    eng,
           roomId:    roomID,
-          muted:     mutedRef.current,
+          muted:     true, // reflect the forced mute above
           published: publishedRef.current,
           speakerOn: speakerOnRef.current,
         };
