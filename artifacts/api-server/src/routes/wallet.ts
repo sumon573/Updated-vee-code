@@ -297,11 +297,36 @@ router.post("/send-gift", async (req: Request, res: Response) => {
     const db = adminDatabase();
     const receiptRef = db.ref(`walletTransactions/${idempotencyKey}`);
 
-    // Idempotency first: a retry returns the stored receipt without
-    // re-charging the sender.
-    const priorSnap = await receiptRef.get();
-    if (priorSnap.exists()) {
-      const stored = (priorSnap.val() ?? {}) as Record<string, unknown>;
+    // ATOMIC IDEMPOTENCY (2026-10-06 fix):
+    // Claim the idempotency key via transaction BEFORE debiting.
+    // Previously: check-then-act race allowed double-debit on concurrent requests.
+    // Now: only the request that successfully claims the key proceeds to debit.
+    const claimResult = await receiptRef.transaction((current: unknown) => {
+      if (current !== null) return undefined; // abort: already claimed
+      return {
+        fromUid,
+        toUid,
+        giftId,
+        coins,
+        ts: ServerValue.TIMESTAMP,
+        status: "processing",
+      };
+    });
+
+    if (!claimResult.committed) {
+      // Another request already claimed this key — return the stored receipt
+      // without re-charging. If the prior request is still processing, wait
+      // briefly and re-check (simple spin with timeout).
+      let stored = (claimResult.snapshot.val() ?? {}) as Record<string, unknown>;
+      if (stored["status"] === "processing") {
+        // Wait up to 5 seconds for the processing request to complete
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          const recheck = await receiptRef.get();
+          stored = (recheck.val() ?? {}) as Record<string, unknown>;
+          if (stored["status"] !== "processing") break;
+        }
+      }
       const balanceSnap = await db.ref(`wallets/${fromUid}/balance`).get();
       const newBalance =
         typeof balanceSnap.val() === "number" ? balanceSnap.val() : null;
@@ -317,9 +342,9 @@ router.post("/send-gift", async (req: Request, res: Response) => {
       });
     }
 
-    // Atomically debit the sender. Missing wallet counts as balance 0, so
-    // uninitialized senders fail here with insufficient balance instead of
-    // being charged.
+    // We claimed the key — now atomically debit the sender.
+    // Missing wallet counts as balance 0, so uninitialized senders fail here
+    // with insufficient balance instead of being charged.
     const txResult = await db
       .ref(`wallets/${fromUid}/balance`)
       .transaction((current: number | null) => {
@@ -328,6 +353,8 @@ router.post("/send-gift", async (req: Request, res: Response) => {
         return balance - coins;
       });
     if (!txResult.committed) {
+      // Debit failed — release the claim so a retry can proceed
+      await receiptRef.remove();
       return res
         .status(400)
         .json({ ok: false, error: "Insufficient balance" });
@@ -347,12 +374,42 @@ router.post("/send-gift", async (req: Request, res: Response) => {
       giftId,
       coins,
       ts: ServerValue.TIMESTAMP,
+      status: "completed",
+      newBalance,
     };
     await receiptRef.set(receipt);
 
+    // TRANSACTION HISTORY (2026-10-06 fix):
+    // Write history entries for sender and recipient. Previously no history
+    // was written, leaving wallet history empty.
+    const ts = Date.now();
+    const senderTx = {
+      type: "gift_sent",
+      giftId,
+      coins: -coins, // negative for debit
+      toUid,
+      ts,
+      idempotencyKey,
+    };
+    const recipientTx = {
+      type: "gift_received",
+      giftId,
+      coins: coins, // positive for credit
+      fromUid,
+      ts,
+      idempotencyKey,
+    };
+
+    // Write sender history (always)
+    await db.ref(`wallets/${fromUid}/transactions`).push(senderTx);
+    // Write recipient history (skip for self-gifts since it's deduct-only)
+    if (!isSelfGift) {
+      await db.ref(`wallets/${toUid}/transactions`).push(recipientTx);
+    }
+
     logger.info(
       { fromUid, toUid, giftId, coins },
-      "Gift sent and receipt stored",
+      "Gift sent, receipt stored, history written",
     );
     return res.status(200).json({
       ok: true,

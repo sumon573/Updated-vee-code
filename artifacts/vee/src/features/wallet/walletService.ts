@@ -172,9 +172,19 @@ export function subscribeWalletBalance(
     async (snap) => {
       if (!snap.exists()) {
         // Lazy-init: give 500 diamonds on first touch (server-side).
-        // background: safe to swallow — retried on every balance touch until it succeeds
-        await initializeWallet(uid).catch(() => {});
-        callback(500);
+        // FIX (2026-10-06): Do NOT optimistically callback(500) before init
+        // succeeds — that showed a "phantom 500" when init failed.
+        // Instead, await init; the onValue listener will fire again with the
+        // real value once the wallet is created. If init fails, report 0
+        // (the true state) rather than a phantom balance.
+        try {
+          await initializeWallet(uid);
+          // Init succeeded — onValue will fire again with the real 500.
+          // Do not callback here; wait for the authoritative snapshot.
+        } catch {
+          // Init failed — report 0 (true state), not phantom 500.
+          callback(0);
+        }
       } else {
         callback(snap.val() as number);
       }
