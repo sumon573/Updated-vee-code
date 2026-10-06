@@ -127,6 +127,18 @@ router.post("/verify-pin", async (req: Request, res: Response) => {
 
     if (!valid) {
       logger.info({ userId, roomId }, "PIN verification failed");
+    } else {
+      // Write a short-lived PIN grant so /api/livekit/token can authorize
+      // private-room joins without the client resending the PIN. Server-side
+      // only (no client rules exist for roomPinGrants → default-deny).
+      try {
+        await db.ref(`roomPinGrants/${roomId}/${userId}`).set({ at: Date.now() });
+      } catch (grantErr) {
+        logger.warn(
+          { grantErr, userId, roomId },
+          "verify-pin: failed to write PIN grant (non-fatal)",
+        );
+      }
     }
 
     return res.json({ ok: true, valid });

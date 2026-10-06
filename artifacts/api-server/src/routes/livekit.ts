@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AccessToken } from "livekit-server-sdk";
 import {
+  adminDatabase,
   getAdminInitError,
   isAdminReady,
   verifyIdToken,
@@ -16,6 +17,12 @@ import { logger } from "../lib/logger";
  *
  * The participant identity always comes from the verified Firebase ID token
  * (`decoded.uid`) — a client-supplied uid is never trusted.
+ *
+ * Authorization gate (server-side, via Admin SDK): the roomName must be a
+ * real voice-room ID; the caller must not be platform-banned nor blocked
+ * from the room; private (PIN-locked) rooms additionally require the caller
+ * to be the room owner or hold a fresh PIN grant written by
+ * POST /api/rooms/verify-pin (10-minute TTL).
  *
  * Required env (server env, NOT EAS):
  *   FIREBASE_SERVICE_ACCOUNT_JSON  Firebase service-account JSON string,
@@ -33,9 +40,10 @@ import { logger } from "../lib/logger";
  *
  * Response contract:
  *   200 { token, url }            fresh LiveKit join token (valid 6h)
- *   400                           roomName missing / not a string / too long,
- *                                   or participantName too long
+ *   400                           roomName missing / not a string / too long
  *   401                           missing or invalid Firebase ID token
+ *   403                           banned / room-blocked / PIN required
+ *   404                           room does not exist
  *   500                           server misconfigured or unhandled error
  */
 
@@ -95,6 +103,68 @@ router.post("/token", async (req: Request, res: Response) => {
         .status(400)
         .json({ ok: false, error: "roomName is too long" });
     }
+
+    // --- Room authorization gate ---
+    // The roomName is a Firebase voice-room ID. Verify via Admin SDK that:
+    //   1. the room actually exists (kills arbitrary-room token minting),
+    //   2. the caller is not platform-banned,
+    //   3. the caller is not blocked from this room,
+    //   4. for private (PIN-locked) rooms, the caller is the owner or has a
+    //      fresh PIN grant written by POST /api/rooms/verify-pin.
+    const roomId = roomName.trim();
+    if (/[/\\.#$[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomName" });
+    }
+    try {
+      const db = adminDatabase();
+      const [infoSnap, pinSnap, blockSnap, bannedSnap, grantSnap] =
+        await Promise.all([
+          db.ref(`rooms/${roomId}/info`).get(),
+          db.ref(`roomPins/${roomId}`).get(),
+          db.ref(`roomBlocks/${roomId}/${uid}`).get(),
+          db.ref(`users/${uid}/banned`).get(),
+          db.ref(`roomPinGrants/${roomId}/${uid}`).get(),
+        ]);
+
+      if (!infoSnap.exists()) {
+        return res.status(404).json({ ok: false, error: "Room not found" });
+      }
+      if (bannedSnap.val() === true) {
+        logger.warn({ uid, roomId }, "LiveKit token denied: user banned");
+        return res
+          .status(403)
+          .json({ ok: false, error: "Account restricted" });
+      }
+      if (blockSnap.exists()) {
+        logger.warn({ uid, roomId }, "LiveKit token denied: room-blocked");
+        return res
+          .status(403)
+          .json({ ok: false, error: "You are blocked from this room" });
+      }
+
+      const info = infoSnap.val() as { ownerId?: string };
+      const isOwner = info?.ownerId === uid;
+      if (pinSnap.exists() && !isOwner) {
+        // Private room: require a PIN grant from a successful verify-pin
+        // within the last 10 minutes (client flow: PIN dialog → verify →
+        // enter room → token request, seconds apart).
+        const grant = grantSnap.val() as { at?: number } | null;
+        const grantAt = typeof grant?.at === "number" ? grant.at : 0;
+        const grantAge = Date.now() - grantAt;
+        if (grantAt <= 0 || grantAge < 0 || grantAge > 10 * 60 * 1000) {
+          logger.warn({ uid, roomId }, "LiveKit token denied: PIN required");
+          return res
+            .status(403)
+            .json({ ok: false, error: "PIN verification required" });
+        }
+      }
+    } catch (gateErr) {
+      logger.error({ gateErr, uid, roomId }, "LiveKit token gate failed");
+      return res
+        .status(500)
+        .json({ ok: false, error: "Authorization check failed" });
+    }
+    // --- End authorization gate ---
 
     const participantNameStr =
       typeof participantName === "string" ? participantName : uid;
