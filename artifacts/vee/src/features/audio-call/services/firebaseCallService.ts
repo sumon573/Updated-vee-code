@@ -16,6 +16,7 @@
 
 import { ref, set, remove, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
+import { sendPushNotification } from '@/src/services/notifyService';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,21 @@ export async function initiateCall(
     ...data,
     createdAt: Date.now(),
   });
+  // Push notification so the callee's phone rings even if the app is
+  // closed/backgrounded. The incoming-call screen opens via the click handler.
+  sendPushNotification(
+    calleeUid,
+    data.callerName || 'Vee',
+    '📞 Incoming audio call — tap to answer',
+    {
+      type: 'incoming-call',
+      callerUid: data.callerId,
+      callerName: data.callerName,
+      callerAvatar: data.callerPhotoURL,
+      roomId: data.roomId,
+    },
+    'voiceRooms',
+  );
 }
 
 /**

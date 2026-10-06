@@ -146,6 +146,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       (chatId) => router.push(`/inbox/${chatId}` as any),
       (roomId) => router.push({ pathname: '/voice-room', params: { roomId } } as any),
       () => router.push('/chat' as any),
+      (callerUid, callerName) => router.push({
+        pathname: '/audio-call',
+        params: { callerUid, callerName, incoming: '1' },
+      } as any),
     ).then((unsub) => {
       if (cancelled) {
         unsub();

@@ -106,6 +106,7 @@ export async function registerNotificationOpenedHandler(
   onChat: (chatId: string) => void,
   onRoom: (roomId: string) => void,
   onFallback: () => void,
+  onCall?: (callerUid: string, callerName: string) => void,
 ): Promise<() => void> {
   // BUG 13: Skip entirely in Expo Go
   if (isExpoGo()) return () => {};
@@ -130,6 +131,11 @@ export async function registerNotificationOpenedHandler(
       const roomId = data?.roomId;
       const type   = data?.type;
 
+      if (typeof type === 'string' && type === 'incoming-call' && onCall) {
+        const callerUid = typeof data?.callerUid === 'string' ? data.callerUid : '';
+        const callerName = typeof data?.callerName === 'string' ? data.callerName : 'Vee';
+        if (callerUid) { onCall(callerUid, callerName); return; }
+      }
       if (typeof chatId === 'string' && chatId.length > 0) {
         onChat(chatId);
       } else if (

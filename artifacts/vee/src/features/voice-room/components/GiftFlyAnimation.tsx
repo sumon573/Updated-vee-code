@@ -46,6 +46,20 @@ export type GiftFlyHandle = {
   playFly: (e: Omit<GiftFlyEvent, 'key'>) => void;
 };
 
+/** Gift tier by coin value — drives animation scale (small gift = small
+ *  animation, big gift = big dramatic animation). */
+export function giftTier(coins: number): 'small' | 'medium' | 'large' {
+  if (coins >= 500) return 'large';
+  if (coins >= 100) return 'medium';
+  return 'small';
+}
+
+const TIER_STYLE = {
+  small:  { emojiSize: 52, flyMs: 900,  bannerScale: 0.85 },
+  medium: { emojiSize: 80, flyMs: 1200, bannerScale: 1 },
+  large:  { emojiSize: 112, flyMs: 1600, bannerScale: 1.15 },
+} as const;
+
 /** Deterministic pastel-ish color from a name (avatar fallback). */
 function hashColor(name: string): string {
   let h = 0;
@@ -87,11 +101,17 @@ export function GiftAvatar({
    1) SENDER-SIDE fly animation (ref-driven)
 ═══════════════════════════════════════════ */
 
-const FLY_MS = 1300;   // emoji flight duration
-const TOTAL_MS = 2600; // whole showpiece (fly + overlapping banner) per event
+const FLY_MS_DEFAULT = 1300;   // fallback emoji flight duration
+const TOTAL_MS_DEFAULT = 2600; // fallback whole showpiece per event
 
 function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => void }) {
   const { width: W, height: H } = Dimensions.get('window');
+  // Tier-based animation: small gifts fly fast & small, large gifts fly
+  // slow & big with a grander banner.
+  const tier = giftTier(event.coins);
+  const tierStyle = TIER_STYLE[tier];
+  const FLY_MS = tierStyle.flyMs;
+  const TOTAL_MS = tierStyle.flyMs + 1300;
   const start = { x: W / 2, y: H - 170 };
   const end = event.target ?? { x: W / 2, y: 110 }; // graceful top-center fallback
   const dx = end.x - start.x;
@@ -155,7 +175,7 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
         opacity: emojiOp,
         transform: [{ translateX }, { translateY }, { rotate }, { scale }],
       }}>
-        <Text style={{ fontSize: 80 }}>{event.emoji}</Text>
+        <Text style={{ fontSize: tierStyle.emojiSize }}>{event.emoji}</Text>
       </Animated.View>
       {/* follow-up banner: sender → gift → recipient */}
       <Animated.View style={{

@@ -115,6 +115,16 @@ export function MemberManageModal({
                 </Text>
               </Pressable>
             )}
+            {/* Self-gift: send diamonds to your own ID */}
+            <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onGift(); }}
+              style={{ backgroundColor: C.pink + '22', borderRadius: 14, paddingVertical: 13, marginBottom: 8,
+                alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+                borderWidth: 1, borderColor: C.pink + '44' }}>
+              <Text style={{ fontSize: 16 }}>🎁</Text>
+              <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
+                {t('voiceRoom.memberManage.giftSelf', { defaultValue: 'Send Gift to Myself' })}
+              </Text>
+            </Pressable>
           </>
         ) : (
         <>

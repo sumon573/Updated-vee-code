@@ -409,23 +409,6 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                   </Text>
                 )}
               </Pressable>
-
-              {/* Message */}
-              <Pressable
-                onPress={handleMessage}
-                style={{
-                  flex: 1, paddingVertical: 14, borderRadius: 16,
-                  backgroundColor: C.surface,
-                  borderWidth: 1, borderColor: C.border,
-                  alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
-              >
-                <Feather name="message-circle" size={18} color={C.glow} />
-                <Text style={{ color: C.text, fontSize: 15, fontWeight: '800' }}>
-                  {t('userProfile.message')}
-                </Text>
-              </Pressable>
             </View>
           )}
 

@@ -299,6 +299,17 @@ export default function ContactsScreen() {
     );
   }, [me, router]);
 
+  /** Audio call — navigate to the 1-to-1 audio call screen as caller. */
+  const handleCall = useCallback((targetUser: VeeUser) => {
+    if (!me?.uid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const callRoomId = [me.uid, targetUser.uid].sort().join('_');
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(targetUser.uid)}&remoteName=${encodeURIComponent(targetUser.name)}&calleeUid=${encodeURIComponent(targetUser.uid)}&myUid=${encodeURIComponent(me.uid)}&myName=${encodeURIComponent(me.displayName ?? 'Vee User')}`;
+    if (targetUser.photoURL) url += `&remotePhotoURL=${encodeURIComponent(targetUser.photoURL)}`;
+    if (me.photoURL) url += `&myPhotoURL=${encodeURIComponent(me.photoURL)}`;
+    router.push(url as never);
+  }, [me, router]);
+
   const handleViewProfile = useCallback((targetUser: VeeUser) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(
@@ -701,6 +712,17 @@ export default function ContactsScreen() {
                   </View>
                   {/* Actions */}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => handleCall(item)}
+                      style={{
+                        width: 36, height: 36, borderRadius: 18,
+                        backgroundColor: 'rgba(34,197,94,0.15)',
+                        borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="phone" size={16} color={C.online} />
+                    </Pressable>
                     <Pressable
                       onPress={() => handleMessage(item)}
                       style={{

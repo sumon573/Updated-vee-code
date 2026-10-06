@@ -349,6 +349,10 @@ const bn = {
       selectFirst: 'আগে কাউকে বেছে নিন',
       close: 'বন্ধ করুন',
       notEnoughCoins: 'যথেষ্ট কয়েন নেই',
+      confirmTitle: 'গিফট পাঠাবেন?',
+      confirmMsg: '{{names}}-কে {{emoji}} {{name}} ({{total}} 💎) পাঠাবেন?',
+      send: 'পাঠান',
+      cancel: 'বাতিল',
       notEnoughCoinsMsg: '{{total}} 💎 দরকার',
       // TODO i18n: English fallback — need proper Bengali translation
       sendFailed: 'Could not send gift. Please try again.',

@@ -349,6 +349,10 @@ const ar = {
       selectFirst: 'اختر شخصاً أولاً',
       close: 'إغلاق',
       notEnoughCoins: 'عملات غير كافية',
+      confirmTitle: 'إرسال الهدية؟',
+      confirmMsg: 'إرسال {{emoji}} {{name}} ({{total}} 💎) إلى {{names}}؟',
+      send: 'إرسال',
+      cancel: 'إلغاء',
       notEnoughCoinsMsg: 'تحتاج {{total}} 💎',
       sendFailed: 'تعذّر إرسال الهدية. حاول مرة أخرى.',
       // TODO i18n: English fallbacks — need proper Arabic translations

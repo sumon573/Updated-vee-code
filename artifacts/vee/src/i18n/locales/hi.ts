@@ -349,6 +349,10 @@ const hi = {
       selectFirst: 'पहले किसी को चुनें',
       close: 'बंद करें',
       notEnoughCoins: 'पर्याप्त सिक्के नहीं',
+      confirmTitle: 'उपहार भेजें?',
+      confirmMsg: 'क्या {{names}} को {{emoji}} {{name}} ({{total}} 💎) भेजें?',
+      send: 'भेजें',
+      cancel: 'रद्द करें',
       notEnoughCoinsMsg: '{{total}} 💎 चाहिए',
       // TODO i18n: English fallback — need proper Hindi translation
       sendFailed: 'Could not send gift. Please try again.',

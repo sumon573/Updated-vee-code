@@ -8,7 +8,7 @@ import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
-import { sendGift, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { sendGift, getBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -62,11 +62,15 @@ export function GiftsModal({
   const [sending,  setSending]  = useState(false);
   const [step,     setStep]     = useState<'pick-person' | 'pick-gift'>('pick-person');
   const [selected, setSelected] = useState<string[]>([]);
+  /** 2-step send: user taps a gift to SELECT it (no auto-send), then taps
+   *  the Send button and confirms. Prevents accidental wallet deductions. */
+  const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
 
   useEffect(() => {
     if (visible) {
       setSent(null);
       setSending(false);
+      setSelectedGift(null);
       if (initialRecipient) { setSelected([initialRecipient.id]); setStep('pick-gift'); }
       else { setSelected([]); setStep('pick-person'); }
     }
@@ -83,12 +87,47 @@ export function GiftsModal({
 
   const selectedMembers = members.filter(m => selected.includes(m.id));
 
+  /** 2-step send: confirm dialog before charging the wallet. */
+  const confirmSend = () => {
+    if (!selectedGift || sending) return;
+    const g = selectedGift;
+    const totalCost = g.coins * selectedMembers.length;
+    Alert.alert(
+      t('voiceRoom.gifts.confirmTitle'),
+      t('voiceRoom.gifts.confirmMsg', {
+        emoji: g.emoji,
+        name: t(g.nameKey),
+        total: totalCost,
+        names: selectedMembers.map(m => m.name).join(', '),
+      }),
+      [
+        { text: t('voiceRoom.gifts.cancel'), style: 'cancel' },
+        {
+          text: t('voiceRoom.gifts.send'),
+          style: 'default',
+          onPress: () => handleSend(g),
+        },
+      ],
+    );
+  };
+
   const handleSend = async (g: GiftItem) => {
     if (selectedMembers.length === 0 || sending) return;
 
     const totalCost = g.coins * selectedMembers.length;
 
-    if (walletBalance < totalCost) {
+    // Balance pre-check uses the LIVE server balance, not the Firebase-
+    // subscribed prop (which can be stale/zero on slow networks, causing
+    // false "Not enough coins" alerts). If the live check fails, skip the
+    // pre-check and let the server's InsufficientFundsError decide.
+    let liveBalance: number | null = null;
+    try {
+      liveBalance = await getBalance();
+    } catch {
+      liveBalance = null;
+    }
+    const effectiveBalance = liveBalance ?? walletBalance;
+    if (effectiveBalance < totalCost) {
       Alert.alert(
         t('voiceRoom.gifts.notEnoughCoins'),
         t('voiceRoom.gifts.notEnoughCoinsMsg', { total: totalCost }),
@@ -129,7 +168,7 @@ export function GiftsModal({
         // and animation without touching the wallet. No server call needed
         // because debit + credit of the same account = no balance change.
         if (r.id === myUid) {
-          if (walletBalance < g.coins) {
+          if (effectiveBalance < g.coins) {
             failed.push({ name: r.name, insufficient: true });
             continue;
           }
@@ -315,20 +354,42 @@ export function GiftsModal({
             )}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between',
               opacity: sending ? 0.4 : 1 }}>
-              {GIFTS.map(g => (
-                <Pressable key={g.id} onPress={() => handleSend(g)} disabled={sending}
-                  style={{ width: '22%', backgroundColor: C.card, borderRadius: 14, padding: 10,
-                    alignItems: 'center', borderWidth: 1, borderColor: C.borderFaint }}>
-                  <Text style={{ fontSize: 26 }}>{g.emoji}</Text>
-                  <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', marginTop: 4 }}>
-                    {t(g.nameKey)}
-                  </Text>
-                  <Text style={{ color: C.gold, fontSize: 10, marginTop: 2 }}>
-                    💎 {selectedMembers.length > 1 ? `${g.coins}×${selectedMembers.length}` : g.coins}
-                  </Text>
-                </Pressable>
-              ))}
+              {GIFTS.map(g => {
+                const isSelected = selectedGift?.id === g.id;
+                return (
+                  <Pressable key={g.id}
+                    onPress={() => {
+                      setSelectedGift(g);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    disabled={sending}
+                    style={{ width: '22%', backgroundColor: isSelected ? C.gold + '33' : C.card,
+                      borderRadius: 14, padding: 10, alignItems: 'center',
+                      borderWidth: isSelected ? 2 : 1,
+                      borderColor: isSelected ? C.gold : C.borderFaint }}>
+                    <Text style={{ fontSize: 26 }}>{g.emoji}</Text>
+                    <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', marginTop: 4 }}>
+                      {t(g.nameKey)}
+                    </Text>
+                    <Text style={{ color: C.gold, fontSize: 10, marginTop: 2 }}>
+                      💎 {selectedMembers.length > 1 ? `${g.coins}×${selectedMembers.length}` : g.coins}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
+            {/* Send button — appears after selecting a gift (no one-click send) */}
+            {selectedGift && !sending && (
+              <Pressable onPress={confirmSend}
+                style={{ marginTop: 14, backgroundColor: C.gold, borderRadius: 14,
+                  paddingVertical: 14, alignItems: 'center',
+                  shadowColor: C.gold, shadowOpacity: 0.4, shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 } }}>
+                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>
+                  {t('voiceRoom.gifts.send')} {selectedGift.emoji} · 💎 {selectedGift.coins * selectedMembers.length}
+                </Text>
+              </Pressable>
+            )}
           </>
         )}
         <Pressable onPress={onClose} style={{ marginTop: 14, paddingVertical: 10, alignItems: 'center' }}>

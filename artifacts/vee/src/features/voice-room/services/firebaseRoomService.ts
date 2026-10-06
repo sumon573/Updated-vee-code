@@ -303,9 +303,12 @@ export function subscribeMyRoomsCombined(
     const joined = joinedOrder
       .filter((id) => !ownedIds.has(id))
       .map((id) => joinedInfo.get(id))
-      // CRITICAL-9 fix: show all joined rooms regardless of active state
-      .filter((r): r is RoomInfo => !!r);
-    callback([...ownedRooms, ...joined]);
+      // Show only rooms that still exist AND are active. Disbanded rooms
+      // (null info) and inactive/closed rooms are hidden from My Rooms.
+      .filter((r): r is RoomInfo => !!r && r.active === true);
+    // Owned rooms: show only if they still exist (not disbanded).
+    const owned = ownedRooms.filter((r) => !!r);
+    callback([...owned, ...joined]);
   }
 
   const unsubOwned = subscribeMyRooms(userId, (rooms) => {
