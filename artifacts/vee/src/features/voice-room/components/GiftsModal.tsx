@@ -96,8 +96,11 @@ export function GiftsModal({
       return;
     }
 
-    // Filter out sending to yourself
-    const recipients = selectedMembers.filter(m => m.id !== myUid);
+    // Self-gifting is allowed (net-zero): the sender is kept in the recipient
+    // list and handled specially below — no server charge, just the feed
+    // entry and animation. Balance is unchanged, which is the correct net
+    // result of debiting + crediting the same account.
+    const recipients = selectedMembers;
 
     if (recipients.length === 0) {
       Alert.alert('', t('voiceRoom.gifts.cantGiftSelf'));
@@ -121,15 +124,27 @@ export function GiftsModal({
         const key = keys.get(r.id)!;
         let lastErr: unknown = null;
         let charged = false;
-        // Retry once on network errors only, with the SAME idempotency key —
-        // safe because the server dedupes on the key.
-        for (let attempt = 0; attempt < 2 && !charged; attempt++) {
-          try {
-            await sendGift({ toUid: r.id, giftId: g.id, idempotencyKey: key });
-            charged = true;
-          } catch (e) {
-            lastErr = e;
-            if (!(e instanceof NetworkError)) break;
+        // SELF-GIFT: net-zero, handled fully client-side. Verify balance
+        // covers the gift (same rule as server), then record the feed entry
+        // and animation without touching the wallet. No server call needed
+        // because debit + credit of the same account = no balance change.
+        if (r.id === myUid) {
+          if (walletBalance < g.coins) {
+            failed.push({ name: r.name, insufficient: true });
+            continue;
+          }
+          charged = true;
+        } else {
+          // Retry once on network errors only, with the SAME idempotency key —
+          // safe because the server dedupes on the key.
+          for (let attempt = 0; attempt < 2 && !charged; attempt++) {
+            try {
+              await sendGift({ toUid: r.id, giftId: g.id, idempotencyKey: key });
+              charged = true;
+            } catch (e) {
+              lastErr = e;
+              if (!(e instanceof NetworkError)) break;
+            }
           }
         }
         if (!charged) {
