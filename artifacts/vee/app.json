@@ -118,7 +118,9 @@
       "router": {
         "origin": "https://vee.app"
       },
-      "eas": {}
+      "eas": {
+        "projectId": "31886cbb-bad9-47c7-b311-beb6cc83762c"
+      }
     },
     "owner": "letac42361s-team"
   }
