@@ -350,7 +350,14 @@
         },
         "seats": {
           "$seatIndex": {
-            ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
+            // SECURITY HARDENING (2026-10-06):
+            // - CREATE: userId must match auth.uid (prevents impersonation)
+            // - CREATE: role cannot be 'host'/'admin'/'moderator' (prevents self-promotion)
+            //   Only room owner or platform admins can assign privileged roles
+            // - UPDATE: only seat holder, room owner, or admins
+            // - seatIndex must be 0-19 (prevents phantom seats at arbitrary indices)
+            ".write": "auth != null && ($seatIndex.matches(/^(0|1|2|3|4|5|6|7|8|9|1[0-9])$/) && ((!data.exists() && newData.child('userId').val() === auth.uid) || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator'))",
+            ".validate": "!newData.exists() || (newData.child('userId').isString() && (!data.exists() ? (newData.child('userId').val() === auth.uid && (!newData.child('role').exists() || newData.child('role').val() === 'member' || newData.child('role').val() === 'speaker')) : true))"
           }
         },
         "audience": {
@@ -400,7 +407,11 @@
       "$roomId": {
         ".read": "auth != null",
         "$reqId": {
-          ".write": "auth != null",
+          // SECURITY HARDENING (2026-10-06):
+          // - CREATE: only the requester can create (userId must match auth.uid)
+          // - UPDATE (approve/reject): only room owner, admins, or moderators
+          //   Previously ANY authenticated user could approve/reject requests!
+          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')))",
           // RC8-B1 Security Fix: userId must match auth.uid on CREATE so that a user
           // cannot impersonate another user in a seat request. On UPDATE (owner
           // approving/rejecting), the userId field must remain unchanged from its
@@ -507,10 +518,16 @@
 
     // ─────────────────────────────────────────────────────────────────────
     // roomPins — hashed PINs for private rooms.
+    // SECURITY HARDENING (2026-10-06):
+    // - READ restricted to room owner and platform admins ONLY
+    //   Previously ANY authenticated user could read PIN hashes, enabling
+    //   offline brute-force attacks (4-digit PIN = only 10k combinations).
+    // - Client PIN verification MUST use the API endpoint /api/rooms/verify-pin
+    //   (server-side with Admin SDK) instead of reading the hash directly.
     // ─────────────────────────────────────────────────────────────────────
     "roomPins": {
       "$roomId": {
-        ".read": "auth != null",
+        ".read": "auth != null && (root.child(\"rooms\").child($roomId).child(\"info\").child(\"ownerId\").val() === auth.uid || auth.token.role === \"superAdmin\" || auth.token.role === \"admin\")",
         ".write": "auth != null && (root.child(\"rooms\").child($roomId).child(\"info\").child(\"ownerId\").val() === auth.uid || auth.token.role === \"superAdmin\" || auth.token.role === \"admin\")",
         ".validate": "!newData.exists() || (newData.child(\"hashedPin\").isString() && newData.child(\"updatedAt\").isNumber())"
       }

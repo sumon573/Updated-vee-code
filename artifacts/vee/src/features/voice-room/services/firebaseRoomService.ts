@@ -1036,14 +1036,32 @@ export async function storeRoomPin(roomId: string, hashedPin: string): Promise<v
 }
 
 /**
- * Verify a hashed PIN for a private room.
+ * Verify a hashed PIN for a private room via the API server.
+ * SECURITY (2026-10-06): PIN hashes are no longer readable by clients
+ * (Firebase rules hardened). This uses the server-side /api/rooms/verify-pin
+ * endpoint which compares via Admin SDK — the hash never leaves the server.
  * Returns true when the PIN hash matches, false otherwise.
  */
 export async function verifyRoomPin(roomId: string, hashedPin: string): Promise<boolean> {
-  const snap = await get(ref(database, `roomPins/${roomId}`));
-  if (!snap.exists()) return false;
-  const stored = snap.val() as { hashedPin: string };
-  return stored.hashedPin === hashedPin;
+  try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+    if (!idToken) return false;
+
+    const res = await fetch(`${getApiBase()}/api/rooms/verify-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ roomId, hashedPin }),
+    });
+
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data?.valid === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
