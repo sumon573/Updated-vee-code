@@ -21,6 +21,7 @@ import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { submitReport } from '@/src/services/reportService';
 
 import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
+import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo } from '../types/room';
 import { fmtDiamonds, getWeekStart } from '../utils/format';
 import { SeatCard } from '../components/SeatCard';
@@ -150,6 +151,41 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const voiceUserName = useMemo(() => user?.displayName ?? myUid, []);
 
+  /**
+   * Staged voice init (crash-hardening): the native LiveKit/WebRTC stack is
+   * NOT initialized when this screen mounts. The room UI (Firebase seats,
+   * chat, info) renders first; only after the room info is confirmed valid
+   * AND the screen has stabilized do we hand a real roomID to the voice hook.
+   * A dead/closed room therefore never touches native audio at all.
+   */
+  const [voiceReady, setVoiceReady] = useState(false);
+  const voiceReadyRef = useRef(false);
+  const voiceReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    markVoiceStage('screen_mount', roomId);
+    return () => {
+      if (voiceReadyTimerRef.current !== null) {
+        clearTimeout(voiceReadyTimerRef.current);
+        voiceReadyTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Called once the room info subscription confirms a live room. */
+  const handleRoomInfoOk = useCallback(() => {
+    markVoiceStage('room_info_ok', roomId);
+    if (voiceReadyRef.current) return;
+    voiceReadyRef.current = true;
+    // Let the screen settle (layout, first Firebase snapshots) before the
+    // native audio stack initializes.
+    voiceReadyTimerRef.current = setTimeout(() => {
+      voiceReadyTimerRef.current = null;
+      setVoiceReady(true);
+    }, 1200);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
   /* ── LiveKit real audio ── */
   const {
     joined: voiceJoined,
@@ -170,7 +206,8 @@ export default function VoiceRoomScreen() {
     stopUserStream,
     wasRestored,
   } = useLivekitVoiceRoom({
-    roomID: roomId,
+    // Empty until staged init completes — the hook skips native init for ''.
+    roomID: voiceReady ? roomId : '',
     userID: myUid,
     // Use the stable voiceUserName (never changes after mount) so a profile
     // load doesn't trigger a full voice engine re-init mid-session.
@@ -472,6 +509,8 @@ export default function VoiceRoomScreen() {
       setRoomIsPublic(info.isPublic);
       setRoomIsLocked(info.isLocked ?? false);
       setRoomDescription(info.description ?? '');
+      // Room is live — begin the staged native voice init.
+      handleRoomInfoOk();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);

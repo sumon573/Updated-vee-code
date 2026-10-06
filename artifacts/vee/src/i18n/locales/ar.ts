@@ -88,6 +88,8 @@ const ar = {
       locationRetry: 'Try Again', // TODO i18n: English fallback — needs translation
       locationOpenSettings: 'Open Settings', // TODO i18n: English fallback — needs translation
       noMyRooms: 'لم تقم بإنشاء أي غرفة بعد.',
+      voiceCrashTitle: 'تم إغلاق غرفة الصوت بشكل غير متوقع',
+      voiceCrashMsg: 'تم إغلاق التطبيق أثناء الانضمام إلى الغرفة {{roomId}} (المرحلة: {{stage}}، {{when}}). يرجى مشاركة لقطة شاشة لهذه الرسالة — سيساعد ذلك في إصلاح العطل.',
       },
       creation: {
       title: '🎙️ إنشاء غرفة',

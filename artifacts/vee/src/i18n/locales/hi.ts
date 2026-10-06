@@ -88,6 +88,8 @@ const hi = {
       locationRetry: 'Try Again', // TODO i18n: English fallback — needs translation
       locationOpenSettings: 'Open Settings', // TODO i18n: English fallback — needs translation
       noMyRooms: 'आपने अभी तक कोई रूम नहीं बनाया है।',
+      voiceCrashTitle: 'Voice room अप्रत्याशित रूप से बंद हो गया',
+      voiceCrashMsg: 'रूम {{roomId}} में प्रवेश करते समय ऐप बंद हो गया (चरण: {{stage}}, {{when}})। कृपया इस संदेश का स्क्रीनशॉट भेजें — क्रैश ठीक करने में मदद मिलेगी।',
       },
       creation: {
       title: '🎙️ रूम बनाएं',

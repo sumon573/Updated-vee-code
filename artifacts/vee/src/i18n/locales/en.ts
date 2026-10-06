@@ -88,6 +88,8 @@ const en = {
       locationRetry: 'Try Again',
       locationOpenSettings: 'Open Settings',
       noMyRooms: "You haven't created any rooms yet.",
+      voiceCrashTitle: 'Voice room closed unexpectedly',
+      voiceCrashMsg: 'The app closed while joining room {{roomId}} (stage: {{stage}}, {{when}}). Please share a screenshot of this message — it helps fix the crash.',
       },
       creation: {
       title: '🎙️ Create Room',

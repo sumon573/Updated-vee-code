@@ -27,6 +27,10 @@ import {
   verifyRoomPin,
   type RoomInfo,
 } from '../services/firebaseRoomService';
+import {
+  getVoiceBreadcrumb,
+  clearVoiceBreadcrumb,
+} from '../utils/voiceCrashBreadcrumb';
 import { VoiceRoom } from '../types/room';
 import { useAuth } from '@/src/context/AuthContext';
 import * as Crypto from 'expo-crypto';
@@ -217,6 +221,28 @@ export default function VoiceRoomHome({
   const [activeTab, setActiveTab] = useState<RecommendedTab>('trending');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+
+  // Crash diagnostic: if the previous session died while entering a voice
+  // room, the breadcrumb survives (a clean unmount clears it). Report the
+  // exact stage once so the crash can be pinpointed, then clear it.
+  useEffect(() => {
+    let cancelled = false;
+    getVoiceBreadcrumb().then((crumb) => {
+      if (cancelled || !crumb) return;
+      clearVoiceBreadcrumb();
+      const when = new Date(crumb.ts).toLocaleString();
+      Alert.alert(
+        t('voiceRoom.home.voiceCrashTitle'),
+        t('voiceRoom.home.voiceCrashMsg', {
+          roomId: crumb.roomId,
+          stage: crumb.stage,
+          when,
+        }),
+      );
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Private room PIN dialog
   const [pinDialogRoom, setPinDialogRoom] = useState<RoomInfo | null>(null);

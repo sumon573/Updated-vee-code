@@ -36,6 +36,10 @@ import { useTranslation } from 'react-i18next';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
 import { isExpoGo, getApiBase } from '@/src/utils/platform';
+import {
+  markVoiceStage,
+  clearVoiceBreadcrumb,
+} from './utils/voiceCrashBreadcrumb';
 import type {
   VoiceEngine,
   VoiceParticipant,
@@ -425,6 +429,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         rnSdk.registerGlobals();
         _globalsRegistered = true;
       }
+      // Crash breadcrumb: native WebRTC globals are now loaded.
+      markVoiceStage('sdk_loaded', roomId);
 
       // 1. Token from the LiveKit token endpoint (Bearer Firebase ID token).
       const fbUser = auth.currentUser;
@@ -447,9 +453,13 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       if (!data.token || !data.url) {
         throw new Error('Voice server returned an invalid response');
       }
+      // Crash breadcrumb: token acquired, about to touch the native audio session.
+      markVoiceStage('token_ok', roomId);
 
       // 2. Audio session + connect. The URL comes ONLY from the server response.
       await rnSdk.AudioSession.startAudioSession();
+      // Crash breadcrumb: native audio session started — next is WebRTC connect.
+      markVoiceStage('audio_session_started', roomId);
       const room = new lk.Room();
       this.room = room;
       this.registerRoomListeners(room);
@@ -457,6 +467,10 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
       this.connection = 'connected';
       this.error = null;
+      // Voice is up — the join survived every native stage; clear the breadcrumb
+      // so a later unrelated crash is not misattributed to voice-room entry.
+      markVoiceStage('room_connected', roomId);
+      clearVoiceBreadcrumb();
       this.refreshParticipants();
     } catch (err) {
       this.connection = 'failed';
@@ -796,6 +810,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // The effect re-runs when the real userID/roomID arrive.
         if (!roomID || userID === 'anonymous') return;
 
+        // Crash breadcrumb: the screen now begins the native voice init
+        // sequence (mic permission → SDK load → token → audio session).
+        markVoiceStage('engine_init_start', roomID);
+
         const hasMic = await requestMicPermission({
           title: t('voiceRoom.screen.micPermissionTitle'),
           message: t('voiceRoom.screen.micPermissionMessage'),
@@ -827,6 +845,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
       appStateSub.remove();
+
+      // Crash breadcrumb: the screen unmounted without a native crash, so any
+      // in-flight join breadcrumb must not survive (a real crash never runs
+      // this cleanup, which is exactly how we tell the two apart).
+      clearVoiceBreadcrumb();
 
       // Minimize path: save the room to module-level persist instead of leaving
       if (_isMinimized && engineRef.current) {
