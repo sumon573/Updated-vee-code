@@ -5,6 +5,20 @@ const en = {
     continue: 'Continue',
   },
   auth: {
+    errors: {
+      userNotFound: 'No account found with this email.',
+      wrongPassword: 'Incorrect password. Please try again.',
+      invalidCredential: 'Incorrect email or password.',
+      emailInUse: 'An account with this email already exists.',
+      weakPassword: 'Password must be at least 6 characters.',
+      invalidEmail: 'Please enter a valid email address.',
+      tooManyRequests: 'Too many attempts. Please try again later.',
+      networkFailed: 'No internet connection. Please check your network.',
+      userDisabled: 'This account has been disabled.',
+      notAllowed: 'This sign-in method is not enabled.',
+      recentLogin: 'Please sign in again to complete this action.',
+      generic: 'Something went wrong. Please try again.',
+    },
     login: {
       headerTitle: 'Welcome Back',
       headerSubtitle: 'Good to see you again 👋',

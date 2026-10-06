@@ -67,7 +67,7 @@ export default function ForgotPasswordScreen() {
         t('auth.forgotPassword.successMessage', { email: email.trim() }),
       );
     } catch (err) {
-      setErrorMsg(getAuthErrorMessage(err));
+      setErrorMsg(t(getAuthErrorMessage(err) as any));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);

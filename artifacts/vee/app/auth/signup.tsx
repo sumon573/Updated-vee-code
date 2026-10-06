@@ -198,7 +198,7 @@ export default function SignupScreen() {
       setupPresence(firebaseUser.uid);
       // AuthGuard handles redirect to /home
     } catch (err) {
-      setErrorMsg(getAuthErrorMessage(err));
+      setErrorMsg(t(getAuthErrorMessage(err) as any));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);

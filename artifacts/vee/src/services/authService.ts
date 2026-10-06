@@ -22,20 +22,22 @@ export type { User as AuthUser };
 
 export function getAuthErrorMessage(error: unknown): string {
   const code = (error as AuthError)?.code ?? '';
-  const messages: Record<string, string> = {
-    'auth/user-not-found':         'No account found with this email.',
-    'auth/wrong-password':         'Incorrect password. Please try again.',
-    'auth/invalid-credential':     'Incorrect email or password.',
-    'auth/email-already-in-use':   'An account with this email already exists.',
-    'auth/weak-password':          'Password must be at least 6 characters.',
-    'auth/invalid-email':          'Please enter a valid email address.',
-    'auth/too-many-requests':      'Too many attempts. Please try again later.',
-    'auth/network-request-failed': 'No internet connection. Please check your network.',
-    'auth/user-disabled':          'This account has been disabled.',
-    'auth/operation-not-allowed':  'This sign-in method is not enabled.',
-    'auth/requires-recent-login':  'Please sign in again to complete this action.',
+  // Returns an i18n KEY (not English text) so callers can translate via t().
+  // Keys live under `auth.errors.*` in all 4 locales.
+  const keys: Record<string, string> = {
+    'auth/user-not-found':         'auth.errors.userNotFound',
+    'auth/wrong-password':         'auth.errors.wrongPassword',
+    'auth/invalid-credential':     'auth.errors.invalidCredential',
+    'auth/email-already-in-use':   'auth.errors.emailInUse',
+    'auth/weak-password':          'auth.errors.weakPassword',
+    'auth/invalid-email':          'auth.errors.invalidEmail',
+    'auth/too-many-requests':      'auth.errors.tooManyRequests',
+    'auth/network-request-failed': 'auth.errors.networkFailed',
+    'auth/user-disabled':          'auth.errors.userDisabled',
+    'auth/operation-not-allowed':  'auth.errors.notAllowed',
+    'auth/requires-recent-login':  'auth.errors.recentLogin',
   };
-  return messages[code] ?? 'Something went wrong. Please try again.';
+  return keys[code] ?? 'auth.errors.generic';
 }
 
 // ─── Core Auth Functions ─────────────────────────────────────────────────────

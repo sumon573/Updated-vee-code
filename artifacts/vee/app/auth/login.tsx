@@ -94,7 +94,7 @@ export default function LoginScreen() {
       await login(email, password);
       // AuthGuard in _layout.tsx will handle redirect to /home
     } catch (err) {
-      setErrorMsg(getAuthErrorMessage(err));
+      setErrorMsg(t(getAuthErrorMessage(err) as any));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
