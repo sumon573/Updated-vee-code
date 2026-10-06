@@ -201,6 +201,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [hasMoreOlder, setHasMoreOlder]       = useState(false);
   const [loadingOlder, setLoadingOlder]       = useState(false);
   const [blockDirection, setBlockDirection]   = useState<BlockDirection>('none');
+  // A1 fix: track initial load so empty-state doesn't flash before Firebase returns.
+  const [initialLoading, setInitialLoading]   = useState(true);
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -233,10 +235,13 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // receives an oldestKey so we know where to start the "load older" cursor.
   useEffect(() => {
     shouldScrollRef.current = true;
+    setInitialLoading(true);
 
     const unsubMsgs = subscribeMessages(chatId, myUid, (msgs, oldestKey) => {
       setMessages(msgs);
       setOldestRecentKey(oldestKey);
+      // A1: first callback means initial load done — hide spinner.
+      setInitialLoading(false);
       // If the page is full, there may be older messages to fetch
       setHasMoreOlder(msgs.length >= DM_PAGE_SIZE);
 
@@ -818,11 +823,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               // RC8-A: header shows "Load earlier messages" when older pages exist
               ListHeaderComponent={ListHeaderComponent}
               ListEmptyComponent={
-                <View style={{ alignItems: 'center', paddingTop: 80 }}>
-                  <Text style={{ color: C.dim, fontSize: 14 }}>
-                    {t('chat.emptyMessages')}
-                  </Text>
-                </View>
+                // A1: show spinner during initial load, not false "empty".
+                initialLoading ? (
+                  <View style={{ alignItems: 'center', paddingTop: 80 }}>
+                    <ActivityIndicator color={C.glow} size="large" />
+                  </View>
+                ) : (
+                  <View style={{ alignItems: 'center', paddingTop: 80 }}>
+                    <Text style={{ color: C.dim, fontSize: 14 }}>
+                      {t('chat.emptyMessages')}
+                    </Text>
+                  </View>
+                )
               }
               ListFooterComponent={isTypingRemote ? <TypingDots /> : null}
             />

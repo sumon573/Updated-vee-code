@@ -174,7 +174,19 @@ function StoryCard({
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
         {story.type === 'text' ? (
           <Text style={{
-            color: story.textColor ?? '#fff', fontSize: 28, fontWeight: '900',
+            // P0-6 fix: white text on bright gradients is illegible.
+            // Use dark text on bright backgrounds (luminance check).
+            color: (() => {
+              const bg = story.bgGradient?.[0] ?? '#7C3AED';
+              // Simple luminance: bright backgrounds get dark text.
+              const hex = bg.replace('#', '');
+              const r = parseInt(hex.slice(0, 2), 16) / 255;
+              const g = parseInt(hex.slice(2, 4), 16) / 255;
+              const b = parseInt(hex.slice(4, 6), 16) / 255;
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              return lum > 0.6 ? '#1a1a2e' : (story.textColor ?? '#fff');
+            })(),
+            fontSize: 28, fontWeight: '900',
             textAlign: 'center', lineHeight: 40,
             textShadowColor: 'rgba(0,0,0,0.4)',
             textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8,

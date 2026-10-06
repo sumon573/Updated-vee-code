@@ -9,9 +9,21 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';
 import { reloadAppAsync } from 'expo';
+
+// P0-1 fix: crash screen was blinding white (useColors resolves to light
+// palette). Hardcode the dark palette — the app is dark-first.
+const DARK_COLORS = {
+  background: '#07020F',
+  card: 'rgba(255,255,255,0.055)',
+  foreground: '#FFFFFF',
+  muted: '#B8A6D9',
+  mutedForeground: '#B8A6D9',
+  border: 'rgba(255,255,255,0.10)',
+  primary: '#8B5CF6',
+  primaryForeground: '#FFFFFF',
+} as const;
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -25,7 +37,7 @@ export type ErrorFallbackProps = {
 const DEBUG_MODE = false;
 
 export function ErrorFallback({ error, componentStack, resetError }: ErrorFallbackProps) {
-  const colors = useColors();
+  const colors = DARK_COLORS;
   const insets = useSafeAreaInsets();
 
   // Fix TypeScript: DEBUG_MODE=false causes type to be inferred as useState<false>.
