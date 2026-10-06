@@ -37,7 +37,7 @@ const SAFE_PRIVACY: PrivacySettings = {
   showLastSeen: false,
   allowMessageFromAll: false,
   allowRoomInvites: false,
-  profileVisibility: 'contacts',
+  profileVisibility: 'none',
 };
 
 /**
