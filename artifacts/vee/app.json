@@ -118,10 +118,8 @@
       "router": {
         "origin": "https://vee.app"
       },
-      "eas": {
-        "projectId": "85455cf1-e27f-4bdc-a729-cc442146d327"
-      }
+      "eas": {}
     },
-    "owner": "wexoc20175s-team"
+    "owner": "letac42361s-team"
   }
 }
