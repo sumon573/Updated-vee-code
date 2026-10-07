@@ -34,9 +34,14 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 // This keeps the user logged in across app restarts
 let auth: Auth;
 try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
+  // FIX: getReactNativePersistence may not exist if Metro resolves the
+  // browser build of @firebase/auth (depends on pnpm lockfile structure).
+  // Check for existence to avoid "not a function" crash on launch.
+  const persistence =
+    typeof getReactNativePersistence === 'function'
+      ? getReactNativePersistence(AsyncStorage)
+      : undefined;
+  auth = initializeAuth(app, persistence ? { persistence } : {});
 } catch {
   // Auth already initialized (hot reload)
   auth = getAuth(app);
