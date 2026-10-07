@@ -17,26 +17,18 @@ import { ref as dbRef, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import ScalePress from '@/components/ScalePress';
 import { useAuth } from '@/src/context/AuthContext';
+import { useTheme } from '@/src/context/ThemeContext';
 import { subscribeUser, VeeUser } from '@/src/services/userService';
 import { subscribeFollowCounts } from '@/src/services/followService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { useTranslation } from 'react-i18next';
 
-const C = {
-  bg: '#07020F',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
-  error: '#EF4444',
-} as const;
-
 // ─── Sub-components ─────────────────────────────────────────────────────────
+// Note: C (colors) now comes from useTheme() — passed as prop to sub-components
+// that need it, or they use the theme directly.
 
 function StatBox({ label, value, onPress }: { label: string; value: string | number; onPress?: () => void }) {
+  const { theme: C } = useTheme();
   return (
     <Pressable onPress={onPress} style={{ flex: 1 }}>
       <View style={{
@@ -60,6 +52,7 @@ function MenuItem({
   danger?: boolean;
   badge?: number;
 }) {
+  const { theme: C } = useTheme();
   return (
     <ScalePress onPress={onPress}>
       <View style={{
@@ -129,6 +122,9 @@ export default function ProfileSection({
 } = {}) {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
+  const { darkMode, toggleTheme, theme } = useTheme();
+  // Use theme-aware colors (C now comes from theme)
+  const C = theme;
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const topPad = Platform.OS === 'web' ? 67 : 0;
@@ -259,12 +255,38 @@ export default function ProfileSection({
       <SafeAreaView style={{ flex: 1 }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
         >
-          {/* ── Top: Avatar + Name + Bio ── */}
+          {/* ── Cover + Theme toggle ── */}
+          <View style={{ height: 180, position: 'relative' }}>
+            {/* Cover gradient placeholder */}
+            <View style={{
+              width: '100%', height: 180,
+              backgroundColor: darkMode ? '#1A0F2E' : '#E8E2F2',
+            }} />
+            {/* Theme toggle — top-right corner, one-click switch */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                toggleTheme();
+              }}
+              style={{
+                position: 'absolute', top: 12, right: 16,
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+              }}
+            >
+              <Feather name={darkMode ? 'sun' : 'moon'} size={18} color="#fff" />
+            </Pressable>
+          </View>
+
+          {/* ── Top: Avatar + Name + Bio (overlapping cover) ── */}
           <View style={{
             alignItems: 'center',
-            paddingTop: topPad + 24,
+            marginTop: -48,
+            paddingHorizontal: 20,
             paddingBottom: 24,
           }}>
             {/* Avatar with edit ring */}
