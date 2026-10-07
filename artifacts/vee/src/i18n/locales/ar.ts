@@ -530,6 +530,8 @@ const ar = {
     menuHelp: 'المساعدة والدعم',
     menuAbout: 'حول Vee',
     menuWallet: 'المحفظة',
+    menuHonor: 'الشرف',
+    menuDecoration: 'الزينة',
     menuSignOut: 'تسجيل الخروج',
     signOutTitle: 'تسجيل الخروج',
     signOutMsg: 'هل تريد تسجيل الخروج؟',
@@ -808,6 +810,20 @@ const ar = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
+  },
+  honor: {
+    title: 'الشرف',
+    badges: 'الشارات',
+    nameplates: 'لوحات الأسماء',
+    noNameplates: 'لا توجد لوحات بعد',
+    nameplateHint: 'اكسب لوحات الأسماء من نشاط الغرف',
+  },
+  decoration: {
+    title: 'الزينة',
+    use: 'استخدام',
+    inUse: 'قيد الاستخدام',
+    permanent: 'دائم',
+    remove: 'إزالة الإطار',
   },
 } as const;
 

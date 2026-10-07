@@ -531,6 +531,8 @@ const bn = {
     menuHelp: 'সাহায্য ও সহায়তা',
     menuAbout: 'Vee সম্পর্কে',
     menuWallet: 'ওয়ালেট',
+    menuHonor: 'সম্মান',
+    menuDecoration: 'সাজসজ্জা',
     menuSignOut: 'সাইন আউট',
     signOutTitle: 'সাইন আউট',
     signOutMsg: 'আপনি কি সাইন আউট করতে চান?',
@@ -809,6 +811,20 @@ const bn = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
+  },
+  honor: {
+    title: 'সম্মান',
+    badges: 'ব্যাজ',
+    nameplates: 'নেমপ্লেট',
+    noNameplates: 'এখনো নেমপ্লেট নেই',
+    nameplateHint: 'রুম অ্যাক্টিভিটির মাধ্যমে নেমপ্লেট অর্জন করো',
+  },
+  decoration: {
+    title: 'সাজসজ্জা',
+    use: 'ব্যবহার করো',
+    inUse: 'ব্যবহার হচ্ছে',
+    permanent: 'স্থায়ী',
+    remove: 'ফ্রেম সরাও',
   },
 } as const;
 

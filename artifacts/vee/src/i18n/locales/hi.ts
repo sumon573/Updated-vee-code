@@ -531,6 +531,8 @@ const hi = {
     menuHelp: 'मदद और सहायता',
     menuAbout: 'Vee के बारे में',
     menuWallet: 'वॉलेट',
+    menuHonor: 'सम्मान',
+    menuDecoration: 'सजावट',
     menuSignOut: 'साइन आउट',
     signOutTitle: 'साइन आउट',
     signOutMsg: 'क्या आप साइन आउट करना चाहते हैं?',
@@ -809,6 +811,20 @@ const hi = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
+  },
+  honor: {
+    title: 'सम्मान',
+    badges: 'बैज',
+    nameplates: 'नेमप्लेट',
+    noNameplates: 'अभी कोई नेमप्लेट नहीं',
+    nameplateHint: 'रूम गतिविधि से नेमप्लेट कमाएं',
+  },
+  decoration: {
+    title: 'सजावट',
+    use: 'उपयोग करें',
+    inUse: 'उपयोग में',
+    permanent: 'स्थायी',
+    remove: 'फ्रेम हटाएं',
   },
 } as const;
 

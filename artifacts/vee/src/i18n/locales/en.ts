@@ -522,6 +522,8 @@ const en = {
     menuHelp: 'Help & Support',
     menuAbout: 'About Vee',
     menuWallet: 'Wallet',
+    menuHonor: 'Honor',
+    menuDecoration: 'Decoration',
     menuSignOut: 'Sign Out',
     signOutTitle: 'Sign Out',
     signOutMsg: 'Are you sure you want to sign out?',
@@ -797,6 +799,20 @@ const en = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.',
+  },
+  honor: {
+    title: 'Honor',
+    badges: 'Badges',
+    nameplates: 'Nameplates',
+    noNameplates: 'No nameplates yet',
+    nameplateHint: 'Earn nameplates through room activity',
+  },
+  decoration: {
+    title: 'Decoration',
+    use: 'Use',
+    inUse: 'In Use',
+    permanent: 'Permanent',
+    remove: 'Remove frame',
   },
 } as const;
 

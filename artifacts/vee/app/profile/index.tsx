@@ -415,6 +415,16 @@ export default function ProfileSection({
             onPress={() => router.push('/profile/wallet' as never)}
           />
           <MenuItem
+            icon="award"
+            label={t('profile.menuHonor', 'Honor')}
+            onPress={() => router.push('/profile/honor' as never)}
+          />
+          <MenuItem
+            icon="image"
+            label={t('profile.menuDecoration', 'Decoration')}
+            onPress={() => router.push('/profile/decoration' as never)}
+          />
+          <MenuItem
             icon="bell"
             label={t('profile.menuNotifications')}
             badge={totalUnread}
