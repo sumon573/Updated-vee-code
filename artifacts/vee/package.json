@@ -29,7 +29,7 @@
     "livekit-client": "2.20.1",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
     "expo": "~54.0.27",
-    "expo-av": "~16.0.8",
+    "expo-audio": "~1.0.15",
     "expo-blur": "~15.0.8",
     "expo-clipboard": "~8.0.7",
     "expo-constants": "~18.0.11",
