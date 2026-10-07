@@ -65,14 +65,24 @@ export function subscribeUserBadges(uid: string, cb: (badges: Record<string, { e
 }
 
 export async function grantBadge(uid: string, badgeId: string, grantedBy?: string): Promise<void> {
-  await set(ref(database, `userBadges/${uid}/${badgeId}`), {
-    earnedAt: Date.now(),
-    ...(grantedBy ? { grantedBy } : {}),
-  });
+  try {
+    await set(ref(database, `userBadges/${uid}/${badgeId}`), {
+      earnedAt: Date.now(),
+      ...(grantedBy ? { grantedBy } : {}),
+    });
+  } catch (e) {
+    console.warn('[honor] grantBadge failed:', e);
+    throw e;
+  }
 }
 
 export async function revokeBadge(uid: string, badgeId: string): Promise<void> {
-  await remove(ref(database, `userBadges/${uid}/${badgeId}`));
+  try {
+    await remove(ref(database, `userBadges/${uid}/${badgeId}`));
+  } catch (e) {
+    console.warn('[honor] revokeBadge failed:', e);
+    throw e;
+  }
 }
 
 // ─── User frames ────────────────────────────────────────────────────────
@@ -92,17 +102,27 @@ export function subscribeActiveFrame(uid: string, cb: (frameId: string | null) =
 }
 
 export async function grantFrame(uid: string, frameId: string, grantedBy?: string): Promise<void> {
-  await set(ref(database, `userFrames/${uid}/${frameId}`), {
-    earnedAt: Date.now(),
-    ...(grantedBy ? { grantedBy } : {}),
-  });
+  try {
+    await set(ref(database, `userFrames/${uid}/${frameId}`), {
+      earnedAt: Date.now(),
+      ...(grantedBy ? { grantedBy } : {}),
+    });
+  } catch (e) {
+    console.warn('[honor] grantFrame failed:', e);
+    throw e;
+  }
 }
 
 export async function setActiveFrame(uid: string, frameId: string | null): Promise<void> {
-  if (frameId) {
-    await set(ref(database, `userFrames/${uid}/active`), frameId);
-  } else {
-    await remove(ref(database, `userFrames/${uid}/active`));
+  try {
+    if (frameId) {
+      await set(ref(database, `userFrames/${uid}/active`), frameId);
+    } else {
+      await remove(ref(database, `userFrames/${uid}/active`));
+    }
+  } catch (e) {
+    console.warn('[honor] setActiveFrame failed:', e);
+    throw e;
   }
 }
 

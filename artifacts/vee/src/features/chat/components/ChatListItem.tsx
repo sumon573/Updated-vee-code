@@ -1,10 +1,8 @@
-import { memo, useEffect, useState, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { View, Text, Image } from 'react-native';
 import ScalePress from '@/components/ScalePress';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { ref, get } from 'firebase/database';
-import { database } from '@/src/config/firebase';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Chat } from '../types';
 import { formatTime } from '../data/mockChats';
@@ -46,26 +44,10 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
   const isPinned  = chat.isPinned === true;
 
-  // RC6 fix Issue 5: fetch the participant's live photoURL from RTDB so the
-  // avatar stays current even after the other user changes their profile photo.
-  // The stored chat.participantAvatar may be stale (it is only written once when
-  // the chat is first created). We do a one-time get() per chat item — cheap and
-  // doesn't leave a permanent listener for every chat in the list.
-  const [livePhotoURL, setLivePhotoURL] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (!chat.participantId) return;
-    get(ref(database, `users/${chat.participantId}/photoURL`))
-      .then(snap => {
-        if (!cancelled && snap.exists() && snap.val()) {
-          setLivePhotoURL(snap.val() as string);
-        }
-      })
-      .catch(() => {/* non-critical — fall back to stored avatar or initials */});
-    return () => { cancelled = true; };
-  }, [chat.participantId]);
-
-  const avatarUri = livePhotoURL ?? chat.participantAvatar ?? null;
+  // Performance: use stored avatar directly. The per-item Firebase get() was
+  // causing N+1 queries on list mount (50 chats = 50 queries = slow loading).
+  // Avatar updates propagate via the chat list subscription anyway.
+  const avatarUri = chat.participantAvatar ?? null;
 
   /** Label for the last message type */
   function messagePreview(c: Chat): { icon: React.ComponentProps<typeof Feather>['name'] | null; text: string } {
