@@ -84,19 +84,13 @@ const TopTab = memo(function TopTab({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={{ alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4 }}>
-      <Feather name={icon} size={22} color={active ? C.glow : C.muted} />
-      <Text style={{
-        color: active ? C.text : C.muted,
-        fontSize: 11, fontWeight: active ? '800' : '400',
-        marginTop: 3, letterSpacing: 0.2,
-      }}>
-        {title}
-      </Text>
+    <Pressable onPress={onPress} style={{ alignItems: 'center', paddingHorizontal: 16, paddingVertical: 6 }}>
+      <Feather name={icon} size={26} color={active ? '#3B82F6' : C.muted} />
       <View style={{
-        marginTop: 3,
-        width: active ? 5 : 0, height: active ? 5 : 0,
-        borderRadius: 3, backgroundColor: C.glow,
+        marginTop: 4,
+        width: 24, height: 3,
+        borderRadius: 2,
+        backgroundColor: active ? '#3B82F6' : 'transparent',
       }} />
     </Pressable>
   );
