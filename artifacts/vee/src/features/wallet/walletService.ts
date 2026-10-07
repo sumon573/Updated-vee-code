@@ -79,6 +79,19 @@ export class InsufficientFundsError extends GiftError {
   }
 }
 
+/**
+ * Server rejected the gift request for a NON-balance reason (HTTP 400 with
+ * an error other than insufficient balance, e.g. unknown gift or invalid
+ * request). Surfaced separately so the UI doesn't misreport it as
+ * "not enough coins".
+ */
+export class GiftRejectedError extends GiftError {
+  constructor(message = 'Gift request rejected') {
+    super(message);
+    this.name = 'GiftRejectedError';
+  }
+}
+
 /** The request failed before reaching the server, or the response was unusable. */
 export class NetworkError extends GiftError {
   constructor(message = 'Network request failed') {
@@ -231,7 +244,14 @@ export async function sendGift({
 
   if (res.status === 400) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new InsufficientFundsError(body.error ?? 'Insufficient diamonds');
+    const serverMsg = body.error ?? 'Insufficient diamonds';
+    // Only treat it as insufficient funds when the server actually says so.
+    // Other 400s (unknown gift, invalid request) are surfaced as-is so the
+    // UI doesn't misreport them as "not enough coins".
+    if (/insufficient/i.test(serverMsg)) {
+      throw new InsufficientFundsError(serverMsg);
+    }
+    throw new GiftRejectedError(serverMsg);
   }
   if (!res.ok) {
     throw new GiftError(`Gift send failed (HTTP ${res.status})`);

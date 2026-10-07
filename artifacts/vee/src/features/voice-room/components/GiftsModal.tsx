@@ -8,7 +8,7 @@ import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
-import { sendGift, getBalance, getWalletBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { sendGift, getBalance, getWalletBalance, InsufficientFundsError, GiftRejectedError, NetworkError } from '@/src/features/wallet/walletService';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -118,21 +118,24 @@ export function GiftsModal({
 
     const totalCost = g.coins * selectedMembers.length;
 
-    // Balance pre-check: use Firebase (same source as the UI display).
-    // Try a fresh one-shot read first; fall back to the subscribed prop;
-    // fall back to server balance last. If all fail, skip the pre-check
-    // and let the server's InsufficientFundsError decide.
-    let effectiveBalance: number | null = null;
-    try {
-      effectiveBalance = await getWalletBalance(myUid);
-    } catch { /* try next */ }
-    if (effectiveBalance === null || effectiveBalance === 0) {
+    // Balance pre-check: trust the SUBSCRIBED balance (walletBalance prop)
+    // FIRST — it is the same source the header UI displays, so the check
+    // can never disagree with what the user sees. Only if the subscription
+    // hasn't delivered yet (prop is 0) do we try a fresh Firebase read and
+    // then the server as fallbacks.
+    let effectiveBalance: number = walletBalance;
+    if (effectiveBalance <= 0) {
+      try {
+        const fresh = await getWalletBalance(myUid);
+        if (fresh > 0) effectiveBalance = fresh;
+      } catch { /* try server next */ }
+    }
+    if (effectiveBalance <= 0) {
       try {
         const serverBal = await getBalance();
         if (serverBal > 0) effectiveBalance = serverBal;
-      } catch { /* use prop */ }
+      } catch { /* use prop (0) */ }
     }
-    if (effectiveBalance === null) effectiveBalance = walletBalance;
     if (effectiveBalance < totalCost) {
       Alert.alert(
         t('voiceRoom.gifts.notEnoughCoins'),
@@ -166,7 +169,7 @@ export function GiftsModal({
       const senderAvatar = members.find(m => m.id === myUid)?.photoURL;
 
       const succeeded: Participant[] = [];
-      const failed: { name: string; insufficient: boolean }[] = [];
+      const failed: { name: string; insufficient: boolean; rejectedMsg?: string }[] = [];
 
       for (const r of recipients) {
         const key = keys.get(r.id)!;
@@ -191,7 +194,11 @@ export function GiftsModal({
             }
           }
         if (!charged) {
-          failed.push({ name: r.name, insufficient: lastErr instanceof InsufficientFundsError });
+          failed.push({
+            name: r.name,
+            insufficient: lastErr instanceof InsufficientFundsError,
+            rejectedMsg: lastErr instanceof GiftRejectedError ? lastErr.message : undefined,
+          });
           continue;
         }
         succeeded.push(r);
@@ -218,13 +225,14 @@ export function GiftsModal({
       if (succeeded.length === 0) {
         // Nothing went through — keep the modal open so the user can retry.
         const allInsufficient = failed.length > 0 && failed.every(f => f.insufficient);
+        const rejectedMsg = failed.find(f => f.rejectedMsg)?.rejectedMsg;
         Alert.alert(
           allInsufficient
             ? t('voiceRoom.gifts.notEnoughCoins')
             : t('voiceRoom.screen.error'),
           allInsufficient
             ? t('voiceRoom.gifts.notEnoughCoinsMsg', { total: totalCost })
-            : t('voiceRoom.gifts.sendFailed'),
+            : (rejectedMsg ?? t('voiceRoom.gifts.sendFailed')),
         );
         return;
       }
