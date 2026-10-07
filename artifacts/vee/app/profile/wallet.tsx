@@ -12,25 +12,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
+import { useTheme } from '@/src/context/ThemeContext';
 import {
   subscribeWalletBalance,
   subscribeTransactionHistory,
   WalletTransaction,
 } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
-
-const C = {
-  bg: '#07020F',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
-  green: '#22C55E',
-  red: '#EF4444',
-} as const;
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -48,6 +36,12 @@ function formatDate(ts: number): string {
 }
 
 function TransactionItem({ tx }: { tx: WalletTransaction }) {
+  const { theme } = useTheme();
+  const C = {
+    ...theme,
+    green: '#22C55E',
+    red: '#EF4444',
+  };
   const isReceived = tx.type === 'gift_received';
   return (
     <View style={{
@@ -95,6 +89,12 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
 export default function WalletScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
+  const { theme } = useTheme();
+  const C = {
+    ...theme,
+    green: '#22C55E',
+    red: '#EF4444',
+  };
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const [balance, setBalance] = useState<number | null>(null);
