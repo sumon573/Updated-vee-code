@@ -27,22 +27,6 @@ import { useTranslation } from 'react-i18next';
 // Note: C (colors) now comes from useTheme() — passed as prop to sub-components
 // that need it, or they use the theme directly.
 
-function StatBox({ label, value, onPress }: { label: string; value: string | number; onPress?: () => void }) {
-  const { theme: C } = useTheme();
-  return (
-    <Pressable onPress={onPress} style={{ flex: 1 }}>
-      <View style={{
-        alignItems: 'center', paddingVertical: 14,
-        backgroundColor: C.surface,
-        borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-      }}>
-        <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{value}</Text>
-        <Text style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{label}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 function MenuItem({
   icon, label, onPress, danger, badge,
 }: {
