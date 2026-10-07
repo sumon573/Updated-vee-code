@@ -465,8 +465,17 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
       // 2. Audio session + connect. The URL comes ONLY from the server response.
       await rnSdk.AudioSession.startAudioSession();
-      // Background audio: expo-av removed (caused startup crash).
+      // Background audio: use expo-audio for background-capable audio mode.
       // Audio session is already started via rnSdk.AudioSession above.
+      try {
+        const { setAudioModeAsync } = await import('expo-audio');
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldPlayInBackground: true,
+          interruptionMode: 'duckOthers',
+          allowsRecording: true,
+        });
+      } catch { /* non-critical */ }
       // Crash breadcrumb: native audio session started — next is WebRTC connect.
       markVoiceStage('audio_session_started', roomId);
       const room = new lk.Room();
