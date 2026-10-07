@@ -4,7 +4,7 @@
  * New users start with ZERO frames. Tap a frame to preview, tap Use to apply.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Image, Modal } from 'react-native';
+import { View, Text, ScrollView, Pressable, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
