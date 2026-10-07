@@ -356,7 +356,15 @@ export async function addReaction(
   messageId: string,
   myUid: string,
   emoji: string,
+  participantUid?: string,
 ): Promise<void> {
+  // Block enforcement: blocked users cannot react to messages either.
+  if (participantUid) {
+    const direction = await getBlockDirection(myUid, participantUid);
+    if (direction !== 'none') {
+      throw new BlockedInteractionError(direction);
+    }
+  }
   const reactionRef = ref(database, `chats/${chatId}/messages/${messageId}/reactions/${myUid}`);
   const snap = await get(reactionRef);
   // Toggle: same emoji removes it

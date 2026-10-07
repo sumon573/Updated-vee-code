@@ -125,6 +125,7 @@ export default function AudioCallScreen({
   const callStateRef   = useRef<CallState>(role === 'caller' ? 'ringing' : 'connecting');
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rejectUnsubRef = useRef<(() => void) | null>(null);
   const mutedRef       = useRef(false);
   const speakerOnRef   = useRef(true);
 
@@ -141,6 +142,11 @@ export default function AudioCallScreen({
   const updateCallState = useCallback((state: CallState) => {
     callStateRef.current = state;
     if (mountedRef.current) setCallState(state);
+    // Ringback sound follows the ringing state (caller only)
+    import('./services/callSounds').then(({ startRingback, stopAllCallSounds }) => {
+      if (state === 'ringing') startRingback().catch(() => {});
+      else stopAllCallSounds().catch(() => {});
+    });
   }, []);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
@@ -313,6 +319,28 @@ export default function AudioCallScreen({
             roomId,
           });
         } catch { /* non-critical — WebRTC signaling is already live */ }
+
+        // Watch for callee REJECT: if they decline, stop ringing immediately
+        // instead of waiting for the 45s timeout.
+        try {
+          const { database } = await import('@/src/config/firebase');
+          const { ref, onValue } = await import('firebase/database');
+          const statusRef = ref(database, `calls/${calleeUid}/status`);
+          const unsubReject = onValue(statusRef, (snap) => {
+            if (snap.val() === 'rejected' && callStateRef.current === 'ringing') {
+              unsubReject();
+              setCallState('ended');
+              callStateRef.current = 'ended';
+              Alert.alert(
+                t('audioCall.callEndedTitle'),
+                t('audioCall.declined', 'Call declined'),
+                [{ text: t('audioCall.ok'), onPress: () => endCall(true) }],
+                { onDismiss: () => endCall(true) },
+              );
+            }
+          });
+          rejectUnsubRef.current = unsubReject;
+        } catch { /* non-critical */ }
       }
 
       // Connection timeout (both roles): if the call never reaches
@@ -328,6 +356,10 @@ export default function AudioCallScreen({
     })().catch(() => {});
 
     return () => {
+      if (rejectUnsubRef.current) {
+        try { rejectUnsubRef.current(); } catch { /* ignore */ }
+        rejectUnsubRef.current = null;
+      }
       if (!cleaningUpRef.current) endCall(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

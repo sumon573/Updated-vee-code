@@ -27,6 +27,8 @@ import {
 } from 'firebase/auth';
 import { auth, database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
+import { useLanguage } from '@/src/context/LanguageContext';
+import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 
 const C = {
   bg: '#07020F',
@@ -128,6 +130,8 @@ function SettingButton({
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { language, changeLanguage } = useLanguage();
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
   // Issue 7: dark mode is managed by ThemeContext (persists to Firebase + app-wide)
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
@@ -294,6 +298,61 @@ export default function SettingsScreen() {
           {/* Dark mode toggle removed — the app is dark-first by design and no
               light theme exists. A non-functional toggle is worse than none.
               Re-add when a full light theme ships. */}
+
+          {/* Language */}
+          <Pressable
+            onPress={() => setLangPickerOpen(true)}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: C.surface, borderRadius: 16,
+              padding: 14, marginBottom: 8,
+              borderWidth: 1, borderColor: C.border,
+            }}
+          >
+            <View style={{
+              width: 38, height: 38, borderRadius: 19,
+              backgroundColor: 'rgba(139,92,246,0.15)',
+              alignItems: 'center', justifyContent: 'center', marginRight: 12,
+            }}>
+              <Feather name="globe" size={18} color={C.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                {t('settings.language', 'Language')}
+              </Text>
+              <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                {SUPPORTED_LANGUAGES.find(l => l.code === language)?.nativeName}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={C.muted} />
+          </Pressable>
+          {/* Language picker sheet */}
+          <Modal visible={langPickerOpen} transparent animationType="fade"
+            onRequestClose={() => setLangPickerOpen(false)}>
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
+              onPress={() => setLangPickerOpen(false)}>
+              <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+                backgroundColor: '#120A24', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+                padding: 20, paddingBottom: 40 }}>
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 14, textAlign: 'center' }}>
+                  {t('settings.language', 'Language')}
+                </Text>
+                {SUPPORTED_LANGUAGES.map(l => (
+                  <Pressable key={l.code}
+                    onPress={async () => {
+                      await changeLanguage(l.code as any);
+                      setLangPickerOpen(false);
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13,
+                      borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}>
+                    <Text style={{ fontSize: 22, marginRight: 12 }}>{l.flag}</Text>
+                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600', flex: 1 }}>{l.nativeName}</Text>
+                    {language === l.code && <Feather name="check" size={18} color="#8B5CF6" />}
+                  </Pressable>
+                ))}
+              </View>
+            </Pressable>
+          </Modal>
 
           {/* Media */}
           <Text style={{

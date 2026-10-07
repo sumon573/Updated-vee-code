@@ -314,7 +314,7 @@ const hi = {
       invite: 'आमंत्रित करें',
     },
     audience: {
-      title: 'लाइव दर्शक',
+      title: 'श्रोता',
       noAudience: 'कोई दर्शक नहीं',
       audienceLabel: 'दर्शक',
       adminBadge: 'एडमिन',
@@ -405,6 +405,7 @@ const hi = {
     },
   },
   chat: {
+    send: 'भेजें',
     title: 'चैट्स',
     searchPlaceholder: 'चैट खोजें...',
     searchActive: 'खोजें...',

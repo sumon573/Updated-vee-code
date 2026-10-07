@@ -209,6 +209,10 @@ router.post("/send", async (req: Request, res: Response) => {
         headings: { en: title },
         contents: { en: message },
         data: dataPayload,
+        // Android: use a dedicated channel with sound so notifications
+        // are audible and visible (not silent default channel).
+        android_channel_id: "vee-messages",
+        android_sound: "notification_pop",
       }),
       // Never let a hung OneSignal call tie up a server connection forever.
       signal: AbortSignal.timeout(10_000),

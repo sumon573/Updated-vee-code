@@ -314,7 +314,7 @@ const ar = {
       invite: 'دعوة',
     },
     audience: {
-      title: 'الجمهور المباشر',
+      title: 'مستمع',
       noAudience: 'لا يوجد أعضاء في الجمهور',
       audienceLabel: 'جمهور',
       adminBadge: 'مشرف',
@@ -404,6 +404,7 @@ const ar = {
     },
   },
   chat: {
+    send: 'إرسال',
     title: 'المحادثات',
     searchPlaceholder: 'ابحث في المحادثات...',
     searchActive: 'بحث...',

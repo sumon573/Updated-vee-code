@@ -192,6 +192,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [mediaViewerUri, setMediaViewerUri] = useState<string | null>(null);
   const [mediaViewerType, setMediaViewerType] = useState<'image' | 'video'>('image');
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  // Photo preview: picked image waits for explicit Send/Cancel confirmation
+  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
   // RC6 fix Issue 5: live participant photo from RTDB (stale auth photo replaced)
   const [participantPhotoURL, setParticipantPhotoURL] = useState<string | null>(null);
 
@@ -457,12 +459,21 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
     const asset = result.assets[0];
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Show preview first — user must tap Send to actually send the photo.
+    setPendingPhotoUri(asset.uri);
+  }, [t]);
+
+  /** User confirmed the photo preview — upload and send. */
+  const confirmSendPhoto = useCallback(async () => {
+    const uri = pendingPhotoUri;
+    if (!uri || uploadingMediaRef.current) return;
+    setPendingPhotoUri(null);
     uploadingMediaRef.current = true;
     setUploadingMedia(true);
     shouldScrollRef.current = true;
 
     try {
-      const uploaded = await uploadImage(asset.uri, { folder: 'vee/dm' });
+      const uploaded = await uploadImage(uri, { folder: 'vee/dm' });
       await sendMessage(chatId, myUid, participantId, uploaded.url, 'image', undefined, uploaded.publicId, user?.displayName ?? undefined);
     } catch (err) {
       Alert.alert(t('chat.uploadFailed'), err instanceof Error ? err.message : t('chat.photoSendFailed'));
@@ -470,7 +481,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       uploadingMediaRef.current = false;
       setUploadingMedia(false);
     }
-  }, [chatId, myUid, participantId, t, user]);
+  }, [pendingPhotoUri, chatId, myUid, participantId, t, user]);
 
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
@@ -480,7 +491,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // ── Reaction ──────────────────────────────────────────────────────────────
   const handleReaction = useCallback((messageId: string, emoji: string) => {
-    addReaction(chatId, messageId, myUid, emoji).catch(() => {
+    addReaction(chatId, messageId, myUid, emoji, participantId).catch(() => {
       Alert.alert(t('chat.error'), t('chat.reactionError'));
     });
   }, [chatId, myUid, t]);
@@ -938,6 +949,34 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           </KeyboardAvoidingView>
         </View>
       </SafeAreaView>
+
+      {/* ── Photo send preview (confirm before sending) ───────────────────── */}
+      <Modal
+        visible={!!pendingPhotoUri}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPendingPhotoUri(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+          {pendingPhotoUri && (
+            <Image source={{ uri: pendingPhotoUri }} style={{ width: '100%', height: '70%' }} resizeMode="contain" />
+          )}
+          <View style={{ flexDirection: 'row', marginTop: 24, gap: 16 }}>
+            <Pressable
+              onPress={() => setPendingPhotoUri(null)}
+              style={{ paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24, backgroundColor: '#2A2A3A' }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{t('chat.cancel')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={confirmSendPhoto}
+              style={{ paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24, backgroundColor: '#8B5CF6' }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{t('chat.send')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Media viewer ────────────────────────────────────────────────────── */}
       <Modal

@@ -314,7 +314,7 @@ const bn = {
       invite: 'আমন্ত্রণ',
     },
     audience: {
-      title: 'লাইভ শ্রোতা',
+      title: 'শ্রোতা',
       noAudience: 'কোনো শ্রোতা নেই',
       audienceLabel: 'শ্রোতা',
       adminBadge: 'অ্যাডমিন',
@@ -405,6 +405,7 @@ const bn = {
     },
   },
   chat: {
+    send: 'পাঠান',
     title: 'চ্যাট',
     searchPlaceholder: 'চ্যাট খুঁজুন...',
     searchActive: 'খুঁজুন...',

@@ -63,11 +63,19 @@ export async function loginOneSignal(uid: string): Promise<void> {
   try {
     // External ID set করলে Cloud Function থেকে এই user-কে target করা যাবে
     await os.login(uid);
-    // Subscription ID Firebase-এ save করি
-    const subId: string | undefined = os.User?.pushSubscription?.id ?? undefined;
-    if (subId) {
-      await saveOneSignalIdToFirebase(uid, subId);
-    }
+    // Subscription ID Firebase-এ save করি.
+    // FIX: the subscription ID is often undefined right after login
+    // (async creation) — listen for it instead of reading once.
+    const saveId = (id?: string | null) => {
+      if (id) saveOneSignalIdToFirebase(uid, id).catch(() => {});
+    };
+    saveId(os.User?.pushSubscription?.id);
+    try {
+      // OneSignal v5: listen for subscription changes
+      os.User.pushSubscription.addEventListener('change', (sub: any) => {
+        saveId(sub?.id ?? sub?.current?.id);
+      });
+    } catch { /* older SDK — one-shot read above is the fallback */ }
   } catch {
     // silently ignore
   }

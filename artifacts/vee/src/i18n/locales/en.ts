@@ -309,7 +309,7 @@ const en = {
       invite: 'Invite',
     },
     audience: {
-      title: 'Live Audience',
+      title: 'Listener',
       noAudience: 'No audience members',
       audienceLabel: 'Audience',
       adminBadge: 'Admin',
@@ -397,6 +397,7 @@ const en = {
     },
   },
   chat: {
+    send: 'Send',
     title: 'Chats',
     searchPlaceholder: 'Search chats...',
     searchActive: 'Search...',

@@ -78,6 +78,20 @@ export async function removeCallSignal(calleeUid: string): Promise<void> {
 }
 
 /**
+ * Mark the call as REJECTED before removing the signal, so the caller
+ * can distinguish "declined" from "timeout/no-answer". The caller watches
+ * `calls/{calleeUid}/status` during ringing.
+ */
+export async function rejectCallSignal(calleeUid: string): Promise<void> {
+  try {
+    await set(ref(database, `calls/${calleeUid}/status`), 'rejected');
+  } catch { /* fall through to remove */ }
+  // Small delay so the caller's listener sees 'rejected' before deletion.
+  await new Promise(r => setTimeout(r, 800));
+  await remove(ref(database, `calls/${calleeUid}`)).catch(() => {});
+}
+
+/**
  * Subscribe to incoming calls for a given user (real-time).
  * Returns an unsubscribe function.
  */

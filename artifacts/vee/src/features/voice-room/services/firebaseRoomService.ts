@@ -307,8 +307,9 @@ export function subscribeMyRoomsCombined(
       // Show only rooms that still exist AND are active. Disbanded rooms
       // (null info) and inactive/closed rooms are hidden from My Rooms.
       .filter((r): r is RoomInfo => !!r && r.active === true);
-    // Owned rooms: show only if they still exist (not disbanded).
-    const owned = ownedRooms.filter((r) => !!r);
+    // Owned rooms: show only if they still exist AND are active.
+    // Closed rooms (active=false) are hidden from My Rooms.
+    const owned = ownedRooms.filter((r): r is RoomInfo => !!r && r.active === true);
     callback([...owned, ...joined]);
   }
 

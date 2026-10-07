@@ -377,10 +377,12 @@ export default function VoiceRoomScreen() {
       if (reaction.ts <= lastReactionTsRef.current) return;
       if (Date.now() - reaction.ts > 5000) return;
       lastReactionTsRef.current = reaction.ts;
-      // Animate the emoji over every occupied seat
+      // Animate the emoji ONLY over the sender's DP (reaction.byUid).
+      // Previously it animated over every occupied seat, which was wrong.
       const newReactions: Record<string, SeatReaction> = {};
       seatsRef.current.forEach((member) => {
         if (!member) return;
+        if (member.id !== reaction.byUid) return; // only the sender's seat
         const translateY = new Animated.Value(0);
         const opacity    = new Animated.Value(1);
         newReactions[member.id] = { emoji: reaction.emoji, translateY, opacity };
@@ -786,7 +788,12 @@ export default function VoiceRoomScreen() {
   ═══════════════════════════════════════════ */
 
   const seatMembers = useMemo(() => seats.filter((s: Participant | null): s is Participant => s !== null), [seats]);
-  const allMembers  = useMemo(() => [...seatMembers, ...audience], [seatMembers, audience]);
+  // Dedupe: a user can briefly appear in both seats and audience during
+  // seat transitions — seats win, so own ID never shows twice.
+  const allMembers  = useMemo(() => {
+    const seen = new Set(seatMembers.map(s => s.id));
+    return [...seatMembers, ...audience.filter(a => !seen.has(a.id))];
+  }, [seatMembers, audience]);
 
   const myRole: Role = useMemo(() => {
     const mySeat = seats.find((s: Participant | null) => s?.id === myUid);
@@ -1993,7 +2000,7 @@ export default function VoiceRoomScreen() {
       <AudienceModal
         visible={audienceOpen}
         onClose={() => setAudienceOpen(false)}
-        audience={audience}
+        members={allMembers}
         myRole={myRole}
         onManageMember={(m) => { setAudienceOpen(false); setActiveMember(m); }}
       />

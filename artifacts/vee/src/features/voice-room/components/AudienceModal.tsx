@@ -6,13 +6,19 @@ import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
 
 /* ─────────────────────────── Audience Modal ─────────────────────────── */
-export function AudienceModal({ visible, onClose, audience, myRole, onManageMember }: {
+/* Shows ALL joined members (seats + audience), grouped by role. */
+export function AudienceModal({ visible, onClose, members, myRole, onManageMember }: {
   visible: boolean; onClose: () => void;
-  audience: Participant[]; myRole: Role;
+  members: Participant[]; myRole: Role;
   onManageMember: (m: Participant) => void;
 }) {
   const { t } = useTranslation();
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
+  // Group by role: owner/host first, then admins, then members.
+  const sorted = [...members].sort((a, b) => {
+    const rank = (r?: string) => r === 'host' ? 0 : r === 'admin' ? 1 : 2;
+    return rank(a.role) - rank(b.role);
+  });
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
@@ -29,12 +35,12 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
           </Text>
           <View style={{ backgroundColor: C.primary + '33', borderRadius: 20,
             paddingHorizontal: 10, paddingVertical: 4, marginRight: 10 }}>
-            <Text style={{ color: C.primary, fontSize: 13, fontWeight: '800' }}>{audience.length}</Text>
+            <Text style={{ color: C.primary, fontSize: 13, fontWeight: '800' }}>{members.length}</Text>
           </View>
           <Pressable onPress={onClose}><Feather name="x" size={20} color={C.sub} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          {audience.length === 0 ? (
+          {members.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 30 }}>
               <Feather name="users" size={36} color={C.muted} />
               <Text style={{ color: C.muted, fontSize: 14, marginTop: 12 }}>
@@ -42,7 +48,7 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
               </Text>
             </View>
           ) : (
-            audience.map(m => (
+            sorted.map(m => (
               <Pressable key={m.id}
                 onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onManageMember(m); onClose(); }}
                 style={{ flexDirection: 'row', alignItems: 'center',
@@ -68,11 +74,13 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
                     {t('voiceRoom.audience.audienceLabel')}
                   </Text>
                 </View>
-                {m.role === 'admin' && (
+                {(m.role === 'admin' || m.role === 'host') && (
                   <View style={{ backgroundColor: C.gold + '33', borderRadius: 10,
                     paddingHorizontal: 8, paddingVertical: 3, marginRight: 8 }}>
                     <Text style={{ color: C.gold, fontSize: 10, fontWeight: '800' }}>
-                      {t('voiceRoom.audience.adminBadge')}
+                      {m.role === 'host'
+                        ? t('voiceRoom.audience.ownerBadge', 'Owner')
+                        : t('voiceRoom.audience.adminBadge')}
                     </Text>
                   </View>
                 )}

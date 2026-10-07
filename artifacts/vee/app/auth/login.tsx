@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, Pressable,
+  View, Text, TextInput, Pressable, Modal,
   Animated, ScrollView, ActivityIndicator,
   Platform,
 } from 'react-native';
@@ -12,6 +12,8 @@ import { useTranslation } from 'react-i18next';
 import WaveTopHeader from '@/components/WaveTopHeader';
 import ScalePress from '@/components/ScalePress';
 import { login, getAuthErrorMessage } from '@/src/services/authService';
+import { useLanguage } from '@/src/context/LanguageContext';
+import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 
 const C = {
   bg: '#07020F',
@@ -76,6 +78,8 @@ function Field({
 
 export default function LoginScreen() {
   const { t } = useTranslation();
+  const { language, changeLanguage } = useLanguage();
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -109,6 +113,50 @@ export default function LoginScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {/* Language selector — top-right corner */}
+      <Pressable
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLangPickerOpen(true); }}
+        style={{
+          position: 'absolute', top: 54, right: 18, zIndex: 10,
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: 'rgba(139,92,246,0.15)',
+          borderWidth: 1, borderColor: C.border,
+          borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+        }}
+      >
+        <Text style={{ fontSize: 15, marginRight: 6 }}>
+          {SUPPORTED_LANGUAGES.find(l => l.code === language)?.flag ?? '🌐'}
+        </Text>
+        <Feather name="globe" size={15} color={C.muted} />
+      </Pressable>
+      {/* Language picker sheet */}
+      <Modal visible={langPickerOpen} transparent animationType="fade"
+        onRequestClose={() => setLangPickerOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onPress={() => setLangPickerOpen(false)}>
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+            backgroundColor: '#120A24', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            padding: 20, paddingBottom: 40 }}>
+            <Text style={{ color: C.text, fontSize: 17, fontWeight: '800', marginBottom: 14, textAlign: 'center' }}>
+              {t('languageSelect.title', 'Choose Language')}
+            </Text>
+            {SUPPORTED_LANGUAGES.map(l => (
+              <Pressable key={l.code}
+                onPress={async () => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  await changeLanguage(l.code as any);
+                  setLangPickerOpen(false);
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13,
+                  borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}>
+                <Text style={{ fontSize: 22, marginRight: 12 }}>{l.flag}</Text>
+                <Text style={{ color: C.text, fontSize: 15, fontWeight: '600', flex: 1 }}>{l.nativeName}</Text>
+                {language === l.code && <Feather name="check" size={18} color={C.glow} />}
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
       <WaveTopHeader
         title={t('auth.login.headerTitle')}
         subtitle={t('auth.login.headerSubtitle')}
