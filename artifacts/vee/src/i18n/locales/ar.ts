@@ -99,9 +99,9 @@ const ar = {
       recommended: 'غرف موصى بها',
       gettingLocation: 'جارٍ تحديد موقعك…',
       locationDenied: 'يلزم إذن الموقع للعثور على الغرف القريبة.',
-      locationDeniedSettingsHint: 'Location permission is required to find nearby rooms.', // TODO i18n: English fallback — needs translation
-      locationRetry: 'Try Again', // TODO i18n: English fallback — needs translation
-      locationOpenSettings: 'Open Settings', // TODO i18n: English fallback — needs translation
+      locationDeniedSettingsHint: 'يرجى تمكين إذن الموقع من إعدادات التطبيق للعثور على الغرف القريبة.',
+      locationRetry: 'حاول مرة أخرى',
+      locationOpenSettings: 'فتح الإعدادات',
       noMyRooms: 'لم تقم بإنشاء أي غرفة بعد.',
       voiceCrashTitle: 'تم إغلاق غرفة الصوت بشكل غير متوقع',
       voiceCrashMsg: 'تم إغلاق التطبيق أثناء الانضمام إلى الغرفة {{roomId}} (المرحلة: {{stage}}، {{when}}). يرجى مشاركة لقطة شاشة لهذه الرسالة — سيساعد ذلك في إصلاح العطل.',
@@ -168,23 +168,23 @@ const ar = {
       userCommentBlocked: 'تم حظر تعليقات {{name}}.',
       error: 'خطأ',
       // TODO i18n: English fallbacks — need proper Arabic translations
-      roomNotFound: 'Room not found.',
-      settingsSaveError: 'Could not save room settings. Try again.',
-      inviteSendError: 'Could not send invite. Try again.',
+      roomNotFound: 'لم يتم العثور على الغرفة.',
+      settingsSaveError: 'تعذر حفظ إعدادات الغرفة. حاول مرة أخرى.',
+      inviteSendError: 'تعذر إرسال الدعوة. حاول مرة أخرى.',
       joinedRoom: '{{name}} انضم إلى الغرفة 🎉',
       inviteMember: 'دعوة {{name}}',
       sendInviteToSeat: 'إرسال دعوة للمقعد {{number}}؟',
       memberJoinedSeat: '{{name}} انضم إلى المقعد {{number}}',
       memberJoinedSeatApproved: '{{name}} انضم إلى المقعد {{number}} ✅',
       sentGift: 'أرسل {{emoji}} إلى {{names}} ({{coins}} 💎)',
-      sentAGift: 'sent', // TODO i18n
+      sentAGift: 'أرسل',
       defaultUserName: 'مستخدم Vee',
       roomClosed: 'تم إغلاق الغرفة',
       roomClosedMsg: 'قام المضيف بإغلاق هذه الغرفة.',
       // TODO i18n: English fallbacks — need proper Arabic translations
-      seatInviteTitle: 'Seat Invitation',
+      seatInviteTitle: 'دعوة مقعد',
       seatInviteMsg: '{{inviterName}} has invited you to seat {{number}} in "{{roomName}}". Accept?',
-      accept: 'Accept',
+      accept: 'قبول',
       decline: 'Decline',
       seatNoLongerAvailableTitle: 'Sorry',
       seatNoLongerAvailableMsg: 'That seat is no longer available.',
@@ -202,12 +202,12 @@ const ar = {
       // TODO i18n: English fallbacks — need proper Arabic translations
       micPermissionTitle: 'Microphone Permission',
       micPermissionMessage: 'Vee needs microphone access so you can speak in Voice Rooms.',
-      allow: 'Allow',
+      allow: 'سماح',
       deny: 'Deny',
       askLater: 'Ask Later',
       micPermissionDenied: 'Microphone permission denied. Please allow it in Settings to speak in Voice Rooms.',
       // TODO i18n: English fallbacks — need proper Arabic translations
-      retry: 'Retry',
+      retry: 'إعادة المحاولة',
     },
     seatAction: {
       invite: 'دعوة',
@@ -801,7 +801,7 @@ const ar = {
     ended: 'Call Ended',
     micPermissionTitle: 'Microphone Permission',
     micPermissionMessage: 'Vee needs microphone access for voice calls.',
-    allow: 'Allow',
+    allow: 'سماح',
     deny: 'Deny',
     askLater: 'Ask Later',
     micDeniedTitle: 'Microphone needed',
