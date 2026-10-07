@@ -46,6 +46,21 @@ app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
 app.use("/api", router);
 
+// Version endpoint for auto-update verification (reads deployed version.txt).
+app.get("/api/version", (_req: Request, res: Response) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const verFile = path.join(process.cwd(), "version.txt");
+    const version = fs.existsSync(verFile)
+      ? fs.readFileSync(verFile, "utf8").trim()
+      : "unknown";
+    res.json({ ok: true, version });
+  } catch {
+    res.json({ ok: true, version: "unknown" });
+  }
+});
+
 // Unknown routes → JSON 404 (instead of Express's default HTML page).
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ ok: false, error: "Not found" });

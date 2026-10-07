@@ -37479,6 +37479,17 @@ app2.use((0, import_cors.default)(allowedOrigins.length > 0 ? { origin: allowedO
 app2.use(import_express7.default.json({ limit: "100kb" }));
 app2.use(import_express7.default.urlencoded({ extended: true, limit: "100kb" }));
 app2.use("/api", routes_default);
+app2.get("/api/version", (_req, res) => {
+  try {
+    const fs = __require("fs");
+    const path = __require("path");
+    const verFile = path.join(process.cwd(), "version.txt");
+    const version = fs.existsSync(verFile) ? fs.readFileSync(verFile, "utf8").trim() : "unknown";
+    res.json({ ok: true, version });
+  } catch {
+    res.json({ ok: true, version: "unknown" });
+  }
+});
 app2.use((_req, res) => {
   res.status(404).json({ ok: false, error: "Not found" });
 });
