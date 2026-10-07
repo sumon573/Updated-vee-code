@@ -110,24 +110,9 @@ function goToRoom(id: string) {
 function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
-      <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
-      {onSeeAll && (
-        <ScalePress onPress={onSeeAll}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(139,92,246,0.12)',
-            borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6,
-            borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-            gap: 4,
-          }}>
-            <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>
-              {t('voiceRoom.home.seeAll')}
-            </Text>
-            <Feather name="chevron-right" size={14} color={C.muted} />
-          </View>
-        </ScalePress>
-      )}
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 12 }}>
+      <Text style={{ flex: 1, color: C.text, fontSize: 17, fontWeight: '700' }}>{title}</Text>
+      <Feather name="chevron-right" size={18} color={C.muted} />
     </View>
   );
 }
@@ -171,14 +156,12 @@ function CategoryChip({
     <ScalePress onPress={onPress}>
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingHorizontal: 14, paddingVertical: 8, marginHorizontal: 4,
-        borderRadius: 999,
-        backgroundColor: active ? C.chipBgActive : C.chipBg,
-        borderWidth: 1,
-        borderColor: active ? C.glow : 'rgba(139,92,246,0.25)',
+        paddingHorizontal: 16, paddingVertical: 9, marginHorizontal: 4,
+        borderRadius: 20,
+        backgroundColor: active ? '#000000' : (C as any).chipBg ?? 'rgba(0,0,0,0.05)',
       }}>
-        <Feather name={icon} size={13} color={active ? '#fff' : C.muted} />
-        <Text style={{ color: active ? '#fff' : C.muted, fontSize: 13, fontWeight: '700' }}>
+        <Text style={{ fontSize: 13 }}>{icon === 'trending-up' ? '🔥' : '🎤'}</Text>
+        <Text style={{ color: active ? '#fff' : C.text, fontSize: 13, fontWeight: active ? '700' : '400' }}>
           {label}
         </Text>
       </View>
@@ -219,6 +202,7 @@ export default function VoiceRoomHome({
   const [recLoading, setRecLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<RecommendedTab>('trending');
+  const [roomExploreTab, setRoomExploreTab] = useState<'room' | 'explore'>('room');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
@@ -383,6 +367,42 @@ export default function VoiceRoomHome({
           </View>
         ) : (
           <>
+            {/* ═══ Room | Explore tabs (IMO style) ═══ */}
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border,
+              marginHorizontal: -16, paddingHorizontal: 16,
+            }}>
+              <View style={{ flexDirection: 'row', flex: 1 }}>
+                {(['room', 'explore'] as const).map((tab) => (
+                  <Pressable key={tab} onPress={() => setRoomExploreTab(tab)}
+                    style={{ marginRight: 24, paddingBottom: 8,
+                      borderBottomWidth: 2,
+                      borderBottomColor: roomExploreTab === tab ? '#3B82F6' : 'transparent',
+                    }}>
+                    <Text style={{
+                      fontSize: 17,
+                      fontWeight: roomExploreTab === tab ? '800' : '400',
+                      color: roomExploreTab === tab ? C.text : C.muted,
+                    }}>
+                      {tab === 'room' ? t('voiceRoom.home.room', 'Room') : t('voiceRoom.home.explore', 'Explore')}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <Feather name="bar-chart-2" size={20} color={C.text} />
+                <Feather name="bell" size={20} color={C.text} />
+                <View>
+                  <Feather name="user" size={20} color={C.text} />
+                  <View style={{
+                    position: 'absolute', top: -2, right: -2,
+                    width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E',
+                  }} />
+                </View>
+              </View>
+            </View>
+
             {/* ═══ MY ROOMS ═══ */}
             <SectionTitle title={t('voiceRoom.home.myRooms')} />
 
