@@ -48,8 +48,35 @@ export async function initializeOneSignal(appId: string): Promise<void> {
     os.initialize(appId);
     // Permission request (Android 13+)
     os.Notifications.requestPermission(true);
+    // Create notification channel for vee-messages (server sends android_channel_id: "vee-messages")
+    await createNotificationChannel();
   } catch {
     // silently ignore — Expo Go-তে কাজ করবে না, EAS Build-এ করবে
+  }
+}
+
+/**
+ * Create Android notification channel for vee-messages.
+ * Server sends android_channel_id: "vee-messages" in push payload.
+ * Without this channel, notifications fall back to default channel (may be silent).
+ */
+async function createNotificationChannel(): Promise<void> {
+  try {
+    const Notifications = await import('expo-notifications').catch(() => null);
+    if (!Notifications) return;
+    // Only Android needs channels
+    const Platform = await import('react-native').then(m => m.Platform).catch(() => null);
+    if (!Platform || Platform.OS !== 'android') return;
+    
+    await Notifications.setNotificationChannelAsync('vee-messages', {
+      name: 'Vee Messages',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#7C3AED',
+      sound: 'notification_pop.wav',
+    });
+  } catch {
+    // Non-critical — notifications will use default channel
   }
 }
 
