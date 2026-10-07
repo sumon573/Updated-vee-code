@@ -57,27 +57,19 @@ function MenuItem({
     <ScalePress onPress={onPress}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: C.surface, borderRadius: 16,
-        padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+        paddingVertical: 14,
+        borderBottomWidth: 1, borderBottomColor: C.border,
       }}>
-        <View style={{
-          width: 40, height: 40, borderRadius: 12,
-          backgroundColor: danger ? 'rgba(239,68,68,0.12)' : 'rgba(139,92,246,0.14)',
-          alignItems: 'center', justifyContent: 'center',
-          marginRight: 14,
-        }}>
-          <Feather name={icon} size={18} color={danger ? C.error : C.glow} />
-        </View>
-        <Text style={{ flex: 1, color: danger ? C.error : C.text, fontSize: 15, fontWeight: '700' }}>
+        <Feather name={icon} size={20} color={danger ? C.error : C.primary} style={{ marginRight: 14 }} />
+        <Text style={{ flex: 1, color: danger ? C.error : C.text, fontSize: 15, fontWeight: '500' }}>
           {label}
         </Text>
         {badge !== undefined && badge > 0 && (
           <View style={{
-            backgroundColor: C.primary, borderRadius: 12,
-            paddingHorizontal: 8, paddingVertical: 2, marginRight: 8,
+            backgroundColor: '#22C55E', borderRadius: 10,
+            paddingHorizontal: 7, paddingVertical: 2, marginRight: 8,
           }}>
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>{badge}</Text>
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{badge}</Text>
           </View>
         )}
         <Feather name="chevron-right" size={18} color={C.mutedDim} />
@@ -259,11 +251,22 @@ export default function ProfileSection({
         >
           {/* ── Cover + Theme toggle ── */}
           <View style={{ height: 180, position: 'relative' }}>
-            {/* Cover gradient placeholder */}
             <View style={{
               width: '100%', height: 180,
               backgroundColor: darkMode ? '#1A0F2E' : '#E8E2F2',
             }} />
+            {/* Back button (top-left) */}
+            <Pressable
+              onPress={() => router.back()}
+              style={{
+                position: 'absolute', top: 12, left: 16,
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Feather name="arrow-left" size={20} color="#fff" />
+            </Pressable>
             {/* Theme toggle — top-right corner, one-click switch */}
             <Pressable
               onPress={() => {
@@ -282,205 +285,179 @@ export default function ProfileSection({
             </Pressable>
           </View>
 
-          {/* ── Top: Avatar + Name + Bio (overlapping cover) ── */}
-          <View style={{
-            alignItems: 'center',
-            marginTop: -48,
-            paddingHorizontal: 20,
-            paddingBottom: 24,
-          }}>
-            {/* Avatar with edit ring */}
-            <ScalePress onPress={() => router.push('/profile/edit' as never)}>
-              <View>
-                <Avatar photoURL={photoURL} name={displayName} />
-                <View style={{
-                  position: 'absolute', bottom: 0, right: 0,
-                  width: 28, height: 28, borderRadius: 14,
-                  backgroundColor: C.primary,
-                  alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 2, borderColor: C.bg,
-                }}>
-                  <Feather name="edit-2" size={12} color="#fff" />
-                </View>
-              </View>
-            </ScalePress>
-
-            {/* Name */}
-            <Text style={{
-              color: C.text, fontSize: 22, fontWeight: '900',
-              marginTop: 14, textAlign: 'center',
-            }}>
-              {displayName}
-            </Text>
-
-            {/* Vee ID + copy button */}
-            {vId ? (
-              <View style={{ alignItems: 'center', marginTop: 4 }}>
-                <Pressable
-                  onPress={handleCopyVid}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6,
-                    backgroundColor: 'rgba(139,92,246,0.10)',
-                    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
-                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.22)',
-                  }}
-                >
-                  <Feather name="hash" size={11} color={C.mutedDim} />
-                  <Text style={{ color: C.mutedDim, fontSize: 13, fontWeight: '600' }}>{vId}</Text>
-                  <Feather
-                    name={vidCopied ? 'check' : 'copy'}
-                    size={12}
-                    color={vidCopied ? '#22C55E' : C.mutedDim}
-                  />
-                </Pressable>
-                {vidCopied && (
-                  <Text style={{
-                    color: '#22C55E', fontSize: 11, fontWeight: '700',
-                    marginTop: 4, letterSpacing: 0.3,
+          {/* ── Avatar + Name + Badges (IMO style) ── */}
+          <View style={{ paddingHorizontal: 16, marginTop: -48 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+              <ScalePress onPress={() => router.push('/profile/edit' as never)}>
+                <View>
+                  <Avatar photoURL={photoURL} name={displayName} />
+                  <View style={{
+                    position: 'absolute', bottom: 0, right: 0,
+                    width: 28, height: 28, borderRadius: 14,
+                    backgroundColor: C.primary,
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 2, borderColor: C.bg,
                   }}>
-                    Copied!
-                  </Text>
-                )}
+                    <Feather name="camera" size={12} color="#fff" />
+                  </View>
+                </View>
+              </ScalePress>
+            </View>
+
+            {/* Name with edit */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+              <Text style={{ color: C.text, fontSize: 22, fontWeight: '800' }}>
+                {displayName}
+              </Text>
+              <Pressable onPress={() => router.push('/profile/edit' as never)} style={{ marginLeft: 8 }}>
+                <Feather name="edit-2" size={14} color={C.muted} />
+              </Pressable>
+            </View>
+
+            {/* Badges row (IMO style - horizontal scroll) */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginTop: 8 }} contentContainerStyle={{ gap: 6 }}>
+              {/* Placeholder badges - will show earned badges */}
+              <View style={{
+                backgroundColor: C.gold + '22', borderRadius: 12,
+                paddingHorizontal: 10, paddingVertical: 4,
+                borderWidth: 1, borderColor: C.gold + '44',
+              }}>
+                <Text style={{ color: C.gold, fontSize: 11, fontWeight: '700' }}>Lv.1</Text>
               </View>
+            </ScrollView>
+
+            {/* Stats row (IMO style) */}
+            <View style={{ flexDirection: 'row', marginTop: 12, gap: 16 }}>
+              <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: user?.uid ?? '' } } as never)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Feather name="star" size={14} color={C.muted} />
+                <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{followCounts.followers}</Text>
+                <Text style={{ color: C.muted, fontSize: 13 }}>{t('profile.statFollowers')}</Text>
+              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Feather name="user" size={14} color={C.muted} />
+                <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{followCounts.following}</Text>
+                <Text style={{ color: C.muted, fontSize: 13 }}>{t('profile.statFollowing')}</Text>
+              </View>
+            </View>
+
+            {/* Vee ID card (IMO style) */}
+            {vId ? (
+              <Pressable onPress={handleCopyVid}
+                style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: C.surface, borderRadius: 12,
+                  padding: 12, marginTop: 12,
+                  borderWidth: 1, borderColor: C.border,
+                }}>
+                <Feather name="at-sign" size={16} color={C.muted} />
+                <Text style={{ color: C.muted, fontSize: 14, marginLeft: 8, flex: 1 }}>
+                  Vee ID: <Text style={{ color: C.text, fontWeight: '600' }}>{vId}</Text>
+                </Text>
+                <Feather name={vidCopied ? 'check' : 'copy'} size={14} color={vidCopied ? '#22C55E' : C.muted} />
+              </Pressable>
             ) : null}
 
             {/* Bio */}
             {bio ? (
-              <Text style={{
-                color: C.muted, fontSize: 14,
-                marginTop: 8, textAlign: 'center',
-                lineHeight: 20, paddingHorizontal: 20,
-              }}>
+              <Text style={{ color: C.muted, fontSize: 14, marginTop: 12, lineHeight: 20 }}>
                 {bio}
               </Text>
             ) : null}
+          </View>
 
-            {/* Online indicator */}
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6,
-              marginTop: 10,
-            }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' }} />
-              <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '700' }}>
-                {t('profile.online')}
+          {/* ── VoiceClub Rooms section (IMO style) ── */}
+          <View style={{ marginTop: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 10 }}>
+              <Feather name="mic" size={16} color={C.muted} />
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', marginLeft: 8, flex: 1 }}>
+                {t('profile.voiceRooms', 'Voice Rooms')}
               </Text>
+              <Text style={{ color: C.muted, fontSize: 13 }}>{roomsHosted}</Text>
+              <Feather name="chevron-right" size={16} color={C.muted} />
+            </View>
+            {/* Room thumbnails would go here */}
+          </View>
+
+          {/* ── Honor section (IMO style) ── */}
+          <Pressable onPress={() => router.push('/profile/honor' as never)}
+            style={{ marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 10 }}>
+              <Feather name="award" size={16} color={C.muted} />
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', marginLeft: 8, flex: 1 }}>
+                {t('profile.menuHonor', 'Honor')}
+              </Text>
+              <Feather name="chevron-right" size={16} color={C.muted} />
+            </View>
+          </Pressable>
+
+          {/* ── Decoration section ── */}
+          <Pressable onPress={() => router.push('/profile/decoration' as never)}
+            style={{ marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 10 }}>
+              <Feather name="image" size={16} color={C.muted} />
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', marginLeft: 8, flex: 1 }}>
+                {t('profile.menuDecoration', 'Decoration')}
+              </Text>
+              <Feather name="chevron-right" size={16} color={C.muted} />
+            </View>
+          </Pressable>
+
+          {/* ── Menu items (IMO style - flat) ── */}
+          <View style={{ marginTop: 20, paddingHorizontal: 16 }}>
+            <MenuItem
+              icon="credit-card"
+              label={t('profile.menuWallet')}
+              onPress={() => router.push('/profile/wallet' as never)}
+            />
+            <MenuItem
+              icon="bell"
+              label={t('profile.menuNotifications')}
+              badge={totalUnread}
+              onPress={() => router.push('/profile/notifications' as never)}
+            />
+            <MenuItem
+              icon="shield"
+              label={t('profile.menuPrivacy')}
+              onPress={() => router.push('/profile/privacy' as never)}
+            />
+            <MenuItem
+              icon="settings"
+              label={t('profile.menuSettings')}
+              onPress={() => router.push('/profile/settings' as never)}
+            />
+            <MenuItem
+              icon="help-circle"
+              label={t('profile.menuHelp')}
+              onPress={() => router.push('/profile/help' as never)}
+            />
+            <View style={{ marginTop: 8 }}>
+              <MenuItem icon="log-out" label={t('profile.menuSignOut')} onPress={handleLogout} danger />
             </View>
           </View>
 
-          {/* ── Stats ── */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
-            <StatBox
-              label={t('profile.statFollowers')}
-              value={followCounts.followers}
-              onPress={() =>
-                router.push({
-                  pathname: '/profile/followers',
-                  params: { type: 'followers', uid: user?.uid ?? '' },
-                } as never)
-              }
-            />
-            <StatBox
-              label={t('profile.statFollowing')}
-              value={followCounts.following}
-              onPress={() =>
-                router.push({
-                  pathname: '/profile/followers',
-                  params: { type: 'following', uid: user?.uid ?? '' },
-                } as never)
-              }
-            />
-            <StatBox
-              label={t('profile.statRooms')}
-              value={roomsHosted}
-              onPress={() => router.push('/profile/rooms' as never)}
-            />
-          </View>
-
-          {/* ── Account section ── */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10,
-          }}>
-            {t('profile.sectionAccount')}
-          </Text>
-
-          <MenuItem
-            icon="edit-3"
-            label={t('profile.menuEditProfile')}
-            onPress={() => router.push('/profile/edit' as never)}
-          />
-          <MenuItem
-            icon="credit-card"
-            label={t('profile.menuWallet')}
-            onPress={() => router.push('/profile/wallet' as never)}
-          />
-          <MenuItem
-            icon="award"
-            label={t('profile.menuHonor', 'Honor')}
-            onPress={() => router.push('/profile/honor' as never)}
-          />
-          <MenuItem
-            icon="image"
-            label={t('profile.menuDecoration', 'Decoration')}
-            onPress={() => router.push('/profile/decoration' as never)}
-          />
-          <MenuItem
-            icon="bell"
-            label={t('profile.menuNotifications')}
-            badge={totalUnread}
-            onPress={() => router.push('/profile/notifications' as never)}
-          />
-          <MenuItem
-            icon="shield"
-            label={t('profile.menuPrivacy')}
-            onPress={() => router.push('/profile/privacy' as never)}
-          />
-          <MenuItem
-            icon="users"
-            label={t('profile.menuFriendsContacts')}
-            onPress={() => {
-              if (onNavigateToContacts) {
-                onNavigateToContacts();
-              } else {
-                router.push('/home' as never);
-              }
-            }}
-          />
-
-          {/* ── App section ── */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
-          }}>
-            {t('profile.sectionApp')}
-          </Text>
-
-          <MenuItem
-            icon="settings"
-            label={t('profile.menuSettings')}
-            onPress={() => router.push('/profile/settings' as never)}
-          />
-          <MenuItem
-            icon="help-circle"
-            label={t('profile.menuHelp')}
-            onPress={() => router.push('/profile/help' as never)}
-          />
-          <MenuItem
-            icon="info"
-            label={t('profile.menuAbout')}
-            onPress={() => router.push('/profile/about' as never)}
-          />
-
-          {/* ── Sign Out ── */}
-          <View style={{ marginTop: 16 }}>
-            <MenuItem icon="log-out" label={t('profile.menuSignOut')} onPress={handleLogout} danger />
+          {/* ── Edit button (IMO style - bottom) ── */}
+          <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+            <Pressable
+              onPress={() => router.push('/profile/edit' as never)}
+              style={{
+                backgroundColor: darkMode ? 'rgba(139,92,246,0.15)' : '#E8E2F2',
+                borderRadius: 16, paddingVertical: 14,
+                alignItems: 'center',
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="edit-2" size={16} color={C.primary} />
+                <Text style={{ color: C.primary, fontSize: 16, fontWeight: '700' }}>
+                  {t('profile.edit', 'Edit')}
+                </Text>
+              </View>
+            </Pressable>
           </View>
 
           {/* ── Version ── */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11,
-            textAlign: 'center', marginTop: 24,
-          }}>
+          <Text style={{ color: C.mutedDim, fontSize: 11, textAlign: 'center', marginTop: 24 }}>
             {t('profile.version')}
           </Text>
         </ScrollView>
