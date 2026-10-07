@@ -1,108 +1,74 @@
+/**
+ * RoomCard — IMO-style room thumbnail.
+ * Square image with member count badge (bottom-right) and
+ * owner icon (bottom-left). Room name below.
+ */
 import { View, Text, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
 import { VoiceRoom } from '../types/room';
+import { useTheme } from '@/src/context/ThemeContext';
 
-const SIZE = 108;
+const SIZE = 110;
 
 type Props = { room: VoiceRoom; onPress?: () => void };
 
 export default function RoomCard({ room, onPress }: Props) {
-  const { t } = useTranslation();
-  const previews = room.memberPreviews?.slice(0, 4) ?? [];
+  const { theme: C } = useTheme();
+  const memberCount = room.memberCount ?? room.memberPreviews?.length ?? 0;
 
   return (
     <ScalePress onPress={onPress}>
-      <View style={{ width: 130, marginRight: 14 }}>
+      <View style={{ width: SIZE + 10, marginRight: 12 }}>
         <View style={{
-          width: SIZE, height: SIZE, borderRadius: 22,
-          backgroundColor: room.themeColor,
-          alignItems: 'center', justifyContent: 'center',
+          width: SIZE, height: SIZE, borderRadius: 12,
+          backgroundColor: room.themeColor ?? C.primary,
           overflow: 'hidden',
-          borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-          shadowColor: room.themeColor, shadowOpacity: 0.45,
-          shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8,
         }}>
           {room.coverImageUrl ? (
             <Image
               source={{ uri: room.coverImageUrl }}
-              style={{ position: 'absolute', width: SIZE, height: SIZE }}
+              style={{ width: SIZE, height: SIZE }}
               resizeMode="cover"
             />
           ) : (
-            <>
-              {/* Background circle decoration */}
-              <View style={{
-                position: 'absolute', width: SIZE * 1.2, height: SIZE * 1.2,
-                borderRadius: SIZE, top: -SIZE * 0.45, left: -SIZE * 0.25,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }} />
-              <Feather name="mic" size={28} color="rgba(255,255,255,0.9)" />
-            </>
-          )}
-
-          {/* Member DPs row — bottom left */}
-          {previews.length > 0 && (
             <View style={{
-              position: 'absolute', left: 6, bottom: 6,
-              flexDirection: 'row',
+              width: SIZE, height: SIZE,
+              backgroundColor: room.themeColor ?? C.primary,
+              alignItems: 'center', justifyContent: 'center',
             }}>
-              {previews.map((p, i) => (
-                <View key={i} style={{
-                  width: 18, height: 18, borderRadius: 9,
-                  backgroundColor: p.color,
-                  borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.4)',
-                  alignItems: 'center', justifyContent: 'center',
-                  marginLeft: i === 0 ? 0 : -5,
-                }}>
-                  <Text style={{ color: '#fff', fontSize: 7, fontWeight: '900' }}>
-                    {(p.initials || '?').charAt(0)}
-                  </Text>
-                </View>
-              ))}
+              <Feather name="mic" size={32} color="rgba(255,255,255,0.5)" />
             </View>
           )}
-
-          {/* Member count — bottom right */}
+          {/* Bottom-left: owner icon */}
+          <View style={{
+            position: 'absolute', left: 6, bottom: 6,
+            width: 22, height: 22, borderRadius: 11,
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Feather name="user" size={12} color="#3B82F6" />
+          </View>
+          {/* Bottom-right: member count */}
           <View style={{
             position: 'absolute', right: 6, bottom: 6,
             flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            borderRadius: 999, paddingHorizontal: 5, paddingVertical: 2,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3,
+            gap: 3,
           }}>
-            <Feather name="volume-2" size={8} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', marginLeft: 3 }}>
-              {room.memberCount}
+            <Feather name="users" size={10} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+              {memberCount}
             </Text>
           </View>
         </View>
-
-        {/* Name */}
         <Text numberOfLines={1} style={{
-          color: '#fff', fontSize: 13, fontWeight: '800', marginTop: 8,
+          color: C.text, fontSize: 12, fontWeight: '600',
+          marginTop: 6, textAlign: 'center',
         }}>
           {room.isPublic === false ? '🔒 ' : ''}{room.name}
         </Text>
-
-        {/* Topic pill */}
-        {!!room.topic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 5, flexWrap: 'wrap' }}>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 3,
-              backgroundColor: '#F97316', borderRadius: 999,
-              paddingHorizontal: 7, paddingVertical: 3,
-            }}>
-              <Text style={{ fontSize: 8 }}>💬</Text>
-              <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{t('voiceRoom.card.topic')}</Text>
-            </View>
-            <Text numberOfLines={1} style={{
-              color: 'rgba(255,255,255,0.75)', fontSize: 10, flex: 1,
-            }}>
-              {room.topic}
-            </Text>
-          </View>
-        )}
       </View>
     </ScalePress>
   );
