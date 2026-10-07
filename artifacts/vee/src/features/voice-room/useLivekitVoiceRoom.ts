@@ -467,12 +467,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       await rnSdk.AudioSession.startAudioSession();
       // Background audio: keep the session alive when the app is backgrounded.
       try {
-        const { setAudioModeAsync } = await import('expo-audio');
-        await setAudioModeAsync({
-          allowsRecording: true,
-          playsInSilentMode: true,
-          shouldPlayInBackground: true,
-          interruptionMode: 'duckOthers',
+        const { Audio } = await import('expo-av');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
         });
       } catch { /* non-critical */ }
       // Crash breadcrumb: native audio session started — next is WebRTC connect.

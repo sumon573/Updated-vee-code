@@ -1,30 +1,32 @@
 /**
  * Call sounds — cute ringing tones for outgoing and incoming calls.
- * Uses expo-audio. Sounds loop until explicitly stopped.
+ * Uses expo-av. Sounds loop until explicitly stopped.
  */
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
 
-let ringbackSound: AudioPlayer | null = null;
-let ringtoneSound: AudioPlayer | null = null;
+let ringbackSound: Audio.Sound | null = null;
+let ringtoneSound: Audio.Sound | null = null;
 
 /** Configure audio mode for calls (background-capable). */
 export async function setupCallAudioMode(): Promise<void> {
   try {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      shouldPlayInBackground: true,
-      interruptionMode: 'duckOthers',
-      allowsRecording: true,
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
     });
   } catch { /* non-critical */ }
 }
 
-function loadSound(path: any): AudioPlayer | null {
+async function loadSound(path: any): Promise<Audio.Sound | null> {
   try {
-    const player = createAudioPlayer(path);
-    player.loop = true;
-    player.volume = 0.7;
-    return player;
+    const { sound } = await Audio.Sound.createAsync(path, {
+      isLooping: true,
+      volume: 0.7,
+    });
+    return sound;
   } catch {
     return null;
   }
@@ -35,8 +37,8 @@ export async function startRingback(): Promise<void> {
   try {
     await stopAllCallSounds();
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ringbackSound = loadSound(require('@/assets/sounds/ringback.wav'));
-    ringbackSound?.play();
+    ringbackSound = await loadSound(require('@/assets/sounds/ringback.wav'));
+    await ringbackSound?.playAsync();
   } catch { /* non-critical */ }
 }
 
@@ -45,8 +47,8 @@ export async function startRingtone(): Promise<void> {
   try {
     await stopAllCallSounds();
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ringtoneSound = loadSound(require('@/assets/sounds/ringtone.wav'));
-    ringtoneSound?.play();
+    ringtoneSound = await loadSound(require('@/assets/sounds/ringtone.wav'));
+    await ringtoneSound?.playAsync();
   } catch { /* non-critical */ }
 }
 
@@ -54,13 +56,13 @@ export async function startRingtone(): Promise<void> {
 export async function stopAllCallSounds(): Promise<void> {
   try {
     if (ringbackSound) {
-      try { ringbackSound.pause(); } catch {}
-      try { ringbackSound.remove(); } catch {}
+      await ringbackSound.stopAsync().catch(() => {});
+      await ringbackSound.unloadAsync().catch(() => {});
       ringbackSound = null;
     }
     if (ringtoneSound) {
-      try { ringtoneSound.pause(); } catch {}
-      try { ringtoneSound.remove(); } catch {}
+      await ringtoneSound.stopAsync().catch(() => {});
+      await ringtoneSound.unloadAsync().catch(() => {});
       ringtoneSound = null;
     }
   } catch { /* non-critical */ }
