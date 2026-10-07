@@ -36,7 +36,6 @@ import * as Haptics from 'expo-haptics';
 import {
   subscribeIncomingCall,
   removeCallSignal,
-  rejectCallSignal,
   type IncomingCall,
 } from '@/src/features/audio-call/services/firebaseCallService';
 import { isInteractionBlocked } from '@/src/services/blockService';
@@ -221,27 +220,6 @@ function IncomingCallListener({
   segmentsRef.current = segments as string[];
 
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
-  // Fallback caller DP: if the signal has no callerPhotoURL (stale Auth
-  // photoURL at call time), fetch the fresh one from RTDB.
-  const [fallbackPhotoURL, setFallbackPhotoURL] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!incoming || incoming.callerPhotoURL) {
-      setFallbackPhotoURL(null);
-      return;
-    }
-    let cancelled = false;
-    import('@/src/config/firebase').then(({ database }) =>
-      import('firebase/database').then(({ ref, get }) =>
-        get(ref(database, `users/${incoming.callerId}/photoURL`)).then(snap => {
-          if (!cancelled && snap.exists() && typeof snap.val() === 'string') {
-            setFallbackPhotoURL(snap.val() as string);
-          }
-        }).catch(() => {})
-      )
-    );
-    return () => { cancelled = true; };
-  }, [incoming?.callerId, incoming?.callerPhotoURL]);
 
   useEffect(() => {
     return subscribeIncomingCall(uid, async (call) => {
@@ -265,41 +243,23 @@ function IncomingCallListener({
     });
   }, [uid]);
 
-  // Incoming ringtone: play while the modal is visible, stop on dismiss.
-  useEffect(() => {
-    if (!incoming) return;
-    import('@/src/features/audio-call/services/callSounds').then(
-      ({ startRingtone, stopAllCallSounds, setupCallAudioMode }) => {
-        setupCallAudioMode().catch(() => {});
-        startRingtone().catch(() => {});
-      }
-    );
-    return () => {
-      import('@/src/features/audio-call/services/callSounds').then(
-        ({ stopAllCallSounds }) => stopAllCallSounds().catch(() => {})
-      );
-    };
-  }, [incoming]);
-
   const handleAccept = useCallback(() => {
     if (!incoming) return;
     const call = incoming;
-    const photoURL = call.callerPhotoURL || fallbackPhotoURL;
     setIncoming(null);
     // Remove signal (callee side) — background: safe to swallow
     removeCallSignal(uid).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push(
-      `/audio-call?roomId=${encodeURIComponent(call.roomId)}&role=callee&remoteUid=${encodeURIComponent(call.callerId)}&remoteName=${encodeURIComponent(call.callerName)}&calleeUid=${encodeURIComponent(uid)}&myUid=${encodeURIComponent(uid)}&myName=${encodeURIComponent(myName)}${photoURL ? `&remotePhotoURL=${encodeURIComponent(photoURL)}` : ''}` as never,
+      `/audio-call?roomId=${encodeURIComponent(call.roomId)}&role=callee&remoteUid=${encodeURIComponent(call.callerId)}&remoteName=${encodeURIComponent(call.callerName)}&calleeUid=${encodeURIComponent(uid)}&myUid=${encodeURIComponent(uid)}&myName=${encodeURIComponent(myName)}${call.callerPhotoURL ? `&remotePhotoURL=${encodeURIComponent(call.callerPhotoURL)}` : ''}` as never,
     );
-  }, [incoming, fallbackPhotoURL, uid, myName, router]);
+  }, [incoming, uid, myName, router]);
 
   const handleDecline = useCallback(() => {
     if (!incoming) return;
     setIncoming(null);
-    // Write 'rejected' first so the caller stops ringing immediately,
-    // then remove the signal. Background: safe to swallow.
-    rejectCallSignal(uid).catch(() => {});
+    // background: safe to swallow — signaling cleanup
+    removeCallSignal(uid).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [incoming, uid]);
 
@@ -334,9 +294,9 @@ function IncomingCallListener({
             shadowColor: '#8B5CF6', shadowOpacity: 0.4,
             shadowRadius: 18, shadowOffset: { width: 0, height: 4 },
           }}>
-            {(incoming.callerPhotoURL || fallbackPhotoURL) ? (
+            {incoming.callerPhotoURL ? (
               <Image
-                source={{ uri: (incoming.callerPhotoURL || fallbackPhotoURL) as string }}
+                source={{ uri: incoming.callerPhotoURL }}
                 style={{ width: 84, height: 84 }}
               />
             ) : (
