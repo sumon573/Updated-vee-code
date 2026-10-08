@@ -16,7 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
-import { VeeUser, subscribeUser } from '@/src/services/userService';
+import { VeeUser, subscribeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { useAuth } from '@/src/context/AuthContext';
 import { followUser } from '@/src/services/followService';
 import {
@@ -135,7 +135,8 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
         allUsers = [];
         if (snap.exists()) {
           snap.forEach((child) => {
-            allUsers!.push({ ...(child.val() as VeeUser), uid: child.key! });
+            const sanitized = sanitizeVeeUser(child.key!, child.val());
+            if (sanitized) allUsers!.push(sanitized);
           });
         }
         usersCacheRef.current = allUsers;

@@ -70,7 +70,35 @@ export async function createUser(user: VeeUser): Promise<void> {
 /** Fetch a single user by uid */
 export async function getUser(uid: string): Promise<VeeUser | null> {
   const snap: DataSnapshot = await get(ref(database, `users/${uid}`));
-  return snap.exists() ? (snap.val() as VeeUser) : null;
+  return snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null;
+}
+
+/**
+ * Sanitize raw Firebase user data into a safe VeeUser.
+ * Production data has corrupted records (null `online`/`banned`, missing
+ * `name`/`email`). This ensures the app never crashes on malformed data —
+ * it fills safe defaults instead of throwing.
+ */
+export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    uid,
+    vId: typeof raw.vId === 'string' ? raw.vId : '',
+    name: typeof raw.name === 'string' ? raw.name : '',
+    email: typeof raw.email === 'string' ? raw.email : '',
+    photoURL: typeof raw.photoURL === 'string' ? raw.photoURL : '',
+    bio: typeof raw.bio === 'string' ? raw.bio : '',
+    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
+    lastSeen: typeof raw.lastSeen === 'number' ? raw.lastSeen : Date.now(),
+    online: raw.online === true, // null/undefined/false → false; only true is true
+    followers: typeof raw.followers === 'number' ? raw.followers : 0,
+    following: typeof raw.following === 'number' ? raw.following : 0,
+    roomsHosted: typeof raw.roomsHosted === 'number' ? raw.roomsHosted : 0,
+    oneSignalId: typeof raw.oneSignalId === 'string' ? raw.oneSignalId : undefined,
+    hasActiveStory: raw.hasActiveStory === true,
+    photoPublicId: typeof raw.photoPublicId === 'string' ? raw.photoPublicId : undefined,
+    privacy: raw.privacy && typeof raw.privacy === 'object' ? raw.privacy : undefined,
+  };
 }
 
 /** Update specific fields of a user's profile */
@@ -124,7 +152,7 @@ export function subscribeUser(
 ): () => void {
   const userRef = ref(database, `users/${uid}`);
   return onValue(userRef, (snap) => {
-    callback(snap.exists() ? (snap.val() as VeeUser) : null);
+    callback(snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null);
   });
 }
 

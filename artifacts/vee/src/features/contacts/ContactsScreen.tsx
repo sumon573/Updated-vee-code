@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { ref, get, remove } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
-import { VeeUser } from '@/src/services/userService';
+import { VeeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
@@ -99,7 +99,7 @@ export default function ContactsScreen() {
     const results = await Promise.all(
       uids.map((uid) =>
         get(ref(database, `users/${uid}`)).then((snap) =>
-          snap.exists() ? { ...(snap.val() as VeeUser), uid } : null,
+          snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null,
         ),
       ),
     );
@@ -261,7 +261,7 @@ export default function ContactsScreen() {
     // Use RTDB as the authoritative name source — Auth displayName can be null
     // for social-login or legacy accounts even when RTDB has the correct name.
     const meSnap = await get(ref(database, `users/${me.uid}`));
-    const meProfile = meSnap.exists() ? (meSnap.val() as VeeUser) : null;
+    const meProfile = meSnap.exists() ? sanitizeVeeUser(me.uid, meSnap.val()) : null;
     const myName = meProfile?.name || me.displayName || 'Vee User';
     const myAvatar = meProfile?.photoURL || me.photoURL || '';
 
