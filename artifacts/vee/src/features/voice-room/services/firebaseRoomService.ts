@@ -104,7 +104,8 @@ export function getUserColor(uid: string): string {
   return USER_COLORS[hash];
 }
 
-export function getInitials(name: string): string {
+export function getInitials(name: string | undefined | null): string {
+  if (!name) return '?';
   return name
     .split(' ')
     .map((w) => w[0] ?? '')

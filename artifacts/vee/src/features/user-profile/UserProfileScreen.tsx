@@ -222,7 +222,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
     );
   }
 
-  const displayName = profile?.name ?? fallbackName;
+  const displayName = profile?.name ?? fallbackName ?? 'Unknown';
   const photoURL    = profile?.photoURL;
   const bio         = profile?.bio ?? '';
   const vId         = profile?.vId ?? '';
