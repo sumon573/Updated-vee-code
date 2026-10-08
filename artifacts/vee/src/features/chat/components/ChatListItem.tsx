@@ -32,13 +32,15 @@ const AVATAR_COLORS = [
   '#7C3AED', '#0EA5E9', '#EC4899', '#F97316',
   '#22C55E', '#EAB308', '#8B5CF6', '#06B6D4', '#EF4444', '#10B981',
 ];
-function colorFor(id: string): string {
+function colorFor(id: string | undefined | null): string {
+  if (!id) return AVATAR_COLORS[0];
   let n = 0;
   for (let i = 0; i < id.length; i++) n += id.charCodeAt(i);
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 }
-function initials(name: string): string {
-  return name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+function initials(name: string | undefined | null): string {
+  if (!name) return '?';
+  return name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
 type Props = {

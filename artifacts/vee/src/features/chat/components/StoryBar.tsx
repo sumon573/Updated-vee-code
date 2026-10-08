@@ -51,12 +51,12 @@ function AvatarRing({
 }
 
 /** Fallback avatar: coloured circle with initials */
-function InitialsAvatar({ name, size, color }: { name: string; size: number; color: string }) {
-  const initials = name
+function InitialsAvatar({ name, size, color }: { name: string | undefined | null; size: number; color: string }) {
+  const initials = (name || '?')
     .split(' ')
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('');
+    .join('') || '?';
   return (
     <View style={{
       width: size, height: size, backgroundColor: color,
@@ -73,7 +73,8 @@ const AVATAR_COLORS = [
   '#7C3AED', '#0EA5E9', '#EC4899', '#F97316',
   '#22C55E', '#EAB308', '#8B5CF6', '#06B6D4',
 ];
-function colorFor(userId: string): string {
+function colorFor(userId: string | undefined | null): string {
+  if (!userId) return AVATAR_COLORS[0];
   let n = 0;
   for (let i = 0; i < userId.length; i++) n += userId.charCodeAt(i);
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
