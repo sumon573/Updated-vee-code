@@ -68,7 +68,8 @@ function UserRow({ user, onPress }: { user: VeeUser; onPress: () => void }) {
 
 export default function FollowersScreen() {
   const { type, uid } = useLocalSearchParams<{ type: string; uid: string }>();
-  const isFollowers = type === 'followers';
+  const [activeTab, setActiveTab] = useState<'followers' | 'following'>(type === 'following' ? 'following' : 'followers');
+  const isFollowers = activeTab === 'followers';
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const [users, setUsers] = useState<VeeUser[]>([]);
@@ -129,6 +130,28 @@ export default function FollowersScreen() {
             {isFollowers ? 'Followers' : 'Following'}
           </Text>
           <Text style={{ color: C.muted, fontSize: 14 }}>{users.length}</Text>
+        </View>
+
+        {/* ─── Tabs ─── */}
+        <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 8 }}>
+          {(['followers', 'following'] as const).map((tab) => (
+            <Pressable
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              style={{
+                flex: 1, paddingVertical: 10, alignItems: 'center',
+                borderBottomWidth: 2,
+                borderBottomColor: activeTab === tab ? C.text : 'transparent',
+              }}
+            >
+              <Text style={{
+                fontSize: 15, fontWeight: activeTab === tab ? '800' : '500',
+                color: activeTab === tab ? C.text : C.muted,
+              }}>
+                {tab === 'followers' ? 'Followers' : 'Following'}
+              </Text>
+            </Pressable>
+          ))}
         </View>
 
         {loading ? (

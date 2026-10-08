@@ -7,7 +7,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, Alert,
-  ActivityIndicator, Image, Pressable, FlatList,
+  ActivityIndicator, Image, Pressable, FlatList, Animated,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -68,6 +68,70 @@ function BadgePill({ label, icon }: { label: string; icon?: string }) {
       {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
       <Text style={{ fontSize: 12, color: C.muted, fontWeight: '500' }}>{label}</Text>
     </View>
+  );
+}
+
+// ─── Voice Room Card (IMO style with live indicator) ───
+
+function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (item.isLive) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [item.isLive]);
+
+  return (
+    <Pressable onPress={onPress} style={{ width: 128, marginRight: 12 }}>
+      <View style={{ width: 128, height: 128, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card }}>
+        {item.coverImageUrl ? (
+          <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8E8ED' }}>
+            <Text style={{ fontSize: 44 }}>🎙️</Text>
+          </View>
+        )}
+        {/* Live badge with pulsing dot */}
+        {item.isLive && (
+          <View style={{
+            position: 'absolute', bottom: 8, left: 8,
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 12,
+            paddingHorizontal: 8, paddingVertical: 4,
+          }}>
+            <Animated.View style={{
+              width: 8, height: 8, borderRadius: 4,
+              backgroundColor: '#FF3B30', marginRight: 5,
+              opacity: pulseAnim,
+            }} />
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+              {item.memberCount || 0}
+            </Text>
+          </View>
+        )}
+        {/* Member count for non-live */}
+        {!item.isLive && item.memberCount > 0 && (
+          <View style={{
+            position: 'absolute', bottom: 8, right: 8,
+            backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10,
+            paddingHorizontal: 7, paddingVertical: 3,
+          }}>
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>👥 {item.memberCount}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={{ fontSize: 13, color: C.text, marginTop: 7, fontWeight: '600' }} numberOfLines={1}>
+        {item.name || 'Room'}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -219,7 +283,7 @@ export default function ProfileScreen({
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
           <BadgePill label="Non-Noble" />
           <BadgePill label={`Lv.${Math.min(99, Math.floor(followCounts.followers / 5) + 1)}`} icon="🏅" />
-          <Pressable onPress={() => router.push('/profile/followers')}>
+          <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: user?.uid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
           </Pressable>
           <Pressable onPress={handleCopyVid}>
@@ -238,15 +302,10 @@ export default function ProfileScreen({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
               renderItem={({ item }) => (
-                <Pressable
+                <RoomCard
+                  item={item}
                   onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
-                  style={{ width: 120, marginRight: 12 }}
-                >
-                  <View style={{ width: 120, height: 120, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 40 }}>🎙️</Text>
-                  </View>
-                  <Text style={{ fontSize: 13, color: C.text, marginTop: 6, fontWeight: '500' }} numberOfLines={1}>{item.name || 'Room'}</Text>
-                </Pressable>
+                />
               )}
             />
           </>
@@ -285,22 +344,6 @@ export default function ProfileScreen({
             </View>
           </>
         )}
-
-        {/* ─── Stats (Followers/Following) ─── */}
-        <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 16, marginTop: 8 }}>
-          <Pressable onPress={() => router.push('/profile/followers')} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: C.text }}>{followCounts.followers}</Text>
-            <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Followers</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/profile/followers')} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: C.text }}>{followCounts.following}</Text>
-            <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Following</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/profile/rooms')} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: C.text }}>{rooms.length}</Text>
-            <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>Rooms</Text>
-          </Pressable>
-        </View>
 
         {/* ─── Bottom padding for Edit button ─── */}
         <View style={{ height: 90 }} />
