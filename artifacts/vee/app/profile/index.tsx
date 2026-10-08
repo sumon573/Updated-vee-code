@@ -20,7 +20,14 @@ import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, VeeUser } from '@/src/services/userService';
 import { subscribeFollowCounts } from '@/src/services/followService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
+import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
+
+// Gift definitions (matches GiftsModal)
+const GIFTS: Record<string, string> = {
+  '1': '💝', '2': '🌹', '3': '🎁', '4': '💎',
+  '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆',
+};
 
 const C = {
   bg: '#07020F',
@@ -138,6 +145,9 @@ export default function ProfileSection({
   // Real-time rooms hosted count
   const [roomsHosted, setRoomsHosted] = useState(0);
 
+  // Step 3: Received gifts aggregated by giftId (real from wallet transactions)
+  const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+
   // Subscribe to real-time profile updates from Firebase
   useEffect(() => {
     if (!user?.uid) {
@@ -187,6 +197,20 @@ export default function ProfileSection({
       setTotalUnread(total);
     });
     return unsubscribe;
+  }, [user?.uid]);
+
+  // Step 3: Subscribe to wallet transactions, aggregate received gifts by giftId
+  useEffect(() => {
+    if (!user?.uid) return;
+    return subscribeTransactionHistory(user.uid, (txs) => {
+      const counts: Record<string, number> = {};
+      for (const tx of txs) {
+        if (tx.type === 'gift_received' && tx.giftId) {
+          counts[tx.giftId] = (counts[tx.giftId] ?? 0) + 1;
+        }
+      }
+      setReceivedGifts(counts);
+    });
   }, [user?.uid]);
 
   // V ID copy + toast
@@ -401,6 +425,35 @@ export default function ProfileSection({
               onPress={() => router.push('/profile/rooms' as never)}
             />
           </View>
+
+          {/* ── Step 3: Gifts (IMO-style grid, real data) ── */}
+          {Object.keys(receivedGifts).length > 0 && (
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{
+                color: C.text, fontSize: 16, fontWeight: '800',
+                marginBottom: 12,
+              }}>
+                {t('profile.gifts') ?? 'Gifts'}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                {Object.entries(receivedGifts).map(([giftId, count]) => (
+                  <View key={giftId} style={{ alignItems: 'center', width: 64 }}>
+                    <View style={{
+                      width: 64, height: 64, borderRadius: 16,
+                      backgroundColor: C.surface,
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+                    }}>
+                      <Text style={{ fontSize: 32 }}>{GIFTS[giftId] ?? '🎁'}</Text>
+                    </View>
+                    <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+                      x{count}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* ── Account section ── */}
           <Text style={{
