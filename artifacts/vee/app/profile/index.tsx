@@ -256,15 +256,42 @@ export default function ProfileSection({
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+        {/* ── Step 1: IMO-style header with cover + back button ── */}
+        <View style={{
+          height: 120,
+          backgroundColor: '#1E1830',
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
+          overflow: 'hidden',
+        }}>
+          {/* Cover gradient effect */}
+          <View style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(139,92,246,0.15)',
+          }} />
+          {/* Back button */}
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              position: 'absolute', top: 12, left: 16,
+              width: 40, height: 40, borderRadius: 20,
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              alignItems: 'center', justifyContent: 'center',
+              zIndex: 10,
+            }}
+          >
+            <Feather name="arrow-left" size={20} color="#fff" />
+          </Pressable>
+        </View>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, marginTop: -40 }}
         >
-          {/* ── Top: Avatar + Name + Bio ── */}
+          {/* ── Top: Avatar + Name + Bio (overlapping cover) ── */}
           <View style={{
             alignItems: 'center',
-            paddingTop: topPad + 24,
+            paddingTop: 8,
             paddingBottom: 24,
           }}>
             {/* Avatar with edit ring */}
