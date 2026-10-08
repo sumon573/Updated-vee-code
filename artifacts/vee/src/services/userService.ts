@@ -38,6 +38,8 @@ export type VeeUser = {
    * the canonical display field.
    */
   photoPublicId?: string;
+  /** Profile cover/banner image URL (editable from Edit Profile). */
+  coverImageUrl?: string;
   /**
    * Privacy settings saved by the user in the Privacy screen.
    * Stored at users/{uid}/privacy — read here so UI can enforce them without

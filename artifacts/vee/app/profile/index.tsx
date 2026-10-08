@@ -90,29 +90,29 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
   }, [item.isLive]);
 
   return (
-    <Pressable onPress={onPress} style={{ width: 128, marginRight: 12 }}>
-      <View style={{ width: 128, height: 128, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card }}>
+    <Pressable onPress={onPress} style={{ width: 100, marginRight: 10 }}>
+      <View style={{ width: 100, height: 100, borderRadius: 14, overflow: 'hidden', backgroundColor: C.card }}>
         {item.coverImageUrl ? (
           <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8E8ED' }}>
-            <Text style={{ fontSize: 44 }}>🎙️</Text>
+            <Text style={{ fontSize: 36 }}>🎙️</Text>
           </View>
         )}
         {/* Live badge with pulsing dot */}
         {item.isLive && (
           <View style={{
-            position: 'absolute', bottom: 8, left: 8,
+            position: 'absolute', bottom: 6, left: 6,
             flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 12,
-            paddingHorizontal: 8, paddingVertical: 4,
+            backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 10,
+            paddingHorizontal: 7, paddingVertical: 3,
           }}>
             <Animated.View style={{
-              width: 8, height: 8, borderRadius: 4,
-              backgroundColor: '#FF3B30', marginRight: 5,
+              width: 7, height: 7, borderRadius: 3.5,
+              backgroundColor: '#FF3B30', marginRight: 4,
               opacity: pulseAnim,
             }} />
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
               {item.memberCount || 0}
             </Text>
           </View>
@@ -120,15 +120,15 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
         {/* Member count for non-live */}
         {!item.isLive && item.memberCount > 0 && (
           <View style={{
-            position: 'absolute', bottom: 8, right: 8,
-            backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10,
-            paddingHorizontal: 7, paddingVertical: 3,
+            position: 'absolute', bottom: 6, right: 6,
+            backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
+            paddingHorizontal: 6, paddingVertical: 2,
           }}>
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>👥 {item.memberCount}</Text>
+            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>👥 {item.memberCount}</Text>
           </View>
         )}
       </View>
-      <Text style={{ fontSize: 13, color: C.text, marginTop: 7, fontWeight: '600' }} numberOfLines={1}>
+      <Text style={{ fontSize: 12, color: C.text, marginTop: 6, fontWeight: '600' }} numberOfLines={1}>
         {item.name || 'Room'}
       </Text>
     </Pressable>
@@ -220,6 +220,19 @@ export default function ProfileScreen({
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
+  // ─── Real Level System (based on actual activity) ───
+  // XP: 10 per follower, 20 per room, 5 per gift received, 2 per following
+  // Level thresholds: Lv.1=0, Lv.2=100, Lv.3=250, Lv.4=500, Lv.5=1000, then +1000 per level
+  const calculateLevel = (): number => {
+    const xp = (followCounts.followers * 10) + (rooms.length * 20) + (totalGifts * 5) + (followCounts.following * 2);
+    if (xp < 100) return 1;
+    if (xp < 250) return 2;
+    if (xp < 500) return 3;
+    if (xp < 1000) return 4;
+    return Math.min(99, 5 + Math.floor((xp - 1000) / 1000));
+  };
+  const userLevel = calculateLevel();
+
   // Honor badges (real achievements)
   const honors: { icon: string; label: string }[] = [];
   if (rooms.length > 0) honors.push({ icon: '🎤', label: 'Host' });
@@ -229,36 +242,40 @@ export default function ProfileScreen({
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-        {/* ─── Top Bar ─── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.bg }}>
-          <Pressable onPress={() => router.back()} style={{ padding: 8 }}>
+        {/* ─── Top Bar (IMO style: back + icons only) ─── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.bg }}>
+          <Pressable
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/home' as never);
+            }}
+            style={{ padding: 8 }}
+            hitSlop={12}
+          >
             <Feather name="arrow-left" size={24} color={C.text} />
           </Pressable>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 4 }}>
-            {photoURL ? (
-              <Image source={{ uri: photoURL }} style={{ width: 32, height: 32, borderRadius: 16 }} />
-            ) : (
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.muted }}>{displayName[0]?.toUpperCase()}</Text>
-              </View>
-            )}
-            <Text style={{ fontSize: 17, fontWeight: '600', color: C.text, marginLeft: 8 }} numberOfLines={1}>{displayName}</Text>
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
+              <Feather name="settings" size={22} color={C.text} />
+            </Pressable>
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
+              <Feather name="more-horizontal" size={22} color={C.text} />
+            </Pressable>
           </View>
-          <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }}>
-            <Feather name="user" size={22} color={C.text} />
-          </Pressable>
-          <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }}>
-            <Feather name="more-horizontal" size={22} color={C.text} />
-          </Pressable>
         </View>
 
-        {/* ─── Cover ─── */}
-        <View style={{ height: 180, backgroundColor: '#1a1a2e' }}>
-          {/* Cover image or gradient placeholder */}
-          <View style={{ flex: 1, backgroundColor: '#2d2d44', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 48 }}>🌌</Text>
+        {/* ─── Cover (tappable to change via Edit) ─── */}
+        <Pressable onPress={() => router.push('/profile/edit')}>
+          <View style={{ height: 180, backgroundColor: '#1a1a2e' }}>
+            {profile?.coverImageUrl ? (
+              <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            ) : (
+              <View style={{ flex: 1, backgroundColor: '#2d2d44', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 48 }}>🌌</Text>
+              </View>
+            )}
           </View>
-        </View>
+        </Pressable>
 
         {/* ─── Avatar (overlapping) ─── */}
         <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
@@ -282,7 +299,7 @@ export default function ProfileScreen({
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
           <BadgePill label="Non-Noble" />
-          <BadgePill label={`Lv.${Math.min(99, Math.floor(followCounts.followers / 5) + 1)}`} icon="🏅" />
+          <BadgePill label={`Lv.${userLevel}`} icon="🏅" />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: user?.uid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
           </Pressable>
@@ -295,19 +312,21 @@ export default function ProfileScreen({
         {rooms.length > 0 && (
           <>
             <SectionHeader title="VoiceClub Room" count={rooms.length} onPress={() => router.push('/profile/rooms')} />
-            <FlatList
+            <ScrollView
               horizontal
-              data={rooms.slice(0, 10)}
-              keyExtractor={(item, i) => item.id || String(i)}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
-              renderItem={({ item }) => (
+              // Allow horizontal scroll inside vertical ScrollView
+              nestedScrollEnabled
+            >
+              {rooms.slice(0, 10).map((item, i) => (
                 <RoomCard
+                  key={item.id || String(i)}
                   item={item}
                   onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
                 />
-              )}
-            />
+              ))}
+            </ScrollView>
           </>
         )}
 
