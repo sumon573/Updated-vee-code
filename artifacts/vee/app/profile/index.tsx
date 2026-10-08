@@ -6,9 +6,10 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, Alert,
+  View, Text, Alert,
   ActivityIndicator, Image, Pressable, FlatList, Animated,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -150,6 +151,7 @@ export default function ProfileScreen({
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
   const [vidCopied, setVidCopied] = useState(false);
+  const [showVidMenu, setShowVidMenu] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -258,7 +260,7 @@ export default function ProfileScreen({
             <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
               <Feather name="settings" size={22} color={C.text} />
             </Pressable>
-            <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
+            <Pressable onPress={() => setShowVidMenu(true)} style={{ padding: 8 }} hitSlop={8}>
               <Feather name="more-horizontal" size={22} color={C.text} />
             </Pressable>
           </View>
@@ -303,9 +305,6 @@ export default function ProfileScreen({
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: user?.uid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
           </Pressable>
-          <Pressable onPress={handleCopyVid}>
-            <BadgePill label={vidCopied ? 'Copied!' : `# ${vId}`} icon="📋" />
-          </Pressable>
         </View>
 
         {/* ─── VoiceClub Room ─── */}
@@ -316,8 +315,9 @@ export default function ProfileScreen({
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
-              // Allow horizontal scroll inside vertical ScrollView
+              // Smooth nested scrolling
               nestedScrollEnabled
+              directionalLockEnabled
             >
               {rooms.slice(0, 10).map((item, i) => (
                 <RoomCard
@@ -364,6 +364,27 @@ export default function ProfileScreen({
           </>
         )}
 
+        {/* ─── Decoration ─── */}
+        <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push('/profile/decoration')} />
+        <View style={{ flexDirection: 'row', paddingHorizontal: 16 }}>
+          <Pressable
+            onPress={() => router.push('/profile/decoration')}
+            style={{ flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 16, marginRight: 8, alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 32 }}>🖼️</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 8 }}>Frames</Text>
+            <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{profile?.ownedFrames?.length || 0} owned</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/profile/decoration')}
+            style={{ flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 16, marginLeft: 8, alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 32 }}>🏷️</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 8 }}>Nameplates</Text>
+            <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{profile?.ownedNameplates?.length || 0} owned</Text>
+          </Pressable>
+        </View>
+
         {/* ─── Bottom padding for Edit button ─── */}
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -378,6 +399,32 @@ export default function ProfileScreen({
           <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>Edit</Text>
         </Pressable>
       </View>
+
+      {/* ─── vId Menu Modal ─── */}
+      {showVidMenu && (
+        <Pressable
+          onPress={() => setShowVidMenu(false)}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-start', alignItems: 'flex-end' }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{ backgroundColor: C.bg, borderRadius: 16, marginTop: 60, marginRight: 12, padding: 16, minWidth: 220, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 }}
+          >
+            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>Vee ID</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>#{vId}</Text>
+              <Pressable
+                onPress={handleCopyVid}
+                style={{ backgroundColor: C.blueLight, borderRadius: 10, padding: 8, marginLeft: 12 }}
+                hitSlop={8}
+              >
+                <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={C.blue} />
+              </Pressable>
+            </View>
+            {vidCopied && <Text style={{ fontSize: 12, color: C.blue, marginTop: 6 }}>Copied!</Text>}
+          </Pressable>
+        </Pressable>
+      )}
     </SafeAreaView>
   );
 }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
 import { VoiceRoom } from '../types/room';
 
-const SIZE = 108;
+const SIZE = 84;
 
 type Props = { room: VoiceRoom; onPress?: () => void };
 
@@ -14,7 +14,7 @@ export default function RoomCard({ room, onPress }: Props) {
 
   return (
     <ScalePress onPress={onPress}>
-      <View style={{ width: 130, marginRight: 14 }}>
+      <View style={{ width: 100, marginRight: 10 }}>
         <View style={{
           width: SIZE, height: SIZE, borderRadius: 22,
           backgroundColor: room.themeColor,

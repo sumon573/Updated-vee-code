@@ -136,9 +136,9 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation();
   return (
     <ScalePress onPress={onPress}>
-      <View style={{ width: 124, marginRight: 14 }}>
+      <View style={{ width: 100, marginRight: 10 }}>
         <View style={{
-          width: 108, height: 108, borderRadius: 22,
+          width: 84, height: 84, borderRadius: 18,
           backgroundColor: 'rgba(255,255,255,0.04)',
           borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.55)',
           borderStyle: 'dashed',

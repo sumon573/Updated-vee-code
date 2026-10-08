@@ -40,6 +40,14 @@ export type VeeUser = {
   photoPublicId?: string;
   /** Profile cover/banner image URL (editable from Edit Profile). */
   coverImageUrl?: string;
+  /** Owned avatar frames (earned through activity). Empty for new users. */
+  ownedFrames?: string[];
+  /** Currently equipped avatar frame ID. */
+  activeFrame?: string;
+  /** Owned nameplates (earned through activity). Empty for new users. */
+  ownedNameplates?: string[];
+  /** Currently equipped nameplate ID. */
+  activeNameplate?: string;
   /**
    * Privacy settings saved by the user in the Privacy screen.
    * Stored at users/{uid}/privacy — read here so UI can enforce them without
