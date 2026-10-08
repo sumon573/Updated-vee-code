@@ -29,14 +29,14 @@ import { auth, database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
   red: '#EF4444',
 } as const;
 
@@ -66,7 +66,7 @@ function SettingToggle({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+      borderWidth: 1, borderColor: '#E5E5EA',
     }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,
@@ -105,7 +105,7 @@ function SettingButton({
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: C.surface, borderRadius: 16,
         padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+        borderWidth: 1, borderColor: '#E5E5EA',
       }}>
         <View style={{
           width: 40, height: 40, borderRadius: 12,
@@ -396,10 +396,10 @@ export default function SettingsScreen() {
               secureTextEntry
               autoCapitalize="none"
               style={{
-                backgroundColor: 'rgba(255,255,255,0.06)',
+                backgroundColor: '#F2F2F7',
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
                 color: C.text, fontSize: 15,
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+                borderWidth: 1, borderColor: '#E5E5EA',
                 marginBottom: 20,
               }}
             />
@@ -409,9 +409,9 @@ export default function SettingsScreen() {
                 onPress={() => { setDeleteModalVisible(false); setDeletePassword(''); }}
                 style={{
                   flex: 1, paddingVertical: 14, borderRadius: 12,
-                  backgroundColor: 'rgba(255,255,255,0.07)',
+                  backgroundColor: '#E5E5EA',
                   alignItems: 'center',
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+                  borderWidth: 1, borderColor: '#E5E5EA',
                 }}
               >
                 <Text style={{ color: C.muted, fontWeight: '700' }}>Cancel</Text>

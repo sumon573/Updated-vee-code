@@ -16,14 +16,14 @@ import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
 } as const;
 
 type NotifSettings = {
@@ -60,7 +60,7 @@ function SettingRow({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+      borderWidth: 1, borderColor: C.border,
     }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,

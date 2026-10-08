@@ -28,18 +28,18 @@ import {
 import { useTranslation } from 'react-i18next';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  dim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.05)',
-  inputBg: 'rgba(255,255,255,0.07)',
+  text: '#000000',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
+  inputBg: '#F2F2F7',
   online: '#22C55E',
   red: '#EF4444',
-  subTabBg: 'rgba(255,255,255,0.04)',
+  subTabBg: '#F2F2F7',
 } as const;
 
 function UserAvatar({ user }: { user: VeeUser }) {

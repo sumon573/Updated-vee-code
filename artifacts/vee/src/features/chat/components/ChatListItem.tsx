@@ -9,16 +9,16 @@ import { Chat } from '../types';
 import { formatTime } from '../data/mockChats';
 
 const C = {
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  dim: '#4A3D6E',
-  bg: '#07020F',
+  text: '#000000',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  card: 'rgba(255,255,255,0.038)',
+  card: '#F2F2F7',
   cardUnread: 'rgba(124,58,237,0.09)',
   cardPinned: 'rgba(245,158,11,0.06)',
-  border: 'rgba(255,255,255,0.07)',
+  border: '#E5E5EA',
   borderUnread: 'rgba(139,92,246,0.25)',
   borderPinned: 'rgba(245,158,11,0.18)',
   accent: '#8B5CF6',
@@ -127,7 +127,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               borderWidth: 2,
               borderColor: chat.storySeen ? C.dim : C.glow,
               shadowColor: chat.storySeen ? 'transparent' : C.glow,
-              shadowOpacity: 0.6, shadowRadius: 8,
+              shadowOpacity: 0.3, shadowRadius: 8,
               shadowOffset: { width: 0, height: 0 },
             }} />
           )}
@@ -177,7 +177,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
 
             {/* Time badge */}
             <View style={{
-              backgroundColor: hasUnread ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.06)',
+              backgroundColor: hasUnread ? 'rgba(139,92,246,0.2)' : '#F2F2F7',
               borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8,
             }}>
               <Text style={{
@@ -218,7 +218,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
                 backgroundColor: C.accent,
                 alignItems: 'center', justifyContent: 'center',
                 paddingHorizontal: 5,
-                shadowColor: C.glow, shadowOpacity: 0.6,
+                shadowColor: C.glow, shadowOpacity: 0.3,
                 shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
               }}>
                 <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>

@@ -50,14 +50,14 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 const NEARBY_MAX_KM = 50;
 
 const C = {
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
+  text: '#000000',
+  muted: '#8E8E93',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  border: '#2A2542',
+  border: '#E5E5EA',
   chipBg: 'rgba(139,92,246,0.14)',
   chipBgActive: '#7C3AED',
-  surface: 'rgba(255,255,255,0.045)',
+  surface: '#F2F2F7',
 } as const;
 
 // "Recommended" tabs — match the new RoomCategory type
@@ -139,11 +139,11 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
       <View style={{ width: 100, marginRight: 10 }}>
         <View style={{
           width: 84, height: 84, borderRadius: 18,
-          backgroundColor: 'rgba(255,255,255,0.04)',
+          backgroundColor: '#F2F2F7',
           borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.55)',
           borderStyle: 'dashed',
           alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#A855F7', shadowOpacity: 0.3,
+          shadowColor: '#A855F7', shadowOpacity: 0.15,
           shadowRadius: 16, shadowOffset: { width: 0, height: 0 },
         }}>
           <Feather name="plus" size={30} color={C.glow} />
@@ -501,9 +501,9 @@ export default function VoiceRoomHome({
                   </Pressable>
                   <Pressable
                     onPress={() => Linking.openSettings().catch(() => {})}
-                    style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F2F2F7' }}
                   >
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
+                    <Text style={{ color: '#000000', fontSize: 13, fontWeight: '700' }}>
                       {t('voiceRoom.home.locationOpenSettings')}
                     </Text>
                   </Pressable>
@@ -544,17 +544,17 @@ export default function VoiceRoomHome({
         >
           <Pressable style={{ width: '100%', maxWidth: 360 }} onPress={() => {}}>
             <View style={{
-              backgroundColor: '#0F0A1E', borderRadius: 24, padding: 28,
+              backgroundColor: '#FFFFFF', borderRadius: 24, padding: 28,
               borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
-              shadowColor: '#8B5CF6', shadowOpacity: 0.3, shadowRadius: 20,
+              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18, gap: 10 }}>
                 <Feather name="lock" size={20} color="#F59E0B" />
-                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', flex: 1 }} numberOfLines={1}>
+                <Text style={{ color: '#000000', fontSize: 18, fontWeight: '900', flex: 1 }} numberOfLines={1}>
                   {pinDialogRoom?.name}
                 </Text>
               </View>
-              <Text style={{ color: '#B8A6D9', fontSize: 14, marginBottom: 20 }}>
+              <Text style={{ color: '#8E8E93', fontSize: 14, marginBottom: 20 }}>
                 Enter the 4-digit PIN to join this private room.
               </Text>
               <TextInput
@@ -562,12 +562,12 @@ export default function VoiceRoomHome({
                   backgroundColor: 'rgba(139,92,246,0.1)',
                   borderRadius: 14, borderWidth: 1.5,
                   borderColor: pinError ? '#FF4B4B' : 'rgba(139,92,246,0.35)',
-                  color: '#fff', fontSize: 26, fontWeight: '800',
+                  color: '#000000', fontSize: 26, fontWeight: '800',
                   textAlign: 'center', letterSpacing: 14,
                   paddingVertical: 14, marginBottom: 8,
                 }}
                 placeholder="••••"
-                placeholderTextColor="#4A3D6E"
+                placeholderTextColor="#C7C7CC"
                 value={pinInput}
                 onChangeText={(txt) => {
                   const digits = txt.replace(/[^0-9]/g, '').slice(0, 4);
@@ -582,13 +582,13 @@ export default function VoiceRoomHome({
               {pinError ? (
                 <Text style={{ color: '#FF4B4B', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>{pinError}</Text>
               ) : (
-                <Text style={{ color: '#4A3D6E', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>Numbers only</Text>
+                <Text style={{ color: '#C7C7CC', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>Numbers only</Text>
               )}
               <Pressable
                 onPress={handlePinSubmit}
                 disabled={pinVerifying}
                 style={{
-                  backgroundColor: pinVerifying ? '#4A3D6E' : '#7C3AED',
+                  backgroundColor: pinVerifying ? '#C7C7CC' : '#7C3AED',
                   borderRadius: 14, paddingVertical: 14,
                   alignItems: 'center',
                   opacity: pinVerifying ? 0.7 : 1,

@@ -18,10 +18,10 @@ import { database } from '@/src/config/firebase';
 const { width } = Dimensions.get('window');
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
+  text: '#000000',
   muted: '#B8A6D9',
   dim: '#4A3D6E',
   border: '#2A2542',

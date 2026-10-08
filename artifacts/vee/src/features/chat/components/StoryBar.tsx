@@ -5,13 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { UserStories } from '../types';
 
 const C = {
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  bg: '#07020F',
+  text: '#000000',
+  muted: '#8E8E93',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
   unseen: '#8B5CF6',      // purple ring = unseen
-  seen: '#2A2542',         // dim ring = seen
+  seen: '#E5E5EA',         // dim ring = seen
   onlineGreen: '#22C55E',
 } as const;
 
@@ -34,7 +34,7 @@ function AvatarRing({
       padding: RING,
       backgroundColor: seen ? C.seen : C.unseen,
       shadowColor: seen ? 'transparent' : C.glow,
-      shadowOpacity: seen ? 0 : 0.7,
+      shadowOpacity: seen ? 0 : 0.35,
       shadowRadius: 10,
       shadowOffset: { width: 0, height: 0 },
       elevation: seen ? 0 : 8,
@@ -92,9 +92,9 @@ function AddStoryTile({ onPress }: { onPress: () => void }) {
           width: AVATAR_SIZE + 6,
           height: AVATAR_SIZE + 6,
           borderRadius: (AVATAR_SIZE + 6) / 2,
-          backgroundColor: '#1A1535',
+          backgroundColor: '#E9E9EB',
           borderWidth: 1.5,
-          borderColor: '#2A2542',
+          borderColor: '#E5E5EA',
           alignItems: 'center',
           justifyContent: 'center',
         }}>
@@ -189,7 +189,7 @@ function PlanetTile({ onPress }: { onPress: () => void }) {
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#8B5CF6',
-        shadowOpacity: 0.55,
+        shadowOpacity: 0.25,
         shadowRadius: 10,
         shadowOffset: { width: 0, height: 0 },
         elevation: 6,
@@ -240,7 +240,7 @@ export default function StoryBar({ stories, loading, onOpenCreator, onOpenStory,
         {onOpenPlanet && <PlanetTile onPress={onOpenPlanet} />}
       </GHScrollView>
       {/* Divider */}
-      <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 20 }} />
+      <View style={{ height: 1, backgroundColor: '#E5E5EA', marginHorizontal: 20 }} />
     </View>
   );
 }

@@ -30,12 +30,12 @@ import { useRouter } from 'expo-router';
 import * as Alerts from 'react-native';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   surface: 'rgba(255,255,255,0.055)',
   border: 'rgba(255,255,255,0.10)',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
+  text: '#000000',
   muted: 'rgba(255,255,255,0.55)',
   dim: 'rgba(255,255,255,0.28)',
   inputBg: 'rgba(255,255,255,0.07)',

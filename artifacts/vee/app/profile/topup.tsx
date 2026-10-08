@@ -27,12 +27,12 @@ import { getApiBase } from '@/src/utils/platform';
 import { useTranslation } from 'react-i18next';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
   border: '#1E1830',
   surface: 'rgba(255,255,255,0.055)',
   green: '#22C55E',

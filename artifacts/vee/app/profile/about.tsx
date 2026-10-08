@@ -17,14 +17,14 @@ import ScalePress from '@/components/ScalePress';
 import { useTranslation } from 'react-i18next';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
 } as const;
 
 function LinkButton({
@@ -40,7 +40,7 @@ function LinkButton({
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: C.surface, borderRadius: 16,
         padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+        borderWidth: 1, borderColor: C.border,
       }}>
         <View style={{
           width: 40, height: 40, borderRadius: 12,
@@ -113,7 +113,7 @@ export default function AboutScreen() {
           <View style={{
             backgroundColor: C.surface, borderRadius: 16,
             padding: 18, marginBottom: 24,
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+            borderWidth: 1, borderColor: C.border,
           }}>
             <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', marginBottom: 8 }}>
               {t('about.aboutHeading')}

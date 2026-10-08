@@ -25,10 +25,10 @@ const CARD_GAP = 12;
 const CARD_W = (width - 48) / 2;
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
+  text: '#000000',
   muted: '#B8A6D9',
   dim: '#4A3D6E',
   border: '#1E1830',

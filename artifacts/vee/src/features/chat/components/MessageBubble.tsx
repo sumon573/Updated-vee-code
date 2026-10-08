@@ -14,16 +14,16 @@ const { width } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
 
 const C = {
-  myBubble: '#7C3AED',
-  theirBubble: 'rgba(255,255,255,0.08)',
+  myBubble: '#007AFF',
+  theirBubble: '#E9E9EB',
   myText: '#FFFFFF',
-  theirText: '#FFFFFF',
-  muted: 'rgba(255,255,255,0.45)',
-  dim: 'rgba(255,255,255,0.25)',
-  border: 'rgba(255,255,255,0.12)',
-  reactionBg: 'rgba(18,10,35,0.95)',
+  theirText: '#000000',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  border: '#E5E5EA',
+  reactionBg: 'rgba(255,255,255,0.95)',
   seen: '#8B5CF6',
-  sent: 'rgba(255,255,255,0.45)',
+  sent: 'rgba(255,255,255,0.7)',
 } as const;
 
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
@@ -149,14 +149,14 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
         {/* Reply preview inside bubble */}
         {message.replyTo && !message.deletedForEveryone && (
           <View style={{
-            backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 10,
+            backgroundColor: isMe ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.06)', borderRadius: 10,
             paddingHorizontal: 10, paddingVertical: 6,
             marginBottom: 4, borderLeftWidth: 3, borderLeftColor: C.seen,
           }}>
-            <Text style={{ color: C.seen, fontSize: 11, fontWeight: '700', marginBottom: 2 }}>
+            <Text style={{ color: isMe ? 'rgba(255,255,255,0.95)' : C.seen, fontSize: 11, fontWeight: '700', marginBottom: 2 }}>
               {message.replyTo.senderName}
             </Text>
-            <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
+            <Text style={{ color: isMe ? 'rgba(255,255,255,0.8)' : C.muted, fontSize: 12 }} numberOfLines={1}>
               {message.replyTo.type !== 'text' ? '📷 Media' : message.replyTo.preview}
             </Text>
           </View>
@@ -176,7 +176,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
           }}
         >
           {message.deletedForEveryone ? (
-            <Text style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>
+            <Text style={{ color: isMe ? 'rgba(255,255,255,0.8)' : C.muted, fontSize: 13, fontStyle: 'italic' }}>
               {isMe ? '🗑 You deleted this message' : '🗑 This message was deleted'}
             </Text>
           ) : message.type === 'image' ? (
@@ -198,7 +198,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               }}
             >
               <Feather name="play-circle" size={48} color="#fff" />
-              <Text style={{ color: C.muted, marginTop: 6, fontSize: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.75)', marginTop: 6, fontSize: 12 }}>
                 {t('chat.videoMessage')}
               </Text>
             </Pressable>
@@ -211,7 +211,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
           {/* Timestamp + seen */}
           {!message.deletedForEveryone && (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
-              <Text style={{ color: C.muted, fontSize: 10 }}>
+              <Text style={{ color: isMe ? 'rgba(255,255,255,0.75)' : C.muted, fontSize: 10 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
               {isMe && (
@@ -242,7 +242,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                   borderWidth: 1,
                   borderColor: message.reactions?.[myUid] === emoji
                     ? 'rgba(124,58,237,0.6)'
-                    : 'rgba(255,255,255,0.12)',
+                    : '#E5E5EA',
                 }}
               >
                 <Text style={{ fontSize: 13 }}>{emoji}</Text>
@@ -261,7 +261,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             bottom: 48,
             [isMe ? 'right' : 'left']: 0,
             flexDirection: 'row',
-            backgroundColor: 'rgba(18,10,35,0.97)',
+            backgroundColor: 'rgba(255,255,255,0.97)',
             borderRadius: 30, paddingVertical: 8, paddingHorizontal: 12, gap: 6,
             borderWidth: 1, borderColor: 'rgba(124,58,237,0.4)',
             shadowColor: '#7C3AED', shadowOpacity: 0.3, shadowRadius: 12,
@@ -276,7 +276,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               onPress={() => { setShowReactions(false); handleOptions(); }}
               style={{ padding: 4, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Feather name="more-horizontal" size={20} color="rgba(255,255,255,0.6)" />
+              <Feather name="more-horizontal" size={20} color="#8E8E93" />
             </Pressable>
           </View>
         )}

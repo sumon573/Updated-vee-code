@@ -18,11 +18,11 @@ import WaveTopHeader from '@/components/WaveTopHeader';
 import { resetPassword, getAuthErrorMessage } from '@/src/services/authService';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
+  text: '#000000',
+  muted: '#8E8E93',
   border: '#2A2542',
   borderFocus: '#8B5CF6',
   inputBg: 'rgba(139,92,246,0.07)',

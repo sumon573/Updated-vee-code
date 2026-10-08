@@ -30,13 +30,13 @@ import {
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
 const C = {
-  bg:      '#07020F',
+  bg:      '#FFFFFF',
   primary: '#7C3AED',
   glow:    '#8B5CF6',
-  text:    '#FFFFFF',
-  muted:   '#B8A6D9',
-  border:  '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text:    '#000000',
+  muted:   '#8E8E93',
+  border:  '#E5E5EA',
+  surface: '#F2F2F7',
   gold:    '#F59E0B',
   green:   '#22C55E',
 } as const;
@@ -50,7 +50,7 @@ const ROLE_ORDER: Record<UserRole, number> = { owner: 0, admin: 1, member: 2 };
 const ROLE_CONFIG: Record<UserRole, { color: string; bg: string; border: string; label: string }> = {
   owner:  { color: C.gold,    bg: 'rgba(245,158,11,0.15)',  border: 'rgba(245,158,11,0.35)',  label: 'Owner'  },
   admin:  { color: '#7C3AED', bg: 'rgba(124,58,237,0.15)',  border: 'rgba(124,58,237,0.35)',  label: 'Admin'  },
-  member: { color: C.muted,   bg: 'rgba(184,166,217,0.08)', border: 'rgba(184,166,217,0.18)', label: 'Member' },
+  member: { color: C.muted,   bg: 'rgba(142,142,147,0.08)', border: 'rgba(142,142,147,0.18)', label: 'Member' },
 };
 
 function RoleBadge({ role }: { role: UserRole }) {
@@ -94,7 +94,7 @@ function RoomCard({
         flexDirection: 'row', alignItems: 'center', gap: 12,
         backgroundColor: C.surface, borderRadius: 16,
         borderWidth: 1,
-        borderColor: isActive ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+        borderColor: isActive ? '#E5E5EA' : '#F2F2F7',
         padding: 12, marginBottom: 10,
         opacity: isActive ? 1 : 0.55,
       }}

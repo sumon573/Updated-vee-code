@@ -21,7 +21,7 @@ export default function RoomCard({ room, onPress }: Props) {
           alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden',
           borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-          shadowColor: room.themeColor, shadowOpacity: 0.45,
+          shadowColor: room.themeColor, shadowOpacity: 0.15,
           shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8,
         }}>
           {room.coverImageUrl ? (
@@ -80,7 +80,7 @@ export default function RoomCard({ room, onPress }: Props) {
 
         {/* Name */}
         <Text numberOfLines={1} style={{
-          color: '#fff', fontSize: 13, fontWeight: '800', marginTop: 8,
+          color: '#000000', fontSize: 13, fontWeight: '800', marginTop: 8,
         }}>
           {room.isPublic === false ? '🔒 ' : ''}{room.name}
         </Text>
@@ -97,7 +97,7 @@ export default function RoomCard({ room, onPress }: Props) {
               <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{t('voiceRoom.card.topic')}</Text>
             </View>
             <Text numberOfLines={1} style={{
-              color: 'rgba(255,255,255,0.75)', fontSize: 10, flex: 1,
+              color: '#8E8E93', fontSize: 10, flex: 1,
             }}>
               {room.topic}
             </Text>

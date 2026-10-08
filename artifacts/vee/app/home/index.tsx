@@ -40,14 +40,14 @@ import { useAuth } from '@/src/context/AuthContext';
 const { width } = Dimensions.get('window');
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#4A3D6E',
-  mutedActive: '#B8A6D9',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.045)',
+  text: '#000000',
+  muted: '#C7C7CC',
+  mutedActive: '#8E8E93',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
 } as const;
 
 /**
@@ -122,7 +122,7 @@ const BottomNav = memo(function BottomNav({
     <View style={{
       position: 'absolute', bottom: 0, left: 0, right: 0,
       paddingBottom: bottomPad, paddingTop: 10,
-      backgroundColor: 'rgba(7,2,15,0.97)',
+      backgroundColor: 'rgba(255,255,255,0.97)',
       borderTopWidth: 1, borderTopColor: C.border,
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
     }}>
@@ -138,9 +138,9 @@ const BottomNav = memo(function BottomNav({
           <View style={{
             width: 58, height: 58, borderRadius: 29,
             backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
-            shadowColor: C.glow, shadowOpacity: 0.6,
+            shadowColor: C.glow, shadowOpacity: 0.2,
             shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 14,
-            borderWidth: 3, borderColor: '#07020F',
+            borderWidth: 3, borderColor: '#FFFFFF',
           }}>
             <Feather name="plus" size={28} color="#fff" />
           </View>
@@ -191,7 +191,7 @@ const PlanetModal = memo(function PlanetModal({
             hitSlop={12}
             style={{
               width: 36, height: 36, borderRadius: 18,
-              backgroundColor: 'rgba(255,255,255,0.07)',
+              backgroundColor: '#F2F2F7',
               alignItems: 'center', justifyContent: 'center',
             }}
           >

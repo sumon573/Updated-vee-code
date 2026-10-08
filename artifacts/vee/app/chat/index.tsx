@@ -31,15 +31,15 @@ import { useAuth } from '@/src/context/AuthContext';
 import { VeeUser } from '@/src/services/userService';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  dim: '#4A3D6E',
-  border: '#1E1830',
-  inputBg: 'rgba(255,255,255,0.055)',
-  glass: 'rgba(255,255,255,0.04)',
+  text: '#000000',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  border: '#E5E5EA',
+  inputBg: '#F2F2F7',
+  glass: '#F2F2F7',
 } as const;
 
 type ChatScreenProps = {

@@ -20,14 +20,14 @@ import {
 import { useTranslation } from 'react-i18next';
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
   green: '#22C55E',
   red: '#EF4444',
 } as const;
@@ -54,7 +54,7 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 14, marginBottom: 10,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+      borderWidth: 1, borderColor: '#E5E5EA',
     }}>
       {/* Emoji */}
       <View style={{
@@ -219,7 +219,7 @@ export default function WalletScreen() {
             <View style={{
               flex: 1, backgroundColor: C.surface,
               borderRadius: 16, padding: 16, alignItems: 'center',
-              borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+              borderWidth: 1, borderColor: '#E5E5EA',
             }}>
               <Text style={{ color: C.muted, fontSize: 22, fontWeight: '900' }}>
                 -{totalSent}
@@ -246,7 +246,7 @@ export default function WalletScreen() {
             <View style={{
               alignItems: 'center', paddingVertical: 50,
               backgroundColor: C.surface, borderRadius: 20,
-              borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+              borderWidth: 1, borderColor: '#E5E5EA',
             }}>
               <Text style={{ fontSize: 40 }}>💎</Text>
               <Text style={{ color: C.text, fontSize: 16, fontWeight: '800', marginTop: 14 }}>

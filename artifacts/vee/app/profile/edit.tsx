@@ -24,14 +24,14 @@ import { withTimeout } from '@/src/utils/withTimeout';
 const SAVE_TIMEOUT_MS = 12_000;
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: 'rgba(255,255,255,0.10)',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
   error: '#EF4444',
   success: '#22C55E',
 } as const;
@@ -353,7 +353,7 @@ export default function EditProfileScreen() {
                     ) : photoURI ? (
                       <Image source={{ uri: photoURI }} style={{ width: 110, height: 110 }} />
                     ) : (
-                      <Text style={{ color: '#fff', fontSize: 36, fontWeight: '900' }}>{initials}</Text>
+                      <Text style={{ color: C.glow, fontSize: 36, fontWeight: '900' }}>{initials}</Text>
                     )}
                   </View>
 
@@ -399,9 +399,9 @@ export default function EditProfileScreen() {
                   {t('editProfile.fieldVeeId')}
                 </Text>
                 <View style={{
-                  backgroundColor: 'rgba(255,255,255,0.03)',
+                  backgroundColor: C.surface,
                   borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+                  borderWidth: 1, borderColor: C.border,
                   flexDirection: 'row', alignItems: 'center', gap: 8,
                 }}>
                   <Feather name="hash" size={15} color={C.mutedDim} />
@@ -418,9 +418,9 @@ export default function EditProfileScreen() {
                   {t('editProfile.fieldEmail')}
                 </Text>
                 <View style={{
-                  backgroundColor: 'rgba(255,255,255,0.03)',
+                  backgroundColor: C.surface,
                   borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+                  borderWidth: 1, borderColor: C.border,
                   flexDirection: 'row', alignItems: 'center', gap: 8,
                 }}>
                   <Feather name="mail" size={15} color={C.mutedDim} />

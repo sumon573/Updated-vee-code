@@ -57,18 +57,18 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 const { width, height } = Dimensions.get('window');
 
 const C = {
-  bg: '#07020F',
-  surface: 'rgba(255,255,255,0.05)',
-  border: 'rgba(255,255,255,0.10)',
+  bg: '#FFFFFF',
+  surface: '#F2F2F7',
+  border: '#E5E5EA',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: 'rgba(255,255,255,0.55)',
-  dim: 'rgba(255,255,255,0.3)',
-  inputBg: 'rgba(255,255,255,0.07)',
-  headerBg: 'rgba(7,2,15,0.97)',
+  text: '#000000',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  inputBg: '#F2F2F7',
+  headerBg: 'rgba(255,255,255,0.97)',
   onlineGreen: '#22C55E',
-  offlineGray: 'rgba(255,255,255,0.25)',
+  offlineGray: '#C7C7CC',
 } as const;
 
 // ── Typing dots ────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ function TypingDots() {
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'center', gap: 4,
-      backgroundColor: 'rgba(255,255,255,0.08)',
+      backgroundColor: '#E9E9EB',
       borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
       borderWidth: 1, borderColor: C.border,
       alignSelf: 'flex-start', marginLeft: 14, marginBottom: 6,
@@ -713,7 +713,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             borderBottomWidth: 1, borderBottomColor: C.border,
           }}>
             <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginRight: 10 }}>
-              <Feather name="arrow-left" size={22} color="#fff" />
+              <Feather name="arrow-left" size={22} color="#000000" />
             </Pressable>
 
             {/* Avatar — tap to visit profile */}
@@ -739,7 +739,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                     style={{ width: 42, height: 42, borderRadius: 21 }}
                   />
                 ) : (
-                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: 16 }}>
+                  <Text style={{ color: '#7C3AED', fontWeight: '900', fontSize: 16 }}>
                     {participantName[0]?.toUpperCase()}
                   </Text>
                 )}
@@ -754,7 +754,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* Name + status */}
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+              <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
                 {participantName}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
@@ -871,7 +871,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.3)',
                 alignItems: 'center',
               }}>
-                <Text style={{ color: '#FCA5A5', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
                   {blockDirection === 'byMe' || blockDirection === 'mutual'
                     ? t('chat.blockedBannerByMe', { name: participantName })
                     : t('chat.blockedBannerByThem', { name: participantName })}
@@ -907,7 +907,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   flex: 1, minHeight: 40, maxHeight: 110,
                   backgroundColor: C.inputBg,
                   borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
-                  color: '#fff', fontSize: 15,
+                  color: '#000000', fontSize: 15,
                   borderWidth: 1, borderColor: C.border,
                 }}
                 placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
@@ -927,7 +927,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   backgroundColor: inputText.trim() ? C.primary : 'rgba(124,58,237,0.2)',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: C.primary,
-                  shadowOpacity: inputText.trim() ? 0.5 : 0,
+                  shadowOpacity: inputText.trim() ? 0.25 : 0,
                   shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
                   elevation: inputText.trim() ? 6 : 0,
                 }}>

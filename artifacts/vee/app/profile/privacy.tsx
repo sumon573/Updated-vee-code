@@ -23,14 +23,14 @@ import { withTimeout } from '@/src/utils/withTimeout';
 const SAVE_TIMEOUT_MS = 12_000;
 
 const C = {
-  bg: '#07020F',
+  bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  text: '#FFFFFF',
-  muted: '#B8A6D9',
-  mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  text: '#000000',
+  muted: '#8E8E93',
+  mutedDim: '#C7C7CC',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
 } as const;
 
 type PrivacySettings = {
@@ -63,7 +63,7 @@ function SettingRow({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+      borderWidth: 1, borderColor: C.border,
     }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,
@@ -264,7 +264,7 @@ export default function PrivacyScreen() {
           {blockedUsers.length === 0 ? (
             <View style={{
               backgroundColor: C.surface, borderRadius: 16, padding: 20,
-              borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+              borderWidth: 1, borderColor: C.border,
               alignItems: 'center',
             }}>
               <Feather name="slash" size={24} color={C.mutedDim} />
@@ -280,7 +280,7 @@ export default function PrivacyScreen() {
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: C.surface, borderRadius: 16,
                   padding: 14, marginBottom: 10,
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+                  borderWidth: 1, borderColor: C.border,
                 }}
               >
                 {b.targetAvatar ? (
