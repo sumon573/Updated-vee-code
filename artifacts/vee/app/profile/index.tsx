@@ -455,6 +455,63 @@ export default function ProfileSection({
             </View>
           )}
 
+          {/* ── Step 4: Honor badges (real achievements) ── */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{
+              color: C.text, fontSize: 16, fontWeight: '800',
+              marginBottom: 12,
+            }}>
+              Honor
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {roomsHosted > 0 && (
+                <View style={{ alignItems: 'center', width: 64 }}>
+                  <View style={{
+                    width: 64, height: 64, borderRadius: 16,
+                    backgroundColor: 'rgba(139,92,246,0.15)',
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)',
+                  }}>
+                    <Text style={{ fontSize: 28 }}>🎙️</Text>
+                  </View>
+                  <Text style={{ color: C.muted, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                    Host
+                  </Text>
+                </View>
+              )}
+              {Object.keys(receivedGifts).length > 0 && (
+                <View style={{ alignItems: 'center', width: 64 }}>
+                  <View style={{
+                    width: 64, height: 64, borderRadius: 16,
+                    backgroundColor: 'rgba(139,92,246,0.15)',
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)',
+                  }}>
+                    <Text style={{ fontSize: 28 }}>🎁</Text>
+                  </View>
+                  <Text style={{ color: C.muted, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                    Loved
+                  </Text>
+                </View>
+              )}
+              {followCounts.followers >= 10 && (
+                <View style={{ alignItems: 'center', width: 64 }}>
+                  <View style={{
+                    width: 64, height: 64, borderRadius: 16,
+                    backgroundColor: 'rgba(139,92,246,0.15)',
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)',
+                  }}>
+                    <Text style={{ fontSize: 28 }}>⭐</Text>
+                  </View>
+                  <Text style={{ color: C.muted, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                    Popular
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
           {/* ── Account section ── */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
