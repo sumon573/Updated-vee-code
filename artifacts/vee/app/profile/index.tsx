@@ -38,14 +38,10 @@ const C = {
 
 function StatBox({ label, value, onPress }: { label: string; value: string | number; onPress?: () => void }) {
   return (
-    <Pressable onPress={onPress} style={{ flex: 1 }}>
-      <View style={{
-        alignItems: 'center', paddingVertical: 14,
-        backgroundColor: C.surface,
-        borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-      }}>
+    <Pressable onPress={onPress} style={{ flex: 1, paddingVertical: 12 }}>
+      <View style={{ alignItems: 'center' }}>
         <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{value}</Text>
-        <Text style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{label}</Text>
+        <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{label}</Text>
       </View>
     </Pressable>
   );
@@ -372,8 +368,13 @@ export default function ProfileSection({
             </View>
           </View>
 
-          {/* ── Stats ── */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+          {/* ── Stats (IMO-style: flat, functional) ── */}
+          <View style={{
+            flexDirection: 'row',
+            marginBottom: 24,
+            borderTopWidth: 1, borderBottomWidth: 1,
+            borderColor: 'rgba(255,255,255,0.08)',
+          }}>
             <StatBox
               label={t('profile.statFollowers')}
               value={followCounts.followers}
