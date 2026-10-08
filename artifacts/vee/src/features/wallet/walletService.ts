@@ -51,6 +51,8 @@ async function authedFetch(
 export type WalletTransaction = {
   id: string;
   type: 'gift_sent' | 'gift_received';
+  /** Gift catalog id ('1'–'8') — written by the api-server for gift transactions */
+  giftId: string;
   /** Negative for sent, positive for received */
   diamonds: number;
   emoji: string;

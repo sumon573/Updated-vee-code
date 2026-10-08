@@ -520,6 +520,7 @@ const hi = {
     statFollowers: 'फ़ॉलोअर',
     statFollowing: 'फ़ॉलोइंग',
     statRooms: 'रूम्स',
+    gifts: 'उपहार',
     sectionAccount: 'अकाउंट',
     sectionApp: 'ऐप',
     menuEditProfile: 'प्रोफ़ाइल संपादित करें',

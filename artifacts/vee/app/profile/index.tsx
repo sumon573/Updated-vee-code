@@ -433,7 +433,7 @@ export default function ProfileSection({
                 color: C.text, fontSize: 16, fontWeight: '800',
                 marginBottom: 12,
               }}>
-                {t('profile.gifts') ?? 'Gifts'}
+                {t('profile.gifts')}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                 {Object.entries(receivedGifts).map(([giftId, count]) => (

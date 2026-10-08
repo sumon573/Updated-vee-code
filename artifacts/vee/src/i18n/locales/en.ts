@@ -511,6 +511,7 @@ const en = {
     statFollowers: 'Followers',
     statFollowing: 'Following',
     statRooms: 'Rooms',
+    gifts: 'Gifts',
     sectionAccount: 'ACCOUNT',
     sectionApp: 'APP',
     menuEditProfile: 'Edit Profile',

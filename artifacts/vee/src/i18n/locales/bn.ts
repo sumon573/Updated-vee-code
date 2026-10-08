@@ -520,6 +520,7 @@ const bn = {
     statFollowers: 'ফলোয়ার',
     statFollowing: 'ফলোয়িং',
     statRooms: 'রুম',
+    gifts: 'উপহার',
     sectionAccount: 'অ্যাকাউন্ট',
     sectionApp: 'অ্যাপ',
     menuEditProfile: 'প্রোফাইল সম্পাদনা',

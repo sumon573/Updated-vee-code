@@ -519,6 +519,7 @@ const ar = {
     statFollowers: 'متابعون',
     statFollowing: 'يتابع',
     statRooms: 'غرف',
+    gifts: 'الهدايا',
     sectionAccount: 'الحساب',
     sectionApp: 'التطبيق',
     menuEditProfile: 'تعديل الملف الشخصي',
