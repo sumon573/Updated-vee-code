@@ -6,16 +6,14 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, Platform, Alert,
+  View, Text, ScrollView, Alert,
   ActivityIndicator, Image, Pressable, FlatList,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { ref as dbRef, onValue } from 'firebase/database';
-import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, VeeUser } from '@/src/services/userService';
 import { subscribeFollowCounts } from '@/src/services/followService';
@@ -241,7 +239,7 @@ export default function ProfileScreen({
               contentContainerStyle={{ paddingHorizontal: 16 }}
               renderItem={({ item }) => (
                 <Pressable
-                  onPress={() => router.push(`/voice-room/${item.id}`)}
+                  onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
                   style={{ width: 120, marginRight: 12 }}
                 >
                   <View style={{ width: 120, height: 120, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
