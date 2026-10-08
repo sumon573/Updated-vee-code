@@ -388,6 +388,31 @@ export async function deleteMessage(
 // ─── Chat list ────────────────────────────────────────────────────────────────
 
 /**
+ * Sanitize raw Firebase chat data into a safe Chat object.
+ * PERMANENT FIX (2026-10-08): Corrupted chat entries (missing participantName/
+ * participantId) crash ChatListItem during render. This ensures safe defaults.
+ * Returns null if the data is not an object (caller should skip it).
+ */
+export function sanitizeChat(chatId: string, raw: any): Chat | null {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id: chatId,
+    participantId: typeof raw.participantId === 'string' ? raw.participantId : '',
+    participantName: typeof raw.participantName === 'string' ? raw.participantName : 'Unknown',
+    participantAvatar: typeof raw.participantAvatar === 'string' ? raw.participantAvatar : undefined,
+    lastMessage: typeof raw.lastMessage === 'string' ? raw.lastMessage : '',
+    lastMessageType: typeof raw.lastMessageType === 'string' ? raw.lastMessageType : 'text',
+    lastMessageTime: typeof raw.lastMessageTime === 'number' ? raw.lastMessageTime : 0,
+    unreadCount: typeof raw.unreadCount === 'number' ? raw.unreadCount : 0,
+    isOnline: raw.isOnline === true,
+    hasStory: raw.hasStory === true,
+    storySeen: raw.storySeen === true,
+    isPinned: raw.isPinned === true,
+    isTyping: raw.isTyping === true,
+  } as Chat;
+}
+
+/**
  * Subscribe to the logged-in user's chat list.
  * Each entry in userChats/{uid} is a Chat object.
  */
@@ -400,8 +425,8 @@ export function subscribeUserChats(
     if (!snap.exists()) { callback([]); return; }
     const chats: Chat[] = [];
     snap.forEach((child) => {
-      const v = child.val() as Chat;
-      chats.push({ ...v, id: child.key! });
+      const sanitized = sanitizeChat(child.key!, child.val());
+      if (sanitized) chats.push(sanitized);
     });
     // Sort by lastMessageTime descending
     chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));

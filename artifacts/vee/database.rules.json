@@ -14,14 +14,33 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
+        // PERMANENT FIX (2026-10-08): Validate data types to prevent corrupted
+        // records that crash the app. These rules reject malformed writes at
+        // the database level, so bad data can never be stored.
         "vId": {
           ".validate": "!data.exists() || data.val() === newData.val()"
         },
         "createdAt": {
           ".validate": "!data.exists() || data.val() === newData.val()"
         },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "email": {
+          ".validate": "newData.isString()"
+        },
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        "photoURL": {
+          ".validate": "newData.isString()"
+        },
+        "bio": {
+          ".validate": "newData.isString()"
+        },
         "banned": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'"
+          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
+          ".validate": "newData.isBoolean()"
         },
         "banReason": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'"
