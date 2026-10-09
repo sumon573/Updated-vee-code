@@ -359,10 +359,14 @@ router.post("/send-gift", async (req: Request, res: Response) => {
     // We claimed the key — now atomically debit the sender.
     // Missing wallet counts as balance 0, so uninitialized senders fail here
     // with insufficient balance instead of being charged.
+    // FIX (2026-10-09): Coerce string balances to number — if the wallet
+    // was written as a string, the old `typeof current === "number"` check
+    // treated it as 0 and falsely reported insufficient balance.
     const txResult = await db
       .ref(`wallets/${fromUid}/balance`)
-      .transaction((current: number | null) => {
-        const balance = typeof current === "number" ? current : 0;
+      .transaction((current: number | string | null) => {
+        const balance = typeof current === "number" ? current : 
+          (typeof current === "string" ? parseFloat(current) || 0 : 0);
         if (balance < coins) return undefined; // abort: insufficient balance
         return balance - coins;
       });

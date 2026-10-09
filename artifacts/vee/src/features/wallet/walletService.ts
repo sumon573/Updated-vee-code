@@ -155,7 +155,11 @@ export async function getBalance(): Promise<number> {
 /** One-shot read of the current diamond balance (own wallet, via RTDB). */
 export async function getWalletBalance(uid: string): Promise<number> {
   const snap = await get(ref(database, `wallets/${uid}/balance`));
-  return snap.exists() ? (snap.val() as number) : 0;
+  if (!snap.exists()) return 0;
+  const val = snap.val();
+  // FIX (2026-10-09): Coerce string balances — prevents false "insufficient"
+  // when the wallet was written as a string.
+  return typeof val === "number" ? val : (typeof val === "string" ? parseFloat(val) || 0 : 0);
 }
 
 /**

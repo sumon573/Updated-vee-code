@@ -182,6 +182,16 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const { t } = useTranslation();
   const myUid = user?.uid ?? 'unknown';
 
+  // FIX (2026-10-09): Derive participantId from chatId when not provided.
+  // Notification deep-links only pass chatId (format: sortedUids joined by '_').
+  // Without this, the header shows "User" and profile shows "User not found".
+  const effectiveParticipantId = useMemo(() => {
+    if (participantId && participantId.length > 0) return participantId;
+    const parts = chatId.split('_');
+    const other = parts.find(p => p !== myUid && p.length > 0);
+    return other ?? '';
+  }, [participantId, chatId, myUid]);
+
   // ── State ──────────────────────────────────────────────────────────────────
   const [messages, setMessages]             = useState<DmMessage[]>([]);
   const [inputText, setInputText]           = useState('');
@@ -259,20 +269,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!participantId) return;
-    const unsub = subscribeTyping(chatId, participantId, setIsTypingRemote);
+    if (!effectiveParticipantId) return;
+    const unsub = subscribeTyping(chatId, effectiveParticipantId, setIsTypingRemote);
     return unsub;
-  }, [chatId, participantId]);
+  }, [chatId, effectiveParticipantId]);
 
   // ── Subscribe to presence (respects target's privacy settings) ────────────
   useEffect(() => {
-    if (!participantId) return;
+    if (!effectiveParticipantId) return;
     let unsub: (() => void) | null = null;
     let cancelled = false;
     (async () => {
       const [showOnline, showSeen] = await Promise.all([
-        canViewOnlineStatus(participantId).catch(() => true),
-        canViewLastSeen(participantId).catch(() => true),
+        canViewOnlineStatus(effectiveParticipantId).catch(() => true),
+        canViewLastSeen(effectiveParticipantId).catch(() => true),
       ]);
       if (cancelled) return;
       if (!showOnline && !showSeen) {
@@ -281,21 +291,21 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         setLastSeen(null);
         return;
       }
-      unsub = subscribePresence(participantId, (online, seen) => {
+      unsub = subscribePresence(effectiveParticipantId, (online, seen) => {
         setIsOnline(showOnline ? online : false);
         setLastSeen(showSeen ? seen : null);
       });
     })();
     return () => { cancelled = true; unsub?.(); };
-  }, [participantId]);
+  }, [effectiveParticipantId]);
 
   // RC6 fix Issue 5: subscribe to participant's RTDB profile for live photoURL.
   useEffect(() => {
-    if (!participantId) return;
-    return subscribeUser(participantId, (profile) => {
+    if (!effectiveParticipantId) return;
+    return subscribeUser(effectiveParticipantId, (profile) => {
       if (profile?.photoURL) setParticipantPhotoURL(profile.photoURL);
     });
-  }, [participantId]);
+  }, [effectiveParticipantId]);
 
   // ── Mark seen on open ──────────────────────────────────────────────────
   useEffect(() => {
@@ -308,11 +318,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Block status: check on open and refresh when returning ────────────────
   useEffect(() => {
     let cancelled = false;
-    getBlockDirection(myUid, participantId)
+    getBlockDirection(myUid, effectiveParticipantId)
       .then((d) => { if (!cancelled) setBlockDirection(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [myUid, participantId]);
+  }, [myUid, effectiveParticipantId]);
 
   // ── Timers cleanup on unmount ─────────────────────────────────────────────
   useEffect(() => () => {
@@ -397,13 +407,13 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     setTyping(chatId, myUid, false);
 
     try {
-      await sendMessage(chatId, myUid, participantId, text, 'text', replyPreview, undefined, user?.displayName ?? undefined);
+      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, user?.displayName ?? undefined);
     } catch (e) {
       // Restore the typed text on failure (only if the user hasn't typed
       // something new meanwhile) so a failed send doesn't eat the message.
       setInputText((prev) => (prev ? prev : text));
       if (e instanceof BlockedInteractionError) {
-        const d = await getBlockDirection(myUid, participantId).catch(() => 'none' as BlockDirection);
+        const d = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
         setBlockDirection(d);
         Alert.alert(
           t('chat.blockedTitle') ?? 'Blocked',
@@ -415,7 +425,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         Alert.alert(t('chat.error'), t('chat.sendError'));
       }
     }
-  }, [inputText, chatId, myUid, participantId, replyTarget, participantName, t, user]);
+  }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, participantName, t, user]);
 
   // ── Typing detection ──────────────────────────────────────────────────────
   const handleInputChange = useCallback((text: string) => {
@@ -463,14 +473,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
     try {
       const uploaded = await uploadImage(asset.uri, { folder: 'vee/dm' });
-      await sendMessage(chatId, myUid, participantId, uploaded.url, 'image', undefined, uploaded.publicId, user?.displayName ?? undefined);
+      await sendMessage(chatId, myUid, effectiveParticipantId, uploaded.url, 'image', undefined, uploaded.publicId, user?.displayName ?? undefined);
     } catch (err) {
       Alert.alert(t('chat.uploadFailed'), err instanceof Error ? err.message : t('chat.photoSendFailed'));
     } finally {
       uploadingMediaRef.current = false;
       setUploadingMedia(false);
     }
-  }, [chatId, myUid, participantId, t, user]);
+  }, [chatId, myUid, effectiveParticipantId, t, user]);
 
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
@@ -520,7 +530,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                       // RC8-A: actually execute the block via blockService
                       await blockUser(
                         myUid,
-                        participantId,
+                        effectiveParticipantId,
                         participantName,
                         participantPhotoURL ?? undefined,
                       );
@@ -552,7 +562,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 await submitReport({
                   reporterUid: myUid,
                   reporterName: user?.displayName ?? 'Vee User',
-                  reportedUid: participantId,
+                  reportedUid: effectiveParticipantId,
                   reportedName: participantName,
                   reason,
                   roomId: chatId,
@@ -603,7 +613,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         { text: t('chat.cancel'), style: 'cancel' },
       ],
     );
-  }, [chatId, myUid, participantId, participantName, participantPhotoURL, router, t, user]);
+  }, [chatId, myUid, effectiveParticipantId, participantName, participantPhotoURL, router, t, user]);
 
   // ── Render message ─────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }: { item: DmMessage }) => {
@@ -628,7 +638,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const handleVoiceCall = useCallback(async () => {
     if (!user) return;
     // Block enforcement: cannot call if blocked either way.
-    const direction = await getBlockDirection(myUid, participantId).catch(() => 'none' as BlockDirection);
+    const direction = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
     if (direction !== 'none') {
       setBlockDirection(direction);
       Alert.alert(
@@ -640,12 +650,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const callRoomId = buildCallRoomId(myUid, participantId);
-    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(participantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(participantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
+    const callRoomId = buildCallRoomId(myUid, effectiveParticipantId);
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
     if (participantPhotoURL) url += `&remotePhotoURL=${encodeURIComponent(participantPhotoURL)}`;
     if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
     router.push(url as never);
-  }, [user, myUid, participantId, participantName, participantPhotoURL, router]);
+  }, [user, myUid, effectiveParticipantId, participantName, participantPhotoURL, router]);
 
   const statusColor = isTypingRemote ? C.glow : isOnline ? C.onlineGreen : C.offlineGray;
   const topPad = Platform.OS === 'web' ? 67 : 0;
@@ -721,7 +731,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push(
-                  `/user-profile?uid=${encodeURIComponent(participantId)}&name=${encodeURIComponent(participantName)}` as never,
+                  `/user-profile?uid=${encodeURIComponent(effectiveParticipantId)}&name=${encodeURIComponent(participantName)}` as never,
                 );
               }}
               style={{ position: 'relative', marginRight: 10 }}
