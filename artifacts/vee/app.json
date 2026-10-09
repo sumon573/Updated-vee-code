@@ -26,7 +26,10 @@
         "NSCameraUsageDescription": "Vee uses the camera to capture profile photos and stories.",
         "NSPhotoLibraryUsageDescription": "Vee accesses your photo library to upload profile photos and stories.",
         "NSPhotoLibraryAddUsageDescription": "Vee saves media to your photo library.",
-        "UIBackgroundModes": ["audio", "voip"]
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ]
       },
       "buildNumber": "1",
       "bitcode": false
@@ -120,6 +123,9 @@
     "extra": {
       "router": {
         "origin": "https://vee.app"
+      },
+      "eas": {
+        "projectId": "68751f57-958a-4abb-a64d-b5df3abead1f"
       }
     },
     "owner": "baceki8326s-team"
