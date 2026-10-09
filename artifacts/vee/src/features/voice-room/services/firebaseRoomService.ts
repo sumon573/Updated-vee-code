@@ -226,10 +226,10 @@ export async function createRoom(data: {
   const hostSeatRef = ref(database, `rooms/${roomId}/seats/0`);
   await set(hostSeatRef, hostSeat);
 
-  // BUG 14/15 fix: if the host disconnects without explicitly closing the room,
-  // only their SEAT is removed — the room itself stays active:true so it
-  // remains visible to other users and the host can rejoin.
-  onDisconnect(hostSeatRef).remove().catch(() => {/* non-critical */});
+  // FIX (2026-10-09): DO NOT use onDisconnect().remove() for host seat either.
+  // Brief network blips were dropping the host from their seat. The seat now
+  // persists until explicit leave or room close. Cancel any stale handler.
+  onDisconnect(hostSeatRef).cancel().catch(() => {/* non-critical */});
 
   return roomId;
 }
