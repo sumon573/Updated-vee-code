@@ -1043,9 +1043,14 @@ export default function VoiceRoomScreen() {
       return;
     }
 
-    if (mySeatIdx >= 0 && mySeatIdx !== seatIdx) {
-      removeSeat(roomId, mySeatIdx).catch(() => {});
-    } else if (mySeatIdx < 0) {
+    // H8 FIX: Use ref (not stale state) for old seat index. During rapid
+    // switches, mySeatIdx (from useMemo on seats) can be stale because
+    // Firebase hasn't synced yet. Update ref synchronously.
+    const oldIdx = mySeatIdxRef.current;
+    mySeatIdxRef.current = seatIdx;
+    if (oldIdx >= 0 && oldIdx !== seatIdx) {
+      removeSeat(roomId, oldIdx).catch(() => {});
+    } else if (oldIdx < 0) {
       startPublishing();
       // FIRST-SEAT FIX (2026-10-09): Firebase seat.muted=true but the local
       // mic starts live — explicitly mute to match. Otherwise the UI shows
