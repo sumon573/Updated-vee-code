@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Chat } from '../types';
-import { formatTime } from '../data/mockChats';
+import { formatTime } from '../data/chatUtils';
 
 const C = {
   text: '#000000',

@@ -11,7 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { UserStories, Story } from '../types';
-import { STORY_REACTIONS } from '../data/mockStories';
+import { STORY_REACTIONS } from '../data/storyConstants';
 
 const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 5000;

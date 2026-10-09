@@ -377,6 +377,14 @@ export async function deleteMessage(
 ): Promise<void> {
   const msgRef = ref(database, `chats/${chatId}/messages/${messageId}`);
   if (forEveryone) {
+    // SECURITY FIX (2026-10-09): only the sender can delete for everyone.
+    // Verify ownership before wiping — a direct service call must not be
+    // able to delete someone else's message.
+    const snap = await get(msgRef).catch(() => null);
+    const senderId = snap?.val()?.senderId as string | undefined;
+    if (!snap?.exists() || senderId !== myUid) {
+      throw new Error('Only the sender can delete a message for everyone');
+    }
     await update(msgRef, { deletedForEveryone: true, content: '' });
   } else {
     // "Delete for me" — store uid in deletedForUids array
@@ -499,24 +507,30 @@ export async function unpinChat(uid: string, chatId: string): Promise<void> {
 
 /** Clear all messages in a chat (soft delete for one user) */
 export async function clearChat(chatId: string, myUid: string): Promise<void> {
-  // RC8-A: read only the 200 most recent messages to avoid downloading the full
-  // history. The "clear chat" action primarily targets recent messages; older
-  // messages (before the user's oldest loaded page) are left in place since
-  // they are already filtered out by the pagination window.
-  const recentQuery = query(
-    ref(database, `chats/${chatId}/messages`),
-    orderByKey(),
-    limitToLast(200),
-  );
-  const msgsSnap = await get(recentQuery);
-  if (!msgsSnap.exists()) return;
-
-  const updates: Record<string, boolean> = {};
-  msgsSnap.forEach((child) => {
-    updates[`chats/${chatId}/messages/${child.key}/deletedForUids/${myUid}`] = true;
-  });
-  if (Object.keys(updates).length > 0) {
-    await update(ref(database), updates);
+  // FIX (2026-10-09): paginate through the ENTIRE history in batches so
+  // "clear chat" truly clears everything, not just the last 200 messages.
+  let lastKey: string | undefined;
+  for (;;) {
+    const q = lastKey
+      ? query(ref(database, `chats/${chatId}/messages`), orderByKey(), endBefore(lastKey), limitToLast(200))
+      : query(ref(database, `chats/${chatId}/messages`), orderByKey(), limitToLast(200));
+    const msgsSnap = await get(q);
+    if (!msgsSnap.exists()) break;
+    const updates: Record<string, boolean> = {};
+    let oldestKey: string | undefined;
+    let count = 0;
+    msgsSnap.forEach((child) => {
+      if (oldestKey === undefined) oldestKey = child.key ?? undefined;
+      updates[`chats/${chatId}/messages/${child.key}/deletedForUids/${myUid}`] = true;
+      count++;
+    });
+    if (count === 0) break;
+    if (Object.keys(updates).length > 0) {
+      await update(ref(database), updates);
+    }
+    // Fewer than a full batch (or same oldest key) means we've reached the start.
+    if (count < 200 || oldestKey === lastKey) break;
+    lastKey = oldestKey;
   }
 }
 
