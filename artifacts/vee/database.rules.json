@@ -500,18 +500,20 @@
     // ─────────────────────────────────────────────────────────────────────
     "shortIds": {
       ".read": "auth != null",
+      // C8 FIX: Block ALL direct client writes. Short IDs can only be
+      // purchased via POST /api/wallet/purchase-short-id (server uses Admin
+      // SDK which bypasses these rules) or granted by an admin via the
+      // server-side admin panel. The old rules allowed free claims.
       "users": {
         "$shortId": {
-          // Claim: only if not taken, or by the current owner (re-claim),
-          // or by an admin (custom grant). Value must be the claimant's UID.
-          ".write": "auth != null && (!data.exists() || data.val() === auth.uid || root.child('admins').child(auth.uid).exists())",
-          ".validate": "newData.isString() && newData.val().length > 0"
+          ".write": "false",
+          ".validate": "newData.hasChildren(['ownerUid', 'ts'])"
         }
       },
       "rooms": {
         "$shortId": {
-          ".write": "auth != null && (!data.exists() || root.child('admins').child(auth.uid).exists())",
-          ".validate": "newData.isString() && newData.val().length > 0"
+          ".write": "false",
+          ".validate": "newData.hasChildren(['ownerUid', 'ts'])"
         }
       }
     },

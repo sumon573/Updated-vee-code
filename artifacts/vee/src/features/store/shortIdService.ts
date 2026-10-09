@@ -1,64 +1,83 @@
 /**
- * Short ID Service — claim, random assign, admin grant (2026-10-09).
+ * Short ID Service — purchase via server, admin grant (2026-10-09).
  *
- * - Users: shortIds/users/{id} → uid, users/{uid}/shortId → id
- * - Rooms: shortIds/rooms/{id} → roomId, rooms/{roomId}/info/shortId → id
+ * C5-C8 FIX: All purchases go through POST /api/wallet/purchase-short-id
+ * (atomic server-side: balance check + debit + ID claim + mapping).
+ * Direct client writes to shortIds/ are BLOCKED by Firebase rules —
+ * the old claimShortId() did free direct writes (security hole).
  *
- * Claim uses a Firebase transaction for atomic uniqueness: if two users
- * race for the same ID, only the first transaction commits.
+ * - Users: shortIds/users/{id} → {ownerUid, ...}, users/{uid}/shortId → id
+ * - Rooms: shortIds/rooms/{id} → {ownerUid, ...}, rooms/{roomId}/info/shortId → id
  */
 
-import { ref, runTransaction, get, set } from 'firebase/database';
+import { ref, get, runTransaction, set } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
+import { getApiBase } from '@/src/utils/platform';
 
 export type ShortIdKind = 'users' | 'rooms';
 
+/** Price catalog (mirrors server) */
+const SHORT_ID_PRICES: Record<string, number> = {
+  '8888': 50000,
+  '6666': 25000, '7777': 25000, '9999': 25000,
+  '1234': 10000, '4321': 10000, '1314': 10000, '5200': 10000,
+  '1000': 5000, '2000': 5000, '3000': 5000, '5000': 5000, '8000': 5000,
+};
+export function getShortIdPrice(shortId: string): number {
+  return SHORT_ID_PRICES[shortId] ?? 1000;
+}
+
 /**
- * Claim a specific 4-digit short ID.
- * @returns { success, error } — error is a user-friendly message key.
+ * Purchase a specific 4-digit short ID via the server (atomic).
+ * @returns { success, error } — error is a user-friendly message.
+ */
+export async function purchaseShortId(
+  kind: ShortIdKind,
+  shortId: string,
+  roomId?: string,
+): Promise<{ success: boolean; error?: string; newBalance?: number }> {
+  const user = auth.currentUser;
+  if (!user) return { success: false, error: 'Not signed in' };
+
+  if (!/^[0-9]{4}$/.test(shortId)) {
+    return { success: false, error: 'ID must be 4 digits' };
+  }
+  if (kind === 'rooms' && !roomId) {
+    return { success: false, error: 'Select a room first' };
+  }
+
+  try {
+    const token = await user.getIdToken();
+    const idempotencyKey = `${user.uid}_${shortId}_${Date.now()}`;
+    const res = await fetch(`${getApiBase()}/api/wallet/purchase-short-id`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ shortId, kind, roomId, idempotencyKey }),
+    });
+    const data = await res.json() as { ok?: boolean; error?: string; newBalance?: number };
+    if (!res.ok || !data.ok) {
+      return { success: false, error: data.error ?? 'Purchase failed' };
+    }
+    return { success: true, newBalance: data.newBalance };
+  } catch {
+    return { success: false, error: 'Network error' };
+  }
+}
+
+/**
+ * @deprecated Use purchaseShortId() instead. Kept for backwards compat;
+ * now routes through the server (no direct writes).
  */
 export async function claimShortId(
   kind: ShortIdKind,
   shortId: string,
-  ownerId: string, // uid for users, roomId for rooms
+  ownerId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return { success: false, error: 'Not signed in' };
-
-  // Validate: digits only, 4 digits for store purchases
-  if (!/^[0-9]{4}$/.test(shortId)) {
-    return { success: false, error: 'ID must be 4 digits' };
-  }
-
-  const registryRef = ref(database, `shortIds/${kind}/${shortId}`);
-
-  // Atomic claim via transaction
-  const result = await runTransaction(registryRef, (current) => {
-    if (current !== null) {
-      // Already taken — abort
-      return undefined;
-    }
-    return ownerId;
-  });
-
-  if (!result.committed) {
-    return { success: false, error: 'ID already taken' };
-  }
-
-  // Write the reverse mapping
-  try {
-    if (kind === 'users') {
-      await set(ref(database, `users/${ownerId}/shortId`), shortId);
-    } else {
-      await set(ref(database, `rooms/${ownerId}/info/shortId`), shortId);
-    }
-  } catch {
-    // Rollback the registry on failure
-    await set(registryRef, null).catch(() => {});
-    return { success: false, error: 'Failed to save ID' };
-  }
-
-  return { success: true };
+  const roomId = kind === 'rooms' ? ownerId : undefined;
+  return purchaseShortId(kind, shortId, roomId);
 }
 
 /**

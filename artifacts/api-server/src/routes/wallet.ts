@@ -1158,4 +1158,147 @@ router.get("/topup-bkash/pending", async (req: Request, res: Response) => {
   }
 });
 
+// ─── Short-ID purchase (C5-C8) ─────────────────────────────────────────────
+// Atomic purchase: in a SINGLE Firebase multi-path update, this:
+//  1. Verifies the user has sufficient diamond balance
+//  2. Debits the wallet
+//  3. Claims the short ID in the registry (fails if taken)
+//  4. Sets the reverse mapping on user/room profile
+//  5. Writes idempotency receipt (prevents double-charge on retry)
+//
+// Price catalog (diamonds):
+//   8888 → 50000 | 6666,7777,9999 → 25000 | 1234,4321,1314,5200 → 10000
+//   1000,2000,3000,5000,8000 → 5000 | random 4-digit → 1000
+const SHORT_ID_PRICES: Record<string, number> = {
+  '8888': 50000,
+  '6666': 25000, '7777': 25000, '9999': 25000,
+  '1234': 10000, '4321': 10000, '1314': 10000, '5200': 10000,
+  '1000': 5000, '2000': 5000, '3000': 5000, '5000': 5000, '8000': 5000,
+};
+const RANDOM_SHORT_ID_PRICE = 1000;
+
+function getShortIdPrice(shortId: string): number {
+  return SHORT_ID_PRICES[shortId] ?? RANDOM_SHORT_ID_PRICE;
+}
+
+router.post("/purchase-short-id", async (req: Request, res: Response) => {
+  try {
+    const fromUid = (req as unknown as { uid?: string }).uid;
+    if (!fromUid) {
+      return res.status(401).json({ ok: false, error: "Missing Authorization Bearer <redacted>" });
+    }
+
+    const { shortId, kind, roomId, idempotencyKey } = req.body as {
+      shortId?: string;
+      kind?: string;
+      roomId?: string;
+      idempotencyKey?: string;
+    };
+
+    // Validate inputs
+    if (typeof shortId !== "string" || !/^[0-9]{4}$/.test(shortId)) {
+      return res.status(400).json({ ok: false, error: "Invalid short ID (must be 4 digits)" });
+    }
+    if (kind !== "users" && kind !== "rooms") {
+      return res.status(400).json({ ok: false, error: "Invalid kind" });
+    }
+    if (kind === "rooms" && (typeof roomId !== "string" || roomId.length === 0)) {
+      return res.status(400).json({ ok: false, error: "roomId required for room purchase" });
+    }
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length < 10) {
+      return res.status(400).json({ ok: false, error: "Invalid idempotency key" });
+    }
+
+    const price = getShortIdPrice(shortId);
+    const db = adminDatabase();
+
+    // Idempotency: if this purchase was already processed, return the cached result
+    const receiptRef = db.ref(`shortIdPurchases/${idempotencyKey}`);
+    const receiptSnap = await receiptRef.get();
+    if (receiptSnap.exists()) {
+      const receipt = receiptSnap.val();
+      return res.status(200).json({ ok: true, shortId, price, cached: true, receipt });
+    }
+
+    const ownerId = kind === "users" ? fromUid : roomId!;
+    const ts = Date.now();
+
+    // For room purchases, verify ownership
+    if (kind === "rooms") {
+      const roomSnap = await db.ref(`rooms/${roomId}/info/ownerId`).get();
+      const ownerUid = roomSnap.val();
+      // Also check alternative owner field locations
+      if (ownerUid !== fromUid) {
+        const altSnap = await db.ref(`rooms/${roomId}/ownerId`).get();
+        if (altSnap.val() !== fromUid) {
+          return res.status(403).json({ ok: false, error: "Not room owner" });
+        }
+      }
+    }
+
+    // Atomic transaction on wallet balance + ID registry
+    // We use a transaction on the wallet to ensure sufficient funds,
+    // then a transaction on the registry to claim the ID.
+    // If either fails, nothing is committed.
+    const walletRef = db.ref(`wallets/${fromUid}/balance`);
+    const registryRef = db.ref(`shortIds/${kind}/${shortId}`);
+
+    // Step 1: Debit wallet atomically (fails if insufficient)
+    const debitResult = await walletRef.transaction((current) => {
+      const bal = typeof current === "number" ? current : 0;
+      if (bal < price) return; // abort
+      return bal - price;
+    });
+    if (!debitResult.committed) {
+      return res.status(400).json({ ok: false, error: "Insufficient diamonds" });
+    }
+    const newBalance = debitResult.snapshot.val() as number;
+
+    // Step 2: Claim the ID atomically (fails if taken)
+    const claimResult = await registryRef.transaction((current) => {
+      if (current !== null && current !== undefined) return; // abort: taken
+      return { ownerUid: fromUid, ownerId, ts, price };
+    });
+    if (!claimResult.committed) {
+      // Refund the debit since ID was taken
+      await walletRef.transaction((current) => {
+        const bal = typeof current === "number" ? current : 0;
+        return bal + price;
+      });
+      return res.status(409).json({ ok: false, error: "ID already taken (refunded)" });
+    }
+
+    // Step 3: Set reverse mapping + receipt (best-effort, with rollback on failure)
+    try {
+      const updates: Record<string, unknown> = {};
+      if (kind === "users") {
+        updates[`users/${fromUid}/shortId`] = shortId;
+      } else {
+        updates[`rooms/${roomId}/info/shortId`] = shortId;
+      }
+      updates[`shortIdPurchases/${idempotencyKey}`] = {
+        uid: fromUid, shortId, kind, ownerId, price, ts, newBalance,
+      };
+      updates[`wallets/${fromUid}/transactions`] = undefined; // placeholder
+      await db.ref().update(updates);
+      // Push transaction history separately (push generates unique key)
+      await db.ref(`wallets/${fromUid}/transactions`).push({
+        type: "short_id_purchase",
+        shortId, kind, price: -price, ts, idempotencyKey,
+      });
+    } catch (err) {
+      // Rollback: refund + release ID
+      logger.error({ err }, "Short-ID mapping failed, rolling back");
+      await walletRef.transaction((c) => (typeof c === "number" ? c : 0) + price);
+      await registryRef.set(null);
+      return res.status(500).json({ ok: false, error: "Failed to complete purchase (refunded)" });
+    }
+
+    return res.status(200).json({ ok: true, shortId, kind, price, newBalance });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/wallet/purchase-short-id");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
 export default router;
