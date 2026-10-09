@@ -202,6 +202,32 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                 {t('chat.videoMessage')}
               </Text>
             </Pressable>
+          ) : message.type === 'call' ? (
+            // CALL LOG (2026-10-09): IMO-style call entry in chat
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+              <View style={{
+                width: 38, height: 38, borderRadius: 19,
+                backgroundColor: message.callInfo?.result === 'missed' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Feather
+                  name="phone"
+                  size={18}
+                  color={message.callInfo?.result === 'missed' ? '#EF4444' : '#22C55E'}
+                />
+              </View>
+              <View>
+                <Text style={{ color: textColor, fontSize: 14, fontWeight: '600' }}>
+                  {message.callInfo?.result === 'missed' ? 'Missed Audio Call'
+                    : message.callInfo?.result === 'rejected' ? 'Declined Audio Call'
+                    : message.callInfo?.result === 'cancelled' ? 'Cancelled Audio Call'
+                    : `Audio Call (${Math.floor((message.callInfo?.durationSec ?? 0) / 60)}:${String((message.callInfo?.durationSec ?? 0) % 60).padStart(2, '0')})`}
+                </Text>
+                <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                  {message.callInfo?.direction === 'outgoing' ? 'Outgoing' : 'Incoming'}
+                </Text>
+              </View>
+            </View>
           ) : (
             <Text style={{ color: textColor, fontSize: 15, lineHeight: 22 }}>
               {message.content}

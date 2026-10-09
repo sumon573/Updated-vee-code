@@ -86,6 +86,12 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
       case 'voice':        return { icon: 'mic',       text: t('chat.mediaVoice') };
       case 'story_share':  return { icon: 'share-2',  text: t('chat.mediaStoryShare') };
       case 'sticker':      return { icon: 'smile',     text: t('chat.mediaSticker') };
+      case 'call': {
+        // Call log preview — the lastMessage already contains the formatted
+        // text (e.g. "Missed Audio Call"), show it with a phone icon.
+        const isMissed = c.lastMessage.includes('Missed');
+        return { icon: 'phone', text: c.lastMessage || t('chat.mediaCall') };
+      }
       default:             return { icon: null,         text: c.lastMessage };
     }
   }

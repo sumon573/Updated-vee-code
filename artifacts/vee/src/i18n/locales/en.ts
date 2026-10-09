@@ -415,6 +415,7 @@ const en = {
     mediaVoice: 'Voice message',
     mediaStoryShare: 'Story share',
     mediaSticker: 'Sticker',
+    mediaCall: 'Audio Call',
     messagePlaceholder: 'Type a message...',
     emptyMessages: 'No messages yet. Say hi! 👋',
     statusTyping: 'typing...',

@@ -296,10 +296,25 @@ function IncomingCallListener({
 
   const handleDecline = useCallback(() => {
     if (!incoming) return;
+    const call = incoming;
     setIncoming(null);
     // background: safe to swallow — signaling cleanup
     removeCallSignal(uid).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // MISSED CALL LOG (2026-10-09): record in chat inbox like IMO.
+    import('@/src/features/chat/services/firebaseDmService').then(async ({ buildChatId, logCallToChat }) => {
+      try {
+        const chatId = buildChatId(uid, call.callerId);
+        await logCallToChat(
+          chatId,
+          uid,
+          call.callerId,
+          'incoming',
+          'missed',
+          0,
+        );
+      } catch { /* non-critical */ }
+    });
   }, [incoming, uid]);
 
   if (!incoming) return null;

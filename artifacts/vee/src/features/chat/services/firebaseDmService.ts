@@ -202,6 +202,88 @@ export async function sendMessage(
   sendPushNotification(participantUid, senderName ?? 'Vee', meta.lastMessage, { chatId }, 'messages');
 }
 
+/**
+ * Log a call to the chat history (2026-10-09).
+ * Writes a 'call' type message so the inbox shows "Missed Audio Call",
+ * "Outgoing call (2:34)" etc. like IMO/WhatsApp.
+ */
+export async function logCallToChat(
+  chatId: string,
+  myUid: string,
+  participantUid: string,
+  direction: 'incoming' | 'outgoing',
+  result: 'missed' | 'rejected' | 'completed' | 'cancelled',
+  durationSec: number,
+  otherUserName?: string,
+): Promise<void> {
+  try {
+    const msgsRef = ref(database, `chats/${chatId}/messages`);
+    const newMsgRef = push(msgsRef);
+
+    const msg = {
+      chatId,
+      // For missed incoming calls, the "sender" is the caller (them).
+      // For outgoing, the sender is me. This drives the inbox display.
+      senderId: direction === 'incoming' ? participantUid : myUid,
+      type: 'call',
+      content: '',
+      createdAt: serverTimestamp(),
+      status: 'sent',
+      reactions: {},
+      deletedForMe: false,
+      deletedForEveryone: false,
+      callInfo: { direction, result, durationSec },
+    };
+
+    await set(newMsgRef, msg);
+
+    // Human-readable preview for the chat list
+    const preview = formatCallPreview(direction, result, durationSec);
+    const meta = {
+      id: chatId,
+      lastMessage: preview,
+      lastMessageType: 'call',
+      lastMessageTime: Date.now(),
+    };
+
+    // Missed calls increment unread; completed calls don't
+    const unreadForParticipant = result === 'missed' && direction === 'incoming' ? 1 : 0;
+
+    await Promise.all([
+      update(ref(database, `userChats/${myUid}/${chatId}`), {
+        ...meta,
+        unreadCount: 0,
+      }),
+      update(ref(database, `userChats/${participantUid}/${chatId}`), {
+        ...meta,
+        unreadCount: unreadForParticipant,
+      }),
+    ]);
+  } catch {
+    // Non-critical — call logging must never break the call flow
+  }
+}
+
+/** Human-readable call preview for inbox, like IMO. */
+function formatCallPreview(
+  direction: 'incoming' | 'outgoing',
+  result: 'missed' | 'rejected' | 'completed' | 'cancelled',
+  durationSec: number,
+): string {
+  if (result === 'missed') return 'Missed Audio Call';
+  if (result === 'rejected') {
+    return direction === 'incoming' ? 'Declined Audio Call' : 'Call Declined';
+  }
+  if (result === 'cancelled') return 'Cancelled Audio Call';
+  // completed
+  const mins = Math.floor(durationSec / 60);
+  const secs = durationSec % 60;
+  const dur = mins > 0 ? `${mins}:${String(secs).padStart(2, '0')}` : `${secs}s`;
+  return direction === 'outgoing'
+    ? `Outgoing Audio Call (${dur})`
+    : `Incoming Audio Call (${dur})`;
+}
+
 type ChatMetaUpdate = {
   id: string;
   lastMessage: string;

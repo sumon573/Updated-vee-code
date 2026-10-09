@@ -40,7 +40,7 @@ export type UserStories = {
   allSeen: boolean;
 };
 
-export type ChatMessageType = 'text' | 'image' | 'video' | 'voice' | 'story_share' | 'sticker';
+export type ChatMessageType = 'text' | 'image' | 'video' | 'voice' | 'story_share' | 'sticker' | 'call';
 
 export type Chat = {
   id: string;

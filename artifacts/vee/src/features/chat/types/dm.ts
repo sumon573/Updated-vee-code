@@ -8,7 +8,7 @@ export type DmReplyPreview = {
   messageId: string;
   senderName: string;
   preview: string; // first 60 chars of the message content
-  type: 'text' | 'image' | 'video';
+  type: 'text' | 'image' | 'video' | 'voice' | 'call' | 'sticker' | 'story_share';
 };
 
 export type DmMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen';
@@ -18,7 +18,7 @@ export type DmMessage = {
   chatId: string;
   /** 'me' = current user, anything else = the other participant */
   senderId: string;
-  type: 'text' | 'image' | 'video';
+  type: 'text' | 'image' | 'video' | 'voice' | 'call' | 'sticker' | 'story_share';
   /** text content, or local URI / cloudinary URL for media */
   content: string;
   /** cloudinary public_id — set after upload */
@@ -31,6 +31,15 @@ export type DmMessage = {
   /** soft-delete flags */
   deletedForMe?: boolean;
   deletedForEveryone?: boolean;
+  /** Call log metadata (type='call' only) */
+  callInfo?: {
+    /** incoming = they called me, outgoing = I called them */
+    direction: 'incoming' | 'outgoing';
+    /** missed, rejected, completed, cancelled */
+    result: 'missed' | 'rejected' | 'completed' | 'cancelled';
+    /** call duration in seconds (0 for missed/rejected) */
+    durationSec: number;
+  };
 };
 
 export type TypingState = {

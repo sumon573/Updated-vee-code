@@ -166,6 +166,34 @@ export default function AudioCallScreen({
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
 
+    // CALL HISTORY (2026-10-09): log to chat inbox like IMO/WhatsApp.
+    // Fire-and-forget — never blocks the hangup flow.
+    try {
+      const state = callStateRef.current;
+      const wasConnected = state === 'connected';
+      const result = wasConnected ? 'completed'
+        : state === 'declined' ? 'rejected'
+        : 'cancelled';
+      // Only log if there was actual call activity (not instant hangup)
+      if (state !== 'ended') {
+        import('@/src/features/chat/services/firebaseDmService').then(async ({ buildChatId, logCallToChat }) => {
+          try {
+            const otherUid = role === 'caller' ? calleeUid : remoteUid;
+            if (!otherUid || !myUid) return;
+            const chatId = buildChatId(myUid, otherUid);
+            await logCallToChat(
+              chatId,
+              myUid,
+              otherUid,
+              role === 'caller' ? 'outgoing' : 'incoming',
+              result as 'missed' | 'rejected' | 'completed' | 'cancelled',
+              elapsed,
+            );
+          } catch { /* non-critical */ }
+        });
+      }
+    } catch { /* non-critical */ }
+
     // Remove Firebase signaling (caller removes it; callee already removed on accept)
     if (role === 'caller') {
       removeCallSignal(calleeUid).catch(() => {/* background: safe to swallow — signaling cleanup */});
