@@ -5,22 +5,26 @@
  * so the app never stays permanently stuck on the loading screen if
  * AsyncStorage hangs (common after a crash on some Android devices).
  *
+ * 2026-10-09 — RTL REMOVED PERMANENTLY: selecting Arabic used to call
+ * I18nManager.forceRTL(true), which mirrored the whole app and left it
+ * permanently garbled (no clean undo). No screen was ever built for RTL.
+ * Per the "no setting may ever break the app" rule:
+ *   - Arabic is no longer selectable (see src/i18n/index.ts),
+ *   - I18nManager.allowRTL(false) is enforced at app root (app/_layout.tsx),
+ *   - this context never touches I18nManager again.
+ * If a device has 'ar' persisted from before, it is migrated to 'en'.
+ *
  * Responsibilities:
  *  - Load the previously-selected language from AsyncStorage on app start.
- *  - Apply it to i18next and React Native's I18nManager (RTL).
+ *  - Apply it to i18next.
  *  - Expose helpers so screens can change / confirm the language.
  *  - Track whether the user has ever completed language selection (used by
  *    AuthGuard to gate the language-select screen on first launch).
- *
- * RTL note: forceRTL() takes effect after the next JS bundle reload.
- * The first time a user picks Arabic the layout will flip on next start.
- * This is standard React Native behaviour — no redesign is needed now.
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { I18nManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import i18n, { SupportedLanguage, RTL_LANGUAGES } from '@/src/i18n';
+import i18n, { SupportedLanguage } from '@/src/i18n';
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────
 
@@ -35,7 +39,7 @@ const LANG_LOADING_TIMEOUT_MS = 6_000;
 interface LanguageContextValue {
   /** Active language code */
   language: SupportedLanguage;
-  /** True when the active language is RTL */
+  /** Always false — RTL is permanently disabled app-wide (2026-10-09). */
   isRTL: boolean;
   /** True once the user has completed the language-selection screen */
   isLanguageSelected: boolean;
@@ -83,6 +87,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
         if (savedLang && isValidLang(savedLang)) {
           await applyLanguage(savedLang as SupportedLanguage, false);
+        } else if (savedLang === 'ar') {
+          // Migrated: Arabic was removed (RTL broke the app) — fall back to
+          // English and overwrite the persisted value so the user is never
+          // stuck on an unselectable language.
+          await applyLanguage('en', true);
         }
 
         setIsLangSelected(selected === 'true');
@@ -101,16 +110,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Apply language to i18next + RTL manager, optionally persisting it. */
+  /** Apply language to i18next, optionally persisting it. Never touches RTL. */
   async function applyLanguage(lang: SupportedLanguage, persist: boolean) {
     await i18n.changeLanguage(lang);
     setLanguage(lang);
-
-    const shouldBeRTL = RTL_LANGUAGES.includes(lang);
-    if (I18nManager.isRTL !== shouldBeRTL) {
-      // Queues a layout direction change; takes effect after next bundle reload.
-      I18nManager.forceRTL(shouldBeRTL);
-    }
 
     if (persist) {
       await AsyncStorage.setItem(LANG_KEY, lang);
@@ -130,7 +133,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     <LanguageContext.Provider
       value={{
         language,
-        isRTL: RTL_LANGUAGES.includes(language),
+        isRTL: false, // RTL permanently disabled — see file header
         isLanguageSelected,
         isLoading,
         changeLanguage,
@@ -151,5 +154,6 @@ export function useLanguage() {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function isValidLang(value: string): value is SupportedLanguage {
-  return ['en', 'bn', 'hi', 'ar'].includes(value);
+  // 'ar' intentionally excluded — removed 2026-10-09 (RTL broke the app).
+  return ['en', 'bn', 'hi'].includes(value);
 }

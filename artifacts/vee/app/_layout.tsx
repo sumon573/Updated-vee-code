@@ -1,5 +1,22 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, Modal, Text, Pressable, Image } from 'react-native';
+import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager } from 'react-native';
+
+/**
+ * PERMANENT GUARD (2026-10-09): RTL layout is disabled for the entire app.
+ * Selecting Arabic used to call I18nManager.forceRTL(true), which mirrored
+ * every screen and left the app permanently garbled. No screen was ever
+ * designed or tested for RTL, so per the "no setting may ever break the
+ * app" rule, LTR is now enforced at the root: even if some persisted or
+ * future code path ever flips the RTL flag, React Native will NOT mirror
+ * the layout. This also instantly heals devices currently stuck in the
+ * mirrored state — no reinstall needed.
+ */
+try {
+  I18nManager.allowRTL(false);
+  I18nManager.forceRTL(false);
+} catch {
+  // Non-fatal: layout simply stays in its default direction.
+}
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -433,6 +450,10 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="profile/gifts"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="profile/honor"
           options={{ animation: 'slide_from_right' }}
         />
         {/* RC6 fix Issue 8: real 1-to-1 audio call screen */}

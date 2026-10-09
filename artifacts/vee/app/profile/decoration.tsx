@@ -10,6 +10,8 @@ import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
 import * as Haptics from 'expo-haptics';
+// Nameplate catalog lives in the shared honor module (also used by the Honor screen).
+import { NAMEPLATES } from '@/src/data/honor';
 
 const C = {
   bg: '#FFFFFF',
@@ -27,12 +29,6 @@ const FRAMES = [
   { id: 'diamond', name: 'Diamond Frame', icon: '💎', requirement: 'Reach Lv.10' },
   { id: 'crown', name: 'Crown Frame', icon: '👑', requirement: '100 followers' },
   { id: 'fire', name: 'Fire Frame', icon: '🔥', requirement: 'Host 10 rooms' },
-];
-
-const NAMEPLATES = [
-  { id: 'vip', name: 'VIP', icon: '⭐', requirement: 'Receive 50 gifts' },
-  { id: 'star', name: 'Rising Star', icon: '🌟', requirement: 'Reach Lv.3' },
-  { id: 'legend', name: 'Legend', icon: '🏆', requirement: 'Reach Lv.15' },
 ];
 
 export default function DecorationScreen() {

@@ -21,6 +21,7 @@ import { subscribeFollowCounts } from '@/src/services/followService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
+import { evaluateAchievements } from '@/src/data/honor';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
 const GIFTS: Record<string, string> = {
@@ -235,11 +236,17 @@ export default function ProfileScreen({
   };
   const userLevel = calculateLevel();
 
-  // Honor badges (real achievements)
-  const honors: { icon: string; label: string }[] = [];
-  if (rooms.length > 0) honors.push({ icon: '🎤', label: 'Host' });
-  if (totalGifts > 0) honors.push({ icon: '💝', label: 'Loved' });
-  if (followCounts.followers >= 10) honors.push({ icon: '⭐', label: 'Popular' });
+  // Honor badges — real achievements only, from the shared catalog.
+  // (2026-10-09: section is always visible; locked badges show greyed with
+  // their unlock requirement — never faked as earned.)
+  const honorStats = {
+    roomsHosted: rooms.length,
+    totalGifts,
+    followers: followCounts.followers,
+    following: followCounts.following,
+    level: userLevel,
+  };
+  const { earned: earnedHonors, locked: lockedHonors } = evaluateAchievements(honorStats);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -347,22 +354,35 @@ export default function ProfileScreen({
           </>
         )}
 
-        {/* ─── Honor ─── */}
-        {honors.length > 0 && (
-          <>
-            <SectionHeader title="Honor" count={honors.length} />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-              {honors.map((h, i) => (
-                <View key={i} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                  <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 36 }}>{h.icon}</Text>
-                  </View>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.label}</Text>
+        {/* ─── Honor — always visible; tap opens the Honor detail screen ─── */}
+        <SectionHeader
+          title="Honor"
+          count={earnedHonors.length}
+          onPress={() => router.push('/profile/honor')}
+        />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+          <Pressable
+            onPress={() => router.push('/profile/honor')}
+            style={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%' }}
+          >
+            {earnedHonors.map((h) => (
+              <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
+                <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 36 }}>{h.icon}</Text>
                 </View>
-              ))}
-            </View>
-          </>
-        )}
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.label}</Text>
+              </View>
+            ))}
+            {lockedHonors.map((h) => (
+              <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center', opacity: 0.55 }}>
+                <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 30, opacity: 0.5 }}>{h.icon}</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.label}</Text>
+              </View>
+            ))}
+          </Pressable>
+        </View>
 
         {/* ─── Decoration ─── */}
         <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push('/profile/decoration')} />

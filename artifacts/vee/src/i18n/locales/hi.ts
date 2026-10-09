@@ -137,6 +137,7 @@ const hi = {
       gift: 'गिफ़्ट',
       invite: 'आमंत्रण',
       listeners: '{{count}} श्रोता',
+      members: '{{count}} सदस्य',
       messagePlaceholder: 'संदेश...',
       accessDenied: 'एक्सेस अस्वीकृत',
       accessDeniedMsg: 'आपको इस रूम से ब्लॉक किया गया है।',
@@ -581,6 +582,10 @@ const hi = {
     deleteAccountMsg: 'सारा डेटा हमेशा के लिए हट जाएगा। क्या आप निश्चित हैं?',
     deleteAccountConfirm: 'हटाएं',
     deleteAccountComingSoon: 'अकाउंट हटाने के लिए सहायता टीम से संपर्क करें।',
+    logout: 'लॉग आउट',
+    logoutTitle: 'लॉग आउट',
+    logoutMsg: 'क्या आप Vee से लॉग आउट करना चाहते हैं?',
+    logoutConfirm: 'लॉग आउट',
     cancel: 'रद्द करें',
     version: 'Vee v1.0.0',
     // TODO i18n: English fallbacks — need proper Hindi translations

@@ -33,8 +33,8 @@ const C = {
   text: '#000000',
   muted: '#8E8E93',
   mutedDim: '#C7C7CC',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
   green: '#22C55E',
   red: '#EF4444',
 } as const;
@@ -224,7 +224,7 @@ export default function TopUpScreen() {
                         backgroundColor: selected ? 'rgba(124,58,237,0.25)' : C.surface,
                         borderRadius: 16, padding: 14, alignItems: 'center',
                         borderWidth: 2,
-                        borderColor: selected ? C.glow : 'rgba(255,255,255,0.08)',
+                        borderColor: selected ? C.glow : '#E5E5EA',
                       }}
                     >
                       <Text style={{ color: C.text, fontSize: 18, fontWeight: '900' }}>
@@ -291,7 +291,7 @@ const styles = {
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: '#E5E5EA',
     marginBottom: 8,
   },
   stepTitle: {

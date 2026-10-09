@@ -33,6 +33,7 @@ import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
 import { AudienceModal } from '../components/AudienceModal';
+import RoomMembersModal from '../components/RoomMembersModal';
 import { GiftsModal } from '../components/GiftsModal';
 import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
 import { MemberManageModal } from '../components/MemberManageModal';
@@ -465,6 +466,7 @@ export default function VoiceRoomScreen() {
   const [invToSeatIdx,    setInvToSeatIdx]    = useState(-1);
   const [inviteOpen,      setInviteOpen]      = useState(false);
   const [audienceOpen,    setAudienceOpen]    = useState(false);
+  const [membersOpen,     setMembersOpen]     = useState(false);
   const [giftsOpen,       setGiftsOpen]       = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
@@ -1602,22 +1604,20 @@ export default function VoiceRoomScreen() {
           ))}
         </View>
 
-        {/* ── Audience count ── */}
-        {audience.length > 0 && (
-          <ScalePress onPress={() => setAudienceOpen(true)}>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-              backgroundColor: C.card, borderRadius: 12, padding: 10,
-              borderWidth: 1, borderColor: C.borderFaint, marginBottom: 10,
-            }}>
-              <Feather name="users" size={15} color={C.sub} />
-              <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700' }}>
-                {t('voiceRoom.screen.listeners', { count: audience.length })}
-              </Text>
-              <Feather name="chevron-right" size={14} color={C.muted} style={{ marginLeft: 'auto' }} />
-            </View>
-          </ScalePress>
-        )}
+        {/* ── Room members (imo style: owner → admins → members, total count) ── */}
+        <ScalePress onPress={() => setMembersOpen(true)}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            backgroundColor: C.card, borderRadius: 12, padding: 10,
+            borderWidth: 1, borderColor: C.borderFaint, marginBottom: 10,
+          }}>
+            <Feather name="users" size={15} color={C.sub} />
+            <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700' }}>
+              {t('voiceRoom.screen.members', { count: allMembers.length })}
+            </Text>
+            <Feather name="chevron-right" size={14} color={C.muted} style={{ marginLeft: 'auto' }} />
+          </View>
+        </ScalePress>
 
         {/* ── Room Chat ── */}
         <View style={{
@@ -1996,6 +1996,14 @@ export default function VoiceRoomScreen() {
         audience={audience}
         myRole={myRole}
         onManageMember={(m) => { setAudienceOpen(false); setActiveMember(m); }}
+      />
+      <RoomMembersModal
+        visible={membersOpen}
+        onClose={() => setMembersOpen(false)}
+        ownerId={ownerId}
+        seats={seats}
+        audience={audience}
+        onManageMember={(m) => { setMembersOpen(false); setActiveMember(m); }}
       />
       <MemberManageModal
         member={activeMember}

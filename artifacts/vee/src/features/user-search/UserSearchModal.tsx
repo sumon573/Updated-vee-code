@@ -29,16 +29,23 @@ import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import * as Alerts from 'react-native';
 
+/**
+ * Light-mode palette (2026-10-09 fix): the earlier light-mode conversion
+ * changed bg/text but left muted/dim/border/inputBg as white-translucent
+ * dark-theme values — invisible on the white background (empty-looking
+ * "New Message" screen with only a cursor visible). All tokens below are
+ * verified visible on #FFFFFF.
+ */
 const C = {
   bg: '#FFFFFF',
-  surface: 'rgba(255,255,255,0.055)',
-  border: 'rgba(255,255,255,0.10)',
+  surface: '#F2F2F7',
+  border: '#E5E5EA',
   primary: '#7C3AED',
   glow: '#8B5CF6',
   text: '#000000',
-  muted: 'rgba(255,255,255,0.55)',
-  dim: 'rgba(255,255,255,0.28)',
-  inputBg: 'rgba(255,255,255,0.07)',
+  muted: '#8E8E93',
+  dim: '#C7C7CC',
+  inputBg: '#F2F2F7',
   online: '#22C55E',
   green: '#22C55E',
 } as const;

@@ -222,7 +222,19 @@ function LanguageSelector() {
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+
+  // ── Logout (2026-10-09: user asked for a logout option inside Settings) ──
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      t('settings.logoutTitle'),
+      t('settings.logoutMsg'),
+      [
+        { text: t('settings.cancel'), style: 'cancel' },
+        { text: t('settings.logoutConfirm'), style: 'destructive', onPress: () => logout() },
+      ],
+    );
+  }, [logout, t]);
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULTS);
@@ -464,6 +476,11 @@ export default function SettingsScreen() {
             icon="info"
             label="About"
             onPress={() => router.push('/profile/about')}
+          />
+          <SettingButton
+            icon="log-out"
+            label={t('settings.logout')}
+            onPress={handleLogout}
           />
           <SettingButton
             icon="trash-2"

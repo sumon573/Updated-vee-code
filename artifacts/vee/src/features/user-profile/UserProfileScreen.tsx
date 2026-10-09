@@ -35,8 +35,8 @@ const C = {
   text: '#000000',
   muted: '#B8A6D9',
   mutedDim: '#4A3D6E',
-  border: '#1E1830',
-  surface: 'rgba(255,255,255,0.055)',
+  border: '#E5E5EA',
+  surface: '#F2F2F7',
   online: '#22C55E',
   red: '#EF4444',
 } as const;
@@ -46,7 +46,7 @@ function StatBox({ label, value }: { label: string; value: number }) {
     <View style={{
       flex: 1, alignItems: 'center', paddingVertical: 14,
       backgroundColor: C.surface, borderRadius: 14,
-      borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1, borderColor: '#E5E5EA',
     }}>
       <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{value}</Text>
       <Text style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{label}</Text>

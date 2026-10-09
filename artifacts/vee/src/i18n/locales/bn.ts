@@ -137,6 +137,7 @@ const bn = {
       gift: 'গিফট',
       invite: 'আমন্ত্রণ',
       listeners: '{{count}} শ্রোতা',
+      members: '{{count}} জন মেম্বার',
       messagePlaceholder: 'বার্তা...',
       accessDenied: 'প্রবেশাধিকার নেই',
       accessDeniedMsg: 'আপনাকে এই রুম থেকে ব্লক করা হয়েছে।',
@@ -581,6 +582,10 @@ const bn = {
     deleteAccountMsg: 'সব ডেটা চিরতরে মুছে যাবে। নিশ্চিত?',
     deleteAccountConfirm: 'মুছুন',
     deleteAccountComingSoon: 'অ্যাকাউন্ট মুছতে সাপোর্টের সাথে যোগাযোগ করুন।',
+    logout: 'লগ আউট',
+    logoutTitle: 'লগ আউট',
+    logoutMsg: 'আপনি কি Vee থেকে লগ আউট করতে চান?',
+    logoutConfirm: 'লগ আউট',
     cancel: 'বাতিল',
     version: 'Vee v1.0.0',
     // TODO i18n: English fallbacks — need proper Bengali translations
