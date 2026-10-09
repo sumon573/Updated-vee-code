@@ -1146,10 +1146,16 @@ async function _updateCounts(roomId: string): Promise<void> {
     let memberCount = 0;
     let listenerCount = 0;
     const memberPreviews: MemberPreview[] = [];
+    // DEDUPE (2026-10-09): count unique users only — ghost seats must never
+    // inflate the live member count shown on room cards.
+    const seenUserIds = new Set<string>();
 
     if (seatsSnap.exists()) {
       seatsSnap.forEach((child) => {
         const seat = child.val() as NonNullable<RoomSeat>;
+        const uid = (seat as { userId?: string }).userId;
+        if (uid && seenUserIds.has(uid)) return; // ghost — skip
+        if (uid) seenUserIds.add(uid);
         memberCount++;
         // 2026-10-09: include real profile photo so cards show actual DPs.
         memberPreviews.push({

@@ -346,35 +346,39 @@ export default function VoiceRoomHome({
 
   // Filter recommended rooms by active tab
   const recommended = (() => {
+    // ACTIVITY SORT (2026-10-09): every tab ranks by live activity —
+    // live rooms first, then by member count. No dead room outranks a live one.
+    const byActivity = (rooms: RoomInfo[]) =>
+      [...rooms].sort((a, b) => {
+        const liveDiff = Number(b.isLive ?? false) - Number(a.isLive ?? false);
+        if (liveDiff !== 0) return liveDiff;
+        return (b.memberCount ?? 0) - (a.memberCount ?? 0);
+      });
     if (activeTab === 'new') {
       // "New" = rooms created in the last 2 hours, sorted newest first
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-      return allRooms.filter(r => r.createdAt >= twoHoursAgo);
+      return allRooms
+        .filter(r => r.createdAt >= twoHoursAgo)
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     }
     if (activeTab === 'trending') {
       // 2026-10-09: trending = live rooms first, then by member count.
       // Live status is the primary ranking signal.
-      return allRooms
-        .filter(r => r.isTrending || r.memberCount >= 3)
-        .sort((a, b) => {
-          const liveDiff = Number(b.isLive ?? false) - Number(a.isLive ?? false);
-          if (liveDiff !== 0) return liveDiff;
-          return (b.memberCount ?? 0) - (a.memberCount ?? 0);
-        });
+      return byActivity(allRooms.filter(r => r.isTrending || r.memberCount >= 3));
     }
     // Fix 6: Nearby — filter by geolocation proximity
     if (activeTab === 'nearby') {
       if (!userLocation) return []; // awaiting location permission
-      return allRooms.filter(r => {
+      return byActivity(allRooms.filter(r => {
         if (!r.location) return false;
         return haversineKm(
           userLocation.lat, userLocation.lng,
           r.location.lat,  r.location.lng,
         ) <= NEARBY_MAX_KM;
-      });
+      }));
     }
-    // For all other tabs, match by category
-    return allRooms.filter(r => r.category === activeTab);
+    // For all other tabs, match by category — still activity-sorted
+    return byActivity(allRooms.filter(r => r.category === activeTab));
   })();
 
   const isLoading = myLoading || recLoading;
