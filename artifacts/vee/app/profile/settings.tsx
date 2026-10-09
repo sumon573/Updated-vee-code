@@ -441,6 +441,11 @@ export default function SettingsScreen() {
             {t('settings.sectionAccount')}
           </Text>
           <SettingButton
+            icon="credit-card"
+            label="Wallet"
+            onPress={() => router.push('/profile/wallet')}
+          />
+          <SettingButton
             icon="lock"
             label={t('settings.changePassword')}
             onPress={handleChangePassword}

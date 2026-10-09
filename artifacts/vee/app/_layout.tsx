@@ -431,6 +431,10 @@ function RootLayoutNav() {
           name="profile/wallet"
           options={{ animation: 'slide_from_right' }}
         />
+        <Stack.Screen
+          name="profile/gifts"
+          options={{ animation: 'slide_from_right' }}
+        />
         {/* RC6 fix Issue 8: real 1-to-1 audio call screen */}
         <Stack.Screen
           name="audio-call"

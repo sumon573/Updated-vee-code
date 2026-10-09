@@ -22,10 +22,10 @@ import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/fir
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
 
-// Gift emojis (matches GiftsModal)
+// Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
 const GIFTS: Record<string, string> = {
-  '1': '💋', '2': '🔑', '3': '🌹', '4': '🔔',
-  '5': '💎', '6': '🏆', '7': '👑', '8': '🎆',
+  '1': '💝', '2': '🌹', '3': '🎁', '4': '💎',
+  '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆',
 };
 
 // IMO light-mode colors
@@ -333,7 +333,7 @@ export default function ProfileScreen({
         {/* ─── Gifts ─── */}
         {giftEntries.length > 0 && (
           <>
-            <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push('/profile/wallet')} />
+            <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push('/profile/gifts')} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
               {giftEntries.slice(0, 8).map(([giftId, count]) => (
                 <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
