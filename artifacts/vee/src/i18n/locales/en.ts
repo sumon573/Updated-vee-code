@@ -789,6 +789,8 @@ const en = {
   },
   audioCall: {
     ringing: 'Ringing...',
+    calling: 'Calling...',
+    declined: 'Declined',
     connecting: 'Connecting...',
     ended: 'Call Ended',
     micPermissionTitle: 'Microphone Permission',

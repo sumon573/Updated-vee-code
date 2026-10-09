@@ -801,6 +801,8 @@ const bn = {
   audioCall: {
     // TODO i18n: English fallbacks — need proper Bengali translations
     ringing: 'Ringing...',
+    calling: 'Calling...',
+    declined: 'Declined',
     connecting: 'Connecting...',
     ended: 'Call Ended',
     micPermissionTitle: 'Microphone Permission',

@@ -76,7 +76,7 @@ function formatElapsed(s: number): string {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CallState = 'ringing' | 'connecting' | 'connected' | 'ended';
+type CallState = 'calling' | 'ringing' | 'connecting' | 'connected' | 'ended' | 'declined';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -122,11 +122,13 @@ export default function AudioCallScreen({
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);
   const mountedRef     = useRef(true);
   const cleaningUpRef  = useRef(false);
-  const callStateRef   = useRef<CallState>(role === 'caller' ? 'ringing' : 'connecting');
+  const callStateRef   = useRef<CallState>(role === 'caller' ? 'calling' : 'connecting');
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutedRef       = useRef(false);
   const speakerOnRef   = useRef(true);
+  /** Unsubscribe for the call-signal reject listener (caller side). */
+  const signalUnsubRef = useRef<(() => void) | null>(null);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callState, setCallState] = useState<CallState>(callStateRef.current);
@@ -303,6 +305,28 @@ export default function AudioCallScreen({
 
       // Caller: write Firebase signal so callee receives IncomingCallModal
       if (role === 'caller') {
+        // ONLINE CHECK (2026-10-09): show "Calling..." if callee is offline,
+        // "Ringing" only when they're online. Professional like IMO.
+        try {
+          const { get, ref, onValue } = await import('firebase/database');
+          const { database } = await import('@/src/config/firebase');
+          const onlineSnap = await get(ref(database, `users/${calleeUid}/online`));
+          const calleeOnline = onlineSnap.exists() && onlineSnap.val() === true;
+          if (mountedRef.current) {
+            updateCallState(calleeOnline ? 'ringing' : 'calling');
+          }
+          // REJECT SYNC (2026-10-09): watch the call signal node. If the
+          // callee declines (node removed) before WebRTC connects, show
+          // "Declined" instead of ringing forever.
+          const signalRef = ref(database, `calls/${calleeUid}`);
+          signalUnsubRef.current = onValue(signalRef, (snap) => {
+            if (!snap.exists() && mountedRef.current &&
+                (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
+              updateCallState('declined');
+              setTimeout(() => { if (mountedRef.current) endCall(true); }, 1500);
+            }
+          });
+        } catch { /* non-critical — default ringing state remains */ }
         try {
           await initiateCall(calleeUid, {
             callerId:        myUid,
@@ -328,6 +352,8 @@ export default function AudioCallScreen({
     })().catch(() => {});
 
     return () => {
+      signalUnsubRef.current?.();
+      signalUnsubRef.current = null;
       if (!cleaningUpRef.current) endCall(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,14 +392,17 @@ export default function AudioCallScreen({
 
   // ── Status text ───────────────────────────────────────────────────────────
   const statusText =
-    callState === 'ringing'    ? t('audioCall.ringing')
+    callState === 'calling'    ? t('audioCall.calling')
+    : callState === 'ringing'    ? t('audioCall.ringing')
     : callState === 'connecting' ? t('audioCall.connecting')
     : callState === 'ended'      ? t('audioCall.ended')
+    : callState === 'declined'   ? t('audioCall.declined')
     : formatElapsed(elapsed);
 
   const statusColor =
     callState === 'connected' ? C.green
     : callState === 'ended'   ? C.red
+    : callState === 'declined' ? C.red
     : C.muted;
 
   const topPad = Platform.OS === 'web' ? 67 : 0;

@@ -237,6 +237,28 @@ function IncomingCallListener({
   segmentsRef.current = segments as string[];
 
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
+  // DP fallback: if the caller signal has no photoURL, fetch it from their
+  // profile so the incoming modal always shows the caller's DP when available.
+  const [fallbackPhoto, setFallbackPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (incoming?.callerPhotoURL || !incoming?.callerId) {
+      setFallbackPhoto(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${incoming.callerId}/photoURL`));
+        if (!cancelled && snap.exists() && typeof snap.val() === 'string') {
+          setFallbackPhoto(snap.val() as string);
+        }
+      } catch { /* non-critical — initial fallback remains */ }
+    })();
+    return () => { cancelled = true; };
+  }, [incoming?.callerId, incoming?.callerPhotoURL]);
 
   useEffect(() => {
     return subscribeIncomingCall(uid, async (call) => {
@@ -311,9 +333,9 @@ function IncomingCallListener({
             shadowColor: '#8B5CF6', shadowOpacity: 0.4,
             shadowRadius: 18, shadowOffset: { width: 0, height: 4 },
           }}>
-            {incoming.callerPhotoURL ? (
+            {(incoming.callerPhotoURL || fallbackPhoto) ? (
               <Image
-                source={{ uri: incoming.callerPhotoURL }}
+                source={{ uri: (incoming.callerPhotoURL || fallbackPhoto) as string }}
                 style={{ width: 84, height: 84 }}
               />
             ) : (
