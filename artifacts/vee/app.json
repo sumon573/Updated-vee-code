@@ -25,7 +25,8 @@
         "NSMicrophoneUsageDescription": "Vee uses the microphone so you can speak in Voice Rooms.",
         "NSCameraUsageDescription": "Vee uses the camera to capture profile photos and stories.",
         "NSPhotoLibraryUsageDescription": "Vee accesses your photo library to upload profile photos and stories.",
-        "NSPhotoLibraryAddUsageDescription": "Vee saves media to your photo library."
+        "NSPhotoLibraryAddUsageDescription": "Vee saves media to your photo library.",
+        "UIBackgroundModes": ["audio", "voip"]
       },
       "buildNumber": "1",
       "bitcode": false
@@ -55,7 +56,9 @@
         "android.permission.VIBRATE",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
       ],
       "versionCode": 1,
       "intentFilters": [

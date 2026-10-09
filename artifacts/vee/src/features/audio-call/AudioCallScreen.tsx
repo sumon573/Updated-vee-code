@@ -29,6 +29,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { useKeepAwake } from 'expo-keep-awake';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { WebRTCCallSession } from './services/webrtcCallService';
 import { alertMicDeniedWithSettings } from '@/src/utils/permissionAlert';
@@ -117,6 +118,9 @@ export default function AudioCallScreen({
 }: AudioCallProps) {
   const router = useRouter();
   const { t } = useTranslation();
+  // Keep screen on during the call — prevents the OS from sleeping the
+  // device mid-call (2026-10-09).
+  useKeepAwake();
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);
