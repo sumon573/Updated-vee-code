@@ -128,13 +128,20 @@ export default function WalletScreen() {
     return () => { clearTimeout(timeout); unsub(); };
   }, [user?.uid]);
 
+  // FIX (2026-10-10): Coerce diamonds to number — prevents NaN when
+  // the transaction was written with a string or missing amount.
+  const toNum = (v: unknown): number => {
+    if (typeof v === 'number' && !isNaN(v)) return v;
+    if (typeof v === 'string') { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+    return 0;
+  };
   const totalReceived = transactions
     .filter((tx) => tx.type === 'gift_received')
-    .reduce((sum, tx) => sum + Math.abs(tx.diamonds), 0);
+    .reduce((sum, tx) => sum + Math.abs(toNum(tx.diamonds)), 0);
 
   const totalSent = transactions
     .filter((tx) => tx.type === 'gift_sent')
-    .reduce((sum, tx) => sum + Math.abs(tx.diamonds), 0);
+    .reduce((sum, tx) => sum + Math.abs(toNum(tx.diamonds)), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>

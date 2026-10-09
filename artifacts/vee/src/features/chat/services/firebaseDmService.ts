@@ -258,22 +258,24 @@ export async function logCallToChat(
       lastMessageTime: Date.now(),
     };
 
-    // Missed calls increment unread; completed calls don't
+    // Missed calls increment unread; other call types don't touch unreadCount.
+    // FIX (2026-10-10): Previously, completed/rejected calls set unreadCount: 0,
+    // wiping out existing unread messages. Now we only update unread for missed
+    // calls, leaving the count untouched otherwise.
     // C4 FIX: Use atomic increment() instead of overwriting unreadCount.
-    // The old code set unreadCount to 0/1, wiping out existing unread messages.
     const shouldIncrementUnread = result === 'missed' && direction === 'incoming';
 
+    const myUpdate: Record<string, unknown> = { ...meta, unreadCount: 0 };
+    const participantUpdate: Record<string, unknown> = { ...meta };
+    if (shouldIncrementUnread) {
+      participantUpdate.unreadCount = increment(1);
+    }
+    // For non-missed calls, don't include unreadCount in the update —
+    // this preserves the existing unread count.
+
     await Promise.all([
-      update(ref(database, `userChats/${myUid}/${chatId}`), {
-        ...meta,
-        unreadCount: 0,
-      }),
-      update(ref(database, `userChats/${participantUid}/${chatId}`), {
-        ...meta,
-        ...(shouldIncrementUnread
-          ? { unreadCount: increment(1) }
-          : { unreadCount: 0 }),
-      }),
+      update(ref(database, `userChats/${myUid}/${chatId}`), myUpdate),
+      update(ref(database, `userChats/${participantUid}/${chatId}`), participantUpdate),
     ]);
   } catch {
     // Non-critical — call logging must never break the call flow
