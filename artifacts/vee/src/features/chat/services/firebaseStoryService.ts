@@ -358,9 +358,23 @@ export function subscribePlanetStories(
   const storiesMap   = new Map<string, UserStories>();
 
   function emit() {
+    const now = Date.now();
     const groups = Array.from(storiesMap.values())
       .filter((g) => g.stories.length > 0)
-      .sort((a, b) => (b.stories[0]?.createdAt ?? 0) - (a.stories[0]?.createdAt ?? 0));
+      .sort((a, b) => {
+        // TRENDING (2026-10-09): rank by engagement + recency, not just time.
+        // Score = views + (reactions × 3) + recency bonus (decays over 24h).
+        const score = (g: UserStories): number => {
+          const s = g.stories[0];
+          if (!s) return 0;
+          const views = s.viewCount ?? 0;
+          const reactions = Object.keys(s.reactions ?? {}).length;
+          const ageHours = (now - (s.createdAt ?? now)) / 3_600_000;
+          const recencyBonus = Math.max(0, 100 - ageHours * 4); // 100 → 0 over 25h
+          return views + reactions * 3 + recencyBonus;
+        };
+        return score(b) - score(a);
+      });
     callback(groups);
   }
 
