@@ -108,6 +108,13 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
     hasActiveStory: raw.hasActiveStory === true,
     photoPublicId: typeof raw.photoPublicId === 'string' ? raw.photoPublicId : undefined,
     privacy: raw.privacy && typeof raw.privacy === 'object' ? raw.privacy : undefined,
+    // Profile cover + decoration fields (previously dropped here — cover photo
+    // change and decoration equip wrote to Firebase but never displayed back).
+    coverImageUrl: typeof raw.coverImageUrl === 'string' ? raw.coverImageUrl : '',
+    ownedFrames: Array.isArray(raw.ownedFrames) ? raw.ownedFrames.filter((f: unknown) => typeof f === 'string') : [],
+    ownedNameplates: Array.isArray(raw.ownedNameplates) ? raw.ownedNameplates.filter((n: unknown) => typeof n === 'string') : [],
+    activeFrame: typeof raw.activeFrame === 'string' ? raw.activeFrame : undefined,
+    activeNameplate: typeof raw.activeNameplate === 'string' ? raw.activeNameplate : undefined,
   };
 }
 
