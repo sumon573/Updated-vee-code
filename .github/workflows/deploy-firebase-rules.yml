@@ -1,0 +1,39 @@
+name: Deploy Firebase Rules
+
+# Auto-deploys Firebase Realtime Database rules when they change.
+# Setup (one-time): Add the service account JSON as a GitHub secret
+# named FIREBASE_SERVICE_ACCOUNT (from C:\vee-api\sa.json on the VPS).
+# Go to: GitHub repo → Settings → Secrets → Actions → New secret.
+
+on:
+  push:
+    branches:
+      - working-2026-10-06
+    paths:
+      - 'artifacts/vee/database.rules.json'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy Database Rules
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          cd artifacts/vee
+          firebase deploy --only database --project vee-chat-36720 --non-interactive
+          rm -f /tmp/sa.json
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
