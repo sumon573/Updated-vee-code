@@ -53,6 +53,7 @@ import * as Haptics from 'expo-haptics';
 import {
   subscribeIncomingCall,
   removeCallSignal,
+  updateCallSignal,
   type IncomingCall,
 } from '@/src/features/audio-call/services/firebaseCallService';
 import { isInteractionBlocked } from '@/src/services/blockService';
@@ -286,8 +287,11 @@ function IncomingCallListener({
     if (!incoming) return;
     const call = incoming;
     setIncoming(null);
-    // Remove signal (callee side) — background: safe to swallow
-    removeCallSignal(uid).catch(() => {});
+    // FIX (2026-10-10): Mark as accepted instead of deleting.
+    // Deleting triggered the caller's decline timer, auto-cutting the call
+    // after 1.5s even though the callee answered. The caller cleans up
+    // the signal when the call connects or ends.
+    updateCallSignal(uid, { status: 'accepted', acceptedAt: Date.now() }).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push(
       `/audio-call?roomId=${encodeURIComponent(call.roomId)}&role=callee&remoteUid=${encodeURIComponent(call.callerId)}&remoteName=${encodeURIComponent(call.callerName)}&calleeUid=${encodeURIComponent(uid)}&myUid=${encodeURIComponent(uid)}&myName=${encodeURIComponent(myName)}${call.callerPhotoURL ? `&remotePhotoURL=${encodeURIComponent(call.callerPhotoURL)}` : ''}` as never,

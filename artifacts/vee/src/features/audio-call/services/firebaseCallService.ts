@@ -70,11 +70,26 @@ export async function initiateCall(
 }
 
 /**
- * Remove the call signal — used by the callee on accept, or by either party
- * on decline/cancel/timeout. Safe to call even if the node doesn't exist.
+ * Remove the call signal — used by the callee on decline, or by either party
+ * on cancel/timeout. Safe to call even if the node doesn't exist.
+ * NOTE: On ACCEPT, use updateCallSignal with status='accepted' instead —
+ * deleting on accept causes the caller's decline timer to fire.
  */
 export async function removeCallSignal(calleeUid: string): Promise<void> {
   await remove(ref(database, `calls/${calleeUid}`));
+}
+
+/**
+ * Update the call signal status — used by the callee on accept.
+ * Sets status='accepted' so the caller knows the call is connecting
+ * (and doesn't start the decline timer).
+ */
+export async function updateCallSignal(
+  calleeUid: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  const { update } = await import('firebase/database');
+  await update(ref(database, `calls/${calleeUid}`), updates);
 }
 
 /**

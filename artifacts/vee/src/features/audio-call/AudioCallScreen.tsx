@@ -402,19 +402,30 @@ export default function AudioCallScreen({
           // Only treat disappearance as rejection AFTER we've seen the node
           // exist at least once.
           // ACCEPT RACE FIX: callee removes the node on ACCEPT too. Wait 3s
-          // before declaring declined — if WebRTC connects in that window,
-          // it was an accept, not a reject.
+          // FIX (2026-10-10): Distinguish accept from reject.
+          // - Callee ACCEPTS: updates signal with status='accepted' (node still exists)
+          //   → cancel any decline timer, call is connecting.
+          // - Callee REJECTS: deletes the signal node
+          //   → start decline timer, show 'declined' after 1.5s.
           const signalRef = ref(database, `calls/${calleeUid}`);
           let signalSeen = false;
           signalUnsubRef.current = onValue(signalRef, (snap) => {
             if (snap.exists()) {
               signalSeen = true;
+              const status = (snap.val() as Record<string, unknown>)?.status;
+              if (status === 'accepted') {
+                // Callee accepted — cancel any pending decline timer.
+                if (declineTimerRef.current) {
+                  clearTimeout(declineTimerRef.current);
+                  declineTimerRef.current = null;
+                }
+              }
               return;
             }
             if (signalSeen && mountedRef.current &&
                 (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
-              // Wait 1.5s — if WebRTC connects, cancel the decline.
-              // (Reduced from 3s per user request for faster reject feedback.)
+              // Node deleted = rejected. Wait 1.5s — if WebRTC connects,
+              // cancel the decline (was actually an accept with slow signal).
               if (declineTimerRef.current) clearTimeout(declineTimerRef.current);
               declineTimerRef.current = setTimeout(() => {
                 if (mountedRef.current &&
