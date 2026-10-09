@@ -424,16 +424,17 @@ export default function AudioCallScreen({
             }
             if (signalSeen && mountedRef.current &&
                 (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
-              // Node deleted = rejected. Wait 1.5s — if WebRTC connects,
-              // cancel the decline (was actually an accept with slow signal).
+              // Node deleted = rejected. Wait 0.5s for fast feedback.
+              // (Accept uses status='accepted' update, not deletion, so no
+              // false positive here.)
               if (declineTimerRef.current) clearTimeout(declineTimerRef.current);
               declineTimerRef.current = setTimeout(() => {
                 if (mountedRef.current &&
                     (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
                   updateCallState('declined');
-                  setTimeout(() => { if (mountedRef.current) endCall(true); }, 1500);
+                  setTimeout(() => { if (mountedRef.current) endCall(true); }, 1000);
                 }
-              }, 1500);
+              }, 500);
             }
           });
         } catch { /* non-critical — default ringing state remains */ }
