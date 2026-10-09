@@ -45,6 +45,9 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
   // "Delete for me" stored as deletedForUids/{uid}=true — map to boolean for UI
   const deletedForUids = (v.deletedForUids as Record<string, boolean> | undefined) ?? {};
   const deletedForMe = deletedForUids[myUid] === true || (v.deletedForMe as boolean) === true;
+  // C2 FIX: Deserialize callInfo so call history renders correctly.
+  // Without this, call duration/direction/result are lost on read.
+  const rawCallInfo = v.callInfo as { direction?: string; result?: string; durationSec?: number } | undefined;
   return {
     id: snap.key!,
     chatId: v.chatId as string,
@@ -58,6 +61,13 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
     replyTo: v.replyTo as DmReplyPreview | undefined,
     deletedForMe,
     deletedForEveryone: (v.deletedForEveryone as boolean) ?? false,
+    ...(rawCallInfo ? {
+      callInfo: {
+        direction: (rawCallInfo.direction as 'incoming' | 'outgoing') ?? 'outgoing',
+        result: (rawCallInfo.result as 'completed' | 'missed' | 'rejected' | 'cancelled') ?? 'completed',
+        durationSec: typeof rawCallInfo.durationSec === 'number' ? rawCallInfo.durationSec : 0,
+      },
+    } : {}),
   };
 }
 
