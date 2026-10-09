@@ -307,8 +307,10 @@
         // caller's read fail with permission-denied instead of null snapshot.
         // Call data is ephemeral (only during ringing), so open read is safe.
         ".read": "auth != null",
-        ".write": "auth != null && ((newData.exists() && newData.child('callerId').val() === auth.uid) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
-        ".validate": "!newData.exists() || (newData.child('callerId').isString() && newData.child('callerName').isString() && newData.child('roomId').isString() && newData.child('createdAt').isNumber() && newData.child('callerId').val() === auth.uid)"
+        // FIX (2026-10-10): Allow callee to UPDATE (e.g., status='accepted').
+        // The old rule only allowed caller writes or callee deletes.
+        ".write": "auth != null && ((newData.exists() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid)) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
+        ".validate": "!newData.exists() || (newData.child('callerId').isString() && newData.child('callerName').isString() && newData.child('roomId').isString() && newData.child('createdAt').isNumber() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid))"
       }
     },
 
