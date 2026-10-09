@@ -434,6 +434,39 @@ export default function VoiceRoomScreen() {
   /* ── Join state ── */
   const [hasJoined, setHasJoined] = useState(false);
 
+  // REJOIN FIX (2026-10-09): On mount, check if user is already in the
+  // room's audience/seats (e.g. rejoining after leave). Without this,
+  // hasJoined stays false and the Join button shows incorrectly.
+  useEffect(() => {
+    if (!roomId || !myUid || hasJoined) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const [audSnap, seatsSnap] = await Promise.all([
+          get(ref(database, `rooms/${roomId}/audience/${myUid}`)),
+          get(ref(database, `rooms/${roomId}/seats`)),
+        ]);
+        if (cancelled) return;
+        if (audSnap.exists()) {
+          setHasJoined(true);
+          return;
+        }
+        // Check if user is on any seat
+        if (seatsSnap.exists()) {
+          let onSeat = false;
+          seatsSnap.forEach((child) => {
+            const s = child.val() as { userId?: string } | null;
+            if (s?.userId === myUid) onSeat = true;
+          });
+          if (onSeat) setHasJoined(true);
+        }
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [roomId, myUid, hasJoined]);
+
   /* ── Chat ── */
   const [messages,   setMessages]   = useState<ChatMsg[]>([]);
   const chatRef = useRef<FlatList<ChatMsg>>(null);
@@ -684,6 +717,12 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = -1;
+      // SAFETY (2026-10-09): if not on any seat but still publishing
+      // (e.g. rapid seat-switch race left us seatless), stop the mic.
+      // Prevents "ghost mic" where ID disappears but audio continues.
+      if (isPublishing) {
+        stopPublishing();
+      }
       return;
     }
     // Seat changed — always apply new seat's muted value regardless of prev

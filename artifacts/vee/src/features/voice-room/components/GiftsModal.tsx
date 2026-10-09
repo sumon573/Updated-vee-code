@@ -118,6 +118,14 @@ export function GiftsModal({
 
     const totalCost = g.coins * selectedMembers.length;
 
+    // ENSURE SERVER WALLET (2026-10-09): the server's send-gift endpoint
+    // checks the SERVER-side balance. If /wallet/init never succeeded, the
+    // server sees 0 even when Firebase shows 500. Initialize first.
+    try {
+      const { initializeWallet } = await import('@/src/features/wallet/walletService');
+      await initializeWallet(myUid);
+    } catch { /* non-critical — proceed with send attempt */ }
+
     // Balance pre-check: use Firebase (same source as the UI display).
     // Try a fresh one-shot read first; fall back to the server balance;
     // fall back to the subscribed prop last. If all fail, skip the pre-check
