@@ -128,6 +128,16 @@ export async function uploadRoomCover(localUri: string): Promise<CloudinaryUploa
 }
 
 /**
+ * Profile cover photo upload — 1080×480 wide banner crop.
+ */
+export async function uploadCoverPhoto(localUri: string): Promise<CloudinaryUploadResult> {
+  return uploadImage(localUri, {
+    folder: 'vee/covers',
+    transformation: 'c_fill,w_1080,h_480,q_auto,f_auto',
+  });
+}
+
+/**
  * Delete a Cloudinary asset via the authenticated backend endpoint.
  * Uses the production API server at https://vee-api.onrender.com.
  * CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are configured on the server.

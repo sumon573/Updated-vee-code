@@ -92,7 +92,7 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
 
   return (
     <Pressable onPress={onPress} style={{ width: 100, marginRight: 10 }}>
-      <View style={{ width: 100, height: 100, borderRadius: 14, overflow: 'hidden', backgroundColor: C.card }}>
+      <View style={{ width: 84, height: 84, borderRadius: 22, overflow: 'hidden', backgroundColor: C.card }}>
         {item.coverImageUrl ? (
           <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
@@ -268,12 +268,12 @@ export default function ProfileScreen({
 
         {/* ─── Cover (tappable to change via Edit) ─── */}
         <Pressable onPress={() => router.push('/profile/edit')}>
-          <View style={{ height: 180, backgroundColor: '#1a1a2e' }}>
+          <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
             {profile?.coverImageUrl ? (
               <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
             ) : (
-              <View style={{ flex: 1, backgroundColor: '#2d2d44', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 48 }}>🌌</Text>
+              <View style={{ flex: 1, backgroundColor: '#EFEFF4', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 48 }}>🌅</Text>
               </View>
             )}
           </View>
@@ -366,22 +366,26 @@ export default function ProfileScreen({
 
         {/* ─── Decoration ─── */}
         <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push('/profile/decoration')} />
-        <View style={{ flexDirection: 'row', paddingHorizontal: 16 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
           <Pressable
             onPress={() => router.push('/profile/decoration')}
-            style={{ flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 16, marginRight: 8, alignItems: 'center' }}
+            style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
-            <Text style={{ fontSize: 32 }}>🖼️</Text>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 8 }}>Frames</Text>
-            <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{profile?.ownedFrames?.length || 0} owned</Text>
+            <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 36 }}>🖼️</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
+            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedFrames?.length || 0} owned</Text>
           </Pressable>
           <Pressable
             onPress={() => router.push('/profile/decoration')}
-            style={{ flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 16, marginLeft: 8, alignItems: 'center' }}
+            style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
-            <Text style={{ fontSize: 32 }}>🏷️</Text>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 8 }}>Nameplates</Text>
-            <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{profile?.ownedNameplates?.length || 0} owned</Text>
+            <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 36 }}>🏷️</Text>
+            </View>
+            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nameplates</Text>
+            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedNameplates?.length || 0} owned</Text>
           </Pressable>
         </View>
 

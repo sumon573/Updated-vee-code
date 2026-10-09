@@ -15,7 +15,7 @@ import { router } from 'expo-router';
 import ScalePress from '@/components/ScalePress';
 import { useAuth } from '@/src/context/AuthContext';
 import { updateUser, VeeUser, subscribeUser } from '@/src/services/userService';
-import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
+import { uploadProfilePhoto, uploadCoverPhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { useTranslation } from 'react-i18next';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { withTimeout } from '@/src/utils/withTimeout';
@@ -150,7 +150,7 @@ export default function EditProfileScreen() {
     if (!user?.uid) return;
     setUploadingCover(true);
     try {
-      const result = await uploadProfilePhoto(localUri);
+      const result = await uploadCoverPhoto(localUri);
       setCoverURI(result.url);
       await updateUser(user.uid, { coverImageUrl: result.url });
     } catch (err) {

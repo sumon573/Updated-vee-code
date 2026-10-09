@@ -27,6 +27,8 @@ import {
 } from 'firebase/auth';
 import { auth, database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
+import { useLanguage } from '@/src/context/LanguageContext';
+import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 
 const C = {
   bg: '#FFFFFF',
@@ -125,10 +127,102 @@ function SettingButton({
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
+function SettingInfo({
+  icon, label, subtitle,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  label: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: C.surface, borderRadius: 16,
+      padding: 16, marginBottom: 10,
+      borderWidth: 1, borderColor: '#E5E5EA',
+    }}>
+      <View style={{
+        width: 40, height: 40, borderRadius: 12,
+        backgroundColor: 'rgba(139,92,246,0.14)',
+        alignItems: 'center', justifyContent: 'center', marginRight: 14,
+      }}>
+        <Feather name={icon} size={18} color={C.glow} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
+        {subtitle ? (
+          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{subtitle}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+// ─── Language selector — fully functional via LanguageContext ────────────────
+
+function LanguageSelector() {
+  const { language, changeLanguage } = useLanguage();
+  const [expanded, setExpanded] = useState(false);
+  const active = SUPPORTED_LANGUAGES.find((l) => l.code === language);
+
+  return (
+    <View style={{
+      backgroundColor: C.surface, borderRadius: 16,
+      marginBottom: 10,
+      borderWidth: 1, borderColor: '#E5E5EA',
+    }}>
+      <ScalePress onPress={() => setExpanded((v) => !v)}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+          <View style={{
+            width: 40, height: 40, borderRadius: 12,
+            backgroundColor: 'rgba(139,92,246,0.14)',
+            alignItems: 'center', justifyContent: 'center', marginRight: 14,
+          }}>
+            <Feather name="globe" size={18} color={C.glow} />
+          </View>
+          <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }}>
+            Language
+          </Text>
+          {active && (
+            <Text style={{ color: C.muted, fontSize: 14, marginRight: 8 }}>
+              {active.flag} {active.nativeName}
+            </Text>
+          )}
+          <Feather name={expanded ? 'chevron-down' : 'chevron-right'} size={18} color={C.mutedDim} />
+        </View>
+      </ScalePress>
+      {expanded && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          {SUPPORTED_LANGUAGES.map((opt) => {
+            const selected = opt.code === language;
+            return (
+              <ScalePress key={opt.code} onPress={() => changeLanguage(opt.code)}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  paddingVertical: 12,
+                  borderTopWidth: 1, borderTopColor: C.border,
+                }}>
+                  <Text style={{ fontSize: 18, marginRight: 12 }}>{opt.flag}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: C.text, fontSize: 15, fontWeight: selected ? '800' : '500' }}>
+                      {opt.nativeName}
+                    </Text>
+                    <Text style={{ color: C.muted, fontSize: 12 }}>{opt.name}</Text>
+                  </View>
+                  {selected && <Feather name="check" size={18} color={C.primary} />}
+                </View>
+              </ScalePress>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  // Issue 7: dark mode is managed by ThemeContext (persists to Firebase + app-wide)
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULTS);
@@ -291,9 +385,31 @@ export default function SettingsScreen() {
           }}>
             {t('settings.sectionAppearance')}
           </Text>
-          {/* Dark mode toggle removed — the app is dark-first by design and no
-              light theme exists. A non-functional toggle is worse than none.
-              Re-add when a full light theme ships. */}
+          {/* The whole app ships in light mode — informational row, no fake toggle. */}
+          <SettingInfo
+            icon="sun"
+            label="Light Mode"
+            subtitle="Light mode is active across the app"
+          />
+
+          {/* Preferences */}
+          <Text style={{
+            color: C.mutedDim, fontSize: 11, fontWeight: '700',
+            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
+          }}>
+            PREFERENCES
+          </Text>
+          <SettingButton
+            icon="bell"
+            label="Notifications"
+            onPress={() => router.push('/profile/notifications')}
+          />
+          <SettingButton
+            icon="shield"
+            label="Privacy"
+            onPress={() => router.push('/profile/privacy')}
+          />
+          <LanguageSelector />
 
           {/* Media */}
           <Text style={{
@@ -333,6 +449,16 @@ export default function SettingsScreen() {
             icon="download"
             label={t('settings.downloadData')}
             onPress={handleDownloadData}
+          />
+          <SettingButton
+            icon="help-circle"
+            label="Help"
+            onPress={() => router.push('/profile/help')}
+          />
+          <SettingButton
+            icon="info"
+            label="About"
+            onPress={() => router.push('/profile/about')}
           />
           <SettingButton
             icon="trash-2"
@@ -376,7 +502,7 @@ export default function SettingsScreen() {
           alignItems: 'center', justifyContent: 'center', padding: 24,
         }}>
           <View style={{
-            width: '100%', backgroundColor: '#12091F',
+            width: '100%', backgroundColor: '#FFFFFF',
             borderRadius: 20, padding: 24,
             borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
           }}>
