@@ -436,10 +436,10 @@ export default function ProfileScreen({
           >
             <Text style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>Vee ID</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>#{vId}</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, letterSpacing: 0.5 }}>{vId}</Text>
               <Pressable
                 onPress={handleCopyVid}
-                style={{ backgroundColor: C.blueLight, borderRadius: 10, padding: 8, marginLeft: 12 }}
+                style={{ backgroundColor: C.blueLight, borderRadius: 12, padding: 10, marginLeft: 12 }}
                 hitSlop={8}
               >
                 <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={C.blue} />
