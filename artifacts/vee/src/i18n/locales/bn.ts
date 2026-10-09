@@ -817,6 +817,29 @@ const bn = {
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
   },
+  store: {
+    shortId: 'শর্ট আইডি',
+    frames: 'ফ্রেম',
+    balance: 'ডায়মন্ড ব্যালেন্স',
+    myId: 'আমার আইডি',
+    forAccount: 'অ্যাকাউন্টের জন্য',
+    forRoom: 'রুমের জন্য',
+    randomId: 'র‍্যান্ডম ৪-ডিজিট আইডি',
+    randomIdSub: 'সাথে সাথে একটি আইডি পান',
+    buy: 'কিনুন',
+    sold: 'বিক্রীত',
+    notEnough: 'পর্যাপ্ত ডায়মন্ড নেই',
+    notEnoughMsg: 'কিনতে আরও ডায়মন্ড লাগবে।',
+    confirmBuy: 'ID {{id}} কিনবেন?',
+    confirmBuyMsg: 'এতে 💎{{price}} ডায়মন্ড খরচ হবে।',
+    success: 'সফল!',
+    idClaimed: 'ID {{id}} এখন আপনার! 🎉',
+    error: 'ত্রুটি',
+    deductFailed: 'ডায়মন্ড কাটা যায়নি। আবার চেষ্টা করুন।',
+    claimFailed: 'আইডি নেওয়া যায়নি। আবার চেষ্টা করুন।',
+    framesComing: 'ফ্রেম শীঘ্রই আসছে',
+    framesComingSub: 'কাস্টম DP ফ্রেম ডিজাইন হচ্ছে। পরে দেখুন!',
+  },
 } as const;
 
 export default bn;

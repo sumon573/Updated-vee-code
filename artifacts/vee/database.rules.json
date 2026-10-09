@@ -60,6 +60,19 @@
         },
         "privacy": {
           ".write": "auth != null && auth.uid === $uid"
+        },
+        // Short ID (2026-10-09): 4-digit premium ID. Writable by owner only
+        // when claiming (must match the shortIds/users registry); admins
+        // can set any custom ID.
+        "shortId": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]+$/)"
+        },
+        // Official verified badge (2026-10-09): ONLY admins can grant/revoke.
+        // Displayed next to the profile name.
+        "officialBadge": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+          ".validate": "newData.hasChildren(['grantedBy', 'grantedAt'])"
         }
       }
     },
@@ -481,8 +494,38 @@
     },
 
     // ─────────────────────────────────────────────────────────────────────
-    // userRooms — persistent "My Room" index per user.
+    // shortIds — 4-digit premium ID registry (2026-10-09).
+    // Separate pools for users and rooms. Claim via transaction: the
+    // transaction aborts if the ID is already taken (atomic uniqueness).
     // ─────────────────────────────────────────────────────────────────────
+    "shortIds": {
+      ".read": "auth != null",
+      "users": {
+        "$shortId": {
+          // Claim: only if not taken, or by the current owner (re-claim),
+          // or by an admin (custom grant). Value must be the claimant's UID.
+          ".write": "auth != null && (!data.exists() || data.val() === auth.uid || root.child('admins').child(auth.uid).exists())",
+          ".validate": "newData.isString() && newData.val().length > 0"
+        }
+      },
+      "rooms": {
+        "$shortId": {
+          ".write": "auth != null && (!data.exists() || root.child('admins').child(auth.uid).exists())",
+          ".validate": "newData.isString() && newData.val().length > 0"
+        }
+      }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // admins — server-managed admin list (2026-10-09).
+    // Only existing admins (or superAdmin token) can add/remove.
+    // ─────────────────────────────────────────────────────────────────────
+    "admins": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin')"
+      }
+    },
     "userRooms": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",

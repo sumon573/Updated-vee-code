@@ -158,7 +158,8 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
         const nameMatch        = u.name?.toLowerCase().includes(q);
         const displayNameMatch = (u as any).displayName?.toLowerCase().includes(q);
         const vidMatch         = u.vId?.toLowerCase().includes(q);
-        if (nameMatch || displayNameMatch || vidMatch) found.push(u);
+        const shortIdMatch     = (u as any).shortId?.toLowerCase().includes(q);
+        if (nameMatch || displayNameMatch || vidMatch || shortIdMatch) found.push(u);
       }
 
       const slice = found.slice(0, 20);

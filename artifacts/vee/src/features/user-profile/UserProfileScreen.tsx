@@ -278,13 +278,40 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
               </View>
             )}
 
-            {/* Name */}
-            <Text style={{
-              color: C.text, fontSize: 22, fontWeight: '900',
-              marginTop: 14, textAlign: 'center',
-            }}>
-              {displayName}
-            </Text>
+            {/* Name + Official Verified Badge */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14 }}>
+              <Text style={{
+                color: C.text, fontSize: 22, fontWeight: '900',
+                textAlign: 'center',
+              }}>
+                {displayName}
+              </Text>
+              {profile?.officialBadge && (
+                <View style={{
+                  marginLeft: 6, backgroundColor: '#1DA1F2', borderRadius: 10,
+                  width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Feather name="check" size={13} color="#fff" />
+                </View>
+              )}
+            </View>
+
+            {/* Short ID gold badge */}
+            {profile?.shortId ? (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6,
+              }}>
+                <View style={{
+                  backgroundColor: '#FFD700', borderRadius: 10,
+                  paddingHorizontal: 12, paddingVertical: 4,
+                  flexDirection: 'row', alignItems: 'center',
+                }}>
+                  <Text style={{ color: '#000', fontSize: 13, fontWeight: '900' }}>
+                    🆔 {profile.shortId}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
 
             {/* VID */}
             {vId ? (

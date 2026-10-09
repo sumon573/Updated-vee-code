@@ -48,6 +48,10 @@ export type VeeUser = {
   ownedNameplates?: string[];
   /** Currently equipped nameplate ID. */
   activeNameplate?: string;
+  /** 4-digit premium Short ID (2026-10-09). Displayed in gold badge. */
+  shortId?: string;
+  /** Official verified badge (2026-10-09). Granted by admins only. */
+  officialBadge?: { grantedBy: string; grantedAt: number };
   /**
    * Privacy settings saved by the user in the Privacy screen.
    * Stored at users/{uid}/privacy — read here so UI can enforce them without
@@ -115,6 +119,11 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
     ownedNameplates: Array.isArray(raw.ownedNameplates) ? raw.ownedNameplates.filter((n: unknown) => typeof n === 'string') : [],
     activeFrame: typeof raw.activeFrame === 'string' ? raw.activeFrame : undefined,
     activeNameplate: typeof raw.activeNameplate === 'string' ? raw.activeNameplate : undefined,
+    // Short ID + official badge (2026-10-09)
+    shortId: typeof raw.shortId === 'string' ? raw.shortId : undefined,
+    officialBadge: raw.officialBadge && typeof raw.officialBadge === 'object'
+      ? { grantedBy: String(raw.officialBadge.grantedBy ?? ''), grantedAt: Number(raw.officialBadge.grantedAt ?? 0) }
+      : undefined,
   };
 }
 
