@@ -230,6 +230,17 @@ export default function AudioCallScreen({
       removeCallSignal(calleeUid).catch(() => {/* background: safe to swallow — signaling cleanup */});
     }
 
+    // C10 FIX: Clean up callMute state on call end. Stale mute nodes leak
+    // into the next call with the same roomId (deterministic per user pair).
+    if (roomId && myUid) {
+      import('firebase/database').then(async ({ ref, remove }) => {
+        try {
+          const { database } = await import('@/src/config/firebase');
+          await remove(ref(database, `callMute/${roomId}/${myUid}`));
+        } catch { /* non-critical */ }
+      });
+    }
+
     // WebRTC teardown — the session owns the peer connection, RTDB
     // listeners, and the ephemeral signaling node.
     const session = webrtcRef.current;
