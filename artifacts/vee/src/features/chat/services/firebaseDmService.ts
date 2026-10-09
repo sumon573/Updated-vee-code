@@ -259,7 +259,9 @@ export async function logCallToChat(
     };
 
     // Missed calls increment unread; completed calls don't
-    const unreadForParticipant = result === 'missed' && direction === 'incoming' ? 1 : 0;
+    // C4 FIX: Use atomic increment() instead of overwriting unreadCount.
+    // The old code set unreadCount to 0/1, wiping out existing unread messages.
+    const shouldIncrementUnread = result === 'missed' && direction === 'incoming';
 
     await Promise.all([
       update(ref(database, `userChats/${myUid}/${chatId}`), {
@@ -268,7 +270,9 @@ export async function logCallToChat(
       }),
       update(ref(database, `userChats/${participantUid}/${chatId}`), {
         ...meta,
-        unreadCount: unreadForParticipant,
+        ...(shouldIncrementUnread
+          ? { unreadCount: increment(1) }
+          : { unreadCount: 0 }),
       }),
     ]);
   } catch {
