@@ -3,6 +3,8 @@ export type RoomCategory = 'trending' | 'nearby' | 'ludo' | 'game' | 'music' | '
 export type MemberPreview = {
   initials: string;
   color: string;
+  /** Real profile photo URL — shown as the DP; falls back to initials. */
+  photoURL?: string;
 };
 
 export type VoiceRoom = {

@@ -352,7 +352,15 @@ export default function VoiceRoomHome({
       return allRooms.filter(r => r.createdAt >= twoHoursAgo);
     }
     if (activeTab === 'trending') {
-      return allRooms.filter(r => r.isTrending || r.memberCount >= 3);
+      // 2026-10-09: trending = live rooms first, then by member count.
+      // Live status is the primary ranking signal.
+      return allRooms
+        .filter(r => r.isTrending || r.memberCount >= 3)
+        .sort((a, b) => {
+          const liveDiff = Number(b.isLive ?? false) - Number(a.isLive ?? false);
+          if (liveDiff !== 0) return liveDiff;
+          return (b.memberCount ?? 0) - (a.memberCount ?? 0);
+        });
     }
     // Fix 6: Nearby — filter by geolocation proximity
     if (activeTab === 'nearby') {

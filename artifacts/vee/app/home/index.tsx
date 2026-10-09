@@ -348,7 +348,10 @@ export default function HomeScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={{ flex: 1, paddingTop: topPad }}>
 
-          {/* ── Top header bar ── */}
+          {/* ── Top header bar — hidden on Profile (2026-10-09):
+              the Profile section is full-screen with its own header;
+              the Chat/Voice Room/Contacts tabs must not show above it. ── */}
+          {activeIndex !== 0 && (
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             paddingHorizontal: 16, paddingVertical: 8,
@@ -403,6 +406,7 @@ export default function HomeScreen() {
               />
             </View>
           </View>
+          )}
 
           {/* ── Horizontal pager — 4 sections only (Fix #2 & #3) ── */}
           <ScrollView

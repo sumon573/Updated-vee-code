@@ -185,6 +185,7 @@ export async function createRoom(data: {
       {
         initials: getInitials(data.hostName),
         color: getUserColor(data.hostId),
+        photoURL: data.hostPhotoURL,
       },
     ],
     isPublic: data.isPublic,
@@ -1123,7 +1124,12 @@ async function _updateCounts(roomId: string): Promise<void> {
       seatsSnap.forEach((child) => {
         const seat = child.val() as NonNullable<RoomSeat>;
         memberCount++;
-        memberPreviews.push({ initials: seat.initials, color: seat.color });
+        // 2026-10-09: include real profile photo so cards show actual DPs.
+        memberPreviews.push({
+          initials: seat.initials,
+          color: seat.color,
+          photoURL: (seat as any).photoURL,
+        });
       });
     }
     if (audSnap.exists()) {
@@ -1133,7 +1139,7 @@ async function _updateCounts(roomId: string): Promise<void> {
     await update(ref(database, `rooms/${roomId}/info`), {
       memberCount,
       listenerCount,
-      memberPreviews: memberPreviews.slice(0, 5),
+      memberPreviews: memberPreviews.slice(0, 6),
       isTrending: memberCount >= 5,
     });
   } catch {
