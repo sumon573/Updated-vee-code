@@ -1946,6 +1946,7 @@ export default function VoiceRoomScreen() {
         roomId={roomId}
         isOwner={myRole === 'host'}
         isAdmin={myRole === 'admin'}
+        ownerId={ownerId}
         onDisband={handleDisband}
         onLeave={() => { setRoomInfoOpen(false); setExitModalOpen(true); }}
       />

@@ -12,7 +12,7 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
 export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, roomTopic, accent,
   roomName, onChangeRoomName, roomImageUri, onChangeRoomImage, roomId, description,
-  isOwner, isAdmin, onDisband, onLeave }: {
+  isOwner, isAdmin, ownerId, onDisband, onLeave }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
   /** Fix 9: Weekly diamonds earned (from wallets/{uid}/weeklyEarned). */
@@ -29,12 +29,38 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   isOwner?: boolean;
   /** Whether the current user is a room admin (can also edit name/image). */
   isAdmin?: boolean;
+  /** Room owner's user ID — shown even if not currently in the room. */
+  ownerId?: string;
   /** Called when the owner confirms "Disband Room". */
   onDisband?: () => void;
   /** Called when a non-owner taps "Leave Room". */
   onLeave?: () => void;
 }) {
   const { t } = useTranslation();
+  const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
+
+  // Fetch owner info if not in allMembers (2026-10-09)
+  useEffect(() => {
+    const ownerInList = allMembers.find((m: Participant) => m.role === 'host');
+    if (ownerInList || !ownerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${ownerId}`));
+        if (!cancelled && snap.exists()) {
+          const data = snap.val() as { displayName?: string; photoURL?: string };
+          setOwnerInfo({
+            name: data.displayName ?? 'Room Owner',
+            photoURL: data.photoURL,
+          });
+        }
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [allMembers, ownerId]);
+
   const owner   = allMembers.find((m: Participant) => m.role === 'host');
   const admins  = allMembers.filter((m: Participant) => m.role === 'admin');
   const regular = allMembers.filter((m: Participant) => m.role === 'member');
@@ -217,7 +243,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
             </View>
           )}
 
-          {owner && (
+          {(owner || ownerInfo) && (
             <>
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
                 marginBottom: 8, textTransform: 'uppercase' }}>
@@ -225,7 +251,19 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               </Text>
               <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
                 borderWidth: 1, borderColor: C.borderFaint, marginBottom: 20 }}>
-                <MRow m={owner} badge={t('voiceRoom.info.ownerBadge')} />
+                {owner ? (
+                  <MRow m={owner} badge={t('voiceRoom.info.ownerBadge')} />
+                ) : ownerInfo ? (
+                  <MRow
+                    m={{
+                      id: ownerId ?? '',
+                      name: ownerInfo.name,
+                      photoURL: ownerInfo.photoURL,
+                      role: 'host',
+                    } as Participant}
+                    badge={t('voiceRoom.info.ownerBadge')}
+                  />
+                ) : null}
               </View>
             </>
           )}

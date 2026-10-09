@@ -131,12 +131,40 @@ export default function AudioCallScreen({
   const speakerOnRef   = useRef(true);
   /** Unsubscribe for the call-signal reject listener (caller side). */
   const signalUnsubRef = useRef<(() => void) | null>(null);
+  /** Timer for delayed decline detection (cancelled on connect). */
+  const declineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callState, setCallState] = useState<CallState>(callStateRef.current);
   const [muted,     setMuted]     = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [elapsed,   setElapsed]   = useState(0);
+  /** Ref mirror of elapsed — endCall's closure needs the live value. */
+  const elapsedRef = useRef(0);
+  /** Display name with Firebase fallback (2026-10-09): if remoteName is
+   *  missing/"Vee User", fetch the real name from users/{remoteUid}. */
+  const [displayName, setDisplayName] = useState(remoteName);
+  useEffect(() => {
+    if (remoteName && remoteName !== 'Vee User' && remoteName.trim()) {
+      setDisplayName(remoteName);
+      return;
+    }
+    const uid = remoteUid || calleeUid;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${uid}/displayName`));
+        if (!cancelled && snap.exists()) {
+          const name = snap.val() as string;
+          if (name && name.trim()) setDisplayName(name);
+        }
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [remoteName, remoteUid, calleeUid]);
   /** Remote user's photo — fetched from Firebase as fallback if the nav
    *  param is missing/stale, so the callee's DP always shows. */
   const [remotePhoto, setRemotePhoto] = useState<string | undefined>(remotePhotoURL);
@@ -151,7 +179,10 @@ export default function AudioCallScreen({
   const startTimer = useCallback(() => {
     if (timerRef.current) return;
     timerRef.current = setInterval(() => {
-      if (mountedRef.current) setElapsed(e => e + 1);
+      if (mountedRef.current) {
+        elapsedRef.current += 1;
+        setElapsed(e => e + 1);
+      }
     }, 1000);
   }, []);
 
@@ -185,7 +216,7 @@ export default function AudioCallScreen({
               otherUid,
               role === 'caller' ? 'outgoing' : 'incoming',
               result as 'missed' | 'rejected' | 'completed' | 'cancelled',
-              elapsed,
+              elapsedRef.current,
             );
           } catch { /* non-critical */ }
         });
@@ -273,6 +304,11 @@ export default function AudioCallScreen({
           // Remote audio is flowing — call connected, start timer
           updateCallState('connected');
           startTimer();
+          // Cancel decline timer — it was an accept, not a reject
+          if (declineTimerRef.current) {
+            clearTimeout(declineTimerRef.current);
+            declineTimerRef.current = null;
+          }
           // Cancel ringing timeout now that connection is established
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
@@ -348,12 +384,31 @@ export default function AudioCallScreen({
           // REJECT SYNC (2026-10-09): watch the call signal node. If the
           // callee declines (node removed) before WebRTC connects, show
           // "Declined" instead of ringing forever.
+          // RACE FIX (2026-10-09): Firebase fires the callback immediately
+          // with null (node doesn't exist yet — initiateCall hasn't run).
+          // Only treat disappearance as rejection AFTER we've seen the node
+          // exist at least once.
+          // ACCEPT RACE FIX: callee removes the node on ACCEPT too. Wait 3s
+          // before declaring declined — if WebRTC connects in that window,
+          // it was an accept, not a reject.
           const signalRef = ref(database, `calls/${calleeUid}`);
+          let signalSeen = false;
           signalUnsubRef.current = onValue(signalRef, (snap) => {
-            if (!snap.exists() && mountedRef.current &&
+            if (snap.exists()) {
+              signalSeen = true;
+              return;
+            }
+            if (signalSeen && mountedRef.current &&
                 (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
-              updateCallState('declined');
-              setTimeout(() => { if (mountedRef.current) endCall(true); }, 1500);
+              // Wait 3s — if WebRTC connects, cancel the decline
+              if (declineTimerRef.current) clearTimeout(declineTimerRef.current);
+              declineTimerRef.current = setTimeout(() => {
+                if (mountedRef.current &&
+                    (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
+                  updateCallState('declined');
+                  setTimeout(() => { if (mountedRef.current) endCall(true); }, 1500);
+                }
+              }, 3000);
             }
           });
         } catch { /* non-critical — default ringing state remains */ }
@@ -469,7 +524,7 @@ export default function AudioCallScreen({
               />
             ) : (
               <Text style={{ color: C.text, fontSize: 44, fontWeight: '900' }}>
-                {remoteName[0]?.toUpperCase() ?? '?'}
+                {displayName[0]?.toUpperCase() ?? '?'}
               </Text>
             )}
           </View>
@@ -479,7 +534,7 @@ export default function AudioCallScreen({
             color: C.text, fontSize: 28, fontWeight: '900',
             marginTop: 22, letterSpacing: 0.2,
           }}>
-            {remoteName}
+            {displayName}
           </Text>
 
           {/* Status / timer */}
