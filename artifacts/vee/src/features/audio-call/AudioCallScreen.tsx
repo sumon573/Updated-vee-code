@@ -141,6 +141,8 @@ export default function AudioCallScreen({
   const [elapsed,   setElapsed]   = useState(0);
   /** Ref mirror of elapsed — endCall's closure needs the live value. */
   const elapsedRef = useRef(0);
+  /** Remote user's mute state (synced via Firebase). */
+  const [remoteMuted, setRemoteMuted] = useState(false);
   /** Display name with Firebase fallback (2026-10-09): if remoteName is
    *  missing/"Vee User", fetch the real name from users/{remoteUid}. */
   const [displayName, setDisplayName] = useState(remoteName);
@@ -444,6 +446,25 @@ export default function AudioCallScreen({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid, myName]);
 
+  // ── Remote mute sync listener (2026-10-09) ──────────────────────────────
+  // Shows a muted indicator when the other side mutes.
+  useEffect(() => {
+    if (!roomId) return;
+    const otherUid = role === 'caller' ? calleeUid : remoteUid;
+    if (!otherUid) return;
+    let unsub: (() => void) | null = null;
+    (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        unsub = onValue(ref(database, `callMute/${roomId}/${otherUid}`), (snap) => {
+          if (mountedRef.current) setRemoteMuted(snap.val() === true);
+        });
+      } catch { /* non-critical */ }
+    })();
+    return () => { unsub?.(); };
+  }, [roomId, role, calleeUid, remoteUid]);
+
   // ── Mic toggle ────────────────────────────────────────────────────────────
   // RC6 fix pattern: native SDK call OUTSIDE setState callback
   const handleToggleMic = useCallback(() => {
@@ -454,8 +475,18 @@ export default function AudioCallScreen({
       mutedRef.current = newMuted;
       setMuted(newMuted);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // MUTE SYNC (2026-10-09): publish mute state so the other side
+      // sees the muted indicator. Best-effort, never blocks.
+      if (roomId && myUid) {
+        import('firebase/database').then(async ({ ref, set }) => {
+          try {
+            const { database } = await import('@/src/config/firebase');
+            await set(ref(database, `callMute/${roomId}/${myUid}`), newMuted);
+          } catch { /* non-critical */ }
+        });
+      }
     } catch { /* non-critical */ }
-  }, []);
+  }, [roomId, myUid]);
 
   // ── Speaker toggle ────────────────────────────────────────────────────────
   const handleToggleSpeaker = useCallback(() => {
@@ -530,12 +561,26 @@ export default function AudioCallScreen({
           </View>
 
           {/* Name */}
-          <Text style={{
-            color: C.text, fontSize: 28, fontWeight: '900',
-            marginTop: 22, letterSpacing: 0.2,
-          }}>
-            {displayName}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22 }}>
+            <Text style={{
+              color: C.text, fontSize: 28, fontWeight: '900',
+              letterSpacing: 0.2,
+            }}>
+              {displayName}
+            </Text>
+            {remoteMuted && (
+              <View style={{
+                marginLeft: 8, backgroundColor: 'rgba(239,68,68,0.2)',
+                borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4,
+                flexDirection: 'row', alignItems: 'center',
+              }}>
+                <Feather name="mic-off" size={12} color="#EF4444" />
+                <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>
+                  Muted
+                </Text>
+              </View>
+            )}
+          </View>
 
           {/* Status / timer */}
           <Text style={{
