@@ -540,8 +540,12 @@ export async function takeSeat(
   const audienceRef = ref(database, `rooms/${roomId}/audience/${member.userId}`);
   onDisconnect(audienceRef).cancel().catch(() => {/* non-critical */});
   await remove(audienceRef);
-  // BUG 14/15 fix: seat disconnect removes the seat entry only — room stays active
-  onDisconnect(seatRef).remove().catch(() => {/* non-critical */});
+  // FIX (2026-10-09): DO NOT use onDisconnect().remove() for seats.
+  // Brief network blips (1-2 min) were dropping users from seats even though
+  // they were still in the room. Seats now persist until explicit leaveSeat(),
+  // room close, or the H8 ghost-seat cleanup on next seat take.
+  // Cancel any stale onDisconnect from a previous seat to be safe.
+  onDisconnect(seatRef).cancel().catch(() => {/* non-critical */});
   // Belt-and-suspenders: also record in "My Room" index in case a seat was
   // taken directly without going through joinRoomAsAudience first.
   // background: safe to swallow — analytics index write
