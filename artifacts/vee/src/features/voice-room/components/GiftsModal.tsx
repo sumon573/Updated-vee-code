@@ -119,9 +119,13 @@ export function GiftsModal({
     const totalCost = g.coins * selectedMembers.length;
 
     // Balance pre-check: use Firebase (same source as the UI display).
-    // Try a fresh one-shot read first; fall back to the subscribed prop;
-    // fall back to server balance last. If all fail, skip the pre-check
+    // Try a fresh one-shot read first; fall back to the server balance;
+    // fall back to the subscribed prop last. If all fail, skip the pre-check
     // and let the server's InsufficientFundsError decide.
+    // FIX (2026-10-09): the prop fallback must also cover the 0 case — if
+    // Firebase returns 0 (missing node) and the server read fails, the old
+    // `=== null` check skipped the prop and falsely blocked the user even
+    // when the UI displayed a healthy balance.
     let effectiveBalance: number | null = null;
     try {
       effectiveBalance = await getWalletBalance(myUid);
@@ -132,7 +136,7 @@ export function GiftsModal({
         if (serverBal > 0) effectiveBalance = serverBal;
       } catch { /* use prop */ }
     }
-    if (effectiveBalance === null) effectiveBalance = walletBalance;
+    if (effectiveBalance === null || effectiveBalance === 0) effectiveBalance = walletBalance;
     if (effectiveBalance < totalCost) {
       Alert.alert(
         t('voiceRoom.gifts.notEnoughCoins'),

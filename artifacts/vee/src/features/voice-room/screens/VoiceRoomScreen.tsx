@@ -788,7 +788,16 @@ export default function VoiceRoomScreen() {
   ═══════════════════════════════════════════ */
 
   const seatMembers = useMemo(() => seats.filter((s: Participant | null): s is Participant => s !== null), [seats]);
-  const allMembers  = useMemo(() => [...seatMembers, ...audience], [seatMembers, audience]);
+  // DEDUPE FIX (2026-10-09): the same user can appear in seats + audience
+  // (or ghost seats) — dedupe by ID so member lists, counts and gift
+  // recipient pickers never show the same person twice.
+  const allMembers  = useMemo(() => {
+    const map = new Map<string, Participant>();
+    for (const p of [...seatMembers, ...audience]) {
+      if (!map.has(p.id)) map.set(p.id, p);
+    }
+    return [...map.values()];
+  }, [seatMembers, audience]);
 
   const myRole: Role = useMemo(() => {
     const mySeat = seats.find((s: Participant | null) => s?.id === myUid);
@@ -1897,6 +1906,7 @@ export default function VoiceRoomScreen() {
         }}
         roomId={roomId}
         isOwner={myRole === 'host'}
+        isAdmin={myRole === 'admin'}
         onDisband={handleDisband}
         onLeave={() => { setRoomInfoOpen(false); setExitModalOpen(true); }}
       />

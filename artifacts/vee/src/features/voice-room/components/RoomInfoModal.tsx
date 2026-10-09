@@ -12,7 +12,7 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
 export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, roomTopic, accent,
   roomName, onChangeRoomName, roomImageUri, onChangeRoomImage, roomId, description,
-  isOwner, onDisband, onLeave }: {
+  isOwner, isAdmin, onDisband, onLeave }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
   /** Fix 9: Weekly diamonds earned (from wallets/{uid}/weeklyEarned). */
@@ -27,6 +27,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   roomId: string;
   /** Whether the current user is the room owner. */
   isOwner?: boolean;
+  /** Whether the current user is a room admin (can also edit name/image). */
+  isAdmin?: boolean;
   /** Called when the owner confirms "Disband Room". */
   onDisband?: () => void;
   /** Called when a non-owner taps "Leave Room". */
@@ -41,10 +43,15 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   const [nameInput,      setNameInput]      = useState(roomName);
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  // PERMISSION FIX (2026-10-09): only owner/admin can edit room name or image.
+  // Regular members see a static name with no edit affordance.
+  const canEdit = isOwner === true || isAdmin === true;
+
   useEffect(() => { if (!editingName) setNameInput(roomName); }, [roomName, editingName]);
 
   // Fix 3/8: Pick image, upload to Cloudinary, then persist via onChangeRoomImage
   async function pickRoomImage() {
+    if (!canEdit) return; // owner/admin only
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       const title = t('voiceRoom.info.permissionRequired');
@@ -77,6 +84,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   }
 
   function commitName() {
+    if (!canEdit) { setEditingName(false); return; }
     const trimmed = nameInput.trim();
     if (trimmed.length >= 2) onChangeRoomName(trimmed);
     else setNameInput(roomName);
@@ -126,8 +134,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           {/* ── Profile section ── */}
           <View style={{ alignItems: 'center', marginBottom: 20 }}>
-            {/* Tappable room profile picture — Fix 3/8 */}
-            <Pressable onPress={pickRoomImage} disabled={uploadingImage} style={{ marginBottom: 14 }}>
+            {/* Tappable room profile picture — Fix 3/8 (owner/admin only) */}
+            <Pressable onPress={pickRoomImage} disabled={uploadingImage || !canEdit} style={{ marginBottom: 14 }}>
               <View style={{ width: 84, height: 84, borderRadius: 42,
                 backgroundColor: accent + '33',
                 alignItems: 'center', justifyContent: 'center',
@@ -139,16 +147,18 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
                     : <Feather name="mic" size={34} color={accent} />
                 }
               </View>
-              {/* Camera badge */}
+              {/* Camera badge — only for editors */}
+              {canEdit && (
               <View style={{ position: 'absolute', bottom: 2, right: 2,
                 width: 26, height: 26, borderRadius: 13,
                 backgroundColor: accent, alignItems: 'center', justifyContent: 'center',
                 borderWidth: 2, borderColor: '#0F0A1E' }}>
                 <Feather name="camera" size={13} color="#fff" />
               </View>
+              )}
             </Pressable>
 
-            {/* Room name — tap > to edit */}
+            {/* Room name — tap > to edit (owner/admin only) */}
             {editingName ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 }}>
                 <TextInput
@@ -168,13 +178,17 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
                   <Feather name="x" size={19} color={C.muted} />
                 </Pressable>
               </View>
-            ) : (
+            ) : canEdit ? (
               <Pressable
                 onPress={() => { setNameInput(roomName); setEditingName(true); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{roomName}</Text>
                 <Feather name="chevron-right" size={18} color={accent} />
               </Pressable>
+            ) : (
+              <View style={{ marginBottom: 2 }}>
+                <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{roomName}</Text>
+              </View>
             )}
 
             <Text style={{ color: C.sub, fontSize: 13, marginTop: 4 }}>{roomTopic}</Text>

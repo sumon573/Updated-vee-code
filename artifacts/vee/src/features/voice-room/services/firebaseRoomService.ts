@@ -508,6 +508,33 @@ export async function takeSeat(
     return { success: false };
   }
 
+  // GHOST FIX (2026-10-09): atomically clear EVERY other seat held by this
+  // user. The UI's mySeatIdx-based removeSeat() is fire-and-forget and can be
+  // stale, leaving ghost profiles that inflate member counts and duplicate
+  // the member list. Clearing here (service level) is authoritative.
+  try {
+    const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`));
+    if (seatsSnap.exists()) {
+      const ghostPaths: Record<string, null> = {};
+      seatsSnap.forEach((child) => {
+        const key = child.key ?? '';
+        const s = child.val() as { userId?: string } | null;
+        if (s && s.userId === member.userId && Number(key) !== seatIndex) {
+          ghostPaths[`rooms/${roomId}/seats/${key}`] = null;
+          // Also cancel any lingering onDisconnect for the ghost seat so a
+          // later disconnect doesn't wipe the NEW seat by mistake.
+          onDisconnect(ref(database, `rooms/${roomId}/seats/${key}`)).cancel().catch(() => {});
+        }
+      });
+      if (Object.keys(ghostPaths).length > 0) {
+        await update(ref(database), ghostPaths);
+      }
+    }
+  } catch {
+    // Non-critical — ghosts will be cleaned on next seat change; counts
+    // are recomputed best-effort below.
+  }
+
   // Seat won — clear the audience onDisconnect and register one for the seat
   // so a dropped connection frees the seat rather than leaving a ghost.
   const audienceRef = ref(database, `rooms/${roomId}/audience/${member.userId}`);
