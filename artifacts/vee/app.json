@@ -120,11 +120,8 @@
     "extra": {
       "router": {
         "origin": "https://vee.app"
-      },
-      "eas": {
-        "projectId": "ffaeb1c8-f2f1-45d1-a0cd-98a5178a6842"
       }
     },
-    "owner": "wefobi2239s-team"
+    "owner": "baceki8326s-team"
   }
 }
