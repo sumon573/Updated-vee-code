@@ -232,9 +232,11 @@ export async function logCallToChat(
 
     const msg = {
       chatId,
-      // For missed incoming calls, the "sender" is the caller (them).
-      // For outgoing, the sender is me. This drives the inbox display.
-      senderId: direction === 'incoming' ? participantUid : myUid,
+      // C3 FIX: Always use myUid as senderId so Firebase rules allow the write.
+      // The previous code used participantUid for incoming calls, which the
+      // rules reject (senderId must equal auth.uid). The direction field in
+      // callInfo preserves incoming/outgoing semantics for the UI.
+      senderId: myUid,
       type: 'call',
       content: '',
       createdAt: serverTimestamp(),
