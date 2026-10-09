@@ -272,13 +272,45 @@ export function subscribeTransactionHistory(
     orderByKey(),
     limitToLast(50),
   );
+  // Gift catalog for mapping giftId -> emoji/name (mirrors server catalog)
+  const GIFT_MAP: Record<string, { emoji: string; name: string }> = {
+    '1': { emoji: '💝', name: 'Heart' },
+    '2': { emoji: '🌹', name: 'Rose' },
+    '3': { emoji: '🎁', name: 'Gift' },
+    '4': { emoji: '💎', name: 'Diamond' },
+    '5': { emoji: '🏆', name: 'Trophy' },
+    '6': { emoji: '🚀', name: 'Rocket' },
+    '7': { emoji: '👑', name: 'Crown' },
+    '8': { emoji: '🎆', name: 'Firework' },
+  };
   return onValue(
     txQuery,
     (snap) => {
       const txs: WalletTransaction[] = [];
       if (snap.exists()) {
         snap.forEach((child) => {
-          txs.push({ id: child.key!, ...(child.val() as Omit<WalletTransaction, 'id'>) });
+          const raw = child.val() as Record<string, unknown>;
+          // C9 FIX: Map server schema to client schema.
+          // Server writes: { type, giftId, coins, toUid/fromUid, ts }
+          // Client expects: { type, giftId, diamonds, counterpartUid, giftName, emoji, ts }
+          const giftId = String(raw.giftId ?? '');
+          const giftMeta = GIFT_MAP[giftId] ?? { emoji: '🎁', name: 'Gift' };
+          const isSent = raw.type === 'gift_sent';
+          const counterpartUid = String(raw.toUid ?? raw.fromUid ?? '');
+          // Handle non-gift transaction types (e.g., short_id_purchase)
+          const txType = raw.type === 'short_id_purchase' ? 'gift_sent' : (isSent ? 'gift_sent' : 'gift_received');
+          txs.push({
+            id: child.key!,
+            type: txType as WalletTransaction['type'],
+            giftId,
+            diamonds: typeof raw.coins === 'number' ? raw.coins : (typeof raw.price === 'number' ? raw.price : 0),
+            emoji: giftMeta.emoji,
+            giftName: raw.type === 'short_id_purchase' ? 'Short ID' : giftMeta.name,
+            counterpartUid,
+            counterpartName: counterpartUid.slice(0, 8),
+            roomId: null,
+            ts: typeof raw.ts === 'number' ? raw.ts : Date.now(),
+          });
         });
         // Sort newest-first (push keys are chronological, so reverse)
         txs.sort((a, b) => b.ts - a.ts);
