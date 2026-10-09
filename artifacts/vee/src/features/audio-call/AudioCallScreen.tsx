@@ -413,7 +413,8 @@ export default function AudioCallScreen({
             }
             if (signalSeen && mountedRef.current &&
                 (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
-              // Wait 3s — if WebRTC connects, cancel the decline
+              // Wait 1.5s — if WebRTC connects, cancel the decline.
+              // (Reduced from 3s per user request for faster reject feedback.)
               if (declineTimerRef.current) clearTimeout(declineTimerRef.current);
               declineTimerRef.current = setTimeout(() => {
                 if (mountedRef.current &&
@@ -421,7 +422,7 @@ export default function AudioCallScreen({
                   updateCallState('declined');
                   setTimeout(() => { if (mountedRef.current) endCall(true); }, 1500);
                 }
-              }, 3000);
+              }, 1500);
             }
           });
         } catch { /* non-critical — default ringing state remains */ }
