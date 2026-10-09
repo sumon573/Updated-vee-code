@@ -719,29 +719,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
     // ── AppState handler (shared by both paths) ───────────────────────────
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      try {
-        if (nextState === 'background' || nextState === 'inactive') {
-          // Privacy: mute the mic track while backgrounded, restore on return.
-          if (publishedRef.current && !mutedRef.current) {
-            preBackgroundMutedRef.current = false;
-            engine.setMuted(true).catch(() => {
-              // non-critical
-            });
-          }
-        } else if (nextState === 'active') {
-          if (preBackgroundMutedRef.current !== null) {
-            const restore = preBackgroundMutedRef.current;
-            preBackgroundMutedRef.current = null;
-            engine.setMuted(restore).catch(() => {
-              // non-critical
-            });
-          }
-        }
-      } catch {
-        // non-critical
-      }
+      // BACKGROUND AUDIO (2026-10-09): Do NOT mute on background — Sumon
+      // requires voice to continue when the app is backgrounded (like IMO).
+      // The previous privacy-mute behavior is removed.
+      return;
     };
 
     // ── Normal cleanup helper ─────────────────────────────────────────────

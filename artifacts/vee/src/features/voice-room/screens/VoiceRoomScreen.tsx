@@ -1047,6 +1047,10 @@ export default function VoiceRoomScreen() {
       removeSeat(roomId, mySeatIdx).catch(() => {});
     } else if (mySeatIdx < 0) {
       startPublishing();
+      // FIRST-SEAT FIX (2026-10-09): Firebase seat.muted=true but the local
+      // mic starts live — explicitly mute to match. Otherwise the UI shows
+      // muted while the mic is actually transmitting.
+      setMicMuted(true);
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
