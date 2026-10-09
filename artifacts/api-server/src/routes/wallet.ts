@@ -229,7 +229,9 @@ router.post("/init", async (req: Request, res: Response) => {
     const snap = await walletRef.get();
     if (snap.exists()) {
       const stored = (snap.val() ?? {}) as { balance?: unknown };
-      const balance = typeof stored.balance === "number" ? stored.balance : 0;
+      // FIX (2026-10-10): Coerce string balances.
+      const raw = stored.balance;
+      const balance = typeof raw === "number" ? raw : (typeof raw === "string" ? parseFloat(raw) || 0 : 0);
       return res.status(200).json({ ok: true, balance, created: false });
     }
 
@@ -453,7 +455,10 @@ router.get("/balance", async (req: Request, res: Response) => {
     const snap = await adminDatabase()
       .ref(`wallets/${uid}/balance`)
       .get();
-    const balance = typeof snap.val() === "number" ? snap.val() : 0;
+    // FIX (2026-10-10): Coerce string balances — defensive against
+    // wallets written as strings by old clients or manual edits.
+    const raw = snap.val();
+    const balance = typeof raw === "number" ? raw : (typeof raw === "string" ? parseFloat(raw) || 0 : 0);
     return res.status(200).json({ balance });
   } catch (err) {
     logger.error({ err }, "Unhandled error in GET /api/wallet/balance");

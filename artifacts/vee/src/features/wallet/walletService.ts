@@ -192,7 +192,9 @@ export function subscribeWalletBalance(
           callback(0);
         }
       } else {
-        callback(snap.val() as number);
+        // FIX (2026-10-10): Coerce string balances.
+        const val = snap.val();
+        callback(typeof val === "number" ? val : (typeof val === "string" ? parseFloat(val) || 0 : 0));
       }
     },
     () => callback(0),
