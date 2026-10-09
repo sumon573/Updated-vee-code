@@ -10,7 +10,7 @@ const C = {
   bg: '#FFFFFF',
   primary: '#7C3AED',
   glow: '#8B5CF6',
-  unseen: '#8B5CF6',      // purple ring = unseen
+  unseen: '#22C55E',      // IMO green ring = unseen
   seen: '#E5E5EA',         // dim ring = seen
   onlineGreen: '#22C55E',
 } as const;

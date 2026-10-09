@@ -92,43 +92,28 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
 
   const preview = messagePreview(chat);
 
+  // IMO-STYLE FLAT DESIGN (2026-10-09): no cards, no shadows, no rounded
+  // containers — just clean rows with thin dividers, exactly like IMO.
   return (
-    <ScalePress onPress={handlePress} onLongPress={handleLongPress} scaleTo={0.97}>
+    <ScalePress onPress={handlePress} onLongPress={handleLongPress} scaleTo={0.98}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: isPinned ? C.cardPinned : hasUnread ? C.cardUnread : C.card,
-        borderRadius: 20,
-        marginHorizontal: 16, marginBottom: 8,
-        paddingVertical: 12, paddingHorizontal: 14,
-        borderWidth: 1,
-        borderColor: isPinned ? C.borderPinned : hasUnread ? C.borderUnread : C.border,
-        shadowColor: isPinned ? C.gold : hasUnread ? C.glow : 'transparent',
-        shadowOpacity: 0.18, shadowRadius: 12,
-        shadowOffset: { width: 0, height: 2 }, elevation: (isPinned || hasUnread) ? 6 : 0,
+        backgroundColor: C.bg,
+        paddingVertical: 10, paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F2F2F7',
       }}>
 
-        {/* Left accent stripe */}
-        {(hasUnread || isPinned) && (
-          <View style={{
-            position: 'absolute', left: 0, top: 14, bottom: 14,
-            width: 3, borderRadius: 99,
-            backgroundColor: isPinned ? C.gold : C.accent,
-          }} />
-        )}
-
         {/* Avatar */}
-        <View style={{ position: 'relative', marginRight: 14 }}>
-          {/* Story ring */}
+        <View style={{ position: 'relative', marginRight: 12 }}>
+          {/* Story ring — IMO green for unseen */}
           {chat.hasStory && (
             <View style={{
               position: 'absolute', top: -3, left: -3,
               width: AVATAR_SIZE + 6, height: AVATAR_SIZE + 6,
               borderRadius: (AVATAR_SIZE + 6) / 2,
               borderWidth: 2,
-              borderColor: chat.storySeen ? C.dim : C.glow,
-              shadowColor: chat.storySeen ? 'transparent' : C.glow,
-              shadowOpacity: 0.3, shadowRadius: 8,
-              shadowOffset: { width: 0, height: 0 },
+              borderColor: chat.storySeen ? C.dim : '#22C55E',
             }} />
           )}
 
@@ -144,7 +129,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               backgroundColor: colorFor(chat.participantId),
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>
                 {initials(chat.participantName)}
               </Text>
             </View>
@@ -155,7 +140,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
             <View style={{
               position: 'absolute', bottom: 1, right: 1,
               width: 12, height: 12, borderRadius: 6,
-              backgroundColor: C.online,
+              backgroundColor: '#22C55E',
               borderWidth: 2, borderColor: C.bg,
             }} />
           )}
@@ -163,65 +148,56 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
 
         {/* Text content */}
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-            {/* Pin icon */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
             {isPinned && (
-              <Feather name="bookmark" size={12} color={C.gold} style={{ marginRight: 4 }} />
+              <Feather name="bookmark" size={12} color="#F59E0B" style={{ marginRight: 4 }} />
             )}
             <Text numberOfLines={1} style={{
               flex: 1, color: C.text,
-              fontSize: 15, fontWeight: hasUnread ? '900' : '700',
+              fontSize: 16, fontWeight: hasUnread ? '700' : '600',
             }}>
               {chat.participantName}
             </Text>
 
-            {/* Time badge */}
-            <View style={{
-              backgroundColor: hasUnread ? 'rgba(139,92,246,0.2)' : '#F2F2F7',
-              borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8,
+            <Text style={{
+              color: hasUnread ? '#22C55E' : C.dim,
+              fontSize: 12, fontWeight: '400', marginLeft: 8,
             }}>
-              <Text style={{
-                color: hasUnread ? C.accent : C.dim,
-                fontSize: 11, fontWeight: '700',
-              }}>
-                {formatTime(chat.lastMessageTime)}
-              </Text>
-            </View>
+              {formatTime(chat.lastMessageTime)}
+            </Text>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             {chat.isTyping
               ? (
-                <Text style={{ color: C.accent, fontSize: 13, fontStyle: 'italic' }}>
+                <Text style={{ color: '#22C55E', fontSize: 14, fontStyle: 'italic' }}>
                   {t('chat.typingIndicator')}
                 </Text>
               )
               : (
                 <>
                   {preview.icon && (
-                    <Feather name={preview.icon} size={13} color={hasUnread ? C.muted : C.dim} />
+                    <Feather name={preview.icon} size={14} color={C.muted} />
                   )}
                   <Text numberOfLines={1} style={{
                     flex: 1,
-                    color: hasUnread ? C.muted : C.dim,
-                    fontSize: 13, fontWeight: hasUnread ? '600' : '400',
+                    color: hasUnread ? C.text : C.muted,
+                    fontSize: 14, fontWeight: hasUnread ? '600' : '400',
                   }}>
                     {preview.text}
                   </Text>
                 </>
               )}
 
-            {/* Unread badge */}
+            {/* Unread badge — IMO green */}
             {hasUnread && (
               <View style={{
                 minWidth: 20, height: 20, borderRadius: 10,
-                backgroundColor: C.accent,
+                backgroundColor: '#22C55E',
                 alignItems: 'center', justifyContent: 'center',
-                paddingHorizontal: 5,
-                shadowColor: C.glow, shadowOpacity: 0.3,
-                shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
+                paddingHorizontal: 6,
               }}>
-                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>
+                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
                   {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
                 </Text>
               </View>
