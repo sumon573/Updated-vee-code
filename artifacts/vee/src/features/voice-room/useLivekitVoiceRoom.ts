@@ -308,14 +308,25 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   }
 
   private registerRoomListeners(room: Room): void {
-    const { RoomEvent, ParticipantEvent } = this.lk!;
+    const { RoomEvent, ParticipantEvent, Track } = this.lk!;
     room
       .on(RoomEvent.ParticipantConnected, () => this.refreshParticipants())
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
         this.speakingIds.delete(p.identity);
         this.refreshParticipants();
       })
-      .on(RoomEvent.TrackPublished, () => this.refreshParticipants())
+      .on(RoomEvent.TrackPublished, (pub, participant) => {
+        this.refreshParticipants();
+        // C12 FIX: Apply mute state when local audio track is published.
+        // The track may not exist when setMicrophoneEnabled() is called,
+        // so apply the current mute state when publication completes.
+        // Uses Track.Kind.Audio enum (not magic number) for type safety.
+        try {
+          if (participant?.isLocal && pub?.kind === Track.Kind.Audio) {
+            this.applyTrackMute(this.muted).catch(() => {});
+          }
+        } catch { /* non-critical: mute apply is best-effort */ }
+      })
       .on(RoomEvent.TrackUnpublished, () => this.refreshParticipants())
       .on(RoomEvent.TrackSubscribed, () => this.refreshParticipants())
       .on(RoomEvent.TrackUnsubscribed, () => this.refreshParticipants())
