@@ -233,7 +233,13 @@ export async function sendGift({
 
   if (res.status === 400) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new InsufficientFundsError(body.error ?? 'Insufficient diamonds');
+    const errMsg = body.error ?? 'Insufficient diamonds';
+    // H9 FIX: Only "insufficient" errors are InsufficientFundsError.
+    // Other 400s (invalid gift, invalid UID) are generic GiftErrors.
+    if (errMsg.toLowerCase().includes('insufficient')) {
+      throw new InsufficientFundsError(errMsg);
+    }
+    throw new GiftError(errMsg);
   }
   if (!res.ok) {
     throw new GiftError(`Gift send failed (HTTP ${res.status})`);

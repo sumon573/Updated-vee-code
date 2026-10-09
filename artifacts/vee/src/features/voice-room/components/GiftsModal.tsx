@@ -145,7 +145,9 @@ export function GiftsModal({
       } catch { /* use prop */ }
     }
     if (effectiveBalance === null || effectiveBalance === 0) effectiveBalance = walletBalance;
-    if (effectiveBalance < totalCost) {
+    // H11 FIX: Skip pre-check if balance unknown — let server decide.
+    // Old code falsely blocked when subscription hadn't loaded yet.
+    if (effectiveBalance !== null && effectiveBalance > 0 && effectiveBalance < totalCost) {
       Alert.alert(
         t('voiceRoom.gifts.notEnoughCoins'),
         t('voiceRoom.gifts.notEnoughCoinsMsg', { total: totalCost }),
