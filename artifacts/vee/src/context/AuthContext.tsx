@@ -90,6 +90,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Presence is optional during startup; auth/navigation must continue.
           }
           backfillVIdIfMissing(firebaseUser.uid).catch(() => {/* background: safe to swallow — Vee ID backfill retries on next login */});
+          // FIX (2026-10-10): Initialize wallet on login so gift send works.
+          // Previously wallets were only created in GiftsModal (errors swallowed),
+          // leaving most users without wallets → "Insufficient balance" on gift send.
+          import('@/src/features/wallet/walletService').then(({ initializeWallet }) => {
+            initializeWallet(firebaseUser.uid).catch(() => {/* background: safe — retries on next login */});
+          }).catch(() => {});
         }
       });
     } catch {
