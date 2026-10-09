@@ -301,7 +301,10 @@
     // ─────────────────────────────────────────────────────────────────────
     "calls": {
       "$calleeUid": {
-        ".read": "auth != null && auth.uid === $calleeUid",
+        // FIX (2026-10-09): Allow caller to read the signal node so they can
+        // detect reject/accept. The old rule (auth.uid === $calleeUid) blocked
+        // the caller, leaving their UI stuck on "calling"/"ringing" forever.
+        ".read": "auth != null && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))",
         ".write": "auth != null && ((newData.exists() && newData.child('callerId').val() === auth.uid) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
         ".validate": "!newData.exists() || (newData.child('callerId').isString() && newData.child('callerName').isString() && newData.child('roomId').isString() && newData.child('createdAt').isNumber() && newData.child('callerId').val() === auth.uid)"
       }
