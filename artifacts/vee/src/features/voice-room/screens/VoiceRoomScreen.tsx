@@ -227,7 +227,7 @@ export default function VoiceRoomScreen() {
   const [audience,      setAudience]     = useState<Participant[]>([]);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
   // Entry effect: "X is Coming" banner (2026-10-10)
-  const [entryBanner, setEntryBanner] = useState<{ name: string; userId: string; photoURL?: string | null } | null>(null);
+  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null } | null>(null);
   const prevAudienceIdsRef = useRef<Set<string>>(new Set());
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
@@ -450,7 +450,6 @@ export default function VoiceRoomScreen() {
       const displayName = user?.displayName || 'You';
       setEntryBanner({
         name: displayName,
-        userId: myUid,
         photoURL: user?.photoURL || null,
       });
     }
@@ -672,7 +671,6 @@ export default function VoiceRoomScreen() {
             // New joiner (not me) — show entry banner
             setEntryBanner({
               name: p.name || 'User',
-              userId: p.id,
               photoURL: (p as any).photoURL || null,
             });
             break; // show one at a time
@@ -2121,7 +2119,6 @@ export default function VoiceRoomScreen() {
       {entryBanner ? (
         <EntryBanner
           name={entryBanner.name}
-          userId={entryBanner.userId}
           photoURL={entryBanner.photoURL}
           onDismiss={() => setEntryBanner(null)}
         />

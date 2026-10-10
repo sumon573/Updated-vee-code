@@ -173,7 +173,10 @@ export default function AudioCallScreen({
   // BACK BUTTON → KEEP CALL (2026-10-10, Sumon's order): pressing back during
   // a call must NOT end it. Block the back action; the user stays on the call
   // screen. Pressing the system Home button backgrounds the app and the call
-  // continues (like IMO/WhatsApp). Full in-app call minimize is deferred.
+  // continues (like IMO/WhatsApp).
+  // NOTE: True in-app minimize (IMO-style floating badge) requires moving
+  // WebRTC to a global singleton — deferred to a dedicated architectural batch.
+  // The floating CallMinimizeBar component is ready for that batch.
   useEffect(() => {
     const onBackPress = () => true; // block — do not end call
     const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
