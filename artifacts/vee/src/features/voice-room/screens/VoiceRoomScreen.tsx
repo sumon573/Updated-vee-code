@@ -65,6 +65,8 @@ import {
   sendSeatInvite, subscribeSeatInvites, removeSeatInvite, type SeatInvite,
   // Fix 5: Emoji reaction broadcast
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
+  // Entry broadcast (2026-10-10): all users see everyone's entry
+  sendRoomEntryEvent, subscribeRoomEntryEvents,
 } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
@@ -228,7 +230,6 @@ export default function VoiceRoomScreen() {
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
   // Entry effect: "X is Coming" banner (2026-10-10)
   const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null } | null>(null);
-  const prevAudienceIdsRef = useRef<Set<string>>(new Set());
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
@@ -440,6 +441,7 @@ export default function VoiceRoomScreen() {
 
   // ENTRY EFFECT (2026-10-10): Show "X is Coming" banner when the local user
   // joins too, so they see the effect working (not just when others join).
+  // ALSO broadcast the entry so ALL room participants see it.
   const hasShownSelfEntryRef = useRef(false);
   useEffect(() => {
     if (hasJoined && !hasShownSelfEntryRef.current && myUid) {
@@ -450,8 +452,34 @@ export default function VoiceRoomScreen() {
         name: displayName,
         photoURL: user?.photoURL || null,
       });
+      // Broadcast entry to all participants
+      sendRoomEntryEvent(roomId, {
+        uid: myUid,
+        name: displayName,
+        photoURL: user?.photoURL || null,
+      }).catch(() => {/* non-critical */});
     }
-  }, [hasJoined, myUid, user?.displayName, user?.photoURL]);
+  }, [hasJoined, myUid, user?.displayName, user?.photoURL, roomId]);
+
+  // ENTRY BROADCAST SUBSCRIPTION (2026-10-10): Show entry banner when ANY
+  // participant joins — so everyone sees everyone's entry effect.
+  const lastEntryTsRef = useRef(0);
+  useEffect(() => {
+    if (!roomId) return;
+    return subscribeRoomEntryEvents(roomId, (entry) => {
+      if (!entry) return;
+      // Ignore stale entries
+      if (entry.ts <= lastEntryTsRef.current) return;
+      if (Date.now() - entry.ts > 10000) return; // 10s TTL
+      lastEntryTsRef.current = entry.ts;
+      // Don't show for our own entry (we already showed it locally)
+      if (entry.uid === myUid) return;
+      setEntryBanner({
+        name: entry.name || 'User',
+        photoURL: entry.photoURL || null,
+      });
+    });
+  }, [roomId, myUid]);
 
   // REJOIN FIX (2026-10-09): On mount, check if user is already in the
   // room's audience/seats (e.g. rejoining after leave). Without this,
@@ -660,24 +688,10 @@ export default function VoiceRoomScreen() {
     return subscribeAudience(roomId, (fbAudience) => {
       const participants = fbAudience.map(fbAudToParticipant);
       setAudience(participants);
-      // ENTRY EFFECT (2026-10-10): Detect new joins and show "X is Coming" banner.
-      // Compare with previous IDs; skip the initial load (prev set is empty).
-      const prevIds = prevAudienceIdsRef.current;
-      if (prevIds.size > 0) {
-        for (const p of participants) {
-          if (!prevIds.has(p.id) && p.id !== myUid) {
-            // New joiner (not me) — show entry banner
-            setEntryBanner({
-              name: p.name || 'User',
-              photoURL: (p as any).photoURL || null,
-            });
-            break; // show one at a time
-          }
-        }
-      }
-      prevAudienceIdsRef.current = new Set(participants.map((p) => p.id));
+      // NOTE (2026-10-10): Entry banner now handled by the entry broadcast
+      // subscription above (sendRoomEntryEvent/subscribeRoomEntryEvents).
     });
-  }, [roomId, myUid]);
+  }, [roomId]);
 
   // Subscribe to room chat — Fix 11: track oldest key for pagination
   useEffect(() => {

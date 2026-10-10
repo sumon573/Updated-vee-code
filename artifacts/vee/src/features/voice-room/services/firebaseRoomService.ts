@@ -1234,6 +1234,49 @@ export function subscribeRoomEmojiReactions(
   });
 }
 
+// ─── Entry Broadcast (2026-10-10) ────────────────────────────────────────────
+// When a user joins a room, broadcast an entry event so ALL participants see
+// the "X is Coming" entry banner — not just the joiner.
+
+export type RoomEntryEvent = {
+  uid: string;
+  name: string;
+  photoURL?: string | null;
+  ts: number;
+};
+
+/**
+ * Broadcast a room entry event to all participants.
+ * Stored at rooms/{roomId}/entries/{pushId} with TTL enforced client-side.
+ */
+export async function sendRoomEntryEvent(
+  roomId: string,
+  entry: Omit<RoomEntryEvent, 'ts'>,
+): Promise<void> {
+  const entryRef = push(ref(database, `rooms/${roomId}/entries`));
+  await set(entryRef, { ...entry, ts: Date.now() });
+}
+
+/**
+ * Subscribe to room entry events.
+ * Callback fires with the latest entry; caller filters by ts to ignore stale.
+ */
+export function subscribeRoomEntryEvents(
+  roomId: string,
+  callback: (entry: RoomEntryEvent | null) => void,
+): () => void {
+  // Only listen to the most recent entry to avoid replay storms
+  const q = query(ref(database, `rooms/${roomId}/entries`), limitToLast(1));
+  return onValue(q, (snap) => {
+    if (!snap.exists()) { callback(null); return; }
+    let latest: RoomEntryEvent | null = null;
+    snap.forEach((child) => {
+      latest = child.val() as RoomEntryEvent;
+    });
+    callback(latest);
+  });
+}
+
 // ─── Room Creation Limit ─────────────────────────────────────────────────────
 
 /**
