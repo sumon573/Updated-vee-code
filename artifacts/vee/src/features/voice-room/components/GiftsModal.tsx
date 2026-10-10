@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Alert, Pressable, Modal, ActivityIndicator } from 'react-native';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
@@ -180,7 +181,7 @@ export function GiftsModal({
       const senderAvatar = members.find(m => m.id === myUid)?.photoURL;
 
       const succeeded: Participant[] = [];
-      const failed: { name: string; insufficient: boolean }[] = [];
+      const failed: { name: string; insufficient: boolean; error?: unknown }[] = [];
 
       for (const r of recipients) {
         const key = keys.get(r.id)!;
@@ -205,7 +206,7 @@ export function GiftsModal({
             }
           }
         if (!charged) {
-          failed.push({ name: r.name, insufficient: lastErr instanceof InsufficientFundsError });
+          failed.push({ name: r.name, insufficient: lastErr instanceof InsufficientFundsError, error: lastErr });
           continue;
         }
         succeeded.push(r);
@@ -232,13 +233,16 @@ export function GiftsModal({
       if (succeeded.length === 0) {
         // Nothing went through — keep the modal open so the user can retry.
         const allInsufficient = failed.length > 0 && failed.every(f => f.insufficient);
+        // Show actual cause (2026-10-10, Sumon's standing rule)
+        const firstError = failed.find(f => f.error)?.error;
+        const cause = firstError ? getErrorCause(firstError) : 'Unknown';
         Alert.alert(
           allInsufficient
             ? t('voiceRoom.gifts.notEnoughCoins')
             : t('voiceRoom.screen.error'),
           allInsufficient
             ? t('voiceRoom.gifts.notEnoughCoinsMsg', { total: totalCost })
-            : t('voiceRoom.gifts.sendFailed'),
+            : `${t('voiceRoom.gifts.sendFailed')}\n\nReason: ${cause}`,
         );
         return;
       }
