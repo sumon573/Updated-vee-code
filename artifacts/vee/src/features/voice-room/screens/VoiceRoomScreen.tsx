@@ -446,9 +446,11 @@ export default function VoiceRoomScreen() {
   // ALSO broadcast the entry so ALL room participants see it.
   const hasShownSelfEntryRef = useRef(false);
   useEffect(() => {
-    if (hasJoined && !hasShownSelfEntryRef.current && myUid) {
+    // Wait for myProfile to load (has real name + photoURL from RTDB)
+    // before broadcasting — otherwise DP/name may be empty.
+    if (hasJoined && !hasShownSelfEntryRef.current && myUid && myProfile) {
       hasShownSelfEntryRef.current = true;
-      // Use myName/myPhotoURL (from profile) — not auth displayName which may be empty
+      // Use myName/myPhotoURL (from RTDB profile) — not auth which may be empty
       const displayName = myName || 'User';
       setEntryBanner({
         name: displayName,
@@ -461,7 +463,7 @@ export default function VoiceRoomScreen() {
         photoURL: myPhotoURL || null,
       }).catch(() => {/* non-critical */});
     }
-  }, [hasJoined, myUid, myName, myPhotoURL, roomId]);
+  }, [hasJoined, myUid, myProfile, myName, myPhotoURL, roomId]);
 
   // ENTRY BROADCAST SUBSCRIPTION (2026-10-10): Show entry banner when ANY
   // participant joins — so everyone sees everyone's entry effect.
