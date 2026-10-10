@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, Pressable, Image, TextInput,
   Dimensions, Alert, ActivityIndicator,
@@ -6,6 +6,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
@@ -40,8 +41,35 @@ export default function StoryShareScreen() {
   const [musicUri, setMusicUri] = useState<string | null>(null);
   const [musicName, setMusicName] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  const [cameraUri, setCameraUri] = useState<string | null>(null);
 
   const isTextMode = mode === 'text';
+  const isCameraMode = mode === 'camera';
+
+  useEffect(() => {
+    if (isCameraMode && !cameraUri) {
+      (async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            t('story.error', { defaultValue: 'Error' }),
+            t('story.cameraPermission', { defaultValue: 'Camera permission required' }),
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.8,
+        });
+        if (!result.canceled && result.assets[0]) {
+          setCameraUri(result.assets[0].uri);
+        } else {
+          router.back();
+        }
+      })();
+    }
+  }, [isCameraMode, cameraUri, router, t]);
 
   const handleSelectMusic = useCallback(async () => {
     try {
@@ -81,6 +109,14 @@ export default function StoryShareScreen() {
       );
     }
   }, [t]);
+
+  // Music mode: auto-open music picker on mount (after handleSelectMusic is defined)
+  useEffect(() => {
+    if (mode === 'music' && !musicUri) {
+      handleSelectMusic();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const handleShare = useCallback(async () => {
     if (isTextMode && !text.trim()) {
@@ -162,12 +198,34 @@ export default function StoryShareScreen() {
               autoFocus
             />
           </View>
-        ) : assetUri ? (
+        ) : (assetUri || cameraUri) ? (
           <Image
-            source={{ uri: assetUri }}
+            source={{ uri: (assetUri || cameraUri) as string }}
             style={{ width, height: height * 0.7 }}
             resizeMode="contain"
           />
+        ) : mode === 'music' ? (
+          <View style={{
+            width: width - 40, minHeight: 300,
+            backgroundColor: bgColor, borderRadius: 16,
+            justifyContent: 'center', alignItems: 'center', padding: 20,
+          }}>
+            <Feather name="music" size={48} color="#fff" style={{ marginBottom: 16 }} />
+            <Text style={{ color: '#fff', fontSize: 16, textAlign: 'center', marginBottom: 12 }}>
+              {musicName || t('story.tapMusic', { defaultValue: 'Tap "Select Music" above to add music' })}
+            </Text>
+            <TextInput
+              style={{
+                color: '#fff', fontSize: 20, fontWeight: '700',
+                textAlign: 'center', width: '100%',
+              }}
+              placeholder={t('story.writeSomething', { defaultValue: 'Write something...' })}
+              placeholderTextColor="rgba(255,255,255,0.6)"
+              value={text}
+              onChangeText={setText}
+              multiline
+            />
+          </View>
         ) : (
           <Text style={{ color: '#fff' }}>
             {t('story.noMedia', { defaultValue: 'No media selected' })}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, Pressable, Image,
-  Dimensions, ActivityIndicator, Share, Alert,
+  Dimensions, ActivityIndicator, Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -28,7 +28,6 @@ export default function PlanetScreen() {
   const [videos, setVideos] = useState<PlanetVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'story' | 'planet' | 'marketplace'>('planet');
-  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     // TODO: Fetch public videos from Firebase (audience === 'everyone')
@@ -165,9 +164,7 @@ export default function PlanetScreen() {
   };
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
-    }
+    // Track visible video for future playback control
   }).current;
 
   return (
@@ -182,11 +179,10 @@ export default function PlanetScreen() {
           <Feather name="x" size={24} color="#fff" />
         </Pressable>
         
-        <Pressable onPress={() => setActiveTab('story')} style={{ marginRight: 20 }}>
+        <Pressable onPress={() => router.back()} style={{ marginRight: 20 }}>
           <Text style={{
-            color: activeTab === 'story' ? '#fff' : 'rgba(255,255,255,0.6)',
-            fontSize: 17, fontWeight: activeTab === 'story' ? '700' : '400',
-            textDecorationLine: activeTab === 'story' ? 'underline' : 'none',
+            color: 'rgba(255,255,255,0.6)',
+            fontSize: 17, fontWeight: '400',
           }}>
             {t('planet.story', { defaultValue: 'Story' })}
           </Text>
@@ -225,6 +221,13 @@ export default function PlanetScreen() {
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color="#fff" />
+        </View>
+      ) : activeTab === 'marketplace' ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <Feather name="shopping-bag" size={48} color="rgba(255,255,255,0.3)" style={{ marginBottom: 16 }} />
+          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' }}>
+            {t('planet.marketplaceSoon', { defaultValue: 'Marketplace is coming soon!' })}
+          </Text>
         </View>
       ) : videos.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>

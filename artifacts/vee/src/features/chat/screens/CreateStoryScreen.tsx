@@ -8,32 +8,57 @@ import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const ITEM_SIZE = (width - 4) / 3;
 
 export default function CreateStoryScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const [photos, setPhotos] = useState<MediaLibrary.Asset[]>([]);
+  const [albums, setAlbums] = useState<MediaLibrary.Album[]>([]);
+  const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
+  const [albumPickerOpen, setAlbumPickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasPermission, setHasPermission] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [multiSelect, setMultiSelect] = useState(false);
+
+  const loadAssets = useCallback(async (albumId?: string) => {
+    const result = await MediaLibrary.getAssetsAsync({
+      first: 100,
+      album: albumId as any,
+      mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
+      sortBy: [MediaLibrary.SortBy.creationTime],
+    });
+    setPhotos(result.assets);
+  }, []);
 
   useEffect(() => {
     (async () => {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       setHasPermission(status === 'granted');
       if (status === 'granted') {
-        const result = await MediaLibrary.getAssetsAsync({
-          first: 100,
-          mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
-          sortBy: [MediaLibrary.SortBy.creationTime],
-        });
-        setPhotos(result.assets);
+        await loadAssets();
+        const albumList = await MediaLibrary.getAlbumsAsync();
+        setAlbums(albumList);
       }
       setLoading(false);
     })();
+  }, [loadAssets]);
+
+  const handleAlbumSelect = useCallback(async (album: MediaLibrary.Album | null) => {
+    setAlbumPickerOpen(false);
+    setSelectedAlbum(album?.id ?? null);
+    setLoading(true);
+    await loadAssets(album?.id);
+    setLoading(false);
+  }, [loadAssets]);
+
+  const handleMultiSelectToggle = useCallback(() => {
+    setMultiSelect(prev => {
+      if (prev) setSelected(new Set()); // clear on toggle off
+      return !prev;
+    });
   }, []);
 
   const handleSelectPhoto = useCallback((asset: MediaLibrary.Asset) => {
@@ -182,15 +207,20 @@ export default function CreateStoryScreen() {
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 16, paddingVertical: 8,
       }}>
-        <Pressable style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable
+          onPress={() => setAlbumPickerOpen(true)}
+          style={{ flexDirection: 'row', alignItems: 'center' }}
+        >
           <Text style={{ fontSize: 15, fontWeight: '600', color: '#000', marginRight: 4 }}>
-            {t('story.gallery', { defaultValue: 'Gallery' })}
+            {selectedAlbum
+              ? albums.find(a => a.id === selectedAlbum)?.title ?? t('story.gallery', { defaultValue: 'Gallery' })
+              : t('story.gallery', { defaultValue: 'Gallery' })}
           </Text>
           <Feather name="chevron-down" size={16} color="#000" />
         </Pressable>
         <View style={{ flex: 1 }} />
         <Pressable
-          onPress={() => setMultiSelect(!multiSelect)}
+          onPress={handleMultiSelectToggle}
           style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: multiSelect ? '#1877F2' : '#f0f0f0',
@@ -270,6 +300,47 @@ export default function CreateStoryScreen() {
           <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
             {t('story.continue', { defaultValue: 'Continue' })} ({selected.size})
           </Text>
+        </Pressable>
+      )}
+
+      {/* Album picker */}
+      {albumPickerOpen && (
+        <Pressable
+          onPress={() => setAlbumPickerOpen(false)}
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 20,
+            justifyContent: 'center', alignItems: 'center',
+          }}
+        >
+          <View style={{
+            backgroundColor: '#fff', borderRadius: 16,
+            width: width - 60, maxHeight: height * 0.6,
+            overflow: 'hidden',
+          }}>
+            <Text style={{
+              fontSize: 16, fontWeight: '700', color: '#000',
+              padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+            }}>
+              {t('story.selectAlbum', { defaultValue: 'Select album' })}
+            </Text>
+            <FlatList
+              data={[{ id: null, title: t('story.allPhotos', { defaultValue: 'All photos' }) } as any, ...albums]}
+              keyExtractor={(item) => item.id ?? 'all'}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => handleAlbumSelect(item.id ? item : null)}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 14,
+                    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+                    backgroundColor: (selectedAlbum ?? null) === item.id ? '#f0f7ff' : '#fff',
+                  }}
+                >
+                  <Text style={{ fontSize: 14, color: '#000' }}>{item.title}</Text>
+                </Pressable>
+              )}
+            />
+          </View>
         </Pressable>
       )}
     </View>
