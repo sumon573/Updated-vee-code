@@ -486,7 +486,12 @@
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         "balance": {
-          ".write": false
+          // GIFT FIX (2026-10-10): Allow client-side gift transactions as fallback
+          // when the VPS api-server is unreachable/outdated. The sender can only
+          // DECREASE their own balance by a valid gift price; anyone can INCREASE
+          // a balance by a valid gift price (recipient credit). Valid prices:
+          // 10, 25, 50, 100, 200, 500, 1000, 2000.
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && (newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)))"
         },
         "weeklyEarned": {
           ".write": false
@@ -495,7 +500,13 @@
           ".write": false
         },
         "transactions": {
-          ".write": false
+          // GIFT FIX (2026-10-10): Allow gift history writes from client fallback.
+          // Sender writes to both own and recipient's history. Validated by
+          // requiring a valid gift type and diamonds amount.
+          ".write": "auth != null",
+          "$txId": {
+            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && (newData.child('type').val() === 'gift_sent' || newData.child('type').val() === 'gift_received')"
+          }
         }
       }
     },

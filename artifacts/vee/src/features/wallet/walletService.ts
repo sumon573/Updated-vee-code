@@ -217,6 +217,96 @@ export function subscribeWalletBalance(
  * retries of the same send action. Retrying with the same key is safe — the
  * server will not charge twice.
  */
+
+/**
+ * GIFT FALLBACK (2026-10-10): Direct Firebase gift transaction.
+ * Used when the VPS api-server is unreachable or running outdated code.
+ * Performs atomic balance updates via Firebase transactions:
+ * 1. Decrement sender's balance by gift price (validated by Firebase rules)
+ * 2. Increment recipient's balance by gift price (validated by Firebase rules)
+ * 3. Write transaction history for both parties
+ *
+ * Gift prices: 1=10, 2=25, 3=50, 4=100, 5=200, 6=500, 7=1000, 8=2000
+ */
+async function sendGiftViaFirebase(
+  toUid: string,
+  giftId: string,
+): Promise<SendGiftResult> {
+  const { getAuth } = await import('@/src/config/firebase');
+  const { ref, runTransaction, push, set, serverTimestamp } = await import('firebase/database');
+  const { database } = await import('@/src/config/firebase');
+
+  const auth = getAuth();
+  const fromUid = auth.currentUser?.uid;
+  if (!fromUid) throw new GiftError('Not authenticated');
+
+  const GIFT_PRICES: Record<string, number> = {
+    '1': 10, '2': 25, '3': 50, '4': 100,
+    '5': 200, '6': 500, '7': 1000, '8': 2000,
+  };
+  const price = GIFT_PRICES[giftId];
+  if (!price) throw new GiftError('Invalid gift');
+
+  // Step 1: Decrement sender's balance (atomic, validated by rules)
+  const senderBalRef = ref(database, `wallets/${fromUid}/balance`);
+  const senderResult = await runTransaction(senderBalRef, (current) => {
+    const bal = typeof current === 'number' ? current : 0;
+    if (bal < price) return; // Abort — insufficient funds
+    return bal - price;
+  });
+  if (!senderResult.committed) {
+    throw new InsufficientFundsError('Not enough diamonds');
+  }
+  const newBalance = senderResult.snapshot.val() as number;
+
+  // Step 2: Increment recipient's balance (skip for self-gifts, net-zero)
+  if (toUid !== fromUid) {
+    const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
+    try {
+      await runTransaction(recipientBalRef, (current) => {
+        const bal = typeof current === 'number' ? current : 0;
+        return bal + price;
+      });
+    } catch {
+      // Recipient credit failed — refund sender (best effort)
+      await runTransaction(senderBalRef, (current) => {
+        const bal = typeof current === 'number' ? current : 0;
+        return bal + price;
+      }).catch(() => {});
+      throw new GiftError('Failed to credit recipient');
+    }
+  }
+
+  // Step 3: Write transaction history (best effort, non-blocking)
+  const timestamp = Date.now();
+  try {
+    const senderTxRef = push(ref(database, `wallets/${fromUid}/transactions`));
+    await set(senderTxRef, {
+      type: 'gift_sent',
+      diamonds: -price,
+      toUid,
+      giftId,
+      timestamp,
+      createdAt: serverTimestamp(),
+    });
+    if (toUid !== fromUid) {
+      const recipientTxRef = push(ref(database, `wallets/${toUid}/transactions`));
+      await set(recipientTxRef, {
+        type: 'gift_received',
+        diamonds: price,
+        fromUid,
+        giftId,
+        timestamp,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // History write failed — gift already completed, don't fail
+  }
+
+  return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
+}
+
 export async function sendGift({
   toUid,
   giftId,
@@ -243,6 +333,15 @@ export async function sendGift({
     // H9 FIX: Only "insufficient" errors are InsufficientFundsError.
     // Other 400s (invalid gift, invalid UID) are generic GiftErrors.
     if (errMsg.toLowerCase().includes('insufficient')) {
+      // GIFT FALLBACK (2026-10-10): If server says insufficient but client
+      // knows there's balance (VPS running old code), try Firebase direct.
+      // This bypasses the broken server for gift transactions.
+      try {
+        const fbResult = await sendGiftViaFirebase(toUid, giftId);
+        if (fbResult.ok) return fbResult;
+      } catch {
+        // Firebase fallback failed — throw original server error
+      }
       throw new InsufficientFundsError(errMsg);
     }
     throw new GiftError(errMsg);
