@@ -15,6 +15,7 @@ import {
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
+import { getUser } from '@/src/services/userService';
 import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
@@ -38,6 +39,9 @@ export default function IMOHomeScreen() {
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
   const { stories, publish } = useStories();
 
+  // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
+  const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
+
   // Profile
   useEffect(() => {
     if (!user?.uid) return;
@@ -57,7 +61,7 @@ export default function IMOHomeScreen() {
   const imoChats: IMOChat[] = chats.map((c) => ({
     id: c.id,
     name: c.participantName || 'Unknown',
-    photoURL: c.participantAvatar || null,
+    photoURL: c.participantAvatar || avatarCache[c.participantId || ''] || null,
     lastMessage: c.lastMessage || '',
     lastMessageTime: formatTime(c.lastMessageTime),
     unreadCount: c.unreadCount || 0,
@@ -67,12 +71,50 @@ export default function IMOHomeScreen() {
   }));
 
   const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
-    id: s.id || s.userId,
+    id: s.userId,
     // Show "You" for the user's own story (like IMO)
     name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
-    photoURL: s.photoURL || null,
+    photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
     unreadCount: s.unreadCount || 0,
   }));
+
+  useEffect(() => {
+    const missingUids = new Set<string>();
+    // Collect story userIds with missing DPs
+    for (const s of (stories || [])) {
+      const uid = (s as any).userId;
+      if (uid && !(s as any).photoURL && !avatarCache[uid]) {
+        missingUids.add(uid);
+      }
+    }
+    // Collect chat participantIds with missing DPs
+    for (const c of chats) {
+      const pid = c.participantId;
+      if (pid && !c.participantAvatar && !avatarCache[pid]) {
+        missingUids.add(pid);
+      }
+    }
+    if (missingUids.size === 0) return;
+    // Fetch all missing DPs in parallel
+    Promise.all(
+      [...missingUids].map(async (uid) => {
+        try {
+          const profile = await getUser(uid);
+          const url = (profile as any)?.photoURL;
+          if (url) return [uid, url] as const;
+        } catch {/* ignore */}
+        return null;
+      })
+    ).then((results) => {
+      const updates: Record<string, string> = {};
+      for (const r of results) {
+        if (r) updates[r[0]] = r[1];
+      }
+      if (Object.keys(updates).length > 0) {
+        setAvatarCache((prev) => ({ ...prev, ...updates }));
+      }
+    });
+  }, [stories, chats]);
 
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
@@ -81,8 +123,9 @@ export default function IMOHomeScreen() {
   }, []);
 
   const handleStoryPress = useCallback((storyId: string) => {
-    // Find the user index for this story
-    const idx = stories.findIndex((s) => s.stories.some((st) => st.id === storyId));
+    // storyId is the user ID (from the row's s.id || s.userId)
+    // Find the user group index directly
+    const idx = stories.findIndex((s) => s.userId === storyId);
     if (idx >= 0) {
       setStoryViewerIndex(idx);
       setStoryViewerVisible(true);
@@ -177,7 +220,7 @@ export default function IMOHomeScreen() {
         style={{ flex: 1 }}
       />
       <IMOBottomBar
-        onAddPress={() => setActiveTab('contacts')}
+        onAddPress={() => setActiveTab('voice')}
         onSearchPress={() => router.push('/search' as any)}
       />
       <StoryViewer

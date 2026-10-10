@@ -12,6 +12,9 @@ import {
   onDisconnect,
   serverTimestamp,
   runTransaction,
+  query,
+  orderByChild,
+  equalTo,
   DataSnapshot,
 } from 'firebase/database';
 import { database } from '../config/firebase';
@@ -85,6 +88,21 @@ export async function createUser(user: VeeUser): Promise<void> {
 export async function getUser(uid: string): Promise<VeeUser | null> {
   const snap: DataSnapshot = await get(ref(database, `users/${uid}`));
   return snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null;
+}
+
+/**
+ * Find a user by their short V-ID (e.g. "8888").
+ * Used by Add Friends → V-ID search.
+ */
+export async function getUserByShortId(shortId: string): Promise<VeeUser | null> {
+  const q = query(ref(database, 'users'), orderByChild('shortId'), equalTo(shortId));
+  const snap: DataSnapshot = await get(q);
+  if (!snap.exists()) return null;
+  let found: VeeUser | null = null;
+  snap.forEach((child) => {
+    if (!found) found = sanitizeVeeUser(child.key!, child.val());
+  });
+  return found;
 }
 
 /**

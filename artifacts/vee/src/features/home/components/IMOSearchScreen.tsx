@@ -16,6 +16,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { Chat } from '@/src/features/chat/types';
 import { subscribeUserChats } from '@/src/features/chat/services/firebaseDmService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
+import { getUser } from '@/src/services/userService';
 import { useEffect } from 'react';
 
 export default function IMOSearchScreen() {
@@ -23,12 +24,37 @@ export default function IMOSearchScreen() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [chats, setChats] = useState<Chat[]>([]);
+  const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!user?.uid) return;
     const unsub = subscribeUserChats(user.uid, setChats);
     return unsub;
   }, [user?.uid]);
+
+  // DP HYDRATION (2026-10-10): Fetch missing DPs from RTDB
+  useEffect(() => {
+    const missing = chats
+      .filter((c) => c.participantId && !c.participantAvatar && !avatarCache[c.participantId])
+      .map((c) => c.participantId!);
+    if (missing.length === 0) return;
+    Promise.all(
+      [...new Set(missing)].map(async (uid) => {
+        try {
+          const p = await getUser(uid);
+          const url = (p as any)?.photoURL;
+          if (url) return [uid, url] as const;
+        } catch {/* ignore */}
+        return null;
+      })
+    ).then((results) => {
+      const updates: Record<string, string> = {};
+      for (const r of results) if (r) updates[r[0]] = r[1];
+      if (Object.keys(updates).length > 0) {
+        setAvatarCache((prev) => ({ ...prev, ...updates }));
+      }
+    });
+  }, [chats]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return chats;
@@ -67,6 +93,7 @@ export default function IMOSearchScreen() {
 
   const renderContact = ({ item }: { item: Chat }) => {
     const initials = (item.participantName || '?').trim().charAt(0).toUpperCase();
+    const avatarUrl = item.participantAvatar || (item.participantId ? avatarCache[item.participantId] : null);
     return (
       <TouchableOpacity
         onPress={() => handleChatPress(item)}
@@ -79,9 +106,9 @@ export default function IMOSearchScreen() {
           borderBottomColor: '#F0F0F0',
         }}
       >
-        {item.participantAvatar ? (
+        {avatarUrl ? (
           <Image
-            source={{ uri: item.participantAvatar }}
+            source={{ uri: avatarUrl }}
             style={{ width: 48, height: 48, borderRadius: 24 }}
           />
         ) : (
@@ -163,7 +190,7 @@ export default function IMOSearchScreen() {
           {/* Add Friends */}
           <View style={{ backgroundColor: '#FFFFFF', marginTop: 8, borderRadius: 12, marginHorizontal: 12, overflow: 'hidden' }}>
             <TouchableOpacity
-              onPress={() => router.push('/home' as any)}
+              onPress={() => router.push('/vid-search' as any)}
               style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}
             >
               <Ionicons name="person-add-outline" size={24} color="#2196F3" />
