@@ -48,6 +48,9 @@ function formatDate(ts: number): string {
 }
 
 function TransactionItem({ tx }: { tx: WalletTransaction }) {
+  // FIX (2026-10-10): Wallet history shows ONLY diamond recharges (Sumon's
+  // order). Gift transactions live on the Profile gift history section.
+  const isRecharge = tx.type === 'recharge';
   const isReceived = tx.type === 'gift_received';
   return (
     <View style={{
@@ -59,22 +62,22 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
       {/* Emoji */}
       <View style={{
         width: 46, height: 46, borderRadius: 14,
-        backgroundColor: isReceived ? 'rgba(34,197,94,0.12)' : 'rgba(139,92,246,0.12)',
+        backgroundColor: isRecharge ? 'rgba(124,58,237,0.12)' : isReceived ? 'rgba(34,197,94,0.12)' : 'rgba(139,92,246,0.12)',
         borderWidth: 1,
-        borderColor: isReceived ? 'rgba(34,197,94,0.25)' : 'rgba(139,92,246,0.25)',
+        borderColor: isRecharge ? 'rgba(124,58,237,0.25)' : isReceived ? 'rgba(34,197,94,0.25)' : 'rgba(139,92,246,0.25)',
         alignItems: 'center', justifyContent: 'center',
         marginRight: 14,
       }}>
-        <Text style={{ fontSize: 22 }}>{tx.emoji || '🎁'}</Text>
+        <Text style={{ fontSize: 22 }}>{tx.emoji || (isRecharge ? '💎' : '🎁')}</Text>
       </View>
 
       {/* Info */}
       <View style={{ flex: 1 }}>
         <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>
-          {tx.giftName}
+          {isRecharge ? 'Diamond Recharge' : tx.giftName}
         </Text>
         <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-          {isReceived ? '⬇ From' : '⬆ To'} {tx.counterpartName}
+          {isRecharge ? '⬇ Top-up' : isReceived ? '⬇ From' : '⬆ To'} {isRecharge ? '' : tx.counterpartName}
         </Text>
         <Text style={{ color: C.mutedDim, fontSize: 11, marginTop: 2 }}>
           {formatDate(tx.ts)}
@@ -84,9 +87,9 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
       {/* Amount */}
       <Text style={{
         fontSize: 16, fontWeight: '900',
-        color: isReceived ? C.green : C.muted,
+        color: (isRecharge || isReceived) ? C.green : C.muted,
       }}>
-        {isReceived ? '+' : '-'}{Math.abs(tx.diamonds)} 💎
+        {(isRecharge || isReceived) ? '+' : '-'}{Math.abs(tx.diamonds)} 💎
       </Text>
     </View>
   );
@@ -135,12 +138,10 @@ export default function WalletScreen() {
     if (typeof v === 'string') { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
     return 0;
   };
-  const totalReceived = transactions
-    .filter((tx) => tx.type === 'gift_received')
-    .reduce((sum, tx) => sum + Math.abs(toNum(tx.diamonds)), 0);
-
-  const totalSent = transactions
-    .filter((tx) => tx.type === 'gift_sent')
+  // FIX (2026-10-10): Wallet shows ONLY diamond recharges (Sumon's order).
+  // Gift transactions are displayed on the Profile gift history section.
+  const rechargeTxs = transactions.filter((tx) => tx.type === 'recharge');
+  const totalRecharged = rechargeTxs
     .reduce((sum, tx) => sum + Math.abs(toNum(tx.diamonds)), 0);
 
   return (
@@ -209,30 +210,18 @@ export default function WalletScreen() {
             </Pressable>
           </View>
 
-          {/* Stats row */}
+          {/* Stats row — FIX (2026-10-10): recharge only */}
           <View style={{ flexDirection: 'row', gap: 12, marginBottom: 28 }}>
             <View style={{
-              flex: 1, backgroundColor: 'rgba(34,197,94,0.08)',
+              flex: 1, backgroundColor: 'rgba(124,58,237,0.08)',
               borderRadius: 16, padding: 16, alignItems: 'center',
-              borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
+              borderWidth: 1, borderColor: 'rgba(124,58,237,0.2)',
             }}>
-              <Text style={{ color: C.green, fontSize: 22, fontWeight: '900' }}>
-                +{totalReceived}
+              <Text style={{ color: C.primary, fontSize: 22, fontWeight: '900' }}>
+                +{totalRecharged}
               </Text>
               <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
-                💎 {t('wallet.totalReceived')}
-              </Text>
-            </View>
-            <View style={{
-              flex: 1, backgroundColor: C.surface,
-              borderRadius: 16, padding: 16, alignItems: 'center',
-              borderWidth: 1, borderColor: '#E5E5EA',
-            }}>
-              <Text style={{ color: C.muted, fontSize: 22, fontWeight: '900' }}>
-                -{totalSent}
-              </Text>
-              <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
-                💎 {t('wallet.totalSent')}
+                💎 {t('wallet.totalRecharged', { defaultValue: 'Total Recharged' })}
               </Text>
             </View>
           </View>
@@ -249,7 +238,7 @@ export default function WalletScreen() {
             <View style={{ alignItems: 'center', paddingTop: 30 }}>
               <ActivityIndicator color={C.glow} />
             </View>
-          ) : transactions.length === 0 ? (
+          ) : rechargeTxs.length === 0 ? (
             <View style={{
               alignItems: 'center', paddingVertical: 50,
               backgroundColor: C.surface, borderRadius: 20,
@@ -265,14 +254,14 @@ export default function WalletScreen() {
             </View>
           ) : (
             <>
-              {transactions.map((tx) => (
+              {rechargeTxs.map((tx) => (
                 <TransactionItem key={tx.id} tx={tx} />
               ))}
               <Text style={{
                 color: C.mutedDim, fontSize: 11,
                 textAlign: 'center', marginTop: 8,
               }}>
-                {t('wallet.showing', { count: transactions.length })}
+                {t('wallet.showing', { count: rechargeTxs.length })}
               </Text>
             </>
           )}

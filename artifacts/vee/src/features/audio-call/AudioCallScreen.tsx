@@ -429,11 +429,17 @@ export default function AudioCallScreen({
           //   → start decline timer, show 'declined' after 1.5s.
           const signalRef = ref(database, `calls/${calleeUid}`);
           let signalSeen = false;
+          // FIX (2026-10-10): once 'accepted' is seen, a later node deletion
+          // must NEVER be treated as a reject — it means the call ended, not
+          // that it was declined. (Defensive: the _layout audio-call cleanup
+          // no longer deletes accepted signals, but no other path may either.)
+          let acceptedSeen = false;
           signalUnsubRef.current = onValue(signalRef, (snap) => {
             if (snap.exists()) {
               signalSeen = true;
               const status = (snap.val() as Record<string, unknown>)?.status;
               if (status === 'accepted') {
+                acceptedSeen = true;
                 // Callee accepted — cancel any pending decline timer.
                 if (declineTimerRef.current) {
                   clearTimeout(declineTimerRef.current);
@@ -442,7 +448,7 @@ export default function AudioCallScreen({
               }
               return;
             }
-            if (signalSeen && mountedRef.current &&
+            if (!acceptedSeen && signalSeen && mountedRef.current &&
                 (callStateRef.current === 'ringing' || callStateRef.current === 'calling')) {
               // Node deleted = rejected. Wait 0.5s for fast feedback.
               // (Accept uses status='accepted' update, not deletion, so no

@@ -135,6 +135,13 @@ export default function TopUpScreen() {
       })) as { diamonds?: number; newBalance?: number };
       const credited = res.diamonds ?? 0;
       const balance = res.newBalance ?? 0;
+      // FIX (2026-10-10): Record the recharge in wallet history (wallet screen
+      // shows ONLY recharges, never gifts).
+      if (credited > 0) {
+        import('@/src/features/wallet/walletService').then(({ recordRechargeTransaction }) => {
+          recordRechargeTransaction(credited, balance).catch(() => {});
+        });
+      }
       Alert.alert(
         t('topup.successTitle'),
         t('topup.successMsg', { diamonds: credited.toLocaleString(), balance: balance.toLocaleString() }),

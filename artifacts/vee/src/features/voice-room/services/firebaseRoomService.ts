@@ -117,31 +117,71 @@ export function getInitials(name: string | undefined | null): string {
 // ─── Room CRUD ────────────────────────────────────────────────────────────────
 
 /**
- * Generate a unique 7-digit numeric room ID.
+ * Atomically claim a unique 7-digit room ID AND write the full room info in
+ * a single transaction.
  *
- * RC8-B2: Uses runTransaction() to atomically claim the ID, eliminating the
- * non-atomic get()→set() race condition where two simultaneous createRoom()
- * calls could both read "not exists" for the same ID and both succeed.
- * The transaction atomically reserves the slot with { _reserving: true, ownerId }
- * so the subsequent createRoom set() satisfies owner-write rules and overwrites
- * the placeholder with real room data.
+ * FIX (2026-10-10): Previously this reserved the slot with a {_reserving:true}
+ * placeholder and createRoom() overwrote it with set(). When the set() (or a
+ * later step) failed, the placeholder was never cleaned up — leaving nameless
+ * zombie rooms ("Live · 0 members") polluting My Rooms. Writing the complete
+ * info in the claiming transaction makes placeholder zombies impossible: if
+ * the transaction fails/aborts, nothing is left behind.
+ *
+ * Returns the claimed room ID, or throws after MAX_TRIES attempts.
  */
-async function generateUniqueRoomId(hostId: string): Promise<string> {
+async function claimRoomIdWithInfo(info: RoomInfo): Promise<string> {
   const MAX_TRIES = 20;
   for (let i = 0; i < MAX_TRIES; i++) {
     // 7-digit range: 1000000 – 9999999
     const id = String(Math.floor(1_000_000 + Math.random() * 9_000_000));
     const roomInfoRef = ref(database, `rooms/${id}/info`);
-    const result = await runTransaction(roomInfoRef, (current) => {
-      // If the slot is already taken (any non-null value), abort the transaction
-      if (current !== null) return undefined;
-      // Atomically reserve the slot with a placeholder that satisfies ownership rules.
-      // createRoom immediately overwrites this with real room data.
-      return { _reserving: true, ownerId: hostId };
-    });
+    let result;
+    try {
+      result = await runTransaction(roomInfoRef, (current) => {
+        // If the slot is already taken (any non-null value), abort the transaction
+        if (current !== null) return undefined;
+        // Atomically claim with the complete room info (id stamped in).
+        return { ...info, id };
+      });
+    } catch {
+      // Transaction error (e.g. network blip) — try another ID.
+      continue;
+    }
     if (result.committed) return id;
   }
   throw new Error('Could not generate a unique room ID after 20 attempts');
+}
+
+/**
+ * Delete stale {_reserving:true} placeholder rooms owned by the user.
+ * These are leftovers from the pre-2026-10-10 two-step creation (reserve then
+ * set). They render as nameless "Live · 0 members" cards. Best-effort.
+ */
+export async function cleanupStaleReservations(uid: string): Promise<number> {
+  try {
+    const { get, query, orderByChild, equalTo, remove } = await import('firebase/database');
+    const q = query(ref(database, 'rooms'), orderByChild('info/ownerId'), equalTo(uid));
+    const snap = await get(q);
+    if (!snap.exists()) return 0;
+    let deleted = 0;
+    const jobs: Promise<void>[] = [];
+    snap.forEach((child) => {
+      const info = child.child('info').val() as Record<string, unknown> | null;
+      // A reservation placeholder has _reserving:true and no name.
+      if (info && (info as { _reserving?: boolean })._reserving === true) {
+        const roomId = child.key as string;
+        jobs.push(
+          remove(ref(database, `rooms/${roomId}`))
+            .then(() => { deleted += 1; })
+            .catch(() => {})
+        );
+      }
+    });
+    await Promise.all(jobs);
+    return deleted;
+  } catch {
+    return 0;
+  }
 }
 
 /** Create a new room and put the host in seat 0. Returns roomId. */
@@ -163,10 +203,8 @@ export async function createRoom(data: {
   /** SHA-256 hashed PIN for private rooms. */
   hashedPin?: string;
 }): Promise<string> {
-  const roomId = await generateUniqueRoomId(data.hostId);
-
   const info: RoomInfo = {
-    id: roomId,
+    id: '', // stamped with the claimed ID inside claimRoomIdWithInfo
     name: data.name,
     topic: data.topic || 'Live now',
     description: data.description,
@@ -196,7 +234,12 @@ export async function createRoom(data: {
     ...(data.location ? { location: data.location } : {}),
   };
 
-  await set(ref(database, `rooms/${roomId}/info`), info);
+  // FIX (2026-10-10): Claim the ID and write the FULL info atomically in one
+  // transaction — no {_reserving} placeholder, so a failed creation can never
+  // leave a nameless zombie room behind.
+  const roomId = await claimRoomIdWithInfo(info);
+
+  try {
 
   // Record this room in the host's persistent "My Room" index. Never
   // removed on leave/exit, so the created room is always findable again.
@@ -232,6 +275,13 @@ export async function createRoom(data: {
   onDisconnect(hostSeatRef).cancel().catch(() => {/* non-critical */});
 
   return roomId;
+  } catch (e) {
+    // FIX (2026-10-10): If any post-info step fails (e.g. seat write denied),
+    // remove the just-created room so we never leave a half-created room
+    // behind. The owner-delete rule allows this.
+    await remove(ref(database, `rooms/${roomId}`)).catch(() => {});
+    throw e;
+  }
 }
 
 /**
@@ -275,7 +325,11 @@ export function subscribeMyRooms(
     snap.forEach((child) => {
       const infoSnap = child.child('info');
       if (infoSnap.exists()) {
-        const info = infoSnap.val() as RoomInfo;
+        const info = infoSnap.val() as RoomInfo & { _reserving?: boolean };
+        // FIX (2026-10-10): Hide stale {_reserving:true} placeholders left by
+        // the old two-step creation. They have no name and must never render
+        // as rooms (cleanupStaleReservations deletes them in the background).
+        if (info._reserving === true) return;
         // CRITICAL-8 fix: show ALL owned rooms regardless of active state
         rooms.push(info);
       }
@@ -490,7 +544,37 @@ export async function leaveAudience(
  * Uses a transaction so two users racing for the same empty seat can't both
  * "win" — only the first writer succeeds, the second is rejected.
  */
+// SEAT-SWITCH RACE FIX (2026-10-10): Serialize takeSeat calls per user per
+// room with a promise-chain mutex. Rapid seat switches (3-4+ taps) fired
+// overlapping takeSeat calls; each call's ghost-seat cleanup did a
+// non-atomic get()+update(), so a LATE cleanup from switch #1 could delete
+// the seat just claimed by switch #2 (and vice versa) — the user's ID then
+// disappeared from every seat. Serializing guarantees each switch fully
+// finishes (claim + ghost cleanup) before the next begins.
+const takeSeatQueues = new Map<string, Promise<void>>();
+
 export async function takeSeat(
+  roomId: string,
+  seatIndex: number,
+  member: NonNullable<RoomSeat>,
+): Promise<{ success: boolean }> {
+  const queueKey = `${roomId}:${member.userId}`;
+  const prev = takeSeatQueues.get(queueKey) ?? Promise.resolve();
+  let release!: () => void;
+  const ticket = new Promise<void>((r) => { release = r; });
+  const tail = prev.catch(() => {}).then(() => ticket);
+  takeSeatQueues.set(queueKey, tail);
+  // Wait for our turn (a previous failure must not block the queue).
+  await prev.catch(() => {});
+  try {
+    return await takeSeatInner(roomId, seatIndex, member);
+  } finally {
+    release();
+    if (takeSeatQueues.get(queueKey) === tail) takeSeatQueues.delete(queueKey);
+  }
+}
+
+async function takeSeatInner(
   roomId: string,
   seatIndex: number,
   member: NonNullable<RoomSeat>,

@@ -514,9 +514,11 @@
           // GIFT FIX (2026-10-10): Allow gift history writes from client fallback.
           // Sender writes to both own and recipient's history. Validated by
           // requiring a valid gift type and diamonds amount.
+          // FIX (2026-10-10): Also allow 'recharge' type for diamond top-ups.
+          // Wallet screen shows ONLY recharges; gift history lives on Profile.
           ".write": "auth != null",
           "$txId": {
-            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && (newData.child('type').val() === 'gift_sent' || newData.child('type').val() === 'gift_received')"
+            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && (newData.child('type').val() === 'gift_sent' || newData.child('type').val() === 'gift_received' || newData.child('type').val() === 'recharge')"
           }
         }
       }

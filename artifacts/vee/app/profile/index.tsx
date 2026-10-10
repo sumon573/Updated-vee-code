@@ -151,6 +151,9 @@ export default function ProfileScreen({
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  // FIX (2026-10-10): Gift transaction history for the Profile "Gift History"
+  // section (below Decoration). Wallet screen shows ONLY recharges.
+  const [giftHistory, setGiftHistory] = useState<import('@/src/features/wallet/walletService').WalletTransaction[]>([]);
   const [vidCopied, setVidCopied] = useState(false);
   const [showVidMenu, setShowVidMenu] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -176,12 +179,21 @@ export default function ProfileScreen({
     if (!user?.uid) return;
     return subscribeTransactionHistory(user.uid, (txs) => {
       const counts: Record<string, number> = {};
+      const history: typeof giftHistory = [];
       for (const tx of txs) {
         if (tx.type === 'gift_received' && tx.giftId) {
           counts[tx.giftId] = (counts[tx.giftId] ?? 0) + 1;
         }
+        // FIX (2026-10-10): Gift history (sent + received) for Profile section.
+        // Recharges are excluded — they live on the Wallet screen.
+        if (tx.type === 'gift_sent' || tx.type === 'gift_received') {
+          history.push(tx);
+        }
       }
+      // Most recent first
+      history.sort((a, b) => b.ts - a.ts);
       setReceivedGifts(counts);
+      setGiftHistory(history.slice(0, 10));
     });
   }, [user?.uid]);
 
@@ -408,6 +420,45 @@ export default function ProfileScreen({
             <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedNameplates?.length || 0} owned</Text>
           </Pressable>
         </View>
+
+        {/* ─── Gift History (FIX 2026-10-10: Sumon's order — gift transactions
+             move here from Wallet; Wallet shows ONLY diamond recharges) ─── */}
+        {giftHistory.length > 0 && (
+          <>
+            <SectionHeader title="Gift History" count={giftHistory.length} onPress={() => router.push('/profile/gifts')} />
+            <View style={{ paddingHorizontal: 16 }}>
+              {giftHistory.slice(0, 5).map((tx) => {
+                const isReceived = tx.type === 'gift_received';
+                return (
+                  <View
+                    key={tx.id}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      backgroundColor: C.card, borderRadius: 14,
+                      padding: 12, marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 28, marginRight: 12 }}>{tx.emoji || '🎁'}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: C.text }}>
+                        {tx.giftName || 'Gift'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                        {isReceived ? 'From' : 'To'} {tx.counterpartName || '—'}
+                      </Text>
+                    </View>
+                    <Text style={{
+                      fontSize: 15, fontWeight: '800',
+                      color: isReceived ? '#22C55E' : C.muted,
+                    }}>
+                      {isReceived ? '+' : '-'}{Math.abs(tx.diamonds)} 💎
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         {/* ─── Bottom padding for Edit button ─── */}
         <View style={{ height: 90 }} />

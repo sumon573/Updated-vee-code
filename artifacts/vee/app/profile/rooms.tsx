@@ -25,6 +25,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribeMyRoomsCombined,
   disbandRoom,
+  cleanupStaleReservations,
   type RoomInfo,
 } from '@/src/features/voice-room/services/firebaseRoomService';
 
@@ -175,6 +176,10 @@ export default function ProfileRoomsScreen() {
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
+
+    // FIX (2026-10-10): Silently delete stale {_reserving:true} placeholder
+    // rooms left by failed creations (old two-step flow). One-shot, best-effort.
+    cleanupStaleReservations(user.uid).catch(() => {});
 
     // Subscribe to the user's role map from Firebase
     const unsubRoles = onValue(

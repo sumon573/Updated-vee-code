@@ -267,8 +267,16 @@ function IncomingCallListener({
       // stacking modals when both devices are active in the same call).
       const segs = segmentsRef.current;
       if (segs[0] === 'audio-call') {
+        // FIX (2026-10-10): Do NOT delete the signal for our own ACCEPTED call.
+        // After accept, the callee lands on /audio-call while the signal
+        // (status='accepted') still exists. Deleting it here made the CALLER's
+        // AudioCallScreen listener see node-gone + state 'ringing' → false
+        // 'declined' → auto-cut right after accept. The caller owns the
+        // accepted signal's lifecycle (cleanup on connect/endCall).
+        // Only auto-dismiss genuinely NEW incoming calls (busy) while in a call.
+        const status = (call as { status?: string } | null)?.status;
         // background: safe to swallow — signaling cleanup
-        if (call) removeCallSignal(uid).catch(() => {});
+        if (call && status !== 'accepted') removeCallSignal(uid).catch(() => {});
         return;
       }
       // Block enforcement: auto-decline calls from blocked users (either way).

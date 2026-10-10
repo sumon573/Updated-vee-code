@@ -50,10 +50,12 @@ async function authedFetch(
 
 export type WalletTransaction = {
   id: string;
-  type: 'gift_sent' | 'gift_received';
+  // FIX (2026-10-10): 'recharge' = diamond top-up. Wallet screen shows ONLY
+  // recharges; gift_sent/gift_received are shown on the Profile gift history.
+  type: 'gift_sent' | 'gift_received' | 'recharge';
   /** Gift catalog id ('1'–'8') — written by the api-server for gift transactions */
   giftId: string;
-  /** Negative for sent, positive for received */
+  /** Negative for sent, positive for received/recharge */
   diamonds: number;
   emoji: string;
   giftName: string;
@@ -62,6 +64,40 @@ export type WalletTransaction = {
   roomId: string | null;
   ts: number;
 };
+
+/**
+ * Record a diamond recharge (top-up) transaction in the user's wallet history.
+ * Called after a successful top-up. The wallet screen shows ONLY these.
+ * FIX (2026-10-10): Sumon's order — gift transactions must not appear in the
+ * wallet history; they live on the Profile gift history section instead.
+ */
+export async function recordRechargeTransaction(
+  diamonds: number,
+  newBalance: number,
+): Promise<void> {
+  const { auth } = await import('@/src/config/firebase');
+  const { ref, push, set } = await import('firebase/database');
+  const { database } = await import('@/src/config/firebase');
+  const uid = auth.currentUser?.uid;
+  if (!uid || !diamonds || diamonds <= 0) return;
+  try {
+    const txRef = push(ref(database, `wallets/${uid}/transactions`));
+    await set(txRef, {
+      type: 'recharge',
+      giftId: '',
+      diamonds,
+      emoji: '💎',
+      giftName: 'Diamond Recharge',
+      counterpartUid: '',
+      counterpartName: '',
+      roomId: null,
+      newBalance,
+      ts: Date.now(),
+    });
+  } catch {
+    // non-critical — balance was already credited by the server
+  }
+}
 
 /* ─── Gift errors ───────────────────────────────────────────────────────── */
 
@@ -244,7 +280,7 @@ async function sendGiftViaFirebase(
   idempotencyKey: string,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
-  const { ref, runTransaction, push, set, serverTimestamp, get } = await import('firebase/database');
+  const { ref, runTransaction, push, set, serverTimestamp, get, increment } = await import('firebase/database');
   const { database } = await import('@/src/config/firebase');
 
   const fromUid = auth.currentUser?.uid;
@@ -305,15 +341,18 @@ async function sendGiftViaFirebase(
   const newBalance = coerceBalance(senderResult.snapshot.val());
 
   // Step 2: Increment recipient's balance (skip for self-gifts, net-zero).
-  // The transaction creates the wallet with exactly `price` when missing
-  // (rules allow creating a balance with a valid gift price).
+  // FIX (2026-10-10): Use server-side increment() instead of runTransaction.
+  // runTransaction must READ the current value first, but wallets/$uid/.read
+  // is owner-only → cross-user gifts always failed with PERMISSION_DENIED
+  // ("Could not send gift"), while self-gifts worked (own wallet readable).
+  // increment() is applied server-side: no read permission needed, atomic
+  // under concurrency, and validated by the existing .write rule (existing
+  // balance must grow by exactly a gift price; missing balance is created
+  // with exactly the gift price).
   if (toUid !== fromUid) {
     const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
     try {
-      const creditResult = await runTransaction(recipientBalRef, (current) => {
-        return coerceBalance(current) + price;
-      });
-      if (!creditResult.committed) throw new Error('credit aborted');
+      await set(recipientBalRef, increment(price));
     } catch {
       // Recipient credit failed — refund sender (best effort)
       await runTransaction(senderBalRef, (current) => {
@@ -470,18 +509,29 @@ export function subscribeTransactionHistory(
           const isSent = raw.type === 'gift_sent';
           const counterpartUid = String(raw.toUid ?? raw.fromUid ?? '');
           // Handle non-gift transaction types (e.g., short_id_purchase)
-          const txType = raw.type === 'short_id_purchase' ? 'gift_sent' : (isSent ? 'gift_sent' : 'gift_received');
+          // FIX (2026-10-10): Preserve 'recharge' type — wallet screen shows
+          // ONLY recharges; previously it would have been mapped to gift_received.
+          const rawType = String(raw.type ?? '');
+          const txType = rawType === 'recharge' ? 'recharge'
+            : rawType === 'short_id_purchase' ? 'gift_sent'
+            : (isSent ? 'gift_sent' : 'gift_received');
+          // FIX (2026-10-10): Map recharge fields (diamonds/emoji/giftName)
+          // — recharge records use diamonds directly, not the gift catalog.
+          const isRecharge = txType === 'recharge';
+          const diamondsVal = isRecharge
+            ? (typeof raw.diamonds === 'number' ? raw.diamonds : 0)
+            : (typeof raw.coins === 'number' ? raw.coins : (typeof raw.price === 'number' ? raw.price : 0));
           txs.push({
             id: child.key!,
             type: txType as WalletTransaction['type'],
             giftId,
-            diamonds: typeof raw.coins === 'number' ? raw.coins : (typeof raw.price === 'number' ? raw.price : 0),
-            emoji: giftMeta.emoji,
-            giftName: raw.type === 'short_id_purchase' ? 'Short ID' : giftMeta.name,
+            diamonds: diamondsVal,
+            emoji: isRecharge ? '💎' : giftMeta.emoji,
+            giftName: isRecharge ? 'Diamond Recharge' : (raw.type === 'short_id_purchase' ? 'Short ID' : giftMeta.name),
             counterpartUid,
             counterpartName: counterpartUid.slice(0, 8),
             roomId: null,
-            ts: typeof raw.ts === 'number' ? raw.ts : Date.now(),
+            ts: typeof raw.ts === 'number' ? raw.ts : (typeof raw.timestamp === 'number' ? raw.timestamp : Date.now()),
           });
         });
         // Sort newest-first (push keys are chronological, so reverse)

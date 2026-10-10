@@ -745,11 +745,19 @@ export default function VoiceRoomScreen() {
     const mySeat = seats[mySeatIdx];
     if (!mySeat) return;
     const fbMuted = mySeat.muted;
+    if (!isPublishing) {
+      // FIX (2026-10-10): Do NOT mark the mute as applied when not publishing.
+      // Previously prevFbMutedRef was set even when setMicMuted was skipped,
+      // so when publishing later started, the effect saw "no change" and never
+      // applied the seat's mute — the engine stayed muted=true while the UI
+      // showed unmuted (mic dead on some IDs). Reset instead so the mute is
+      // applied on the first effect run after publishing starts.
+      prevFbMutedRef.current = null;
+      return;
+    }
     if (prevFbMutedRef.current === fbMuted) return; // no change
     prevFbMutedRef.current = fbMuted;
-    if (isPublishing) {
-      setMicMuted(fbMuted);
-    }
+    setMicMuted(fbMuted);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seats, mySeatIdx, isPublishing]);
 
