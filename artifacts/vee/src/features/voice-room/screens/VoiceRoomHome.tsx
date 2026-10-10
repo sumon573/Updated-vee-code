@@ -251,7 +251,8 @@ export default function VoiceRoomHome({
   const [pinVerifying, setPinVerifying] = useState(false);
   // Handle room card press — show PIN dialog for private rooms
   const handleRoomPress = async (room: RoomInfo) => {
-    if (room.isPublic === false) {
+    // Private rooms require PIN (isPublic === false OR undefined/missing = private by default for safety)
+    if (room.isPublic !== true) {
       // Owner bypasses PIN — they created the room and already know it
       if (user?.uid === room.ownerId) {
         goToRoom(room.id);
