@@ -4,7 +4,7 @@
  * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, Text } from 'react-native';
+import { View, FlatList, Text, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -21,6 +21,8 @@ import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IM
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
+import StoryViewer from '@/src/features/chat/screens/StoryViewer';
+import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
 type Tab = 'chat' | 'voice' | 'contacts';
 
@@ -30,6 +32,12 @@ export default function IMOHomeScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [storyViewerVisible, setStoryViewerVisible] = useState(false);
+  const [storyViewerIndex, setStoryViewerIndex] = useState(0);
+  const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
+  const { stories, publish } = useStories();
 
   // Profile
   useEffect(() => {
@@ -45,11 +53,16 @@ export default function IMOHomeScreen() {
     return unsub;
   }, [user?.uid]);
 
-  // Stories
-  const { stories } = useStories();
-
+  // Stories (already loaded above via useStories)
   // Convert to IMO format
-  const imoChats: IMOChat[] = chats.map((c) => ({
+  const imoChats: IMOChat[] = chats
+    .filter((c) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (c.participantName || '').toLowerCase().includes(q) ||
+             (c.lastMessage || '').toLowerCase().includes(q);
+    })
+    .map((c) => ({
     id: c.id,
     name: c.participantName || 'Unknown',
     photoURL: c.participantAvatar || null,
@@ -74,9 +87,33 @@ export default function IMOHomeScreen() {
     setActiveTab(tab);
   }, []);
 
+  const handleStoryPress = useCallback((storyId: string) => {
+    // Find the user index for this story
+    const idx = stories.findIndex((s) => s.stories.some((st) => st.id === storyId));
+    if (idx >= 0) {
+      setStoryViewerIndex(idx);
+      setStoryViewerVisible(true);
+    }
+  }, [stories]);
+
+  const handleAddStory = useCallback(() => {
+    setStoryCreatorVisible(true);
+  }, []);
+
   const handleChatPress = useCallback((chatId: string) => {
-    router.push(`/inbox/${chatId}` as any);
-  }, [router]);
+    // Find the chat to get participant details for the inbox header
+    const chat = imoChats.find((c) => c.id === chatId);
+    if (chat) {
+      const params = new URLSearchParams({
+        participantId: chat.participantId || '',
+        participantName: chat.name || 'User',
+      });
+      if (chat.photoURL) params.set('participantPhoto', chat.photoURL);
+      router.push(`/inbox/${chatId}?${params.toString()}` as any);
+    } else {
+      router.push(`/inbox/${chatId}` as any);
+    }
+  }, [router, imoChats]);
 
   const handleCallPress = useCallback((chat: IMOChat) => {
     if (!user?.uid || !chat.participantId) return;
@@ -131,8 +168,8 @@ export default function IMOHomeScreen() {
       />
       <IMOStoryRow
         stories={imoStories}
-        onAddStory={() => {}}
-        onStoryPress={() => {}}
+        onAddStory={handleAddStory}
+        onStoryPress={handleStoryPress}
       />
       <FlatList
         data={imoChats}
@@ -147,8 +184,44 @@ export default function IMOHomeScreen() {
         style={{ flex: 1 }}
       />
       <IMOBottomBar
-        onAddPress={() => {}}
-        onSearchPress={() => {}}
+        onAddPress={() => setActiveTab('contacts')}
+        onSearchPress={() => setIsSearching(!isSearching)}
+      />
+      {isSearching && (
+        <View style={{ padding: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEEEEE' }}>
+          <TextInput
+            placeholder="Search chats..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+            style={{
+              backgroundColor: '#F5F5F5',
+              borderRadius: 20,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              fontSize: 16,
+            }}
+          />
+        </View>
+      )}
+      <StoryViewer
+        visible={storyViewerVisible}
+        startUserIndex={storyViewerIndex}
+        stories={stories}
+        onClose={() => setStoryViewerVisible(false)}
+        currentUserId={user?.uid}
+      />
+      <StoryCreator
+        visible={storyCreatorVisible}
+        onClose={() => setStoryCreatorVisible(false)}
+        onPublish={async (payload) => {
+          try {
+            await publish(payload);
+          } catch (e) {
+            console.error('Story publish failed:', e);
+          }
+          setStoryCreatorVisible(false);
+        }}
       />
     </SafeAreaView>
   );

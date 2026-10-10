@@ -435,6 +435,12 @@
             ".write": "auth != null",
             ".validate": "!newData.exists() || (newData.child('emoji').isString() && newData.child('byUid').val() === auth.uid && newData.child('byName').isString() && newData.child('ts').isNumber())"
           }
+        },
+        "entries": {
+          "$entryId": {
+            ".write": "auth != null",
+            ".validate": "!newData.exists() || (newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('ts').isNumber())"
+          }
         }
       }
     },
