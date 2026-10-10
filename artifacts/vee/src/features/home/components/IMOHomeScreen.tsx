@@ -18,6 +18,8 @@ import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
+import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
+import ContactsScreen from '@/src/features/contacts/ContactsScreen';
 
 type Tab = 'chat' | 'voice' | 'contacts';
 
@@ -51,10 +53,10 @@ export default function IMOHomeScreen() {
     name: c.participantName || 'Unknown',
     photoURL: c.participantAvatar || null,
     lastMessage: c.lastMessage || '',
-    lastMessageTime: formatTime(c.lastMessageAt),
+    lastMessageTime: formatTime(c.lastMessageTime),
     unreadCount: c.unreadCount || 0,
     isPinned: c.isPinned === true,
-    isMuted: c.isMuted === true,
+    isMuted: false, // TODO: add mute support to Chat type if needed
   }));
 
   const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
@@ -67,23 +69,14 @@ export default function IMOHomeScreen() {
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   const handleTabPress = useCallback((tab: Tab) => {
-    if (tab === 'chat') {
-      setActiveTab('chat');
-    } else if (tab === 'voice') {
-      // Navigate to voice room section
-      router.push('/home' as any);
-      setActiveTab('voice');
-    } else {
-      setActiveTab('contacts');
-    }
-  }, [router]);
+    setActiveTab(tab);
+  }, []);
 
   const handleChatPress = useCallback((chatId: string) => {
     router.push(`/chat/${chatId}` as any);
   }, [router]);
 
-  if (activeTab !== 'chat') {
-    // For voice/contacts tabs, show placeholder — full integration in next step
+  if (activeTab === 'voice') {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <IMOTopBar
@@ -94,15 +87,23 @@ export default function IMOHomeScreen() {
           onProfilePress={() => router.push('/profile' as any)}
           onTabPress={handleTabPress}
         />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: '#9E9E9E' }}>
-            {activeTab === 'voice' ? 'Voice Rooms' : 'Contacts'} — coming in full integration
-          </Text>
-        </View>
-        <IMOBottomBar
-          onAddPress={() => {}}
-          onSearchPress={() => {}}
+        <VoiceRoomHome />
+      </SafeAreaView>
+    );
+  }
+
+  if (activeTab === 'contacts') {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <IMOTopBar
+          profilePhotoURL={profile?.photoURL}
+          profileInitials={profile?.name?.charAt(0) || '?'}
+          activeTab={activeTab}
+          chatBadgeCount={totalUnread}
+          onProfilePress={() => router.push('/profile' as any)}
+          onTabPress={handleTabPress}
         />
+        <ContactsScreen />
       </SafeAreaView>
     );
   }
