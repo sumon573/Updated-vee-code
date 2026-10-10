@@ -123,6 +123,11 @@ export default function IMOHomeScreen() {
   }, []);
 
   const handleStoryPress = useCallback((storyId: string) => {
+    // Planet special case — TikTok-style public feed
+    if (storyId === '__planet__') {
+      router.push('/planet');
+      return;
+    }
     // storyId is the user ID (from the row's s.id || s.userId)
     // Find the user group index directly
     const idx = stories.findIndex((s) => s.userId === storyId);
@@ -130,10 +135,10 @@ export default function IMOHomeScreen() {
       setStoryViewerIndex(idx);
       setStoryViewerVisible(true);
     }
-  }, [stories]);
+  }, [stories, router]);
 
   const handleAddStory = useCallback(() => {
-    setStoryCreatorVisible(true);
+    router.push('/create-story');
   }, []);
 
   const handleChatPress = useCallback((chatId: string) => {

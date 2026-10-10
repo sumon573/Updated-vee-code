@@ -3,7 +3,7 @@
  * "Add a story" + horizontal scrollable story DPs with unread badges.
  */
 import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 
 export interface IMOStory {
   id: string;
@@ -157,6 +157,29 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
           </TouchableOpacity>
           );
         })}
+        {/* Planet — TikTok-style public video feed */}
+        <TouchableOpacity
+          onPress={() => onStoryPress('__planet__')}
+          activeOpacity={0.7}
+          style={{ alignItems: 'center', marginRight: 16, width: 64 }}
+        >
+          <View
+            style={{
+              width: 60, height: 60, borderRadius: 30,
+              backgroundColor: '#E8F5E9',
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: '#4CAF50',
+            }}
+          >
+            <Feather name="globe" size={28} color="#4CAF50" />
+          </View>
+          <Text
+            style={{ marginTop: 6, fontSize: 12, color: '#212121', fontWeight: '600' }}
+            numberOfLines={1}
+          >
+            Planet
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

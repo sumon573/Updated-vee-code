@@ -12,7 +12,7 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
 export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, roomTopic, accent,
   roomName, onChangeRoomName, roomImageUri, onChangeRoomImage, roomId, description,
-  isOwner, isAdmin, ownerId, onDisband, onLeave }: {
+  isOwner, isAdmin, ownerId, onDisband, onLeave, onVisitProfile }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
   /** Fix 9: Weekly diamonds earned (from wallets/{uid}/weeklyEarned). */
@@ -35,6 +35,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   onDisband?: () => void;
   /** Called when a non-owner taps "Leave Room". */
   onLeave?: () => void;
+  /** Called when a member row is tapped — navigates to their profile. */
+  onVisitProfile?: (uid: string, name: string) => void;
 }) {
   const { t } = useTranslation();
   const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
@@ -63,7 +65,14 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
 
   const owner   = allMembers.find((m: Participant) => m.role === 'host');
   const admins  = allMembers.filter((m: Participant) => m.role === 'admin');
-  const regular = allMembers.filter((m: Participant) => m.role === 'member');
+  // Sort regular members by activity: speaking first, then unmuted, then by name
+  const regular = allMembers
+    .filter((m: Participant) => m.role === 'member')
+    .sort((a, b) => {
+      if (a.speaking !== b.speaking) return a.speaking ? -1 : 1;
+      if (a.muted !== b.muted) return a.muted ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
 
   const [editingName,    setEditingName]    = useState(false);
   const [nameInput,      setNameInput]      = useState(roomName);
@@ -119,7 +128,10 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
 
   function MRow({ m, badge }: { m: Participant; badge?: string }) {
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9 }}>
+      <Pressable
+        onPress={() => onVisitProfile?.(m.id, m.name)}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9 }}
+      >
         <View style={{ width: 38, height: 38, borderRadius: 19,
           backgroundColor: m.color + '33', alignItems: 'center', justifyContent: 'center',
           borderWidth: 2, borderColor: m.speaking ? C.gold : C.borderFaint, marginRight: 12,
@@ -134,7 +146,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
           {badge && <Text style={{ color: C.sub, fontSize: 11, marginTop: 1 }}>{badge}</Text>}
         </View>
         {m.speaking && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.mic }} />}
-      </View>
+        <Feather name="chevron-right" size={16} color={C.muted} style={{ marginLeft: 8 }} />
+      </Pressable>
     );
   }
 

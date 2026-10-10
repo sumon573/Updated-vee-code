@@ -137,7 +137,7 @@ const en = {
       gift: 'Gift',
       invite: 'Invite',
       listeners: '{{count}} listeners',
-      members: '{{count}} members',
+      members: '{{count}} Audience',
       messagePlaceholder: 'Message...',
       accessDenied: 'Access Denied',
       accessDeniedMsg: 'You have been blocked from this room.',

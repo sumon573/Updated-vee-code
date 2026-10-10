@@ -14,7 +14,7 @@ import { UserStories, Story } from '../types';
 import { STORY_REACTIONS } from '../data/storyConstants';
 
 const { width, height } = Dimensions.get('window');
-const STORY_DURATION = 5000;
+const STORY_DURATION = 8000;
 
 const C = {
   bg: '#000000',
@@ -70,12 +70,14 @@ type StoryCardProps = {
   onClose: () => void;
   currentUserId?: string;
   onDelete?: (storyId: string, userId: string) => void;
+  onCommentFocus?: () => void;
+  onCommentBlur?: () => void;
 };
 
 function StoryCard({
   story, userStories, storyIndex, totalStories,
   progressAnim, onTapLeft, onTapRight, onClose,
-  currentUserId, onDelete,
+  currentUserId, onDelete, onCommentFocus, onCommentBlur,
 }: StoryCardProps) {
   const { t } = useTranslation();
   const [reactionOpen, setReactionOpen] = useState(false);
@@ -109,6 +111,7 @@ function StoryCard({
       { id: `cmt_${Date.now()}`, userId: 'me', userName: 'You', text: trimmed, ts: Date.now() },
     ]);
     setReply('');
+    onCommentBlur?.();
   };
 
   const shareToInbox = () => {
@@ -290,6 +293,8 @@ function StoryCard({
                 placeholderTextColor={C.muted}
                 value={reply}
                 onChangeText={setReply}
+                onFocus={onCommentFocus}
+                onBlur={onCommentBlur}
                 onSubmitEditing={submitComment}
               />
               {reply.length > 0 && (
@@ -419,6 +424,7 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
   useEffect(() => { storyIndexRef.current = storyIndex; }, [storyIndex]);
 
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
+  const pausedProgress = useRef(0);
 
   const stopTimer = useCallback(() => {
     animRef.current?.stop();
@@ -450,6 +456,29 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
       onClose();
     }
   }, [stories, onClose]);
+
+  const pauseTimer = useCallback(() => {
+    animRef.current?.stop();
+    animRef.current = null;
+    // Save current progress for resume
+    pausedProgress.current = (progressAnim as any).__getValue?.() ?? 0;
+  }, [progressAnim]);
+
+  const resumeTimer = useCallback(() => {
+    if (animRef.current) return; // already running
+    const remaining = Math.max(0, 1 - pausedProgress.current);
+    if (remaining <= 0) { advance(); return; }
+    progressAnim.setValue(pausedProgress.current);
+    const anim = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: STORY_DURATION * remaining,
+      useNativeDriver: false,
+    });
+    animRef.current = anim;
+    anim.start(({ finished }) => {
+      if (finished) advance();
+    });
+  }, [progressAnim, advance]);
 
   const startTimer = useCallback(() => {
     stopTimer();
@@ -526,6 +555,8 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
           onClose={onClose}
           currentUserId={currentUserId}
           onDelete={onDelete}
+          onCommentFocus={pauseTimer}
+          onCommentBlur={resumeTimer}
         />
       </View>
     </Modal>

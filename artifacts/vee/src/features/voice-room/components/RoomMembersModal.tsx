@@ -77,7 +77,6 @@ function RoleBadge({ role }: { role: 'host' | 'admin' | 'member' }) {
 export default function RoomMembersModal({
   visible, onClose, ownerId, seats, audience, onManageMember,
 }: Props) {
-  const [query, setQuery] = useState('');
   // Fallback: owner profile if the owner is not currently seated/in audience
   const [ownerProfile, setOwnerProfile] = useState<VeeUser | null>(null);
 
@@ -128,12 +127,9 @@ export default function RoomMembersModal({
 
   const total = (ownerRow ? 1 : 0) + admins.length + members.length;
 
-  const q = query.trim().toLowerCase();
-  const matchQ = (p: Participant) =>
-    !q || p.name.toLowerCase().includes(q);
-  const fOwner = ownerRow && matchQ(ownerRow) ? [ownerRow] : [];
-  const fAdmins = admins.filter(matchQ);
-  const fMembers = members.filter(matchQ);
+  const fOwner = ownerRow ? [ownerRow] : [];
+  const fAdmins = admins;
+  const fMembers = members;
 
   const sections: { title: string; data: Participant[] }[] = [
     ...(fOwner.length ? [{ title: 'Owner', data: fOwner }] : []),
@@ -188,36 +184,12 @@ export default function RoomMembersModal({
             </Pressable>
             <View style={{ flex: 1 }}>
               <Text style={{ color: C.text, fontSize: 18, fontWeight: '800' }}>
-                Room Members
+                Live Audience
               </Text>
               <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
                 {total} {total === 1 ? 'person' : 'people'}
               </Text>
             </View>
-          </View>
-
-          {/* Search (imo style) */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            marginHorizontal: 16, marginTop: 12, marginBottom: 4,
-            backgroundColor: C.inputBg, borderRadius: 12,
-            paddingHorizontal: 12, paddingVertical: 10,
-            borderWidth: 1, borderColor: C.border,
-          }}>
-            <Feather name="search" size={16} color={C.dim} style={{ marginRight: 8 }} />
-            <TextInput
-              style={{ flex: 1, color: C.text, fontSize: 14 }}
-              placeholder="Search members"
-              placeholderTextColor={C.dim}
-              value={query}
-              onChangeText={setQuery}
-              autoCorrect={false}
-            />
-            {query.length > 0 && (
-              <Pressable onPress={() => setQuery('')}>
-                <Feather name="x-circle" size={16} color={C.dim} />
-              </Pressable>
-            )}
           </View>
 
           <FlatList
@@ -241,7 +213,7 @@ export default function RoomMembersModal({
               <View style={{ alignItems: 'center', paddingTop: 60 }}>
                 <Feather name="users" size={40} color={C.dim} />
                 <Text style={{ color: C.muted, fontSize: 14, marginTop: 12 }}>
-                  {q ? 'No members match your search' : 'No members yet'}
+                  No members yet
                 </Text>
               </View>
             }

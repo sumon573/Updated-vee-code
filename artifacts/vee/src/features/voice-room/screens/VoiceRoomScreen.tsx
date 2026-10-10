@@ -2090,6 +2090,7 @@ export default function VoiceRoomScreen() {
         ownerId={ownerId}
         onDisband={handleDisband}
         onLeave={() => { setRoomInfoOpen(false); setExitModalOpen(true); }}
+        onVisitProfile={handleViewOtherProfile}
       />
       <OperationHistoryModal
         visible={opHistOpen}

@@ -137,7 +137,7 @@ const bn = {
       gift: 'গিফট',
       invite: 'আমন্ত্রণ',
       listeners: '{{count}} শ্রোতা',
-      members: '{{count}} জন মেম্বার',
+      members: '{{count}} Audience',
       messagePlaceholder: 'বার্তা...',
       accessDenied: 'প্রবেশাধিকার নেই',
       accessDeniedMsg: 'আপনাকে এই রুম থেকে ব্লক করা হয়েছে।',
