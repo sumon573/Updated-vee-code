@@ -160,31 +160,15 @@ export default function IMOSearchScreen() {
         />
       ) : (
         <ScrollView style={{ flex: 1 }}>
-          {/* Add Friends / Join public group */}
+          {/* Add Friends */}
           <View style={{ backgroundColor: '#FFFFFF', marginTop: 8, borderRadius: 12, marginHorizontal: 12, overflow: 'hidden' }}>
-            <TouchableOpacity
-              onPress={() => router.push('/home' as any)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                padding: 16,
-                borderBottomWidth: 1,
-                borderBottomColor: '#F0F0F0',
-              }}
-            >
-              <Ionicons name="person-add-outline" size={24} color="#2196F3" />
-              <Text style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#212121', fontWeight: '500' }}>
-                Add Friends
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color="#BDBDBD" />
-            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.push('/home' as any)}
               style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}
             >
-              <Ionicons name="people-outline" size={24} color="#00BCD4" />
+              <Ionicons name="person-add-outline" size={24} color="#2196F3" />
               <Text style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#212121', fontWeight: '500' }}>
-                Join public group
+                Add Friends
               </Text>
               <Ionicons name="chevron-forward" size={20} color="#BDBDBD" />
             </TouchableOpacity>
