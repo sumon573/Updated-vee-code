@@ -4,7 +4,7 @@
  * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, Text, TextInput } from 'react-native';
+import { View, FlatList, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -33,7 +33,6 @@ export default function IMOHomeScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
@@ -55,14 +54,7 @@ export default function IMOHomeScreen() {
 
   // Stories (already loaded above via useStories)
   // Convert to IMO format
-  const imoChats: IMOChat[] = chats
-    .filter((c) => {
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (c.participantName || '').toLowerCase().includes(q) ||
-             (c.lastMessage || '').toLowerCase().includes(q);
-    })
-    .map((c) => ({
+  const imoChats: IMOChat[] = chats.map((c) => ({
     id: c.id,
     name: c.participantName || 'Unknown',
     photoURL: c.participantAvatar || null,
@@ -185,25 +177,8 @@ export default function IMOHomeScreen() {
       />
       <IMOBottomBar
         onAddPress={() => setActiveTab('contacts')}
-        onSearchPress={() => setIsSearching(!isSearching)}
+        onSearchPress={() => router.push('/search' as any)}
       />
-      {isSearching && (
-        <View style={{ padding: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEEEEE' }}>
-          <TextInput
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-            style={{
-              backgroundColor: '#F5F5F5',
-              borderRadius: 20,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              fontSize: 16,
-            }}
-          />
-        </View>
-      )}
       <StoryViewer
         visible={storyViewerVisible}
         startUserIndex={storyViewerIndex}

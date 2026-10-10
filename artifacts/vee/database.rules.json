@@ -441,6 +441,12 @@
             ".write": "auth != null",
             ".validate": "!newData.exists() || (newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('ts').isNumber())"
           }
+        },
+        "giftEvents": {
+          "$eventId": {
+            ".write": "auth != null",
+            ".validate": "!newData.exists() || (newData.child('fromUid').val() === auth.uid && newData.child('giftId').isString() && newData.child('ts').isNumber())"
+          }
         }
       }
     },

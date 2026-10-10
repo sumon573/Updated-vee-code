@@ -1277,6 +1277,51 @@ export function subscribeRoomEntryEvents(
   });
 }
 
+// ─── Gift Animation Broadcast (2026-10-10) ───────────────────────────────────
+// When a gift is sent, broadcast it so ALL participants see the fly animation.
+
+export type RoomGiftEvent = {
+  giftId: string;
+  emoji: string;
+  coins: number;
+  fromUid: string;
+  fromName: string;
+  fromAvatar?: string | null;
+  toUid: string;
+  toName: string;
+  toAvatar?: string | null;
+  ts: number;
+};
+
+/**
+ * Broadcast a gift animation event to all participants.
+ */
+export async function sendRoomGiftEvent(
+  roomId: string,
+  event: Omit<RoomGiftEvent, 'ts'>,
+): Promise<void> {
+  const giftRef = push(ref(database, `rooms/${roomId}/giftEvents`));
+  await set(giftRef, { ...event, ts: Date.now() });
+}
+
+/**
+ * Subscribe to gift animation events.
+ */
+export function subscribeRoomGiftEvents(
+  roomId: string,
+  callback: (event: RoomGiftEvent | null) => void,
+): () => void {
+  const q = query(ref(database, `rooms/${roomId}/giftEvents`), limitToLast(1));
+  return onValue(q, (snap) => {
+    if (!snap.exists()) { callback(null); return; }
+    let latest: RoomGiftEvent | null = null;
+    snap.forEach((child) => {
+      latest = child.val() as RoomGiftEvent;
+    });
+    callback(latest);
+  });
+}
+
 // ─── Room Creation Limit ─────────────────────────────────────────────────────
 
 /**

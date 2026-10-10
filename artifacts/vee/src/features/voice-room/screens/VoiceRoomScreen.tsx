@@ -67,6 +67,8 @@ import {
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
   // Entry broadcast (2026-10-10): all users see everyone's entry
   sendRoomEntryEvent, subscribeRoomEntryEvents,
+  // Gift animation broadcast (2026-10-10): all users see gift fly animations
+  sendRoomGiftEvent, subscribeRoomGiftEvents,
 } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
@@ -446,20 +448,20 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if (hasJoined && !hasShownSelfEntryRef.current && myUid) {
       hasShownSelfEntryRef.current = true;
-      // Get the user's name and photo from the profile or auth
-      const displayName = user?.displayName || 'You';
+      // Use myName/myPhotoURL (from profile) — not auth displayName which may be empty
+      const displayName = myName || 'User';
       setEntryBanner({
         name: displayName,
-        photoURL: user?.photoURL || null,
+        photoURL: myPhotoURL || null,
       });
       // Broadcast entry to all participants
       sendRoomEntryEvent(roomId, {
         uid: myUid,
         name: displayName,
-        photoURL: user?.photoURL || null,
+        photoURL: myPhotoURL || null,
       }).catch(() => {/* non-critical */});
     }
-  }, [hasJoined, myUid, user?.displayName, user?.photoURL, roomId]);
+  }, [hasJoined, myUid, myName, myPhotoURL, roomId]);
 
   // ENTRY BROADCAST SUBSCRIPTION (2026-10-10): Show entry banner when ANY
   // participant joins — so everyone sees everyone's entry effect.
@@ -477,6 +479,33 @@ export default function VoiceRoomScreen() {
       setEntryBanner({
         name: entry.name || 'User',
         photoURL: entry.photoURL || null,
+      });
+    });
+  }, [roomId, myUid]);
+
+  // GIFT BROADCAST SUBSCRIPTION (2026-10-10): Show gift fly animation when ANY
+  // participant sends a gift — so everyone sees all gift animations.
+  const lastGiftTsRef = useRef(0);
+  useEffect(() => {
+    if (!roomId) return;
+    return subscribeRoomGiftEvents(roomId, (event) => {
+      if (!event) return;
+      if (event.ts <= lastGiftTsRef.current) return;
+      if (Date.now() - event.ts > 10000) return; // 10s TTL
+      lastGiftTsRef.current = event.ts;
+      // Don't replay our own gifts (we already played them locally)
+      if (event.fromUid === myUid) return;
+      // Play the fly animation for the received gift
+      giftFlyRef.current?.playFly({
+        fromName: event.fromName,
+        fromAvatar: event.fromAvatar || undefined,
+        toUid: event.toUid,
+        toName: event.toName,
+        toAvatar: event.toAvatar || undefined,
+        giftId: event.giftId,
+        emoji: event.emoji,
+        coins: event.coins,
+        target: null, // remote gifts use top-center fallback
       });
     });
   }, [roomId, myUid]);
@@ -1415,6 +1444,18 @@ export default function VoiceRoomScreen() {
       });
     };
     for (const r of info.recipients) {
+      // Broadcast gift event so ALL participants see the animation (2026-10-10)
+      sendRoomGiftEvent(roomId, {
+        giftId: info.giftId,
+        emoji: info.emoji,
+        coins: info.coins,
+        fromUid: myUid,
+        fromName: info.senderName,
+        fromAvatar: info.senderAvatar || null,
+        toUid: r.uid,
+        toName: r.name,
+        toAvatar: r.photoURL || null,
+      }).catch(() => {/* non-critical */});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
