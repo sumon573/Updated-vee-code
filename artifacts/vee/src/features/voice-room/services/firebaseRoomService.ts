@@ -243,6 +243,27 @@ export async function createRoom(data: {
     throw new Error('ROOM_LIMIT_PRIVATE');
   }
 
+  // PERMANENT FIX (2026-10-10): Firebase set() REJECTS objects containing
+  // `undefined` values. The exact cause of the room-creation failure was
+  // `memberPreviews[0].photoURL: undefined` (user has no profile photo).
+  // This recursive stripper removes ALL undefined values from any object
+  // before writing to Firebase — future-proof against any new optional field.
+  const stripUndefined = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(stripUndefined);
+    }
+    if (obj !== null && typeof obj === 'object') {
+      const clean: any = {};
+      for (const key of Object.keys(obj)) {
+        if (obj[key] !== undefined) {
+          clean[key] = stripUndefined(obj[key]);
+        }
+      }
+      return clean;
+    }
+    return obj;
+  };
+
   const info: RoomInfo = {
     id: '', // stamped below after ID generation
     name: data.name,
@@ -308,10 +329,10 @@ export async function createRoom(data: {
   }
 
   // Stamp the ID into the info
-  const fullInfo: RoomInfo = { ...info, id: roomId };
+  const fullInfo: RoomInfo = stripUndefined({ ...info, id: roomId });
 
   // Build the host seat
-  const hostSeat: NonNullable<RoomSeat> = {
+  const hostSeat: NonNullable<RoomSeat> = stripUndefined({
     userId: data.hostId,
     userName: data.hostName,
     initials: getInitials(data.hostName),
@@ -319,7 +340,7 @@ export async function createRoom(data: {
     muted: false,
     role: 'host',
     ...(data.hostPhotoURL ? { photoURL: data.hostPhotoURL } : {}),
-  };
+  });
 
   // FIX (2026-10-10 v3): Write info and seat SEPARATELY (like the last working
   // version a5a262e). A combined set(rooms/{id}, {info, seats}) fails because

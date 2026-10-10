@@ -248,11 +248,13 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
           'You can create max 1 private room. Delete it to create a new one.'
         );
       } else {
-        // DIAGNOSTIC (2026-10-10): Show the EXACT error to identify the root cause.
-        // Temporary — will be replaced with user-friendly message once fixed.
+        // PERMANENT (2026-10-10, Sumon's order): Always show the ACTUAL error
+        // cause, not just a generic message. This way if any problem happens
+        // in the future, the cause is visible immediately for diagnosis.
+        // Format: user-friendly line + technical details below.
         Alert.alert(
           t('voiceRoom.screen.error'),
-          `Debug: ${msg}\n\nPlease screenshot this and send it.`
+          `Could not create room.\n\nReason: ${msg}\n\nIf this keeps happening, please send a screenshot.`
         );
       }
     } finally {
