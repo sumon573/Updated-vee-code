@@ -1,17 +1,28 @@
 /**
- * Profile — Decoration Screen
- * Shows owned avatar frames and nameplates. New users start with none.
+ * Profile — Decoration Screen (NOTE 9, 2026-10-11).
+ *
+ * Tabs: "Frames" | "Nobel"
+ * - Frames: real granted frames ONLY — officially granted (by admin) or
+ *   claimed from special events (users/{uid}/frames in Firebase). NO demo
+ *   frames. Empty state until any exist. Tap an owned frame to equip it.
+ * - Nobel: opens the My Nobel screen (diamond-sending based noble ranks).
+ *
+ * Light mode only. All data is real — no demo content.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
+import {
+  subscribeFrames,
+  formatObtainedDate,
+  type GrantedFrame,
+} from '@/src/services/badgeService';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import * as Haptics from 'expo-haptics';
-// Nameplate catalog lives in the shared honor module (also used by the Honor screen).
-import { NAMEPLATES } from '@/src/data/honor';
 
 const C = {
   bg: '#FFFFFF',
@@ -21,51 +32,70 @@ const C = {
   border: '#E5E5EA',
   blue: '#007AFF',
   blueLight: '#E3F2FF',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
 } as const;
-
-// Available frames (earned through activity)
-const FRAMES = [
-  { id: 'gold', name: 'Gold Frame', icon: '🟡', requirement: 'Reach Lv.5' },
-  { id: 'diamond', name: 'Diamond Frame', icon: '💎', requirement: 'Reach Lv.10' },
-  { id: 'crown', name: 'Crown Frame', icon: '👑', requirement: '100 followers' },
-  { id: 'fire', name: 'Fire Frame', icon: '🔥', requirement: 'Host 10 rooms' },
-];
 
 export default function DecorationScreen() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<VeeUser | null>(null);
+  const [frames, setFrames] = useState<GrantedFrame[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'frames' | 'nameplates'>('frames');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.uid) { setLoading(false); return; }
-    const unsub = subscribeUser(user.uid, (u) => { setProfile(u); setLoading(false); });
-    const timeout = setTimeout(() => setLoading(false), 3000);
-    return () => { clearTimeout(timeout); unsub(); };
-  }, [user?.uid]);
-
-  const handleEquip = async (type: 'frame' | 'nameplate', id: string) => {
-    if (!user?.uid) return;
-    const owned = type === 'frame' ? (profile?.ownedFrames || []) : (profile?.ownedNameplates || []);
-    if (!owned.includes(id)) {
-      Alert.alert('Not owned', 'You need to earn this decoration first.');
+    if (!user?.uid) {
+      setLoading(false);
       return;
     }
+    setLoading(true);
+    setError(null);
+    let profileDone = false;
+    let framesDone = false;
+    const maybeDone = () => {
+      if (profileDone && framesDone) setLoading(false);
+    };
+    const unsubProfile = subscribeUser(user.uid, (u) => {
+      profileDone = true;
+      setProfile(u);
+      maybeDone();
+    });
+    let unsubFrames: () => void = () => {};
+    try {
+      unsubFrames = subscribeFrames(user.uid, (f) => {
+        framesDone = true;
+        setFrames(f);
+        maybeDone();
+      });
+    } catch (e) {
+      setError(`Could not load frames: ${getErrorCause(e)}`);
+      framesDone = true;
+      maybeDone();
+    }
+    const timeout = setTimeout(() => setLoading(false), 8000);
+    return () => {
+      clearTimeout(timeout);
+      unsubProfile();
+      unsubFrames();
+    };
+  }, [user?.uid]);
+
+  const handleEquip = async (id: string) => {
+    if (!user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      if (type === 'frame') {
-        await updateUser(user.uid, { activeFrame: id });
-      } else {
-        await updateUser(user.uid, { activeNameplate: id });
-      }
-    } catch {
-      Alert.alert('Error', 'Could not equip decoration.');
+      await updateUser(user.uid, { activeFrame: id });
+    } catch (e) {
+      setError(`Could not equip frame: ${getErrorCause(e)}`);
     }
   };
 
-  const items = tab === 'frames' ? FRAMES : NAMEPLATES;
-  const owned = tab === 'frames' ? (profile?.ownedFrames || []) : (profile?.ownedNameplates || []);
-  const active = tab === 'frames' ? profile?.activeFrame : profile?.activeNameplate;
+  const goNobel = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/nobel');
+  };
+
+  const activeFrame = (profile as any)?.activeFrame as string | undefined;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -73,69 +103,94 @@ export default function DecorationScreen() {
         <Pressable onPress={() => router.back()} style={{ padding: 8 }} hitSlop={12}>
           <Feather name="arrow-left" size={24} color={C.text} />
         </Pressable>
-        <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, marginLeft: 4 }}>Decoration</Text>
+        <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, marginLeft: 4 }}>
+          Decoration
+        </Text>
       </View>
 
+      {/* Tabs: Frames | Nobel (NOTE 9: Nameplates renamed to Nobel) */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 12 }}>
-        {(['frames', 'nameplates'] as const).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setTab(t)}
-            style={{
-              flex: 1, paddingVertical: 10, alignItems: 'center',
-              borderBottomWidth: 2,
-              borderBottomColor: tab === t ? C.text : 'transparent',
-            }}
-          >
-            <Text style={{ fontSize: 15, fontWeight: tab === t ? '800' : '500', color: tab === t ? C.text : C.muted }}>
-              {t === 'frames' ? 'Frames' : 'Nameplates'}
-            </Text>
-          </Pressable>
-        ))}
+        <View
+          style={{
+            flex: 1, paddingVertical: 10, alignItems: 'center',
+            borderBottomWidth: 2, borderBottomColor: C.text,
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>
+            Frames
+          </Text>
+        </View>
+        <Pressable
+          onPress={goNobel}
+          style={{
+            flex: 1, paddingVertical: 10, alignItems: 'center',
+            borderBottomWidth: 2, borderBottomColor: 'transparent',
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: '500', color: C.muted }}>
+            Nobel
+          </Text>
+        </Pressable>
       </View>
+
+      {error && (
+        <View style={{ backgroundColor: '#FDECEA', paddingHorizontal: 16, paddingVertical: 10, marginHorizontal: 16, borderRadius: 10, marginBottom: 8 }}>
+          <Text style={{ fontSize: 12, color: '#B3261E' }}>{error}</Text>
+        </View>
+      )}
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={C.blue} size="large" />
         </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
-          {items.map((item) => {
-            const isOwned = owned.includes(item.id);
-            const isActive = active === item.id;
+      ) : frames.length > 0 ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        >
+          {frames.map((frame) => {
+            const isActive = activeFrame === frame.id;
             return (
               <Pressable
-                key={item.id}
-                onPress={() => handleEquip(tab === 'frames' ? 'frame' : 'nameplate', item.id)}
+                key={frame.id}
+                onPress={() => handleEquip(frame.id)}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: C.card, borderRadius: 16, padding: 16, marginBottom: 12,
-                  borderWidth: isActive ? 2 : 0, borderColor: C.blue,
+                  backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
+                  borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
                 }}
               >
-                <Text style={{ fontSize: 40 }}>{item.icon}</Text>
+                <Text style={{ fontSize: 40 }}>{frame.icon}</Text>
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>{item.name}</Text>
-                  <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>{item.requirement}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>
+                    {frame.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                    Obtained {formatObtainedDate(frame.obtainedAt)}
+                    {frame.source === 'event' ? ' · Event reward' : ' · Official'}
+                  </Text>
                 </View>
                 {isActive ? (
                   <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
                   </View>
-                ) : isOwned ? (
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.blue }}>Tap to equip</Text>
                 ) : (
-                  <Feather name="lock" size={20} color={C.muted} />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.blue }}>Tap to equip</Text>
                 )}
               </Pressable>
             );
           })}
-          {items.length === 0 && (
-            <View style={{ alignItems: 'center', paddingTop: 60 }}>
-              <Text style={{ fontSize: 15, color: C.muted }}>No decorations yet</Text>
-            </View>
-          )}
         </ScrollView>
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', paddingTop: 72, paddingHorizontal: 48 }}>
+          <Text style={{ fontSize: 44, marginBottom: 12 }}>🖼️</Text>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
+            No frames yet
+          </Text>
+          <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+            Frames are granted officially or claimed as event rewards.
+          </Text>
+        </View>
       )}
     </SafeAreaView>
   );

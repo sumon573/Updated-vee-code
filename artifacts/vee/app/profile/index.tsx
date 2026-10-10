@@ -6,22 +6,27 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, Alert,
+  View, Text, Alert, Modal,
   ActivityIndicator, Image, Pressable, FlatList, Animated,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
-import { subscribeUser, VeeUser } from '@/src/services/userService';
+import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
+import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
+import { getErrorCause } from '@/src/utils/errorDisplay';
+import { subscribeBadges } from '@/src/services/badgeService';
+import { subscribeFrames } from '@/src/services/badgeService';
+import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts } from '@/src/services/followService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
-import { evaluateAchievements } from '@/src/data/honor';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
 const GIFTS: Record<string, string> = {
@@ -156,6 +161,11 @@ export default function ProfileScreen({
   const [vidCopied, setVidCopied] = useState(false);
   const [showVidMenu, setShowVidMenu] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // NOTE 11 (2026-10-11): full-screen DP viewer + Change flow
+  const [showDpViewer, setShowDpViewer] = useState(false);
+  const [uploadingDp, setUploadingDp] = useState(false);
+  // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
+  const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
@@ -167,6 +177,19 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!user?.uid) return;
     return subscribeFollowCounts(user.uid, setFollowCounts);
+  }, [user?.uid]);
+
+  // NOTE 7 (2026-10-11): subscribe to real granted badges (official/event only)
+  useEffect(() => {
+    if (!user?.uid) { setGrantedBadges([]); return; }
+    return subscribeBadges(user.uid, setGrantedBadges);
+  }, [user?.uid]);
+
+  // NOTE 9 (2026-10-11): real granted frames (official/event only, no demos)
+  const [grantedFrames, setGrantedFrames] = useState<Array<{ id: string }>>([]);
+  useEffect(() => {
+    if (!user?.uid) { setGrantedFrames([]); return; }
+    return subscribeFrames(user.uid, setGrantedFrames);
   }, [user?.uid]);
 
   useEffect(() => {
@@ -210,6 +233,45 @@ export default function ProfileScreen({
     ]);
   }, [logout, t]);
 
+  // ── NOTE 11 (2026-10-11): DP Change flow — gallery pick → Cloudinary upload → Firebase photoURL
+  const handleChangeDp = useCallback(async () => {
+    if (!user?.uid) return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow gallery access to choose a profile photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      setUploadingDp(true);
+      try {
+        // Delete the old Cloudinary asset so orphans don't accumulate
+        const oldPublicId = (profile as any)?.photoPublicId;
+        if (oldPublicId) {
+          deleteCloudinaryAsset(oldPublicId).catch(() => {/* non-critical */});
+        }
+        const upload = await uploadProfilePhoto(result.assets[0].uri);
+        await updateUser(user.uid, {
+          photoURL: upload.url,
+          ...(upload.publicId ? { photoPublicId: upload.publicId } : {}),
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (err) {
+        Alert.alert('Could not update photo', `Reason: ${getErrorCause(err)}`);
+      } finally {
+        setUploadingDp(false);
+      }
+    } catch (err) {
+      Alert.alert('Could not open gallery', `Reason: ${getErrorCause(err)}`);
+    }
+  }, [user?.uid, profile]);
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -238,17 +300,8 @@ export default function ProfileScreen({
   };
   const userLevel = calculateLevel();
 
-  // Honor badges — real achievements only, from the shared catalog.
-  // (2026-10-09: section is always visible; locked badges show greyed with
-  // their unlock requirement — never faked as earned.)
-  const honorStats = {
-    roomsHosted: rooms.length,
-    totalGifts,
-    followers: followCounts.followers,
-    following: followCounts.following,
-    level: userLevel,
-  };
-  const { earned: earnedHonors, locked: lockedHonors } = evaluateAchievements(honorStats);
+  // NOTE 7 (2026-10-11): demo badges removed — grantedBadges comes from the
+  // Firebase subscription above (official/event grants only).
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -288,16 +341,18 @@ export default function ProfileScreen({
           </View>
         </Pressable>
 
-        {/* ─── Avatar (overlapping) ─── */}
+        {/* ─── Avatar (overlapping) — NOTE 11 (2026-10-11): tap opens full-screen DP viewer ─── */}
         <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            {photoURL ? (
-              <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
-            ) : (
-              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
-              </View>
-            )}
+            <Pressable onPress={() => setShowDpViewer(true)} hitSlop={6}>
+              {photoURL ? (
+                <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
+              ) : (
+                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
+                </View>
+              )}
+            </Pressable>
           </View>
         </View>
 
@@ -356,38 +411,41 @@ export default function ProfileScreen({
           </>
         )}
 
-        {/* ─── Honor — always visible; tap opens the Honor detail screen ─── */}
+        {/* ─── Honor — NOTE 7 (2026-10-11): demo badges removed. Shows only
+            real granted badges from Firebase; empty state until any exist. ─── */}
         <SectionHeader
           title="Honor"
-          count={earnedHonors.length}
+          count={grantedBadges.length}
           onPress={() => router.push('/profile/honor')}
         />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-          <Pressable
-            onPress={() => router.push('/profile/honor')}
-            style={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%' }}
-          >
-            {earnedHonors.map((h) => (
-              <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+        {grantedBadges.length > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+            <Pressable
+              onPress={() => router.push('/profile/honor')}
+              style={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%' }}
+            >
+              {grantedBadges.map((h) => (
+                <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
+                  <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.name}</Text>
                 </View>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.label}</Text>
-              </View>
-            ))}
-            {lockedHonors.map((h) => (
-              <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center', opacity: 0.55 }}>
-                <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 30, opacity: 0.5 }}>{h.icon}</Text>
-                </View>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.label}</Text>
-              </View>
-            ))}
+              ))}
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={() => router.push('/profile/honor')}>
+            <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
+              No badges yet
+            </Text>
           </Pressable>
-        </View>
+        )}
 
-        {/* ─── Decoration ─── */}
-        <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push('/profile/decoration')} />
+        {/* ─── Decoration — NOTE 9 (2026-10-11): real granted frames only
+            (official/event, no demos); Nameplates moved to Honor, this tile
+            is now Nobel. ─── */}
+        <SectionHeader title="Decoration" count={grantedFrames.length} onPress={() => router.push('/profile/decoration')} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
           <Pressable
             onPress={() => router.push('/profile/decoration')}
@@ -397,17 +455,16 @@ export default function ProfileScreen({
               <Text style={{ fontSize: 36 }}>🖼️</Text>
             </View>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedFrames?.length || 0} owned</Text>
+            <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.push('/profile/decoration')}
+            onPress={() => router.push('/nobel')}
             style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
             <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 36 }}>🏷️</Text>
+              <Text style={{ fontSize: 36 }}>👑</Text>
             </View>
-            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nameplates</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedNameplates?.length || 0} owned</Text>
+            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nobel</Text>
           </Pressable>
         </View>
 
@@ -434,23 +491,72 @@ export default function ProfileScreen({
         >
           <Pressable
             onPress={(e) => e.stopPropagation()}
-            style={{ backgroundColor: C.bg, borderRadius: 16, marginTop: 60, marginRight: 12, padding: 16, minWidth: 220, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 }}
+            // NOTE 6 (2026-10-11): polished — no "Vee ID" label, compact badge
+            // with just the ID number + copy icon.
+            style={{ backgroundColor: C.bg, borderRadius: 14, marginTop: 60, marginRight: 12, paddingHorizontal: 14, paddingVertical: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 }}
           >
-            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>Vee ID</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, letterSpacing: 0.5 }}>{vId}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: 0.5 }}>{vId}</Text>
               <Pressable
                 onPress={handleCopyVid}
-                style={{ backgroundColor: C.blueLight, borderRadius: 12, padding: 10, marginLeft: 12 }}
+                style={{ backgroundColor: C.blueLight, borderRadius: 10, padding: 8, marginLeft: 10 }}
                 hitSlop={8}
               >
-                <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={C.blue} />
+                <Feather name={vidCopied ? 'check' : 'copy'} size={16} color={C.blue} />
               </Pressable>
             </View>
-            {vidCopied && <Text style={{ fontSize: 12, color: C.blue, marginTop: 6 }}>Copied!</Text>}
+            {vidCopied && <Text style={{ fontSize: 12, color: C.blue, marginTop: 4 }}>Copied!</Text>}
           </Pressable>
         </Pressable>
       )}
+      {/* ─── NOTE 11 (2026-10-11): Full-screen DP viewer + Change flow ─── */}
+      <Modal
+        visible={showDpViewer}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowDpViewer(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable
+            onPress={() => setShowDpViewer(false)}
+            style={{ position: 'absolute', top: 55, right: 20, zIndex: 10, padding: 8 }}
+            hitSlop={12}
+          >
+            <Feather name="x" size={28} color="#fff" />
+          </Pressable>
+          {photoURL ? (
+            <Image
+              source={{ uri: photoURL }}
+              style={{ width: '100%', aspectRatio: 1, maxHeight: '70%' }}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={{ width: 160, height: 160, borderRadius: 80, backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 64, fontWeight: '800', color: '#fff' }}>{displayName[0]?.toUpperCase()}</Text>
+            </View>
+          )}
+          {/* Change button below the DP */}
+          <Pressable
+            onPress={handleChangeDp}
+            disabled={uploadingDp}
+            style={{
+              marginTop: 32, flexDirection: 'row', alignItems: 'center',
+              backgroundColor: '#1C1C1E', borderRadius: 24,
+              paddingHorizontal: 28, paddingVertical: 12,
+              opacity: uploadingDp ? 0.6 : 1,
+            }}
+          >
+            {uploadingDp ? (
+              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+            ) : (
+              <Feather name="edit-2" size={16} color="#fff" style={{ marginRight: 8 }} />
+            )}
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+              {uploadingDp ? 'Uploading…' : 'Change'}
+            </Text>
+          </Pressable>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

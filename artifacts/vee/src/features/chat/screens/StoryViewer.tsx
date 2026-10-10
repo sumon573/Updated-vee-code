@@ -10,11 +10,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { UserStories, Story } from '../types';
 import { STORY_REACTIONS } from '../data/storyConstants';
 
 const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 8000;
+
+// Video player for video-type stories (NOTE 2, 2026-10-11)
+function StoryVideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.play();
+  });
+  useEffect(() => {
+    return () => { player.pause(); };
+  }, [player]);
+  return (
+    <VideoView
+      player={player}
+      style={{ width: width - 40, height: (width - 40) * 1.4, borderRadius: 20 }}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
 
 const C = {
   bg: '#000000',
@@ -196,6 +216,9 @@ function StoryCard({
           }}>
             {story.content}
           </Text>
+        ) : story.type === 'video' && story.content ? (
+          // NOTE 2 (2026-10-11): video stories play with expo-video
+          <StoryVideoPlayer uri={story.content} />
         ) : story.content ? (
           // RC6 fix Issue 7: render actual Cloudinary image URL stored in story.content
           <Image

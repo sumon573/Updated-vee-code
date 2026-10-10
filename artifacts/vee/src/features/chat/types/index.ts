@@ -16,8 +16,8 @@ export type Story = {
   userId: string;
   userName: string;
   userAvatar?: string;
-  type: 'text' | 'image';
-  /** For text stories: the display text. For image stories: Cloudinary URL (or local URI during mock). */
+  type: 'text' | 'image' | 'video';
+  /** For text stories: the display text. For image/video stories: Cloudinary URL (or local URI during mock). */
   content: string;
   bgGradient?: [string, string]; // for text stories
   textColor?: string;

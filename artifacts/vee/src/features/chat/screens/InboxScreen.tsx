@@ -33,7 +33,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import MessageBubble from '../components/MessageBubble';
+import MessageBubble, { saveRemoteMediaToGallery } from '../components/MessageBubble';
 import {
   subscribeMessages, sendMessage, markAllSeen,
   subscribeTyping, subscribePresence, setTyping,
@@ -41,11 +41,12 @@ import {
   loadOlderMessages, DM_PAGE_SIZE,
 } from '../services/firebaseDmService';
 import { showNotification } from '../services/notificationService';
+// NOTE 5 (2026-10-11): offline-first message history cache.
+import { loadChatMessages, saveChatMessages } from '../services/chatCacheService';
 import { DmMessage, DmReplyPreview } from '../types/dm';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import { useAuth } from '@/src/context/AuthContext';
 import { submitReport } from '@/src/services/reportService';
-import * as MediaLibrary from 'expo-media-library';
 // RC6 fix Issue 5 + Issue 8
 import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
@@ -243,13 +244,25 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Subscribe to Firebase messages ─────────────────────────────────────────
   // RC8-A: subscribeMessages now returns limitToLast(50). The callback
   // receives an oldestKey so we know where to start the "load older" cursor.
+  // NOTE 5 (2026-10-11): offline-first — render the cached page instantly,
+  // then live-subscribe; every live update refreshes the cache.
   useEffect(() => {
     shouldScrollRef.current = true;
     setInitialLoading(true);
+    let cancelled = false;
+
+    loadChatMessages(chatId).then((cached) => {
+      if (!cancelled && cached && cached.length > 0) {
+        setMessages(cached);
+        setInitialLoading(false);
+      }
+    });
 
     const unsubMsgs = subscribeMessages(chatId, myUid, (msgs, oldestKey) => {
+      if (cancelled) return;
       setMessages(msgs);
       setOldestRecentKey(oldestKey);
+      saveChatMessages(chatId, msgs);
       // A1: first callback means initial load done — hide spinner.
       setInitialLoading(false);
       // If the page is full, there may be older messages to fetch
@@ -264,7 +277,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }
     });
 
-    return unsubMsgs;
+    return () => {
+      cancelled = true;
+      unsubMsgs();
+    };
   }, [chatId, myUid, participantName]);
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
@@ -970,25 +986,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             >
               <Feather name="x" size={28} color="#fff" />
             </Pressable>
-            {/* Save to gallery button */}
+            {/* Save to gallery button — NOTE 12 (2026-10-11): fixed via shared
+                helper (downloads remote URL to local file first, real error cause) */}
             <Pressable
               style={{ position: 'absolute', top: 55, left: 20, zIndex: 10, padding: 8 }}
               onPress={async () => {
                 if (!mediaViewerUri) return;
-                const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
-                if (status !== 'granted') {
-                  const title = t('chat.permissionRequired');
-                  const msg = 'Gallery access is needed to save media.';
-                  if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
-                  else Alert.alert(title, msg);
-                  return;
-                }
-                try {
-                  await MediaLibrary.saveToLibraryAsync(mediaViewerUri);
-                  Alert.alert('✅ Saved', t('chat.msgSaveToGallery') + ' successfully.');
-                } catch {
-                  Alert.alert(t('chat.error'), 'Could not save image to gallery.');
-                }
+                await saveRemoteMediaToGallery(mediaViewerUri, {
+                  permissionRequired: t('chat.permissionRequired'),
+                  galleryPermission: 'Gallery access is needed to save media.',
+                  saved: t('chat.saved'),
+                  msgSaveToGallery: t('chat.msgSaveToGallery'),
+                  error: t('chat.error'),
+                  saveToGalleryFailed: t('chat.saveToGalleryFailed'),
+                });
               }}
             >
               <Feather name="download" size={24} color="#fff" />

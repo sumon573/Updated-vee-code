@@ -12,6 +12,9 @@ import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats,
 } from '@/src/features/chat/services/firebaseDmService';
+// NOTE 5 (2026-10-11): offline-first chat list — cached history renders
+// instantly when offline, live subscription keeps it fresh.
+import { loadChatList, saveChatList } from '@/src/features/chat/services/chatCacheService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
@@ -49,11 +52,25 @@ export default function IMOHomeScreen() {
     return unsub;
   }, [user?.uid]);
 
-  // Chats
+  // Chats — offline-first (NOTE 5, 2026-10-11): show the cached list
+  // instantly (works fully offline), then live-subscribe; every live
+  // update refreshes the cache. Firebase auto-syncs on reconnect.
   useEffect(() => {
-    if (!user?.uid) return;
-    const unsub = subscribeUserChats(user.uid, setChats);
-    return unsub;
+    const uid = user?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    loadChatList(uid).then((cached) => {
+      if (!cancelled && cached) setChats(cached);
+    });
+    const unsub = subscribeUserChats(uid, (live) => {
+      if (cancelled) return;
+      setChats(live);
+      saveChatList(uid, live);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [user?.uid]);
 
   // Stories (already loaded above via useStories)

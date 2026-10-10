@@ -118,6 +118,52 @@ export async function uploadStoryImage(localUri: string): Promise<CloudinaryUplo
 }
 
 /**
+ * Story video upload (NOTE 2, 2026-10-11) — Cloudinary video endpoint.
+ */
+export async function uploadStoryVideo(localUri: string): Promise<CloudinaryUploadResult> {
+  if (!isCloudinaryConfigured()) {
+    return {
+      url: localUri,
+      publicId: `local_${Date.now()}`,
+      width: 720,
+      height: 1280,
+      format: 'mp4',
+    };
+  }
+
+  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: localUri,
+    type: 'video/mp4',
+    name: `story_${Date.now()}.mp4`,
+  } as unknown as Blob);
+  formData.append('upload_preset', uploadPreset);
+  formData.append('folder', 'vee/stories');
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message ?? `Cloudinary video upload failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  return {
+    url: data.secure_url as string,
+    publicId: data.public_id as string,
+    width: data.width as number,
+    height: data.height as number,
+    format: data.format as string,
+  };
+}
+
+/**
  * Room cover upload — 800×450 landscape crop.
  */
 export async function uploadRoomCover(localUri: string): Promise<CloudinaryUploadResult> {

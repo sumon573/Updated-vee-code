@@ -8,6 +8,11 @@ import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/src/context/AuthContext';
+import { publishStory } from '@/src/features/chat/services/firebaseStoryService';
+import { uploadStoryImage, uploadStoryVideo } from '@/src/features/chat/services/cloudinaryService';
+import { getErrorCause } from '@/src/utils/errorDisplay';
+import * as DocumentPicker from 'expo-document-picker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,11 +33,14 @@ type Audience = 'everyone' | 'contacts';
 export default function StoryShareScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const params = useLocalSearchParams();
-  
+
   const mode = params.mode as string || 'photo';
   const assetUri = params.uri as string;
   const assetId = params.assetId as string;
+  // 'video' if the picked asset is a video (passed from CreateStoryScreen as mediaType)
+  const assetType = (params.mediaType as string) || 'image';
   
   const [text, setText] = useState('');
   const [bgColor, setBgColor] = useState(BG_COLORS[0]);
@@ -42,6 +50,7 @@ export default function StoryShareScreen() {
   const [musicName, setMusicName] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [cameraUri, setCameraUri] = useState<string | null>(null);
+  const [cameraIsVideo, setCameraIsVideo] = useState(false);
 
   const isTextMode = mode === 'text';
   const isCameraMode = mode === 'camera';
@@ -59,11 +68,14 @@ export default function StoryShareScreen() {
           return;
         }
         const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          // NOTE 2 (2026-10-11): allow both photo and video capture for stories.
+          mediaTypes: ImagePicker.MediaTypeOptions.All,
           quality: 0.8,
+          videoMaxDuration: 60,
         });
         if (!result.canceled && result.assets[0]) {
           setCameraUri(result.assets[0].uri);
+          setCameraIsVideo(result.assets[0].type === 'video');
         } else {
           router.back();
         }
@@ -73,39 +85,19 @@ export default function StoryShareScreen() {
 
   const handleSelectMusic = useCallback(async () => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          t('story.error', { defaultValue: 'Error' }),
-          t('story.noPermission', { defaultValue: 'Please grant media access' })
-        );
-        return;
-      }
-      // Get audio files from media library
-      const result = await MediaLibrary.getAssetsAsync({
-        first: 50,
-        mediaType: MediaLibrary.MediaType.audio,
-        sortBy: [MediaLibrary.SortBy.creationTime],
+      // NOTE 2 (2026-10-11): real file-manager picker — user chooses the audio file.
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: true,
       });
-      if (result.assets.length === 0) {
-        Alert.alert(
-          t('story.noMusic', { defaultValue: 'No music found' }),
-          t('story.noMusicMsg', { defaultValue: 'No audio files found on your device' })
-        );
-        return;
-      }
-      // For now, pick the first one — in a full implementation, show a picker
-      const firstAudio = result.assets[0];
-      setMusicUri(firstAudio.uri);
-      setMusicName(firstAudio.filename || 'Music');
-      Alert.alert(
-        t('story.musicSelected', { defaultValue: 'Music selected' }),
-        firstAudio.filename || 'Music'
-      );
+      if (result.canceled || !result.assets?.[0]) return;
+      const file = result.assets[0];
+      setMusicUri(file.uri);
+      setMusicName(file.name || 'Music');
     } catch (error) {
       Alert.alert(
         t('story.error', { defaultValue: 'Error' }),
-        t('story.musicError', { defaultValue: 'Could not select music' })
+        getErrorCause(error)
       );
     }
   }, [t]);
@@ -126,27 +118,78 @@ export default function StoryShareScreen() {
       );
       return;
     }
-    
+    if (!user?.uid) {
+      Alert.alert(
+        t('story.error', { defaultValue: 'Error' }),
+        t('story.notLoggedIn', { defaultValue: 'Please log in to post a story' })
+      );
+      return;
+    }
+
     setPosting(true);
     try {
-      // TODO: Upload to Firebase and create story
-      // For now, simulate
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      // NOTE 2 (2026-10-11): REAL story posting to Firebase.
+      // privacy: 'everyone' → public (stories/ + Planet), 'contacts' → contactStories/ only.
+      const privacy = audience === 'everyone' ? 'public' : 'contacts';
+      const userName = user.displayName || 'Vee User';
+      const userAvatar = user.photoURL || undefined;
+      const mediaUri = assetUri || cameraUri;
+
+      if (isTextMode || mode === 'music') {
+        // Text story (music mode: text + music name attached)
+        const content = mode === 'music' && musicName
+          ? `${text.trim()}\n🎵 ${musicName}`
+          : text.trim();
+        await publishStory(user.uid, userName, userAvatar, {
+          type: 'text',
+          content,
+          bgGradient: [bgColor, bgColor],
+          mentions: [],
+          privacy,
+        });
+      } else if (mediaUri) {
+        // Camera captures: use cameraIsVideo; gallery picks: use mediaType param
+        const isVideo = cameraUri ? cameraIsVideo : assetType === 'video';
+        if (isVideo) {
+          const result = await uploadStoryVideo(mediaUri);
+          await publishStory(user.uid, userName, userAvatar, {
+            type: 'video',
+            content: result.url,
+            bgGradient: ['#000000', '#000000'],
+            mentions: [],
+            cloudinaryId: result.publicId,
+            privacy,
+          });
+        } else {
+          const result = await uploadStoryImage(mediaUri);
+          await publishStory(user.uid, userName, userAvatar, {
+            type: 'image',
+            content: result.url,
+            bgGradient: ['#000000', '#000000'],
+            mentions: [],
+            cloudinaryId: result.publicId,
+            privacy,
+          });
+        }
+      } else {
+        throw new Error(t('story.noMedia', { defaultValue: 'No media selected' }));
+      }
+
       Alert.alert(
         t('story.success', { defaultValue: 'Success' }),
         t('story.posted', { defaultValue: 'Story posted!' }),
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
+      // Standing rule: show the ACTUAL cause, never a generic message.
       Alert.alert(
         t('story.error', { defaultValue: 'Error' }),
-        t('story.postError', { defaultValue: 'Could not post story' })
+        getErrorCause(error)
       );
     } finally {
       setPosting(false);
     }
-  }, [text, isTextMode, t, router]);
+  }, [text, isTextMode, mode, assetUri, cameraUri, cameraIsVideo, assetType, audience, musicName, bgColor, user, t, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>

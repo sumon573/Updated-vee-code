@@ -73,6 +73,34 @@
         "officialBadge": {
           ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
           ".validate": "newData.hasChildren(['grantedBy', 'grantedAt'])"
+        },
+        // Nobel XP (2026-10-11): total diamonds sent as gifts. Owner-only write,
+        // must be a non-negative number. Incremented server-side on gift send.
+        "nobleXP": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        // Granted badges / nameplates / frames (NOTE 7/8/9, 2026-10-11):
+        // officially granted by admins OR claimed from special events
+        // (owner writes their own claim). Readable by any authenticated user
+        // so friends/public can see them; validity visibility is enforced
+        // client-side (owner-only in the Honor detail view).
+        "badges": {
+          "$badgeId": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+            ".validate": "newData.hasChildren(['id', 'name', 'icon'])"
+          }
+        },
+        "nameplates": {
+          "$plateId": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+            ".validate": "newData.hasChildren(['id', 'name', 'icon'])"
+          }
+        },
+        "frames": {
+          "$frameId": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+            ".validate": "newData.hasChildren(['id', 'name', 'icon'])"
+          }
         }
       }
     },

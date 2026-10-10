@@ -402,6 +402,14 @@ async function sendGiftViaFirebase(
     // History write failed — gift already completed, don't fail
   }
 
+  // Step 5 (NOTE 10, 2026-10-11): Nobel XP — track diamonds sent for noble level.
+  // Owner-only write to users/{uid}/nobleXP, server-side increment.
+  try {
+    await set(ref(database, `users/${fromUid}/nobleXP`), increment(price));
+  } catch {
+    // Non-critical — gift already completed
+  }
+
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
 }
 

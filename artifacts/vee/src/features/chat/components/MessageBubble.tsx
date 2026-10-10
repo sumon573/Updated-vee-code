@@ -4,11 +4,13 @@ import {
   ActionSheetIOS, Platform, Image, Dimensions,
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { DmMessage } from '../types/dm';
 import { addReaction, deleteMessage } from '../services/firebaseDmService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const { width } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
@@ -43,6 +45,54 @@ type Props = {
   onReply: (msg: DmMessage) => void;
   onMediaPress?: (uri: string, type: 'image' | 'video') => void;
 };
+
+/**
+ * NOTE 12 (2026-10-11): Save a remote (or local) media URI to the device gallery.
+ *
+ * Why this exists: `MediaLibrary.saveToLibraryAsync` only accepts a LOCAL file
+ * URI — passing a remote https:// URL silently fails (the old "download does
+ * nothing" bug). Remote URLs are first downloaded to the cache directory via
+ * expo-file-system, then saved. Failures surface the ACTUAL error cause.
+ *
+ * NOTE: takes pre-resolved strings (not the i18next `t` function) — passing
+ * `t` directly trips a TypeScript 5.9 overload-resolution compiler crash.
+ */
+export interface SaveGalleryStrings {
+  permissionRequired: string;
+  galleryPermission: string;
+  saved: string;
+  msgSaveToGallery: string;
+  error: string;
+  saveToGalleryFailed: string;
+}
+
+export async function saveRemoteMediaToGallery(
+  uri: string,
+  s: SaveGalleryStrings,
+): Promise<void> {
+  try {
+    const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      if (canAskAgain === false) alertPermissionPermanentlyDenied(s.permissionRequired, s.galleryPermission);
+      else Alert.alert(s.permissionRequired, s.galleryPermission);
+      return;
+    }
+    let localUri = uri;
+    if (/^https?:\/\//i.test(uri)) {
+      const cacheDir = FileSystem.cacheDirectory;
+      if (!cacheDir) throw new Error('Cache directory unavailable');
+      const ext = (uri.split('?')[0].split('.').pop() || 'jpg').toLowerCase().slice(0, 4);
+      const fileUri = `${cacheDir}vee_dl_${Date.now()}.${ext}`;
+      const dl = await FileSystem.downloadAsync(uri, fileUri);
+      if (dl.status !== 200) throw new Error(`Download failed (HTTP ${dl.status})`);
+      localUri = dl.uri;
+    }
+    await MediaLibrary.saveToLibraryAsync(localUri);
+    Alert.alert(s.saved, s.msgSaveToGallery);
+  } catch (err) {
+    Alert.alert(s.error, `${s.saveToGalleryFailed}\n\nReason: ${getErrorCause(err)}`);
+  }
+}
 
 // Memoized: the DM thread FlatList renders one of these per message.
 function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props) {
@@ -112,20 +162,17 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
     if (action === t('chat.msgDeleteForEveryone')) { deleteMessage(chatId, message.id, myUid, true).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); }); return; }
     if (action === t('chat.msgSaveToGallery')) {
       if (message.type !== 'image' && message.type !== 'video') return;
-      try {
-        const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== 'granted') {
-          const title = t('chat.permissionRequired');
-          const msg = t('chat.galleryPermission');
-          if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
-          else Alert.alert(title, msg);
-          return;
-        }
-        await MediaLibrary.saveToLibraryAsync(message.content);
-        Alert.alert(t('chat.saved'), t('chat.msgSaveToGallery'));
-      } catch {
-        Alert.alert(t('chat.error'), t('chat.saveToGalleryFailed'));
-      }
+      // NOTE 12 (2026-10-11): fixed — downloads remote URL to a local file first.
+      // Strings are resolved here rather than passing `t` itself, which trips
+      // a TypeScript 5.9 overload-resolution compiler crash.
+      await saveRemoteMediaToGallery(message.content, {
+        permissionRequired: t('chat.permissionRequired'),
+        galleryPermission: t('chat.galleryPermission'),
+        saved: t('chat.saved'),
+        msgSaveToGallery: t('chat.msgSaveToGallery'),
+        error: t('chat.error'),
+        saveToGalleryFailed: t('chat.saveToGalleryFailed'),
+      });
       return;
     }
   };
@@ -133,6 +180,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
   const bubbleBg  = isMe ? C.myBubble : C.theirBubble;
   const textColor = isMe ? C.myText : C.theirText;
   const align     = isMe ? 'flex-end' : 'flex-start';
+  // NOTE 12 (2026-10-11): media messages render edge-to-edge with no bubble
+  // chrome (no padding, no background, no border) — clean professional look.
+  const isMediaMsg = message.type === 'image' || message.type === 'video';
 
   const reactions = message.reactions
     ? Object.entries(
@@ -162,11 +212,17 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
           </View>
         )}
 
-        {/* Main bubble */}
+        {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
         <Pressable
           onLongPress={handleLongPress}
           delayLongPress={200}
-          style={{
+          style={isMediaMsg ? {
+            backgroundColor: 'transparent',
+            borderRadius: 16,
+            paddingHorizontal: 0, paddingVertical: 0,
+            borderWidth: 0,
+            overflow: 'hidden',
+          } : {
             backgroundColor: bubbleBg,
             borderRadius: 18,
             borderBottomRightRadius: isMe ? 4 : 18,
@@ -183,7 +239,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
               <Image
                 source={{ uri: message.content }}
-                style={{ width: 200, height: 200, borderRadius: 12 }}
+                style={{ width: 220, height: 220, borderRadius: 16 }}
                 resizeMode="cover"
               />
             </Pressable>
@@ -191,10 +247,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             <Pressable
               onPress={() => onMediaPress?.(message.content, 'video')}
               style={{
-                width: 200, height: 140, borderRadius: 12,
+                width: 220, height: 150, borderRadius: 16,
                 backgroundColor: 'rgba(0,0,0,0.5)',
                 alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
               }}
             >
               <Feather name="play-circle" size={48} color="#fff" />

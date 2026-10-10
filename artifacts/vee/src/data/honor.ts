@@ -1,15 +1,22 @@
 /**
- * Honor — achievement catalog + nameplate catalog (shared).
+ * Honor — shared badge/nameplate types.
  *
- * Every achievement is evaluated from REAL user activity only:
- * no demo/placeholder badges are ever granted. Locked achievements are
- * shown greyed-out with their unlock requirement so the user can see
- * exactly what to do — nothing is faked as earned.
+ * NOTE 7 (2026-10-11): ALL demo/placeholder badges removed per Sumon's order.
+ * Badges are granted ONLY officially (by admin) or claimed from special
+ * events — they live in users/{uid}/badges in Firebase. There is no local
+ * achievement catalog anymore. The Honor section shows an empty state until
+ * real badges exist.
+ *
+ * NOTE 8/9 (2026-10-11): the demo NAMEPLATES catalog was removed per Sumon's
+ * order — nameplates are granted ONLY officially or claimed from special
+ * events and live in users/{uid}/nameplates in Firebase (see badgeService).
+ * This module now only carries shared types.
  *
  * Used by:
  *  - app/profile/index.tsx (Honor section preview)
  *  - app/profile/honor.tsx (Honor detail screen: Badge / Nameplate tabs)
  *  - app/profile/decoration.tsx (nameplate catalog)
+ *  - src/services/badgeService.ts (official grant / event claim)
  */
 
 export interface HonorStats {
@@ -29,28 +36,24 @@ export interface Achievement {
   isUnlocked: (s: HonorStats) => boolean;
 }
 
-export const ACHIEVEMENTS: Achievement[] = [
-  { id: 'host',       icon: '🎤', label: 'Host',        requirement: 'Host 1 room',      isUnlocked: (s) => s.roomsHosted >= 1 },
-  { id: 'super-host', icon: '👑', label: 'Super Host',  requirement: 'Host 5 rooms',     isUnlocked: (s) => s.roomsHosted >= 5 },
-  { id: 'loved',      icon: '💝', label: 'Loved',       requirement: 'Receive 1 gift',   isUnlocked: (s) => s.totalGifts >= 1 },
-  { id: 'treasured',  icon: '💎', label: 'Treasured',   requirement: 'Receive 50 gifts', isUnlocked: (s) => s.totalGifts >= 50 },
-  { id: 'popular',    icon: '⭐', label: 'Popular',     requirement: '10 followers',     isUnlocked: (s) => s.followers >= 10 },
-  { id: 'celebrity',  icon: '🌟', label: 'Celebrity',   requirement: '100 followers',    isUnlocked: (s) => s.followers >= 100 },
-  { id: 'friendly',   icon: '🤝', label: 'Friendly',    requirement: 'Follow 10 people', isUnlocked: (s) => s.following >= 10 },
-  { id: 'rising',     icon: '🚀', label: 'Rising Star', requirement: 'Reach Lv.5',       isUnlocked: (s) => s.level >= 5 },
-];
-
-/** Split the catalog into earned / locked for a given stats snapshot. */
-export function evaluateAchievements(stats: HonorStats): {
-  earned: Achievement[];
-  locked: Achievement[];
-} {
-  const earned: Achievement[] = [];
-  const locked: Achievement[] = [];
-  for (const a of ACHIEVEMENTS) {
-    (a.isUnlocked(stats) ? earned : locked).push(a);
-  }
-  return { earned, locked };
+/**
+ * Real badge granted officially or claimed from a special event.
+ * Stored at users/{uid}/badges/{badgeId} in Firebase.
+ */
+export interface GrantedBadge {
+  id: string;
+  name: string;
+  icon: string;
+  /** Epoch ms when the badge was granted/claimed */
+  obtainedAt: number;
+  /** 'permanent' or epoch ms expiry — visible to the badge owner only */
+  validity: 'permanent' | number;
+  /** 'official' → Verification section, 'event' → Achievement section */
+  source?: 'official' | 'event';
+  /** "How to get this badge" text shown in the detail view */
+  description?: string;
+  grantedBy?: string;
+  howToGet?: string;
 }
 
 export interface NameplateDef {
@@ -59,10 +62,3 @@ export interface NameplateDef {
   icon: string;
   requirement: string;
 }
-
-/** Nameplate catalog — ownership is tracked in users/{uid}/ownedNameplates. */
-export const NAMEPLATES: NameplateDef[] = [
-  { id: 'vip',    name: 'VIP',        icon: '⭐', requirement: 'Receive 50 gifts' },
-  { id: 'star',   name: 'Rising Star', icon: '🌟', requirement: 'Reach Lv.3' },
-  { id: 'legend', name: 'Legend',     icon: '🏆', requirement: 'Reach Lv.15' },
-];

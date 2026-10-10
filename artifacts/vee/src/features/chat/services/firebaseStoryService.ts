@@ -41,7 +41,7 @@ import { Story, StoryComment, UserStories } from '../types';
 // ─── Publish ─────────────────────────────────────────────────────────────────
 
 export interface PublishPayload {
-  type: 'text' | 'image';
+  type: 'text' | 'image' | 'video';
   content: string;                 // text string or Cloudinary URL
   bgGradient: [string, string];
   mentions: string[];
