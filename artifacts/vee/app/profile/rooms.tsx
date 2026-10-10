@@ -24,6 +24,7 @@ import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribeMyRoomsCombined,
+  disbandRoom,
   type RoomInfo,
 } from '@/src/features/voice-room/services/firebaseRoomService';
 
@@ -68,8 +69,8 @@ function RoleBadge({ role }: { role: UserRole }) {
 // ─── Room card ────────────────────────────────────────────────────────────────
 
 function RoomCard({
-  room, role,
-}: { room: RoomInfo; role: UserRole }) {
+  room, role, onDelete,
+}: { room: RoomInfo; role: UserRole; onDelete?: () => void }) {
   // Backward compatible: rooms created before the `active` flag existed
   // (or with a missing field) are treated as active. Only an explicit
   // `active: false` means closed.
@@ -86,6 +87,10 @@ function RoomCard({
     }
     router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
   };
+
+  // DISBAND FIX (2026-10-10): closed rooms could never be removed — tapping
+  // them only showed an alert, and disbandRoom's delete was denied by rules.
+  // Owners now get a trash button to permanently delete a closed room.
 
   return (
     <Pressable
@@ -144,6 +149,17 @@ function RoomCard({
       </View>
 
       <Feather name={isActive ? 'chevron-right' : 'lock'} size={16} color={C.muted} />
+      {!isActive && onDelete && (
+        <Pressable
+          onPress={onDelete}
+          hitSlop={10}
+          style={{
+            padding: 6, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.1)',
+          }}
+        >
+          <Feather name="trash-2" size={16} color="#EF4444" />
+        </Pressable>
+      )}
     </Pressable>
   );
 }
@@ -195,6 +211,28 @@ export default function ProfileRoomsScreen() {
     return roleMap[room.id] ?? 'member';
   };
 
+  // Permanently delete a closed room (owner only). With the rules fix,
+  // disbandRoom now actually removes the node, so it vanishes everywhere.
+  const handleDeleteClosed = (room: RoomInfo) => {
+    Alert.alert(
+      'Delete Room',
+      `"${room.name}" will be permanently deleted. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await disbandRoom(room.id);
+            } catch {
+              Alert.alert('Delete failed', 'Could not delete the room. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const sorted = [...rooms].sort((a, b) => {
     const diff = ROLE_ORDER[getRole(a)] - ROLE_ORDER[getRole(b)];
     return diff !== 0 ? diff : b.createdAt - a.createdAt;
@@ -233,7 +271,17 @@ export default function ProfileRoomsScreen() {
         <FlatList
           data={sorted}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <RoomCard room={item} role={getRole(item)} />}
+          renderItem={({ item }) => {
+            const role = getRole(item);
+            const isClosed = item.active === false;
+            return (
+              <RoomCard
+                room={item}
+                role={role}
+                onDelete={role === 'owner' && isClosed ? () => handleDeleteClosed(item) : undefined}
+              />
+            );
+          }}
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         />

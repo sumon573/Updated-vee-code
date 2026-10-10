@@ -12,6 +12,7 @@
 import React, {
   createContext, useContext, useEffect, useRef, useState, useCallback,
 } from 'react';
+import { AppState } from 'react-native';
 import { User } from 'firebase/auth';
 import { onUserStateChanged, logout as firebaseLogout } from '../services/authService';
 import { withTimeout } from '../utils/withTimeout';
@@ -112,6 +113,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe?.();
     };
   }, []);
+
+  // PRESENCE FIX (2026-10-10): setupPresence ran only on login. When the app
+  // was backgrounded, Firebase onDisconnect marked the user offline — but
+  // foregrounding the app never set online=true again (no re-login), so the
+  // user stayed "offline" forever: callers saw "Calling" instead of "Ringing"
+  // and inbox ticks never upgraded. Re-register presence on every foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && user) {
+        try {
+          setupPresence(user.uid);
+        } catch {
+          // Non-critical — next foreground retry will repair it.
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [user]);
 
   const logout = useCallback(async () => {
     if (user) {

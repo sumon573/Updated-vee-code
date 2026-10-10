@@ -131,6 +131,8 @@ export default function AudioCallScreen({
   const speakerOnRef   = useRef(true);
   /** Unsubscribe for the call-signal reject listener (caller side). */
   const signalUnsubRef = useRef<(() => void) | null>(null);
+  /** Unsubscribe for the callee-online presence listener (caller side). */
+  const onlineUnsubRef = useRef<(() => void) | null>(null);
   /** Timer for delayed decline detection (cancelled on connect). */
   const declineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -408,8 +410,10 @@ export default function AudioCallScreen({
               updateCallState('calling');
             }
           });
-          // Store for cleanup
-          (signalUnsubRef.current as unknown as { onlineUnsub?: () => void }).onlineUnsub = onlineUnsub;
+          // Store for cleanup (FIX 2026-10-10: was assigning onto
+          // signalUnsubRef.current while null → TypeError → the reject
+          // listener below never attached, caller stuck on "Calling").
+          onlineUnsubRef.current = onlineUnsub;
           // REJECT SYNC (2026-10-09): watch the call signal node. If the
           // callee declines (node removed) before WebRTC connects, show
           // "Declined" instead of ringing forever.
@@ -481,6 +485,8 @@ export default function AudioCallScreen({
     return () => {
       signalUnsubRef.current?.();
       signalUnsubRef.current = null;
+      onlineUnsubRef.current?.();
+      onlineUnsubRef.current = null;
       if (!cleaningUpRef.current) endCall(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

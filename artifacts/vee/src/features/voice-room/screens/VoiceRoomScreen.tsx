@@ -1298,7 +1298,14 @@ export default function VoiceRoomScreen() {
     stopPublishing();
     try {
       await disbandRoom(roomId);
-    } catch { /* non-critical */ }
+    } catch {
+      // DISBAND FIX (2026-10-10): never fail silently — the user must know
+      // the room was NOT deleted (previously the rules denied the delete and
+      // the room silently survived).
+      Alert.alert('Disband failed', 'Could not delete the room. Please try again.');
+      hasLeftRef.current = false;
+      return;
+    }
     router.back();
   }, [roomId, stopPublishing]);
 

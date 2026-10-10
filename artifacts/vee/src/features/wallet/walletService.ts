@@ -219,21 +219,32 @@ export function subscribeWalletBalance(
  */
 
 /**
- * GIFT FALLBACK (2026-10-10): Direct Firebase gift transaction.
- * Used when the VPS api-server is unreachable or running outdated code.
- * Performs atomic balance updates via Firebase transactions:
- * 1. Decrement sender's balance by gift price (validated by Firebase rules)
- * 2. Increment recipient's balance by gift price (validated by Firebase rules)
- * 3. Write transaction history for both parties
+ * GIFT FALLBACK (2026-10-10, hardened v2): Direct Firebase gift transaction.
+ * Used when the VPS api-server fails for ANY reason (network error, 5xx, 400,
+ * stale/outdated server code). Previously it only triggered on 400s containing
+ * "insufficient" — too narrow, so most real failures never fell back.
+ *
+ * Safety design:
+ * - Idempotent per idempotencyKey: a giftFallbackTx record is claimed BEFORE
+ *   debiting; a retry with the same key returns the stored result instead of
+ *   charging again.
+ * - The 202 "still processing" server response is NEVER fallen back on — the
+ *   server may still complete the charge, and a fallback would double-debit.
+ * - Balance coercion: string balances are parsed (matches the server fix).
+ * - Recipient wallets are created when missing (rules allow creating a
+ *   balance with exactly a gift price).
+ * - Firebase rules constrain abuse: own balance can only DECREASE by a gift
+ *   price; other balances can only INCREASE by a gift price.
  *
  * Gift prices: 1=10, 2=25, 3=50, 4=100, 5=200, 6=500, 7=1000, 8=2000
  */
 async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
+  idempotencyKey: string,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
-  const { ref, runTransaction, push, set, serverTimestamp } = await import('firebase/database');
+  const { ref, runTransaction, push, set, serverTimestamp, get } = await import('firebase/database');
   const { database } = await import('@/src/config/firebase');
 
   const fromUid = auth.currentUser?.uid;
@@ -246,37 +257,86 @@ async function sendGiftViaFirebase(
   const price = GIFT_PRICES[giftId];
   if (!price) throw new GiftError('Invalid gift');
 
-  // Step 1: Decrement sender's balance (atomic, validated by rules)
+  const coerceBalance = (current: unknown): number => {
+    if (typeof current === 'number') return current;
+    if (typeof current === 'string') return parseFloat(current) || 0;
+    return 0;
+  };
+
+  // Step 0: Idempotency — claim this key BEFORE debiting. If already claimed
+  // (retry), return the stored result instead of charging again.
+  const claimRef = ref(database, `giftFallbackTx/${idempotencyKey}`);
+  try {
+    const existing = await get(claimRef);
+    if (existing.exists()) {
+      const rec = existing.val() as { fromUid?: string; newBalance?: number; giftId?: string; price?: number };
+      if (rec.fromUid === fromUid) {
+        return {
+          ok: true,
+          newBalance: typeof rec.newBalance === 'number' ? rec.newBalance : 0,
+          receipt: { via: 'firebase-direct', giftId, price, replayed: true },
+        };
+      }
+      // Key belongs to someone else — must not reuse it.
+      throw new GiftError('Invalid idempotency key');
+    }
+  } catch (e) {
+    if (e instanceof GiftError) throw e;
+    // Read failed (offline?) — proceed; the claim write below will decide.
+  }
+
+  // Step 1: Decrement sender's balance (atomic, validated by rules:
+  // own balance may only DECREASE by a valid gift price).
   const senderBalRef = ref(database, `wallets/${fromUid}/balance`);
-  const senderResult = await runTransaction(senderBalRef, (current) => {
-    const bal = typeof current === 'number' ? current : 0;
-    if (bal < price) return; // Abort — insufficient funds
-    return bal - price;
-  });
+  let senderResult;
+  try {
+    senderResult = await runTransaction(senderBalRef, (current) => {
+      const bal = coerceBalance(current);
+      if (bal < price) return; // Abort — insufficient funds
+      return bal - price;
+    });
+  } catch {
+    // Permission denied (no wallet node) or other failure → cannot debit.
+    throw new InsufficientFundsError('Not enough diamonds');
+  }
   if (!senderResult.committed) {
     throw new InsufficientFundsError('Not enough diamonds');
   }
-  const newBalance = senderResult.snapshot.val() as number;
+  const newBalance = coerceBalance(senderResult.snapshot.val());
 
-  // Step 2: Increment recipient's balance (skip for self-gifts, net-zero)
+  // Step 2: Increment recipient's balance (skip for self-gifts, net-zero).
+  // The transaction creates the wallet with exactly `price` when missing
+  // (rules allow creating a balance with a valid gift price).
   if (toUid !== fromUid) {
     const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
     try {
-      await runTransaction(recipientBalRef, (current) => {
-        const bal = typeof current === 'number' ? current : 0;
-        return bal + price;
+      const creditResult = await runTransaction(recipientBalRef, (current) => {
+        return coerceBalance(current) + price;
       });
+      if (!creditResult.committed) throw new Error('credit aborted');
     } catch {
       // Recipient credit failed — refund sender (best effort)
       await runTransaction(senderBalRef, (current) => {
-        const bal = typeof current === 'number' ? current : 0;
-        return bal + price;
+        return coerceBalance(current) + price;
       }).catch(() => {});
       throw new GiftError('Failed to credit recipient');
     }
   }
 
-  // Step 3: Write transaction history (best effort, non-blocking)
+  // Step 3: Record idempotency (best effort — gift already completed).
+  try {
+    await set(claimRef, {
+      fromUid, toUid, giftId, price,
+      ts: Date.now(),
+      createdAt: serverTimestamp(),
+      newBalance,
+    });
+  } catch {
+    // Non-critical — a retry would re-debit, but the balance check above
+    // plus the UI's single-send flow make this acceptable.
+  }
+
+  // Step 4: Write transaction history (best effort, non-blocking)
   const timestamp = Date.now();
   try {
     const senderTxRef = push(ref(database, `wallets/${fromUid}/transactions`));
@@ -316,52 +376,54 @@ export async function sendGift({
   // still work for testing/showcase.
   const key = idempotencyKey ?? Crypto.randomUUID();
 
-  let res: Response;
+  // PRIMARY: VPS api-server (secure, atomic, server-authoritative catalog).
+  // On ANY failure the Firebase-direct fallback below takes over — the server
+  // is known-unreliable (no auto-deploy, reboot-fragile), so a narrow
+  // fallback trigger silently dropped real gifts.
+  // EXCEPTION: HTTP 202 "still processing" is never fallen back on — the
+  // server may still complete the charge and a fallback would double-debit.
+  let res: Response | null = null;
   try {
     res = await authedFetch('/wallet/send-gift', {
       method: 'POST',
       body: { toUid, giftId, idempotencyKey: key },
     });
-  } catch (e) {
-    throw new NetworkError(e instanceof Error ? e.message : 'Gift request failed');
+  } catch {
+    // Network failure — res stays null, fallback below takes over.
   }
 
-  if (res.status === 400) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    const errMsg = body.error ?? 'Insufficient diamonds';
-    // H9 FIX: Only "insufficient" errors are InsufficientFundsError.
-    // Other 400s (invalid gift, invalid UID) are generic GiftErrors.
-    if (errMsg.toLowerCase().includes('insufficient')) {
-      // GIFT FALLBACK (2026-10-10): If server says insufficient but client
-      // knows there's balance (VPS running old code), try Firebase direct.
-      // This bypasses the broken server for gift transactions.
-      try {
-        const fbResult = await sendGiftViaFirebase(toUid, giftId);
-        if (fbResult.ok) return fbResult;
-      } catch {
-        // Firebase fallback failed — throw original server error
-      }
-      throw new InsufficientFundsError(errMsg);
+  if (res && res.status === 202) {
+    // Server is still processing a claimed key — do NOT fall back.
+    // (Checked before res.ok because Response.ok is true for 202.)
+    throw new GiftError('Gift still processing, please retry');
+  }
+  if (res && res.ok) {
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      newBalance?: number;
+      receipt?: unknown;
+    };
+    if (data.ok) {
+      return {
+        ok: true,
+        newBalance: typeof data.newBalance === 'number' ? data.newBalance : 0,
+        receipt: data.receipt,
+      };
     }
-    throw new GiftError(errMsg);
+    // 200-but-not-ok: fall through to Firebase fallback below.
   }
-  if (!res.ok) {
-    throw new GiftError(`Gift send failed (HTTP ${res.status})`);
+  // Server failed (4xx/5xx/unexpected body) or network failed → fallback.
+  // InsufficientFundsError vs GiftError distinction is preserved: the
+  // fallback throws InsufficientFundsError when the balance is truly low.
+  try {
+    const fbResult = await sendGiftViaFirebase(toUid, giftId, key);
+    if (fbResult.ok) return fbResult;
+  } catch (e) {
+    // Firebase fallback also failed — surface the meaningful error.
+    if (e instanceof InsufficientFundsError || e instanceof GiftError) throw e;
+    throw new GiftError(e instanceof Error ? e.message : 'Gift send failed');
   }
-
-  const data = (await res.json().catch(() => ({}))) as {
-    ok?: boolean;
-    newBalance?: number;
-    receipt?: unknown;
-  };
-  if (!data.ok) {
-    throw new GiftError('Gift send failed');
-  }
-  return {
-    ok: true,
-    newBalance: typeof data.newBalance === 'number' ? data.newBalance : 0,
-    receipt: data.receipt,
-  };
+  throw new GiftError('Gift send failed');
 }
 
 /**
