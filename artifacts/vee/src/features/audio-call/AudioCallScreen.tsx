@@ -410,10 +410,6 @@ export default function AudioCallScreen({
           });
           // Store for cleanup
           (signalUnsubRef.current as unknown as { onlineUnsub?: () => void }).onlineUnsub = onlineUnsub;
-        } catch {
-          // Online check failed — default to "calling"
-          if (mountedRef.current) updateCallState('calling');
-        }
           // REJECT SYNC (2026-10-09): watch the call signal node. If the
           // callee declines (node removed) before WebRTC connects, show
           // "Declined" instead of ringing forever.

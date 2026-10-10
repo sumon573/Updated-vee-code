@@ -241,11 +241,17 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                 {formatMsgTime(message.createdAt)}
               </Text>
               {isMe && (
-                <Feather
-                  name={message.status === 'seen' ? 'check-circle' : message.status === 'delivered' ? 'check-double' : 'check'}
-                  size={12}
-                  color={message.status === 'seen' ? C.seen : C.sent}
-                />
+                message.status === 'seen' ? (
+                  <Feather name="check-circle" size={12} color={C.seen} />
+                ) : message.status === 'delivered' ? (
+                  // Double tick: two overlapping check icons
+                  <View style={{ flexDirection: 'row', marginLeft: -4 }}>
+                    <Feather name="check" size={12} color={C.sent} />
+                    <Feather name="check" size={12} color={C.sent} style={{ marginLeft: -8 }} />
+                  </View>
+                ) : (
+                  <Feather name="check" size={12} color={C.sent} />
+                )
               )}
             </View>
           )}

@@ -232,11 +232,10 @@ async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
 ): Promise<SendGiftResult> {
-  const { getAuth } = await import('@/src/config/firebase');
+  const { auth } = await import('@/src/config/firebase');
   const { ref, runTransaction, push, set, serverTimestamp } = await import('firebase/database');
   const { database } = await import('@/src/config/firebase');
 
-  const auth = getAuth();
   const fromUid = auth.currentUser?.uid;
   if (!fromUid) throw new GiftError('Not authenticated');
 
