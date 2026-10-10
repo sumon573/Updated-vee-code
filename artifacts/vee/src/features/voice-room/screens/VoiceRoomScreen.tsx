@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, FlatList, Alert, Pressable,
   Animated, Platform, TextInput, ActivityIndicator, Image,
+  BackHandler,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1259,6 +1260,18 @@ export default function VoiceRoomScreen() {
     setExitModalOpen(false);
     router.back();
   }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted]);
+
+  // BACK BUTTON → MINIMIZE (2026-10-10, Sumon's order): pressing the phone's
+  // back button while in a voice room minimizes instead of leaving.
+  // The room keeps running in the background (talk + listen).
+  useEffect(() => {
+    const onBackPress = () => {
+      handleMinimize();
+      return true; // prevent default back behavior
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [handleMinimize]);
 
   // RACE FIX (double-tap): `sendingMsg` is state — two invocations within the
   // same frame (double-tap, or keyboard submit racing the send button) both

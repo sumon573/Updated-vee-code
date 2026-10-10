@@ -206,8 +206,18 @@ export async function createRoom(data: {
   /** SHA-256 hashed PIN for private rooms. */
   hashedPin?: string;
 }): Promise<string> {
+  // ROOM LIMITS (2026-10-10, Sumon's rule): max 2 public + 1 private per user.
+  // Enforced here so the UI and any future callers all respect it.
+  const { publicCount, privateCount } = await getUserRoomCounts(data.hostId);
+  if (data.isPublic && publicCount >= 2) {
+    throw new Error('ROOM_LIMIT_PUBLIC');
+  }
+  if (!data.isPublic && privateCount >= 1) {
+    throw new Error('ROOM_LIMIT_PRIVATE');
+  }
+
   const info: RoomInfo = {
-    id: '', // stamped with the claimed ID inside claimRoomIdWithInfo
+    id: '', // stamped below after ID generation
     name: data.name,
     topic: data.topic || 'Live now',
     description: data.description,
@@ -237,10 +247,61 @@ export async function createRoom(data: {
     ...(data.location ? { location: data.location } : {}),
   };
 
-  // FIX (2026-10-10): Claim the ID and write the FULL info atomically in one
-  // transaction — no {_reserving} placeholder, so a failed creation can never
-  // leave a nameless zombie room behind.
-  const roomId = await claimRoomIdWithInfo(info);
+  // FIX (2026-10-10 v2): Replaced the transaction-based claimRoomIdWithInfo
+  // with a simple get-then-set. The transaction was failing on-device
+  // (exact cause unknown — likely a validation rule interaction), causing
+  // "Could not create room" for every attempt. This approach:
+  // 1. Generates a random 7-digit ID
+  // 2. Checks it doesn't exist via get()
+  // 3. Writes the FULL room (info + host seat) in ONE set() — no placeholder,
+  //    so a failed write never leaves a zombie.
+  // Collision probability with 9M IDs is negligible; the get() check handles it.
+  const { get: dbGet } = await import('firebase/database');
+  let roomId: string | null = null;
+  for (let i = 0; i < 20; i++) {
+    const id = String(Math.floor(1_000_000 + Math.random() * 9_000_000));
+    try {
+      const snap = await dbGet(ref(database, `rooms/${id}/info`));
+      if (!snap.exists()) {
+        roomId = id;
+        break;
+      }
+    } catch {
+      // Network blip — try another ID
+      continue;
+    }
+  }
+  if (!roomId) {
+    throw new Error('Could not generate a unique room ID after 20 attempts');
+  }
+
+  // Stamp the ID into the info
+  const fullInfo: RoomInfo = { ...info, id: roomId };
+
+  // Build the host seat
+  const hostSeat: NonNullable<RoomSeat> = {
+    userId: data.hostId,
+    userName: data.hostName,
+    initials: getInitials(data.hostName),
+    color: getUserColor(data.hostId),
+    muted: false,
+    role: 'host',
+    ...(data.hostPhotoURL ? { photoURL: data.hostPhotoURL } : {}),
+  };
+
+  // Single atomic write: info + host seat together. If this fails,
+  // nothing is written — no zombie room.
+  const roomData = {
+    info: fullInfo,
+    seats: { '0': hostSeat },
+  };
+
+  try {
+    await set(ref(database, `rooms/${roomId}`), roomData);
+  } catch (e) {
+    // Write failed — nothing was created, safe to throw
+    throw e;
+  }
 
   try {
 
@@ -259,29 +320,16 @@ export async function createRoom(data: {
     }
   }
 
-  // Put host in seat 0 — include photoURL so the host's avatar shows immediately
-  const hostSeat: NonNullable<RoomSeat> = {
-    userId: data.hostId,
-    userName: data.hostName,
-    initials: getInitials(data.hostName),
-    color: getUserColor(data.hostId),
-    muted: false,
-    role: 'host',
-    ...(data.hostPhotoURL ? { photoURL: data.hostPhotoURL } : {}),
-  };
-  const hostSeatRef = ref(database, `rooms/${roomId}/seats/0`);
-  await set(hostSeatRef, hostSeat);
-
   // FIX (2026-10-09): DO NOT use onDisconnect().remove() for host seat either.
   // Brief network blips were dropping the host from their seat. The seat now
   // persists until explicit leave or room close. Cancel any stale handler.
+  const hostSeatRef = ref(database, `rooms/${roomId}/seats/0`);
   onDisconnect(hostSeatRef).cancel().catch(() => {/* non-critical */});
 
   return roomId;
   } catch (e) {
-    // FIX (2026-10-10): If any post-info step fails (e.g. seat write denied),
-    // remove the just-created room so we never leave a half-created room
-    // behind. The owner-delete rule allows this.
+    // If any post-creation step fails, remove the just-created room so we
+    // never leave a half-created room behind. The owner-delete rule allows this.
     await remove(ref(database, `rooms/${roomId}`)).catch(() => {});
     throw e;
   }

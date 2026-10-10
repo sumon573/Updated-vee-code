@@ -783,10 +783,15 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // Re-attach handlers with fresh closures on this component instance
       attachHandlers(persisted.engine);
       const s = persisted.engine.getLocalState();
-      mutedRef.current = s.muted;
+      // FIX (2026-10-10): Use the persisted muted state (user's intent at minimize
+      // time), not the engine's possibly-stale s.muted. This prevents the mic
+      // from appearing to "drop" for a few seconds on return from minimize.
+      // The engine's audio track was never interrupted — only the UI state
+      // was getting out of sync.
+      mutedRef.current = persisted.muted;
       speakerOnRef.current = s.speakerOn;
       publishedRef.current = s.publishing;
-      setMuted(s.muted);
+      setMuted(persisted.muted);
       setSpeakerOn(s.speakerOn);
       setIsPublishing(s.publishing);
       setLocalSpeaking(s.localSpeaking);

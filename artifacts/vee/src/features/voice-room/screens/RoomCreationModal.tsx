@@ -234,8 +234,22 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
       setProfileImage(undefined);
 
       onRoomCreated(roomId);
-    } catch (e) {
-      Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.creation.errorCreateFailed'));
+    } catch (e: any) {
+      // ROOM LIMITS (2026-10-10): show specific message for limit errors
+      const msg = e?.message;
+      if (msg === 'ROOM_LIMIT_PUBLIC') {
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          'You can create max 2 public rooms. Delete one to create a new one.'
+        );
+      } else if (msg === 'ROOM_LIMIT_PRIVATE') {
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          'You can create max 1 private room. Delete it to create a new one.'
+        );
+      } else {
+        Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.creation.errorCreateFailed'));
+      }
     } finally {
       setCreating(false);
     }

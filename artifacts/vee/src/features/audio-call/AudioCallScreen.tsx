@@ -21,7 +21,7 @@ import React, {
 } from 'react';
 import {
   View, Text, Pressable, Image, StatusBar, Alert,
-  Platform, PermissionsAndroid,
+  Platform, PermissionsAndroid, BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -169,6 +169,16 @@ export default function AudioCallScreen({
     })();
     return () => { cancelled = true; };
   }, [remoteName, remoteUid, calleeUid]);
+
+  // BACK BUTTON → KEEP CALL (2026-10-10, Sumon's order): pressing back during
+  // a call must NOT end it. Block the back action; the user stays on the call
+  // screen. Pressing the system Home button backgrounds the app and the call
+  // continues (like IMO/WhatsApp). Full in-app call minimize is deferred.
+  useEffect(() => {
+    const onBackPress = () => true; // block — do not end call
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, []);
   /** Remote user's photo — fetched from Firebase as fallback if the nav
    *  param is missing/stale, so the callee's DP always shows. */
   const [remotePhoto, setRemotePhoto] = useState<string | undefined>(remotePhotoURL);
