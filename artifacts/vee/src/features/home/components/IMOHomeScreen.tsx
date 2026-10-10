@@ -68,7 +68,8 @@ export default function IMOHomeScreen() {
 
   const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
     id: s.id || s.userId,
-    name: s.userName || 'Story',
+    // Show "You" for the user's own story (like IMO)
+    name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
     photoURL: s.photoURL || null,
     unreadCount: s.unreadCount || 0,
   }));

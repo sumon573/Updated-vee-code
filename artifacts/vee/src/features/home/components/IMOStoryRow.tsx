@@ -79,25 +79,42 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
         </TouchableOpacity>
 
         {/* Story items */}
-        {stories.map((story) => (
+        {stories.map((story) => {
+          const hasUnread = (story.unreadCount ?? 0) > 0;
+          return (
           <TouchableOpacity
             key={story.id}
             onPress={() => onStoryPress(story.id)}
             activeOpacity={0.7}
             style={{ alignItems: 'center', marginRight: 16, width: 64 }}
           >
-            <View>
+            <View
+              style={
+                hasUnread
+                  ? {
+                      width: 66,
+                      height: 66,
+                      borderRadius: 33,
+                      borderWidth: 2,
+                      borderColor: '#2196F3',
+                      padding: 2,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }
+                  : undefined
+              }
+            >
               {story.photoURL ? (
                 <Image
                   source={{ uri: story.photoURL }}
-                  style={{ width: 60, height: 60, borderRadius: 30 }}
+                  style={{ width: hasUnread ? 58 : 60, height: hasUnread ? 58 : 60, borderRadius: hasUnread ? 29 : 30 }}
                 />
               ) : (
                 <View
                   style={{
-                    width: 60,
-                    height: 60,
-                    borderRadius: 30,
+                    width: hasUnread ? 58 : 60,
+                    height: hasUnread ? 58 : 60,
+                    borderRadius: hasUnread ? 29 : 30,
                     backgroundColor: '#E0E0E0',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -108,7 +125,7 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
                   </Text>
                 </View>
               )}
-              {(story.unreadCount ?? 0) > 0 && (
+              {hasUnread && (
                 <View
                   style={{
                     position: 'absolute',
@@ -138,7 +155,8 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
               {story.name}
             </Text>
           </TouchableOpacity>
-        ))}
+          );
+        })}
       </ScrollView>
     </View>
   );
