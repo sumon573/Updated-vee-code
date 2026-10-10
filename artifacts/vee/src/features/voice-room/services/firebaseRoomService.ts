@@ -206,9 +206,36 @@ export async function createRoom(data: {
   /** SHA-256 hashed PIN for private rooms. */
   hashedPin?: string;
 }): Promise<string> {
+  // DIAGNOSTIC (2026-10-10): Step-by-step logging to find the EXACT failure.
+  // Each step is logged; errors include the step name and Firebase error code.
+  const log = (step: string, detail?: string) => {
+    console.log(`[createRoom] ${step}${detail ? ': ' + detail : ''}`);
+  };
+
+  // Timeout wrapper: Firebase ops must not hang forever (user reports long loading).
+  // 15s per operation; throws TIMEOUT_<step> on expiry.
+  const withTimeout = <T>(promise: Promise<T>, step: string, ms = 15000): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`TIMEOUT_${step}`)), ms)
+      ),
+    ]);
+  };
+
   // ROOM LIMITS (2026-10-10, Sumon's rule): max 2 public + 1 private per user.
   // Enforced here so the UI and any future callers all respect it.
-  const { publicCount, privateCount } = await getUserRoomCounts(data.hostId);
+  log('STEP1', 'checking room limits');
+  let publicCount = 0, privateCount = 0;
+  try {
+    const counts = await withTimeout(getUserRoomCounts(data.hostId), 'LIMITS_CHECK');
+    publicCount = counts.publicCount;
+    privateCount = counts.privateCount;
+    log('STEP1_OK', `public=${publicCount} private=${privateCount}`);
+  } catch (e: any) {
+    log('STEP1_FAIL', e?.message || String(e));
+    throw new Error(`LIMITS_CHECK_FAILED: ${e?.message || String(e)}`);
+  }
   if (data.isPublic && publicCount >= 2) {
     throw new Error('ROOM_LIMIT_PUBLIC');
   }
@@ -257,22 +284,27 @@ export async function createRoom(data: {
   //    so a failed write never leaves a zombie.
   // Collision probability with 9M IDs is negligible; the get() check handles it.
   const { get: dbGet } = await import('firebase/database');
+  log('STEP2', 'generating unique room ID');
   let roomId: string | null = null;
   for (let i = 0; i < 20; i++) {
     const id = String(Math.floor(1_000_000 + Math.random() * 9_000_000));
     try {
-      const snap = await dbGet(ref(database, `rooms/${id}/info`));
+      const snap = await withTimeout(dbGet(ref(database, `rooms/${id}/info`)), 'ID_CHECK', 8000);
       if (!snap.exists()) {
         roomId = id;
+        log('STEP2_OK', `id=${id} (try ${i + 1})`);
         break;
       }
-    } catch {
+      log('STEP2', `id ${id} taken, retrying`);
+    } catch (e: any) {
+      log('STEP2_TRY_FAIL', `try ${i + 1}: ${e?.message || String(e)}`);
       // Network blip — try another ID
       continue;
     }
   }
   if (!roomId) {
-    throw new Error('Could not generate a unique room ID after 20 attempts');
+    log('STEP2_FAIL', 'all 20 tries exhausted');
+    throw new Error('ID_GEN_FAILED: Could not generate a unique room ID after 20 attempts');
   }
 
   // Stamp the ID into the info
@@ -295,21 +327,27 @@ export async function createRoom(data: {
   // intermediate `seats` node — Firebase denies the multi-child write.
   // Separate writes hit the specific child rules directly (info/.write and
   // seats/$seatIndex/.write), which allow creation.
+  log('STEP3', `writing info to rooms/${roomId}/info`);
   try {
-    await set(ref(database, `rooms/${roomId}/info`), fullInfo);
-  } catch (e) {
-    // Info write failed — nothing was created, safe to throw
-    throw e;
+    await withTimeout(set(ref(database, `rooms/${roomId}/info`), fullInfo), 'INFO_WRITE');
+    log('STEP3_OK', 'info written');
+  } catch (e: any) {
+    log('STEP3_FAIL', e?.message || String(e));
+    throw new Error(`INFO_WRITE_FAILED: ${e?.message || String(e)}`);
   }
 
+  log('STEP4', `writing seat to rooms/${roomId}/seats/0`);
   try {
-    await set(ref(database, `rooms/${roomId}/seats/0`), hostSeat);
-  } catch (e) {
+    await withTimeout(set(ref(database, `rooms/${roomId}/seats/0`), hostSeat), 'SEAT_WRITE');
+    log('STEP4_OK', 'seat written');
+  } catch (e: any) {
+    log('STEP4_FAIL', e?.message || String(e));
     // Seat write failed — remove the info so we don't leave a half-created room
     await remove(ref(database, `rooms/${roomId}`)).catch(() => {});
-    throw e;
+    throw new Error(`SEAT_WRITE_FAILED: ${e?.message || String(e)}`);
   }
 
+  log('STEP5', 'room created successfully');
   try {
 
   // Record this room in the host's persistent "My Room" index. Never

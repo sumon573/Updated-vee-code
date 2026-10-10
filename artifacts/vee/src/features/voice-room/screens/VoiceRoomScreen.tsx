@@ -440,6 +440,22 @@ export default function VoiceRoomScreen() {
   /* ── Join state ── */
   const [hasJoined, setHasJoined] = useState(false);
 
+  // ENTRY EFFECT (2026-10-10): Show "X is Coming" banner when the local user
+  // joins too, so they see the effect working (not just when others join).
+  const hasShownSelfEntryRef = useRef(false);
+  useEffect(() => {
+    if (hasJoined && !hasShownSelfEntryRef.current && myUid) {
+      hasShownSelfEntryRef.current = true;
+      // Get the user's name and photo from the profile or auth
+      const displayName = user?.displayName || 'You';
+      setEntryBanner({
+        name: displayName,
+        userId: myUid,
+        photoURL: user?.photoURL || null,
+      });
+    }
+  }, [hasJoined, myUid, user?.displayName, user?.photoURL]);
+
   // REJOIN FIX (2026-10-09): On mount, check if user is already in the
   // room's audience/seats (e.g. rejoining after leave). Without this,
   // hasJoined stays false and the Join button shows incorrectly.
