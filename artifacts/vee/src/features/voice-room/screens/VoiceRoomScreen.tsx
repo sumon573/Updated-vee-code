@@ -437,6 +437,11 @@ export default function VoiceRoomScreen() {
   // REJOIN FIX (2026-10-09): On mount, check if user is already in the
   // room's audience/seats (e.g. rejoining after leave). Without this,
   // hasJoined stays false and the Join button shows incorrectly.
+  // REAL FIX (2026-10-10): also check the persistent userRooms/{uid}/{roomId}
+  // membership index. Audience/seats are cleared on leave, so a member
+  // returning later was never found there — the Join banner showed again
+  // every time. userRooms is never cleared on leave: if it exists, this
+  // user has joined before and enters directly as audience, no Join tap.
   useEffect(() => {
     if (!roomId || !myUid || hasJoined) return;
     let cancelled = false;
@@ -444,6 +449,13 @@ export default function VoiceRoomScreen() {
       try {
         const { get, ref } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
+        // Persistent membership first — the source of truth for "has joined".
+        const memberSnap = await get(ref(database, `userRooms/${myUid}/${roomId}`));
+        if (cancelled) return;
+        if (memberSnap.exists()) {
+          setHasJoined(true);
+          return;
+        }
         const [audSnap, seatsSnap] = await Promise.all([
           get(ref(database, `rooms/${roomId}/audience/${myUid}`)),
           get(ref(database, `rooms/${roomId}/seats`)),
