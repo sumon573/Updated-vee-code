@@ -497,7 +497,10 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       markVoiceStage('audio_session_started', roomId);
       const room = new lk.Room();
       this.room = room;
+      markVoiceStage('room_created', roomId);
       this.registerRoomListeners(room);
+      markVoiceStage('listeners_registered', roomId);
+      markVoiceStage('connect_started', roomId);
       await room.connect(data.url, data.token);
 
       this.connection = 'connected';

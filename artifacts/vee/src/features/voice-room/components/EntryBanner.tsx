@@ -61,8 +61,8 @@ export default function EntryBanner({ name, photoURL, onDismiss }: EntryBannerPr
         transform: [{ translateX: slideAnim }],
         opacity: opacityAnim,
         position: 'absolute',
-        top: 110,
-        left: 16,
+        top: '40%',
+        alignSelf: 'center',
         zIndex: 100,
       }}
       pointerEvents="none"

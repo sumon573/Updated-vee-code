@@ -384,28 +384,26 @@ export default function VoiceRoomScreen() {
       if (reaction.ts <= lastReactionTsRef.current) return;
       if (Date.now() - reaction.ts > 5000) return;
       lastReactionTsRef.current = reaction.ts;
-      // Animate the emoji over every occupied seat
-      const newReactions: Record<string, SeatReaction> = {};
-      seatsRef.current.forEach((member) => {
-        if (!member) return;
-        const translateY = new Animated.Value(0);
-        const opacity    = new Animated.Value(1);
-        newReactions[member.id] = { emoji: reaction.emoji, translateY, opacity };
-        Animated.parallel([
-          Animated.timing(translateY, { toValue: -55, duration: 1600, useNativeDriver: true }),
-          Animated.sequence([
-            Animated.delay(800),
-            Animated.timing(opacity, { toValue: 0, duration: 800, useNativeDriver: true }),
-          ]),
-        ]).start(() => {
-          setSeatReactions((prev: Record<string, SeatReaction>) => {
-            const n = { ...prev }; delete n[member.id]; return n;
-          });
+      // Animate the emoji ONLY over the sender's seat (not everyone's)
+      const senderMember = seatsRef.current.find((m) => m && m.id === reaction.byUid);
+      if (!senderMember) return;
+      const translateY = new Animated.Value(0);
+      const opacity = new Animated.Value(1);
+      const newReactions: Record<string, SeatReaction> = {
+        [senderMember.id]: { emoji: reaction.emoji, translateY, opacity },
+      };
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: -55, duration: 1600, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.delay(800),
+          Animated.timing(opacity, { toValue: 0, duration: 800, useNativeDriver: true }),
+        ]),
+      ]).start(() => {
+        setSeatReactions((prev: Record<string, SeatReaction>) => {
+          const n = { ...prev }; delete n[senderMember.id]; return n;
         });
       });
-      if (Object.keys(newReactions).length > 0) {
-        setSeatReactions((prev: Record<string, SeatReaction>) => ({ ...prev, ...newReactions }));
-      }
+      setSeatReactions((prev: Record<string, SeatReaction>) => ({ ...prev, ...newReactions }));
     });
   }, [roomId]);
 

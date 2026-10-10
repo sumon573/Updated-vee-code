@@ -12,6 +12,7 @@ import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats,
 } from '@/src/features/chat/services/firebaseDmService';
+import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import IMOTopBar from '@/src/features/home/components/IMOTopBar';
@@ -57,6 +58,7 @@ export default function IMOHomeScreen() {
     unreadCount: c.unreadCount || 0,
     isPinned: c.isPinned === true,
     isMuted: false, // TODO: add mute support to Chat type if needed
+    participantId: c.participantId,
   }));
 
   const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
@@ -73,8 +75,17 @@ export default function IMOHomeScreen() {
   }, []);
 
   const handleChatPress = useCallback((chatId: string) => {
-    router.push(`/chat/${chatId}` as any);
+    router.push(`/inbox/${chatId}` as any);
   }, [router]);
+
+  const handleCallPress = useCallback((chat: IMOChat) => {
+    if (!user?.uid || !chat.participantId) return;
+    const callRoomId = buildCallRoomId(user.uid, chat.participantId);
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(chat.participantId)}&remoteName=${encodeURIComponent(chat.name)}&calleeUid=${encodeURIComponent(chat.participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
+    if (chat.photoURL) url += `&remotePhotoURL=${encodeURIComponent(chat.photoURL)}`;
+    if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
+    router.push(url as any);
+  }, [router, user]);
 
   if (activeTab === 'voice') {
     return (
@@ -130,6 +141,7 @@ export default function IMOHomeScreen() {
           <IMOChatListItem
             chat={item}
             onPress={handleChatPress}
+            onCallPress={handleCallPress}
           />
         )}
         style={{ flex: 1 }}

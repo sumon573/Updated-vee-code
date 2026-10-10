@@ -9,6 +9,9 @@ export type VoiceStage =
   | 'sdk_loaded'
   | 'token_ok'
   | 'audio_session_started'
+  | 'room_created'
+  | 'listeners_registered'
+  | 'connect_started'
   | 'room_connected';
 
 /**

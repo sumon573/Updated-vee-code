@@ -20,17 +20,20 @@ export interface IMOChat {
   hasCallIcon?: boolean; // blue phone icon (voice call chats)
   isVoiceClub?: boolean; // special blue ring + audio badge
   isNew?: boolean; // "[New]" prefix in green
+  participantId?: string; // for initiating calls
 }
 
 interface IMOChatListItemProps {
   chat: IMOChat;
   onPress: (chatId: string) => void;
   onLongPress?: (chatId: string) => void;
+  onCallPress?: (chat: IMOChat) => void;
 }
 
-export default function IMOChatListItem({ chat, onPress, onLongPress }: IMOChatListItemProps) {
+export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPress }: IMOChatListItemProps) {
   const handlePress = useCallback(() => onPress(chat.id), [onPress, chat.id]);
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
+  const handleCallPress = useCallback(() => onCallPress?.(chat), [onCallPress, chat]);
 
   const initials = chat.name.trim().charAt(0).toUpperCase() || '?';
 
@@ -161,7 +164,9 @@ export default function IMOChatListItem({ chat, onPress, onLongPress }: IMOChatL
             />
           )}
           {chat.hasCallIcon ? (
-            <Ionicons name="call" size={22} color="#2196F3" />
+            <TouchableOpacity onPress={handleCallPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="call" size={22} color="#2196F3" />
+            </TouchableOpacity>
           ) : (
             <Ionicons name="chevron-forward" size={20} color="#BDBDBD" />
           )}
