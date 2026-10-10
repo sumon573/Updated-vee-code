@@ -154,6 +154,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // FIX (2026-10-10): Request all permissions on first app open (Sumon's order).
+  // Separate useEffect, non-fatal: failures are swallowed, app continues.
+  useEffect(() => {
+    import('@/src/utils/firstLaunchPermissions').then(({ requestAllPermissionsOnFirstLaunch }) => {
+      requestAllPermissionsOnFirstLaunch().catch(() => {});
+    }).catch(() => {});
+  }, []);
+
   // OneSignal: tapping a background/killed-state push opens the right chat
   useEffect(() => {
     let unsubFn: (() => void) | undefined;

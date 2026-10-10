@@ -138,8 +138,11 @@ async function claimRoomIdWithInfo(info: RoomInfo): Promise<string> {
     let result;
     try {
       result = await runTransaction(roomInfoRef, (current) => {
-        // If the slot is already taken (any non-null value), abort the transaction
-        if (current !== null) return undefined;
+        // If the slot is already taken (any non-null value), abort the transaction.
+        // FIX (2026-10-10): Use != (loose) to catch BOTH null and undefined.
+        // On first run, current can be undefined (no local cache) — the old
+        // `!== null` check aborted even for empty slots, failing all 20 tries.
+        if (current != null) return undefined;
         // Atomically claim with the complete room info (id stamped in).
         return { ...info, id };
       });

@@ -134,6 +134,23 @@ export function getPersistedVoiceRoomMuted(): boolean {
 }
 
 /**
+ * Toggle the persisted (minimized) room's mic (2026-10-10).
+ * Lets the user talk/mute while the voice room is minimized.
+ * Returns the new muted state. Safe: no-op if no persisted room.
+ */
+export async function togglePersistedVoiceRoomMic(): Promise<boolean> {
+  if (!_persistedRoom) return true;
+  const newMuted = !_persistedRoom.muted;
+  try {
+    await _persistedRoom.engine.setMuted(newMuted);
+  } catch {
+    // non-critical — keep local state in sync anyway
+  }
+  _persistedRoom.muted = newMuted;
+  return newMuted;
+}
+
+/**
  * Fully tear down the persisted room.
  * Call from MinimizedRoomBar's close (X) button so audio stops
  * when the user discards the minimized room.
@@ -857,16 +874,14 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
       // Minimize path: save the room to module-level persist instead of leaving
       if (_isMinimized && engineRef.current) {
-        // C8 fix: mute before persisting — otherwise the mic stays hot in
-        // background indefinitely with no AppState listener to mute it.
+        // FIX (2026-10-10): Do NOT force-mute on minimize — Sumon requires
+        // talking AND listening while minimized (like IMO). The mic stays in
+        // its current state; the user toggles it from the MinimizedRoomBar.
         const eng = engineRef.current;
-        if (eng && typeof eng.setMuted === 'function') {
-          eng.setMuted(true).catch(() => {});
-        }
         _persistedRoom = {
           engine:    eng,
           roomId:    roomID,
-          muted:     true, // reflect the forced mute above
+          muted:     mutedRef.current,
           published: publishedRef.current,
           speakerOn: speakerOnRef.current,
         };

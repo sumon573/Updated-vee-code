@@ -11,7 +11,7 @@ import {
   subscribeMinimizedRoom,
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
-import { destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
+import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
 import { removeSeat, leaveAudience } from '@/src/features/voice-room/services/firebaseRoomService';
 
 const C = {
@@ -52,6 +52,20 @@ export default function MinimizedRoomBar() {
     return unsub;
   }, []);
 
+  // Mic toggle for minimized room (2026-10-10): talk/mute while minimized.
+  // NOTE: Hooks MUST stay before the `if (!room) return null` below (React Rules).
+  const [micMuted, setMicMuted] = useState<boolean>(() => getMinimizedRoom()?.muted ?? true);
+  useEffect(() => {
+    setMicMuted(room?.muted ?? getPersistedVoiceRoomMuted());
+  }, [room?.muted]);
+  const handleMicToggle = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newMuted = await togglePersistedVoiceRoomMic();
+    setMicMuted(newMuted);
+    const r = getMinimizedRoom();
+    if (r) setMinimizedRoom({ ...r, muted: newMuted });
+  };
+
   if (!room) return null;
 
   const bottomOffset =
@@ -86,8 +100,8 @@ export default function MinimizedRoomBar() {
     setMinimizedRoom(null);
   };
 
-  // Mic indicator color reflects the muted state captured at minimize time
-  const micColor = room.muted ? C.micOff : C.micOn;
+  // Mic indicator color reflects the LIVE muted state (toggleable while minimized)
+  const micColor = micMuted ? C.micOff : C.micOn;
 
   return (
     <Animated.View
@@ -113,8 +127,10 @@ export default function MinimizedRoomBar() {
         zIndex: 999,
       }}
     >
-      {/* Mic state indicator */}
-      <View
+      {/* Mic toggle — tap to talk/mute while minimized (2026-10-10) */}
+      <Pressable
+        onPress={handleMicToggle}
+        hitSlop={10}
         style={{
           width: 36,
           height: 36,
@@ -127,8 +143,8 @@ export default function MinimizedRoomBar() {
           marginRight: 10,
         }}
       >
-        <Feather name={room.muted ? 'mic-off' : 'mic'} size={16} color={micColor} />
-      </View>
+        <Feather name={micMuted ? 'mic-off' : 'mic'} size={16} color={micColor} />
+      </Pressable>
 
       {/* Room info */}
       <View style={{ flex: 1 }}>
