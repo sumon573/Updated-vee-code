@@ -40,6 +40,8 @@ import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { EmojiPanel } from '../components/EmojiPanel';
 import { ExitModal } from '../components/ExitModal';
+// Entry effect: "X is Coming" banner when a user joins (2026-10-10)
+import EntryBanner from '../components/EntryBanner';
 // Track 3: gift fly animation (sender side) + gift receive banners (Firebase giftFeed)
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
 
@@ -224,6 +226,9 @@ export default function VoiceRoomScreen() {
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
+  // Entry effect: "X is Coming" banner (2026-10-10)
+  const [entryBanner, setEntryBanner] = useState<{ name: string; userId: string; photoURL?: string | null } | null>(null);
+  const prevAudienceIdsRef = useRef<Set<string>>(new Set());
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
@@ -640,9 +645,27 @@ export default function VoiceRoomScreen() {
   // Subscribe to audience
   useEffect(() => {
     return subscribeAudience(roomId, (fbAudience) => {
-      setAudience(fbAudience.map(fbAudToParticipant));
+      const participants = fbAudience.map(fbAudToParticipant);
+      setAudience(participants);
+      // ENTRY EFFECT (2026-10-10): Detect new joins and show "X is Coming" banner.
+      // Compare with previous IDs; skip the initial load (prev set is empty).
+      const prevIds = prevAudienceIdsRef.current;
+      if (prevIds.size > 0) {
+        for (const p of participants) {
+          if (!prevIds.has(p.id) && p.id !== myUid) {
+            // New joiner (not me) — show entry banner
+            setEntryBanner({
+              name: p.name || 'User',
+              userId: p.id,
+              photoURL: (p as any).photoURL || null,
+            });
+            break; // show one at a time
+          }
+        }
+      }
+      prevAudienceIdsRef.current = new Set(participants.map((p) => p.id));
     });
-  }, [roomId]);
+  }, [roomId, myUid]);
 
   // Subscribe to room chat — Fix 11: track oldest key for pagination
   useEffect(() => {
@@ -2078,6 +2101,15 @@ export default function VoiceRoomScreen() {
           Above the seat grid/chat, below the modals. */}
       <GiftFlyAnimation ref={giftFlyRef} />
       {roomId ? <GiftReceiveBanners roomId={roomId} /> : null}
+      {/* ── Entry effect: "X is Coming" banner (2026-10-10) ── */}
+      {entryBanner ? (
+        <EntryBanner
+          name={entryBanner.name}
+          userId={entryBanner.userId}
+          photoURL={entryBanner.photoURL}
+          onDismiss={() => setEntryBanner(null)}
+        />
+      ) : null}
       <GiftsModal
         visible={giftsOpen}
         onClose={() => { setGiftsOpen(false); setGiftsRecipient(null); }}

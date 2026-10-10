@@ -289,17 +289,24 @@ export async function createRoom(data: {
     ...(data.hostPhotoURL ? { photoURL: data.hostPhotoURL } : {}),
   };
 
-  // Single atomic write: info + host seat together. If this fails,
-  // nothing is written — no zombie room.
-  const roomData = {
-    info: fullInfo,
-    seats: { '0': hostSeat },
-  };
+  // FIX (2026-10-10 v3): Write info and seat SEPARATELY (like the last working
+  // version a5a262e). A combined set(rooms/{id}, {info, seats}) fails because
+  // the rooms/$roomId .write rule is delete-only, and there's no .write on the
+  // intermediate `seats` node — Firebase denies the multi-child write.
+  // Separate writes hit the specific child rules directly (info/.write and
+  // seats/$seatIndex/.write), which allow creation.
+  try {
+    await set(ref(database, `rooms/${roomId}/info`), fullInfo);
+  } catch (e) {
+    // Info write failed — nothing was created, safe to throw
+    throw e;
+  }
 
   try {
-    await set(ref(database, `rooms/${roomId}`), roomData);
+    await set(ref(database, `rooms/${roomId}/seats/0`), hostSeat);
   } catch (e) {
-    // Write failed — nothing was created, safe to throw
+    // Seat write failed — remove the info so we don't leave a half-created room
+    await remove(ref(database, `rooms/${roomId}`)).catch(() => {});
     throw e;
   }
 
