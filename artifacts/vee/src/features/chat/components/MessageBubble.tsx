@@ -242,7 +242,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               </Text>
               {isMe && (
                 <Feather
-                  name={message.status === 'seen' ? 'check-circle' : 'check'}
+                  name={message.status === 'seen' ? 'check-circle' : message.status === 'delivered' ? 'check-double' : 'check'}
                   size={12}
                   color={message.status === 'seen' ? C.seen : C.sent}
                 />

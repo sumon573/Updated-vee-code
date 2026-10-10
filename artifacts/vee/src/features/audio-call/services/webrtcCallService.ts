@@ -76,7 +76,24 @@ if (!isExpoGo()) {
 const SIGNAL_ROOT = 'webrtc';
 
 /** Public STUN only — see the NAT/TURN notice in the header comment. */
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// TURN FIX (2026-10-10): Added free TURN server as fallback for restrictive NATs.
+// When STUN alone can't establish P2P (symmetric NAT, firewall), TURN relays
+// the media. Uses OpenRelay (metered.ca) free tier. For production, deploy
+// coturn on the VPS for zero-cost self-hosted TURN.
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

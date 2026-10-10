@@ -173,13 +173,27 @@ export async function sendMessage(
   const msgsRef = ref(database, `chats/${chatId}/messages`);
   const newMsgRef = push(msgsRef);
 
+  // TICK FIX (2026-10-10): Check if recipient is online to set initial status.
+  // Online → 'delivered' (double tick), Offline → 'sent' (single tick).
+  // When they read it, status becomes 'seen' (blue circle).
+  let initialStatus: DmMessage['status'] = 'sent';
+  try {
+    const { get } = await import('firebase/database');
+    const onlineSnap = await get(ref(database, `users/${participantUid}/online`));
+    if (onlineSnap.exists() && onlineSnap.val() === true) {
+      initialStatus = 'delivered';
+    }
+  } catch {
+    // Online check failed — default to 'sent'
+  }
+
   const msg: Omit<DmMessage, 'id' | 'createdAt'> & { createdAt: object } = {
     chatId,
     senderId: myUid,
     type,
     content,
     createdAt: serverTimestamp() as object,
-    status: 'sent',
+    status: initialStatus,
     reactions: {},
     ...(replyTo ? { replyTo } : {}),
     ...(cloudinaryId ? { cloudinaryId } : {}),

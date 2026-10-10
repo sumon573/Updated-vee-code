@@ -386,14 +386,34 @@ export default function AudioCallScreen({
       if (role === 'caller') {
         // ONLINE CHECK (2026-10-09): show "Calling..." if callee is offline,
         // "Ringing" only when they're online. Professional like IMO.
+        // FIX (2026-10-10): Use real-time listener so "Calling" upgrades to
+        // "Ringing" if callee comes online during call setup.
         try {
           const { get, ref, onValue } = await import('firebase/database');
           const { database } = await import('@/src/config/firebase');
-          const onlineSnap = await get(ref(database, `users/${calleeUid}/online`));
+          const onlineRef = ref(database, `users/${calleeUid}/online`);
+          const onlineSnap = await get(onlineRef);
           const calleeOnline = onlineSnap.exists() && onlineSnap.val() === true;
           if (mountedRef.current) {
             updateCallState(calleeOnline ? 'ringing' : 'calling');
           }
+          // Real-time updates: if callee comes online, switch to ringing
+          const onlineUnsub = onValue(onlineRef, (snap) => {
+            if (!mountedRef.current) return;
+            const isOnline = snap.exists() && snap.val() === true;
+            const current = callStateRef.current;
+            if (isOnline && current === 'calling') {
+              updateCallState('ringing');
+            } else if (!isOnline && current === 'ringing') {
+              updateCallState('calling');
+            }
+          });
+          // Store for cleanup
+          (signalUnsubRef.current as unknown as { onlineUnsub?: () => void }).onlineUnsub = onlineUnsub;
+        } catch {
+          // Online check failed — default to "calling"
+          if (mountedRef.current) updateCallState('calling');
+        }
           // REJECT SYNC (2026-10-09): watch the call signal node. If the
           // callee declines (node removed) before WebRTC connects, show
           // "Declined" instead of ringing forever.
