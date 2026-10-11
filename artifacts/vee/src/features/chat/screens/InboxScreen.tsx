@@ -41,7 +41,11 @@ import {
   loadOlderMessages, DM_PAGE_SIZE,
 } from '../services/firebaseDmService';
 import { showNotification } from '../services/notificationService';
+// NOTE 5 (2026-10-11): offline-first message history cache.
+import { loadChatMessages, saveChatMessages } from '../services/chatCacheService';
 import { DmMessage, DmReplyPreview } from '../types/dm';
+// NOTE 5 (2026-10-11): every error must show its actual cause.
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import { useAuth } from '@/src/context/AuthContext';
 import { submitReport } from '@/src/services/reportService';
@@ -242,13 +246,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Subscribe to Firebase messages ─────────────────────────────────────────
   // RC8-A: subscribeMessages now returns limitToLast(50). The callback
   // receives an oldestKey so we know where to start the "load older" cursor.
+  // NOTE 5 (2026-10-11): offline-first — render the cached page instantly,
+  // then live-subscribe; every live update refreshes the cache. Firebase
+  // onValue auto-syncs on reconnect.
   useEffect(() => {
     shouldScrollRef.current = true;
     setInitialLoading(true);
+    let cancelled = false;
+
+    loadChatMessages(chatId).then((cached) => {
+      if (!cancelled && cached && cached.length > 0) {
+        setMessages(cached);
+        setInitialLoading(false);
+      }
+    });
 
     const unsubMsgs = subscribeMessages(chatId, myUid, (msgs, oldestKey) => {
+      if (cancelled) return;
       setMessages(msgs);
       setOldestRecentKey(oldestKey);
+      saveChatMessages(chatId, msgs);
       // A1: first callback means initial load done — hide spinner.
       setInitialLoading(false);
       // If the page is full, there may be older messages to fetch
@@ -263,7 +280,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }
     });
 
-    return unsubMsgs;
+    return () => {
+      cancelled = true;
+      unsubMsgs();
+    };
   }, [chatId, myUid, participantName]);
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
@@ -421,7 +441,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             : (t('chat.blockedByThemMsg', { name: participantName }) ?? `${participantName} has blocked you.`),
         );
       } else {
-        Alert.alert(t('chat.error'), t('chat.sendError'));
+        // NOTE 5 (2026-10-11): show the ACTUAL cause, not a generic message.
+        Alert.alert(t('chat.error'), `${t('chat.sendError')}\n\nReason: ${getErrorCause(e)}`);
       }
     }
   }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, participantName, t, user]);
