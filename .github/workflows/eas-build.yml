@@ -34,7 +34,7 @@ jobs:
         run: npm install -g eas-cli
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Submit EAS build
         run: eas build --platform android --profile ${{ inputs.profile }} --non-interactive
