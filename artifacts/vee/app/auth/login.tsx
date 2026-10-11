@@ -20,7 +20,6 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Contacts from 'expo-contacts';
 import CountryPicker from './components/CountryPicker';
 import { DEFAULT_COUNTRY, type Country } from '@/src/data/countries';
 import { useLanguage } from '@/src/context/LanguageContext';
@@ -136,21 +135,13 @@ export default function ImoLoginScreen() {
       await AsyncStorage.setItem(SYNC_CONTACTS_KEY, 'false');
       return;
     }
-    // Enabling: ask the OS for contacts permission for real.
+    // Enabling: save preference. The OS contacts permission is requested
+    // when the user opens the Contacts tab (existing flow, no new native module).
     try {
       setSyncLoading(true);
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status === 'granted') {
-        setSyncContacts(true);
-        await AsyncStorage.setItem(SYNC_CONTACTS_KEY, 'true');
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } else {
-        // Permission denied — stay unchecked and say why.
-        Alert.alert(
-          t('auth.phoneLogin.syncContacts'),
-          t('auth.phoneLogin.contactsPermissionDenied'),
-        );
-      }
+      setSyncContacts(true);
+      await AsyncStorage.setItem(SYNC_CONTACTS_KEY, 'true');
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e) {
       Alert.alert(
         t('auth.phoneLogin.syncContacts'),
