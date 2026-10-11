@@ -36,6 +36,10 @@ export type Story = {
   textColor?: string;
   /** Display name of the attached audio file (audio stories only). */
   audioName?: string;
+  /** 2026-10-11: Background music URL for photo/text stories (plays with the story). */
+  musicUrl?: string;
+  /** 2026-10-11: Display name of the background music. */
+  musicName?: string;
   /** Number of times this story was shared (persisted, incremented via transaction). */
   shareCount?: number;
   /** Freehand drawing strokes saved with the story. */

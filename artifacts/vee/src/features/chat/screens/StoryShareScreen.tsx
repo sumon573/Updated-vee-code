@@ -421,9 +421,18 @@ export default function StoryShareScreen() {
       };
 
       if (isTextMode) {
+        // 2026-10-11: Text + music — upload selected music as background.
+        let musicUrl: string | undefined;
+        let musicNameOut: string | undefined;
+        if (musicUri) {
+          const up = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined);
+          musicUrl = up.url;
+          musicNameOut = musicName || 'Music';
+        }
         await publishStory(user.uid, userName, userAvatar, {
           type: 'text',
           content: text.trim(),
+          ...(musicUrl ? { musicUrl, musicName: musicNameOut } : {}),
           ...common,
         });
       } else if (isMusicMode) {
@@ -474,6 +483,14 @@ export default function StoryShareScreen() {
           });
         } else {
           const up = await uploadStoryImage(mediaUri);
+          // 2026-10-11: Photo + music — upload selected music as background.
+          let musicUrl: string | undefined;
+          let musicNameOut: string | undefined;
+          if (musicUri) {
+            const mUp = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined);
+            musicUrl = mUp.url;
+            musicNameOut = musicName || 'Music';
+          }
           await publishStory(user.uid, userName, userAvatar, {
             type: 'image',
             content: up.url,
@@ -484,6 +501,7 @@ export default function StoryShareScreen() {
             drawing: strokes.length > 0 ? strokes : undefined,
             locationName: location?.name,
             effect: effectIdx === 0 ? undefined : effectIdx,
+            ...(musicUrl ? { musicUrl, musicName: musicNameOut } : {}),
           });
         }
       }

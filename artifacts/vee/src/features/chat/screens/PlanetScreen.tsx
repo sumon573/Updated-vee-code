@@ -19,6 +19,24 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRealAuthor } from '../hooks/useRealAuthor';
+import { useAudioPlayer } from 'expo-audio';
+
+/** Background music for Planet photo/text stories (2026-10-11): plays only when active. */
+function PlanetBackgroundMusic({ uri, active }: { uri: string; active: boolean }) {
+  const player = useAudioPlayer(uri);
+  useEffect(() => {
+    try {
+      if (active) player.play();
+      else player.pause();
+    } catch { /* ignore */ }
+  }, [active, player]);
+  useEffect(() => {
+    return () => {
+      try { player.pause(); } catch { /* ignore */ }
+    };
+  }, [player]);
+  return null;
+}
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -257,9 +275,10 @@ function PlanetOverlay({
   );
 }
 
-function PlanetImageItem({ item, overlay }: { item: PlanetItem; overlay: React.ReactNode }) {
+function PlanetImageItem({ item, active, overlay }: { item: PlanetItem; active: boolean; overlay: React.ReactNode }) {
   return (
     <View style={{ width, height: height, backgroundColor: '#000' }}>
+      {item.story.musicUrl && <PlanetBackgroundMusic uri={item.story.musicUrl} active={active} />}
       <Image source={{ uri: item.story.content }} style={{ width, height: '100%' }} resizeMode="cover" />
       <PlanetMediaOverlay story={item.story} />
       {overlay}
@@ -267,10 +286,11 @@ function PlanetImageItem({ item, overlay }: { item: PlanetItem; overlay: React.R
   );
 }
 
-function PlanetTextItem({ item, overlay }: { item: PlanetItem; overlay: React.ReactNode }) {
+function PlanetTextItem({ item, active, overlay }: { item: PlanetItem; active: boolean; overlay: React.ReactNode }) {
   const [c1, c2] = item.story.bgGradient ?? ['#7C3AED', '#4C1D95'];
   return (
     <View style={{ width, height: height, backgroundColor: '#000' }}>
+      {item.story.musicUrl && <PlanetBackgroundMusic uri={item.story.musicUrl} active={active} />}
       <LinearGradient colors={[c1, c2]} style={{ width, height: '100%', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <Text style={{ color: item.story.textColor ?? '#fff', fontSize: 26, fontWeight: '800', textAlign: 'center' }}>
           {item.story.content}
@@ -346,12 +366,12 @@ export default function PlanetScreen() {
       return <PlanetVideoItem item={item} active={active} overlay={overlay} />;
     }
     if (item.story.type === 'image') {
-      return <PlanetImageItem item={item} overlay={overlay} />;
+      return <PlanetImageItem item={item} active={active} overlay={overlay} />;
     }
     if (item.story.type === 'audio') {
       return <PlanetAudioItem item={item} overlay={overlay} />;
     }
-    return <PlanetTextItem item={item} overlay={overlay} />;
+    return <PlanetTextItem item={item} active={active} overlay={overlay} />;
   };
 
   return (

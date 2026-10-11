@@ -49,6 +49,10 @@ export interface PublishPayload {
   textColor?: string;
   /** Display name of the attached audio file (audio stories only). */
   audioName?: string;
+  /** 2026-10-11: Background music URL for photo/text stories. */
+  musicUrl?: string;
+  /** 2026-10-11: Display name of the background music. */
+  musicName?: string;
   /** Freehand drawing strokes (normalized coords) saved with the story. */
   drawing?: DrawingStroke[];
   /** Real place name attached via the location toolbar button. */
@@ -90,6 +94,8 @@ export async function publishStory(
     comments: {} as unknown as StoryComment[],
     privacy,
     ...(payload.audioName ? { audioName: payload.audioName } : {}),
+    ...(payload.musicUrl ? { musicUrl: payload.musicUrl } : {}),
+    ...(payload.musicName ? { musicName: payload.musicName } : {}),
     ...(payload.drawing && payload.drawing.length > 0 ? { drawing: payload.drawing } : {}),
     ...(payload.locationName ? { locationName: payload.locationName } : {}),
     ...(payload.effect ? { effect: payload.effect } : {}),
@@ -149,6 +155,8 @@ function parseStory(storySnap: { key: string | null; val(): unknown }): Story | 
     bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
     textColor: (v.textColor as string) ?? '#FFFFFF',
     audioName: v.audioName as string | undefined,
+          musicUrl: v.musicUrl as string | undefined,
+          musicName: v.musicName as string | undefined,
     shareCount: (v.shareCount as number) ?? 0,
     drawing: (v.drawing as DrawingStroke[]) ?? undefined,
     locationName: v.locationName as string | undefined,
@@ -489,6 +497,8 @@ export function subscribeMyStories(
           bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
           textColor: (v.textColor as string) ?? '#FFFFFF',
           audioName: v.audioName as string | undefined,
+          musicUrl: v.musicUrl as string | undefined,
+          musicName: v.musicName as string | undefined,
           shareCount: (v.shareCount as number) ?? 0,
           drawing: (v.drawing as DrawingStroke[]) ?? undefined,
           locationName: v.locationName as string | undefined,
@@ -525,6 +535,8 @@ export function subscribeMyStories(
           bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
           textColor: (v.textColor as string) ?? '#FFFFFF',
           audioName: v.audioName as string | undefined,
+          musicUrl: v.musicUrl as string | undefined,
+          musicName: v.musicName as string | undefined,
           shareCount: (v.shareCount as number) ?? 0,
           drawing: (v.drawing as DrawingStroke[]) ?? undefined,
           locationName: v.locationName as string | undefined,

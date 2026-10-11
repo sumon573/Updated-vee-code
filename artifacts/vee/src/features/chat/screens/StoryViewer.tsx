@@ -45,10 +45,32 @@ function StoryVideoPlayer({ uri }: { uri: string }) {
   );
 }
 
-/** Real audio playback for audio-type stories (expo-audio). */
+/** Background music for photo/text stories (2026-10-11): auto-plays, no UI. */
+function StoryBackgroundMusic({ uri }: { uri: string }) {
+  const player = useAudioPlayer(uri);
+  useEffect(() => {
+    try {
+      player.play();
+    } catch { /* ignore */ }
+    return () => {
+      try { player.pause(); } catch { /* ignore */ }
+    };
+  }, [player]);
+  return null;
+}
+
+/** Real audio playback for audio-type stories (expo-audio). Auto-plays on mount (2026-10-11). */
 function StoryAudioPlayer({ uri, audioName }: { uri: string; audioName?: string }) {
   const player = useAudioPlayer(uri);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
+
+  // Auto-play when the story is viewed (like video).
+  useEffect(() => {
+    try {
+      player.play();
+      setPlaying(true);
+    } catch { /* ignore */ }
+  }, [player]);
 
   const toggle = useCallback(() => {
     try {
@@ -316,6 +338,10 @@ function StoryCard({
       </SafeAreaView>
 
       {/* Story content */}
+      {/* Background music for photo/text stories (2026-10-11) */}
+      {story.musicUrl && (story.type === 'text' || story.type === 'image') && (
+        <StoryBackgroundMusic uri={story.musicUrl} />
+      )}
       <View
         style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}
         onLayout={(e) => setContentSize({
