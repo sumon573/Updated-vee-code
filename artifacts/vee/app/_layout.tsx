@@ -484,6 +484,7 @@ function RootLayoutNav() {
           options={{ animation: 'fade' }}
         />
         <Stack.Screen name="auth/login" />
+        <Stack.Screen name="auth/verify-otp" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/signup" />
         <Stack.Screen name="auth/forgot-password" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="home/index" />
