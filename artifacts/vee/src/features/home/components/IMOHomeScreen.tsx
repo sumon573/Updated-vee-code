@@ -37,7 +37,7 @@ export default function IMOHomeScreen() {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
-  const { stories, publish } = useStories();
+  const { stories, publish, react, comment } = useStories();
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
@@ -234,6 +234,9 @@ export default function IMOHomeScreen() {
         stories={stories}
         onClose={() => setStoryViewerVisible(false)}
         currentUserId={user?.uid}
+        currentUserName={user?.displayName ?? undefined}
+        onReact={react}
+        onComment={comment}
       />
       <StoryCreator
         visible={storyCreatorVisible}

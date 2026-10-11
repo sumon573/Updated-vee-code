@@ -36,17 +36,25 @@ import {
   onValue, get, serverTimestamp, runTransaction,
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
-import { Story, StoryComment, UserStories } from '../types';
+import { Story, StoryComment, StoryMediaType, DrawingStroke, UserStories } from '../types';
 
 // ─── Publish ─────────────────────────────────────────────────────────────────
 
 export interface PublishPayload {
-  type: 'text' | 'image';
+  type: StoryMediaType;
   content: string;                 // text string or Cloudinary URL
   bgGradient: [string, string];
   mentions: string[];
   cloudinaryId?: string;
   textColor?: string;
+  /** Display name of the attached audio file (audio stories only). */
+  audioName?: string;
+  /** Freehand drawing strokes (normalized coords) saved with the story. */
+  drawing?: DrawingStroke[];
+  /** Real place name attached via the location toolbar button. */
+  locationName?: string;
+  /** Camera-effect filter index (0/undefined = none). */
+  effect?: number;
   /** 'public' → visible to everyone in Planet feed; 'contacts' → only friends can see */
   privacy?: 'public' | 'contacts';
 }
@@ -76,10 +84,15 @@ export async function publishStory(
     createdAt: serverTimestamp() as object,
     expiresAt: now + 24 * 60 * 60 * 1000,   // 24h
     viewCount: 0,
+    shareCount: 0,
     reactions: {},
     // RC8-B2: comments stored as map {} not array [] to support Firebase push keys
     comments: {} as unknown as StoryComment[],
     privacy,
+    ...(payload.audioName ? { audioName: payload.audioName } : {}),
+    ...(payload.drawing && payload.drawing.length > 0 ? { drawing: payload.drawing } : {}),
+    ...(payload.locationName ? { locationName: payload.locationName } : {}),
+    ...(payload.effect ? { effect: payload.effect } : {}),
     ...(payload.cloudinaryId ? { cloudinaryId: payload.cloudinaryId } : {}),
   };
 
@@ -131,10 +144,15 @@ function parseStory(storySnap: { key: string | null; val(): unknown }): Story | 
     userId: v.userId as string,
     userName: v.userName as string,
     userAvatar: v.userAvatar as string | undefined,
-    type: (v.type as 'text' | 'image') ?? 'text',
+    type: (v.type as StoryMediaType) ?? 'text',
     content: (v.content as string) ?? '',
     bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
     textColor: (v.textColor as string) ?? '#FFFFFF',
+    audioName: v.audioName as string | undefined,
+    shareCount: (v.shareCount as number) ?? 0,
+    drawing: (v.drawing as DrawingStroke[]) ?? undefined,
+    locationName: v.locationName as string | undefined,
+    effect: (v.effect as number) ?? undefined,
     mentions: (v.mentions as string[]) ?? [],
     createdAt: (v.createdAt as number) ?? Date.now(),
     expiresAt,
@@ -466,10 +484,15 @@ export function subscribeMyStories(
           userId: v.userId as string,
           userName: v.userName as string,
           userAvatar: v.userAvatar as string | undefined,
-          type: (v.type as 'text' | 'image') ?? 'text',
+          type: (v.type as StoryMediaType) ?? 'text',
           content: (v.content as string) ?? '',
           bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
           textColor: (v.textColor as string) ?? '#FFFFFF',
+          audioName: v.audioName as string | undefined,
+          shareCount: (v.shareCount as number) ?? 0,
+          drawing: (v.drawing as DrawingStroke[]) ?? undefined,
+          locationName: v.locationName as string | undefined,
+          effect: (v.effect as number) ?? undefined,
           mentions: (v.mentions as string[]) ?? [],
           createdAt: (v.createdAt as number) ?? Date.now(),
           expiresAt,
@@ -497,10 +520,15 @@ export function subscribeMyStories(
           userId: v.userId as string,
           userName: v.userName as string,
           userAvatar: v.userAvatar as string | undefined,
-          type: (v.type as 'text' | 'image') ?? 'text',
+          type: (v.type as StoryMediaType) ?? 'text',
           content: (v.content as string) ?? '',
           bgGradient: (v.bgGradient as [string, string]) ?? ['#7C3AED', '#A855F7'],
           textColor: (v.textColor as string) ?? '#FFFFFF',
+          audioName: v.audioName as string | undefined,
+          shareCount: (v.shareCount as number) ?? 0,
+          drawing: (v.drawing as DrawingStroke[]) ?? undefined,
+          locationName: v.locationName as string | undefined,
+          effect: (v.effect as number) ?? undefined,
           mentions: (v.mentions as string[]) ?? [],
           createdAt: (v.createdAt as number) ?? Date.now(),
           expiresAt,
@@ -531,6 +559,26 @@ export function recordStoryView(authorUid: string, storyId: string): void {
   const tryPath = (basePath: string) =>
     runTransaction(
       ref(database, `${basePath}/${authorUid}/${storyId}/viewCount`),
+      (current) => {
+        if (current === null) return undefined;
+        return (typeof current === 'number' ? current : 0) + 1;
+      },
+    ).catch(() => {/* non-critical */});
+
+  tryPath('stories');
+  tryPath('contactStories');
+}
+
+// ─── Share ────────────────────────────────────────────────────────────────────
+
+/**
+ * Increment share count (fire-and-forget, transaction-safe).
+ * Called when a user shares a story so the count persists to Firebase.
+ */
+export function recordStoryShare(authorUid: string, storyId: string): void {
+  const tryPath = (basePath: string) =>
+    runTransaction(
+      ref(database, `${basePath}/${authorUid}/${storyId}/shareCount`),
       (current) => {
         if (current === null) return undefined;
         return (typeof current === 'number' ? current : 0) + 1;

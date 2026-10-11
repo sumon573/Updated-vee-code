@@ -15,6 +15,7 @@ import {
   publishStory,
   recordStoryView,
   reactToStory,
+  addStoryComment,
   deleteStory,
   cleanExpiredStories,
   markStorySeen,
@@ -29,6 +30,7 @@ export interface UseStoriesResult {
   publish: (payload: PublishPayload) => Promise<void>;
   recordView: (authorUid: string, storyId: string) => void;
   react: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
+  comment: (authorUid: string, storyId: string, text: string) => Promise<void>;
   remove: (storyId: string) => Promise<void>;
   markGroupSeen: (userId: string) => void;
 }
@@ -125,6 +127,16 @@ export function useStories(): UseStoriesResult {
     await reactToStory(authorUid, storyId, user.uid, emoji);
   }, [user?.uid]);
 
+  const comment = useCallback(async (authorUid: string, storyId: string, text: string) => {
+    if (!user?.uid) throw new Error('Not authenticated');
+    await addStoryComment(authorUid, storyId, {
+      userId: user.uid,
+      userName: user.displayName ?? 'You',
+      text,
+      userAvatar: user.photoURL ?? undefined,
+    });
+  }, [user]);
+
   const remove = useCallback(async (storyId: string) => {
     if (!user?.uid) return;
     await deleteStory(user.uid, storyId);
@@ -141,5 +153,5 @@ export function useStories(): UseStoriesResult {
     markStorySeen(user.uid, userId).catch(() => {/* background: safe to swallow — seen markers are best-effort */});
   }, [user?.uid]);
 
-  return { stories, myStories, loading, publish, recordView, react, remove, markGroupSeen };
+  return { stories, myStories, loading, publish, recordView, react, comment, remove, markGroupSeen };
 }

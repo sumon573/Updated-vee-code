@@ -1,7 +1,7 @@
 /**
  * Cloudinary Service — Production
  * Unsigned upload (no backend required).
- * Supports: profile photos, story images, room covers.
+ * Supports: profile photos, story images/videos/audio, room covers.
  */
 
 import { CLOUDINARY_CONFIG, isCloudinaryConfigured } from '../config/cloudinary';
@@ -115,6 +115,100 @@ export async function uploadStoryImage(localUri: string): Promise<CloudinaryUplo
     folder: 'vee/stories',
     transformation: 'q_auto,f_auto',
   });
+}
+
+/**
+ * Story video upload — Cloudinary video endpoint.
+ * Used for real video stories (Note 2). Throws with the actual cause on failure.
+ */
+export async function uploadStoryVideo(localUri: string): Promise<CloudinaryUploadResult> {
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary is not configured — cannot upload video story');
+  }
+
+  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: localUri,
+    type: 'video/mp4',
+    name: `story_${Date.now()}.mp4`,
+  } as unknown as Blob);
+  formData.append('upload_preset', uploadPreset);
+  formData.append('folder', 'vee/stories');
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message ?? `Cloudinary video upload failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  return {
+    url: data.secure_url as string,
+    publicId: data.public_id as string,
+    width: data.width as number,
+    height: data.height as number,
+    format: data.format as string,
+  };
+}
+
+/**
+ * Story audio upload — Cloudinary video endpoint (Cloudinary stores audio
+ * under the video resource type). Used for real audio/music stories (Note 2):
+ * the selected file is actually uploaded and the returned URL is stored on
+ * the story so it can be played back. Throws with the actual cause on failure.
+ */
+export async function uploadStoryAudio(
+  localUri: string,
+  fileName?: string,
+  mimeType?: string,
+): Promise<CloudinaryUploadResult> {
+  if (!isCloudinaryConfigured()) {
+    throw new Error('Cloudinary is not configured — cannot upload audio story');
+  }
+
+  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
+
+  const safeName = (fileName || `story_audio_${Date.now()}.mp3`).replace(/[^\w.\-]/g, '_');
+  const formData = new FormData();
+  formData.append('file', {
+    uri: localUri,
+    type: mimeType || 'audio/mpeg',
+    name: safeName,
+  } as unknown as Blob);
+  formData.append('upload_preset', uploadPreset);
+  formData.append('folder', 'vee/stories/audio');
+  formData.append('resource_type', 'video');
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message ?? `Cloudinary audio upload failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  const url = data.secure_url as string;
+  if (!url) {
+    throw new Error('Cloudinary audio upload returned no URL');
+  }
+  return {
+    url,
+    publicId: data.public_id as string,
+    width: 0,
+    height: 0,
+    format: data.format as string,
+  };
 }
 
 /**

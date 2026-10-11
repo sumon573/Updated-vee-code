@@ -10,11 +10,104 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
-import { UserStories, Story } from '../types';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useAudioPlayer } from 'expo-audio';
+import Svg, { Polyline } from 'react-native-svg';
+import { UserStories, Story, DrawingStroke } from '../types';
 import { STORY_REACTIONS } from '../data/storyConstants';
+import { storyEffectTint } from '../data/storyEffects';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 8000;
+
+/** Real video playback for video-type stories (expo-video). */
+function StoryVideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.play();
+  });
+  useEffect(() => {
+    return () => {
+      try { player.pause(); } catch { /* ignore */ }
+    };
+  }, [player]);
+  return (
+    <VideoView
+      player={player}
+      style={{ width: width - 40, height: (width - 40) * 1.4, borderRadius: 20 }}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+/** Real audio playback for audio-type stories (expo-audio). */
+function StoryAudioPlayer({ uri, audioName }: { uri: string; audioName?: string }) {
+  const player = useAudioPlayer(uri);
+  const [playing, setPlaying] = useState(false);
+
+  const toggle = useCallback(() => {
+    try {
+      if (playing) {
+        player.pause();
+        setPlaying(false);
+      } else {
+        player.play();
+        setPlaying(true);
+      }
+    } catch { /* ignore */ }
+  }, [player, playing]);
+
+  useEffect(() => {
+    return () => {
+      try { player.pause(); } catch { /* ignore */ }
+    };
+  }, [player]);
+
+  return (
+    <View style={{
+      width: width - 40, minHeight: 220, borderRadius: 20,
+      backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+    }}>
+      <Feather name="music" size={48} color="#8B5CF6" style={{ marginBottom: 12 }} />
+      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+        {audioName || 'Audio story'}
+      </Text>
+      <Pressable
+        onPress={toggle}
+        hitSlop={12}
+        style={{
+          marginTop: 16, width: 56, height: 56, borderRadius: 28,
+          backgroundColor: '#7C3AED', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Feather name={playing ? 'pause' : 'play'} size={24} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
+/** Render saved freehand drawing strokes (normalized 0..1 coords). */
+function StoryDrawing({ drawing, w, h }: { drawing?: DrawingStroke[]; w: number; h: number }) {
+  if (!drawing || drawing.length === 0) return null;
+  return (
+    <Svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }} pointerEvents="none">
+      {drawing.map((s, i) => (
+        <Polyline
+          key={i}
+          points={s.points.map((p) => `${p.x * w},${p.y * h}`).join(' ')}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={s.width}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+    </Svg>
+  );
+}
 
 const C = {
   bg: '#000000',
@@ -69,23 +162,37 @@ type StoryCardProps = {
   onTapRight: () => void;
   onClose: () => void;
   currentUserId?: string;
+  currentUserName?: string;
   onDelete?: (storyId: string, userId: string) => void;
   onCommentFocus?: () => void;
   onCommentBlur?: () => void;
+  onReact?: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
+  onComment?: (authorUid: string, storyId: string, text: string) => Promise<void>;
 };
 
 function StoryCard({
   story, userStories, storyIndex, totalStories,
   progressAnim, onTapLeft, onTapRight, onClose,
-  currentUserId, onDelete, onCommentFocus, onCommentBlur,
+  currentUserId, currentUserName, onDelete, onCommentFocus, onCommentBlur,
+  onReact, onComment,
 }: StoryCardProps) {
   const { t } = useTranslation();
   const [reactionOpen, setReactionOpen] = useState(false);
-  const [userReaction, setUserReaction] = useState<string | null>(null);
+  const [userReaction, setUserReaction] = useState<string | null>(
+    () => (currentUserId ? story.reactions?.[currentUserId] ?? null : null),
+  );
   const [reply, setReply] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState(story.comments);
+  const [contentSize, setContentSize] = useState({ w: width, h: height });
   const isOwn = !!currentUserId && story.userId === currentUserId;
+
+  // Sync comments/reaction when the story changes or new data arrives via subscription.
+  useEffect(() => {
+    setComments(story.comments);
+    setUserReaction(currentUserId ? story.reactions?.[currentUserId] ?? null : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story.id, story.comments.length]);
 
   const timeAgo = (ts: number): string => {
     const diff = Date.now() - ts;
@@ -96,22 +203,52 @@ function StoryCard({
     return t('chat.storyHoursAgo', { count: Math.floor(diff / h) });
   };
 
-  const submitReaction = (emoji: string) => {
+  const submitReaction = async (emoji: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setUserReaction((prev) => (prev === emoji ? null : emoji));
+    const prev = userReaction;
+    const next = prev === emoji ? null : emoji;
+    setUserReaction(next);
     setReactionOpen(false);
+    try {
+      // REAL persistence — the reaction is written to Firebase.
+      await onReact?.(story.userId, story.id, emoji);
+    } catch (error) {
+      setUserReaction(prev); // revert optimistic state on failure
+      Alert.alert(
+        t('chat.storyError', { defaultValue: 'Error' }),
+        getErrorCause(error),
+      );
+    }
   };
 
-  const submitComment = () => {
+  const submitComment = async () => {
     const trimmed = reply.trim();
     if (!trimmed) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setComments((c) => [
-      ...c,
-      { id: `cmt_${Date.now()}`, userId: 'me', userName: 'You', text: trimmed, ts: Date.now() },
-    ]);
     setReply('');
     onCommentBlur?.();
+    // Optimistic UI; replaced by the server version when the subscription delivers.
+    const tempId = `temp_${Date.now()}`;
+    setComments((c) => [
+      ...c,
+      {
+        id: tempId,
+        userId: currentUserId ?? 'me',
+        userName: currentUserName ?? t('chat.storyYou', { defaultValue: 'You' }),
+        text: trimmed,
+        ts: Date.now(),
+      },
+    ]);
+    try {
+      // REAL persistence — the comment is written to Firebase.
+      await onComment?.(story.userId, story.id, trimmed);
+    } catch (error) {
+      setComments((c) => c.filter((x) => x.id !== tempId)); // drop optimistic
+      Alert.alert(
+        t('chat.storyError', { defaultValue: 'Error' }),
+        getErrorCause(error),
+      );
+    }
   };
 
   const shareToInbox = () => {
@@ -174,7 +311,13 @@ function StoryCard({
       </SafeAreaView>
 
       {/* Story content */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+      <View
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}
+        onLayout={(e) => setContentSize({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })}
+      >
         {story.type === 'text' ? (
           <Text style={{
             // P0-6 fix: white text on bright gradients is illegible.
@@ -196,6 +339,12 @@ function StoryCard({
           }}>
             {story.content}
           </Text>
+        ) : story.type === 'video' && story.content ? (
+          // NOTE 2 (Batch C): video stories play with expo-video
+          <StoryVideoPlayer uri={story.content} />
+        ) : story.type === 'audio' && story.content ? (
+          // NOTE 2 (Batch C): audio stories play the uploaded file with expo-audio
+          <StoryAudioPlayer uri={story.content} audioName={story.audioName} />
         ) : story.content ? (
           // RC6 fix Issue 7: render actual Cloudinary image URL stored in story.content
           <Image
@@ -214,6 +363,35 @@ function StoryCard({
             <Feather name="image" size={48} color="rgba(255,255,255,0.3)" />
           </View>
         )}
+
+        {/* Saved camera-effect filter */}
+        {(() => {
+          const tint = storyEffectTint(story.effect);
+          return tint ? (
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: tint }}
+            />
+          ) : null;
+        })()}
+
+        {/* Saved freehand drawing */}
+        <StoryDrawing drawing={story.drawing} w={contentSize.w} h={contentSize.h} />
+
+        {/* Saved location chip */}
+        {story.locationName ? (
+          <View style={{
+            position: 'absolute', top: 12, alignSelf: 'center',
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16,
+            paddingHorizontal: 12, paddingVertical: 6,
+          }}>
+            <Feather name="map-pin" size={12} color="#fff" style={{ marginRight: 4 }} />
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+              {story.locationName}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Left / Right tap zones — sit above content but below UI overlays */}
@@ -408,10 +586,13 @@ type Props = {
   stories: UserStories[];
   onClose: () => void;
   currentUserId?: string;
+  currentUserName?: string;
   onDelete?: (storyId: string, userId: string) => void;
+  onReact?: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
+  onComment?: (authorUid: string, storyId: string, text: string) => Promise<void>;
 };
 
-export default function StoryViewer({ visible, startUserIndex, stories, onClose, currentUserId, onDelete }: Props) {
+export default function StoryViewer({ visible, startUserIndex, stories, onClose, currentUserId, currentUserName, onDelete, onReact, onComment }: Props) {
   const [userIndex, setUserIndex]   = useState(startUserIndex);
   const [storyIndex, setStoryIndex] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -554,9 +735,12 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
           onTapRight={advance}
           onClose={onClose}
           currentUserId={currentUserId}
+          currentUserName={currentUserName}
           onDelete={onDelete}
           onCommentFocus={pauseTimer}
           onCommentBlur={resumeTimer}
+          onReact={onReact}
+          onComment={onComment}
         />
       </View>
     </Modal>

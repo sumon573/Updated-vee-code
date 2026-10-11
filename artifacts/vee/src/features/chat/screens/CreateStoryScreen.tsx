@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, Pressable, Image,
   Dimensions, ActivityIndicator, Alert,
@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
 import { useTranslation } from 'react-i18next';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const { width, height } = Dimensions.get('window');
 const ITEM_SIZE = (width - 4) / 3;
@@ -19,40 +20,86 @@ export default function CreateStoryScreen() {
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
   const [albumPickerOpen, setAlbumPickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [multiSelect, setMultiSelect] = useState(false);
+  // Pagination cursor — loads ALL phone photos/videos, not just the first 100.
+  const endCursor = useRef<string | undefined>(undefined);
+  const hasNextPage = useRef(true);
+  const activeAlbum = useRef<string | null>(null);
 
-  const loadAssets = useCallback(async (albumId?: string) => {
+  const loadAssets = useCallback(async (albumId?: string, reset = true) => {
+    if (reset) {
+      endCursor.current = undefined;
+      hasNextPage.current = true;
+      activeAlbum.current = albumId ?? null;
+    }
     const result = await MediaLibrary.getAssetsAsync({
       first: 100,
-      album: albumId as any,
+      after: reset ? undefined : endCursor.current,
+      album: (albumId ?? activeAlbum.current) as any,
       mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
       sortBy: [MediaLibrary.SortBy.creationTime],
     });
-    setPhotos(result.assets);
+    endCursor.current = result.endCursor;
+    hasNextPage.current = result.hasNextPage;
+    if (reset) {
+      setPhotos(result.assets);
+    } else {
+      setPhotos((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...result.assets.filter((a) => !seen.has(a.id))];
+      });
+    }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasNextPage.current) return;
+    setLoadingMore(true);
+    try {
+      await loadAssets(undefined, false);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, loadAssets]);
 
   useEffect(() => {
     (async () => {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
-      if (status === 'granted') {
-        await loadAssets();
-        const albumList = await MediaLibrary.getAlbumsAsync();
-        setAlbums(albumList);
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        setHasPermission(status === 'granted');
+        if (status === 'granted') {
+          await loadAssets(undefined, true);
+          const albumList = await MediaLibrary.getAlbumsAsync();
+          setAlbums(albumList);
+        }
+      } catch (error) {
+        Alert.alert(
+          t('story.error', { defaultValue: 'Error' }),
+          getErrorCause(error),
+        );
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
-  }, [loadAssets]);
+  }, [loadAssets, t]);
 
   const handleAlbumSelect = useCallback(async (album: MediaLibrary.Album | null) => {
     setAlbumPickerOpen(false);
     setSelectedAlbum(album?.id ?? null);
     setLoading(true);
-    await loadAssets(album?.id);
-    setLoading(false);
-  }, [loadAssets]);
+    try {
+      await loadAssets(album?.id, true);
+    } catch (error) {
+      Alert.alert(
+        t('story.error', { defaultValue: 'Error' }),
+        getErrorCause(error),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [loadAssets, t]);
 
   const handleMultiSelectToggle = useCallback(() => {
     setMultiSelect(prev => {
@@ -260,6 +307,13 @@ export default function CreateStoryScreen() {
           keyExtractor={(item) => item.id}
           numColumns={3}
           contentContainerStyle={{ paddingBottom: 100 }}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator size="small" color="#1877F2" style={{ paddingVertical: 16 }} />
+            ) : null
+          }
         />
       )}
 

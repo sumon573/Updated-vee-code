@@ -11,16 +11,35 @@ export type StoryComment = {
 
 export type StoryPrivacy = 'public' | 'contacts';
 
+export type StoryMediaType = 'text' | 'image' | 'video' | 'audio';
+
+/** A freehand drawing stroke on a story (normalized 0..1 coordinates). */
+export type DrawingStroke = {
+  color: string;
+  width: number;
+  points: { x: number; y: number }[];
+};
+
 export type Story = {
   id: string;
   userId: string;
   userName: string;
   userAvatar?: string;
-  type: 'text' | 'image';
-  /** For text stories: the display text. For image stories: Cloudinary URL (or local URI during mock). */
+  type: StoryMediaType;
+  /** For text stories: the display text. For image/video/audio stories: Cloudinary URL. */
   content: string;
   bgGradient?: [string, string]; // for text stories
   textColor?: string;
+  /** Display name of the attached audio file (audio stories only). */
+  audioName?: string;
+  /** Number of times this story was shared (persisted, incremented via transaction). */
+  shareCount?: number;
+  /** Freehand drawing strokes saved with the story. */
+  drawing?: DrawingStroke[];
+  /** Real place name attached via the location toolbar button. */
+  locationName?: string;
+  /** Camera-effect filter index (0 = none). See EFFECTS in StoryShareScreen. */
+  effect?: number;
   mentions?: string[];            // userIds mentioned
   createdAt: number;
   expiresAt: number;
