@@ -7,6 +7,10 @@ export type StoryComment = {
   text: string;
   /** RC8-B2: renamed from createdAt to ts to match Firebase push-key storage format */
   ts: number;
+  /** 2026-10-11: reply support — ID of the parent comment being replied to */
+  replyTo?: string;
+  /** 2026-10-11: display name of the parent comment's author */
+  replyToName?: string;
 };
 
 export type StoryPrivacy = 'public' | 'contacts';

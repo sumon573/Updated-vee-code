@@ -15,6 +15,8 @@ import { useAudioPlayer } from 'expo-audio';
 import Svg, { Polyline } from 'react-native-svg';
 import { UserStories, Story, DrawingStroke } from '../types';
 import { useRealAuthor } from '../hooks/useRealAuthor';
+import StoryCommentsSheet from '../components/StoryCommentsSheet';
+import { addStoryComment } from '../services/firebaseStoryService';
 import { STORY_REACTIONS } from '../data/storyConstants';
 import { storyEffectTint } from '../data/storyEffects';
 import { getErrorCause } from '@/src/utils/errorDisplay';
@@ -427,29 +429,24 @@ function StoryCard({
         </View>
       )}
 
-      {/* Comments list */}
-      {showComments && (
-        <View style={{
-          position: 'absolute', bottom: 170, left: 16, right: 16,
-          backgroundColor: 'rgba(0,0,0,0.85)',
-          borderRadius: 20, maxHeight: 220, padding: 12,
-          borderWidth: 1, borderColor: C.glassBorder, zIndex: 20,
-        }}>
-          <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', marginBottom: 8 }}>
-            {t('chat.storyComments')}
-          </Text>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 150 }}>
-            {comments.length === 0
-              ? <Text style={{ color: C.dim, fontSize: 13, textAlign: 'center' }}>{t('chat.storyNoComments')}</Text>
-              : comments.map((cmt) => (
-                  <View key={cmt.id} style={{ marginBottom: 8 }}>
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>{cmt.userName}</Text>
-                    <Text style={{ color: C.muted, fontSize: 13 }}>{cmt.text}</Text>
-                  </View>
-                ))}
-          </ScrollView>
-        </View>
-      )}
+      {/* Full comments sheet (2026-10-11): all comments + replies + reactions */}
+      <StoryCommentsSheet
+        visible={showComments}
+        comments={comments}
+        reactions={story.reactions ?? {}}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+        onClose={() => setShowComments(false)}
+        onSendComment={async (text, replyTo) => {
+          if (!currentUserId) throw new Error('Not authenticated');
+          await addStoryComment(story.userId, story.id, {
+            userId: currentUserId,
+            userName: currentUserName ?? 'You',
+            text,
+            ...(replyTo ? { replyTo: replyTo.id, replyToName: replyTo.name } : {}),
+          });
+        }}
+      />
 
       {/* Bottom bar */}
       <KeyboardAvoidingView
@@ -498,7 +495,7 @@ function StoryCard({
                 <Text style={{ color: C.muted, fontSize: 11 }}>{t('chat.storyReact')}</Text>
               </Pressable>
 
-              <Pressable onPress={() => setShowComments((v) => !v)} style={{ alignItems: 'center', gap: 4 }}>
+              <Pressable onPress={() => setShowComments(true)} style={{ alignItems: 'center', gap: 4 }}>
                 <View style={{
                   width: 44, height: 44, borderRadius: 22,
                   backgroundColor: C.glass, borderWidth: 1, borderColor: C.glassBorder,

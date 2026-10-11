@@ -639,7 +639,7 @@ export async function reactToStory(
 export async function addStoryComment(
   authorUid: string,
   storyId: string,
-  comment: Pick<StoryComment, 'userId' | 'userName' | 'text' | 'userAvatar'>,
+  comment: Pick<StoryComment, 'userId' | 'userName' | 'text' | 'userAvatar' | 'replyTo' | 'replyToName'>,
 ): Promise<string> {
   const basePath = await resolveStoryPath(authorUid, storyId);
   if (!basePath) throw new Error('Story not found');
@@ -651,6 +651,8 @@ export async function addStoryComment(
     userName: comment.userName,
     text: comment.text,
     ...(comment.userAvatar ? { userAvatar: comment.userAvatar } : {}),
+    ...(comment.replyTo ? { replyTo: comment.replyTo } : {}),
+    ...(comment.replyToName ? { replyToName: comment.replyToName } : {}),
     ts: Date.now(),
   });
   return newRef.key!;
@@ -682,9 +684,9 @@ export function subscribeStoryComments(
     const result: StoryComment[] = [];
     if (!snap.exists()) return result;
     snap.forEach((child) => {
-      const v = child.val() as { userId: string; userName: string; userAvatar?: string; text: string; ts: number };
+      const v = child.val() as { userId: string; userName: string; userAvatar?: string; text: string; ts: number; replyTo?: string; replyToName?: string };
       if (child.key) {
-        result.push({ id: child.key, userId: v.userId, userName: v.userName, userAvatar: v.userAvatar, text: v.text, ts: v.ts ?? 0 });
+        result.push({ id: child.key, userId: v.userId, userName: v.userName, userAvatar: v.userAvatar, text: v.text, ts: v.ts ?? 0, replyTo: v.replyTo, replyToName: v.replyToName });
       }
     });
     return result;
