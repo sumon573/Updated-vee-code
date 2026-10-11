@@ -187,11 +187,19 @@ export default function VoiceRoomScreen() {
      a DIFFERENT room and now opens this one, leave the old room completely —
      disconnect its LiveKit engine, remove Firebase seat/audience entries, and
      clear the mini-player. The user is only ever in ONE room at a time.
-     (Returning to the SAME room via "Return" is unaffected.) ── */
+     ── FIX (2026-10-11): If the user opens the SAME room that was minimized
+     (e.g. via room list instead of Return button), clear the minimized state
+     so the Return bar disappears — they're back in the room now. ── */
   useEffect(() => {
     if (!roomId || !myUid || myUid === 'anonymous') return;
     const prev = getMinimizedRoom();
-    if (!prev || prev.id === roomId) return;
+    if (!prev) return;
+    if (prev.id === roomId) {
+      // Same room re-opened directly (not via Return) — clear minimized state
+      // so the Return bar disappears. The LiveKit engine persists.
+      setMinimizedRoom(null);
+      return;
+    }
     // Different room — tear down the old one.
     try {
       destroyPersistedVoiceRoomEngine();
