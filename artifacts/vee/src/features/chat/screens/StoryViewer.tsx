@@ -378,13 +378,27 @@ function StoryCard({
           <StoryAudioPlayer uri={story.content} audioName={story.audioName} />
         ) : story.content ? (
           // RC6 fix Issue 7: render actual Cloudinary image URL stored in story.content
-          <Image
-            source={{ uri: story.content }}
-            style={{
-              width: width - 40, height: (width - 40) * 1.4, borderRadius: 20,
-            }}
-            resizeMode="cover"
-          />
+          <View>
+            <Image
+              source={{ uri: story.content }}
+              style={{
+                width: width - 40, height: (width - 40) * 1.4, borderRadius: 20,
+              }}
+              resizeMode="cover"
+            />
+            {/* Text overlay (2026-10-11) */}
+            {story.overlayText && (
+              <View style={{ position: 'absolute', top: '40%', left: 0, right: 0, alignItems: 'center' }}>
+                <Text style={{
+                  color: '#fff', fontSize: 24, fontWeight: '800', textAlign: 'center',
+                  textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 4, paddingHorizontal: 20,
+                }}>
+                  {story.overlayText}
+                </Text>
+              </View>
+            )}
+          </View>
         ) : (
           // Fallback: content missing (shouldn't happen with Cloudinary upload)
           <View style={{

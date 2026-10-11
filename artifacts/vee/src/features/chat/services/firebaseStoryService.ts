@@ -53,6 +53,8 @@ export interface PublishPayload {
   musicUrl?: string;
   /** 2026-10-11: Display name of the background music. */
   musicName?: string;
+  /** 2026-10-11: Text overlay for photo stories. */
+  overlayText?: string;
   /** Freehand drawing strokes (normalized coords) saved with the story. */
   drawing?: DrawingStroke[];
   /** Real place name attached via the location toolbar button. */
@@ -96,6 +98,7 @@ export async function publishStory(
     ...(payload.audioName ? { audioName: payload.audioName } : {}),
     ...(payload.musicUrl ? { musicUrl: payload.musicUrl } : {}),
     ...(payload.musicName ? { musicName: payload.musicName } : {}),
+    ...(payload.overlayText ? { overlayText: payload.overlayText } : {}),
     ...(payload.drawing && payload.drawing.length > 0 ? { drawing: payload.drawing } : {}),
     ...(payload.locationName ? { locationName: payload.locationName } : {}),
     ...(payload.effect ? { effect: payload.effect } : {}),
@@ -156,6 +159,7 @@ function parseStory(storySnap: { key: string | null; val(): unknown }): Story | 
     textColor: (v.textColor as string) ?? '#FFFFFF',
     audioName: v.audioName as string | undefined,
           musicUrl: v.musicUrl as string | undefined,
+          overlayText: v.overlayText as string | undefined,
           musicName: v.musicName as string | undefined,
     shareCount: (v.shareCount as number) ?? 0,
     drawing: (v.drawing as DrawingStroke[]) ?? undefined,
@@ -498,6 +502,7 @@ export function subscribeMyStories(
           textColor: (v.textColor as string) ?? '#FFFFFF',
           audioName: v.audioName as string | undefined,
           musicUrl: v.musicUrl as string | undefined,
+          overlayText: v.overlayText as string | undefined,
           musicName: v.musicName as string | undefined,
           shareCount: (v.shareCount as number) ?? 0,
           drawing: (v.drawing as DrawingStroke[]) ?? undefined,
@@ -536,6 +541,7 @@ export function subscribeMyStories(
           textColor: (v.textColor as string) ?? '#FFFFFF',
           audioName: v.audioName as string | undefined,
           musicUrl: v.musicUrl as string | undefined,
+          overlayText: v.overlayText as string | undefined,
           musicName: v.musicName as string | undefined,
           shareCount: (v.shareCount as number) ?? 0,
           drawing: (v.drawing as DrawingStroke[]) ?? undefined,

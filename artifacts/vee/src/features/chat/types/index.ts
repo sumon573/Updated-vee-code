@@ -40,6 +40,8 @@ export type Story = {
   musicUrl?: string;
   /** 2026-10-11: Display name of the background music. */
   musicName?: string;
+  /** 2026-10-11: Text overlay for photo stories (draggable/zoomable in editor). */
+  overlayText?: string;
   /** Number of times this story was shared (persisted, incremented via transaction). */
   shareCount?: number;
   /** Freehand drawing strokes saved with the story. */

@@ -35,6 +35,8 @@ import { database } from '@/src/config/firebase';
 import { getUser } from '@/src/services/userService';
 import { useAuth } from '@/src/context/AuthContext';
 import { publishStory } from '@/src/features/chat/services/firebaseStoryService';
+import Draggable from '../components/Draggable';
+import DraggableZoomable from '../components/DraggableZoomable';
 import {
   uploadStoryImage,
   uploadStoryVideo,
@@ -118,6 +120,9 @@ export default function StoryShareScreen() {
   })();
 
   const [text, setText] = useState('');
+  // 2026-10-11: Text overlay for photo mode (#11, #14).
+  const [photoText, setPhotoText] = useState('');
+  const [photoTextOpen, setPhotoTextOpen] = useState(false);
   const [bgColor, setBgColor] = useState(BG_COLORS[0]);
   const [audience, setAudience] = useState<Audience>('everyone');
   const [audienceOpen, setAudienceOpen] = useState(false);
@@ -260,8 +265,23 @@ export default function StoryShareScreen() {
   }, []);
 
   const insertEmoji = useCallback((emoji: string) => {
-    setText((prev) => prev + emoji);
-  }, []);
+    // 2026-10-11: In photo mode, emoji goes to the photo text overlay.
+    if (!isTextMode && (assetUri || cameraUri)) {
+      setPhotoText((prev) => prev + emoji);
+    } else {
+      setText((prev) => prev + emoji);
+    }
+  }, [isTextMode, assetUri, cameraUri]);
+
+  // ── Toolbar: text (opens text overlay in photo mode, 2026-10-11) ──
+  const handleText = useCallback(() => {
+    if (!isTextMode && (assetUri || cameraUri)) {
+      setPhotoTextOpen((v) => !v);
+    } else {
+      // In text mode, focus the text input (handled by UI).
+      handleTextStyle();
+    }
+  }, [isTextMode, assetUri, cameraUri]);
 
   // ── Toolbar: text style (cycles 4 real styles) ──
   const handleTextStyle = useCallback(() => {
@@ -502,6 +522,7 @@ export default function StoryShareScreen() {
             locationName: location?.name,
             effect: effectIdx === 0 ? undefined : effectIdx,
             ...(musicUrl ? { musicUrl, musicName: musicNameOut } : {}),
+            ...(photoText.trim() ? { overlayText: photoText.trim() } : {}),
           });
         }
       }
@@ -623,11 +644,55 @@ export default function StoryShareScreen() {
         ) : isVideoPreview ? (
           <ShareVideoPreview uri={mediaUri as string} />
         ) : mediaUri ? (
-          <Image
-            source={{ uri: mediaUri }}
-            style={{ width, height: height * 0.7 }}
-            resizeMode="contain"
-          />
+          <View>
+            <Image
+              source={{ uri: mediaUri }}
+              style={{ width, height: height * 0.7 }}
+              resizeMode="contain"
+            />
+            {/* Draggable + zoomable text overlay (2026-10-11, #14) */}
+            {photoText ? (
+              <DraggableZoomable initialX={width / 2 - 100} initialY={height * 0.3}>
+                {(scale) => (
+                  <Text style={{
+                    color: '#fff',
+                    fontSize: 24 * scale,
+                    fontWeight: '800',
+                    textAlign: 'center',
+                    textShadowColor: 'rgba(0,0,0,0.8)',
+                    textShadowOffset: { width: 0, height: 2 },
+                    textShadowRadius: 4,
+                    minWidth: 200,
+                  }}>
+                    {photoText}
+                  </Text>
+                )}
+              </DraggableZoomable>
+            ) : null}
+            {/* Text input for photo overlay (2026-10-11, #11) */}
+            {photoTextOpen && (
+              <View style={{
+                position: 'absolute', bottom: 20, left: 20, right: 20,
+                backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 12, padding: 12,
+              }}>
+                <TextInput
+                  style={{ color: '#fff', fontSize: 16 }}
+                  placeholder={t('story.writeSomething', { defaultValue: 'Write something...' })}
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={photoText}
+                  onChangeText={setPhotoText}
+                  multiline
+                  autoFocus
+                />
+                <Pressable
+                  onPress={() => setPhotoTextOpen(false)}
+                  style={{ marginTop: 8, alignSelf: 'flex-end', backgroundColor: '#1877F2', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>{t('story.done', { defaultValue: 'Done' })}</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
         ) : isMusicMode ? (
           <View style={{
             width: width - 40, minHeight: 300,
@@ -689,18 +754,19 @@ export default function StoryShareScreen() {
 
         {/* Location chip */}
         {location && (
-          <View style={{
-            position: 'absolute', top: 70, alignSelf: 'center',
-            flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16,
-            paddingHorizontal: 12, paddingVertical: 6,
-          }}>
-            <Feather name="map-pin" size={12} color="#fff" style={{ marginRight: 4 }} />
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{location.name}</Text>
-            <Pressable onPress={() => setLocation(null)} style={{ marginLeft: 6 }}>
-              <Feather name="x" size={12} color="#fff" />
-            </Pressable>
-          </View>
+          <Draggable initialX={width / 2 - 80} initialY={70}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16,
+              paddingHorizontal: 12, paddingVertical: 6,
+            }}>
+              <Feather name="map-pin" size={12} color="#fff" style={{ marginRight: 4 }} />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{location.name}</Text>
+              <Pressable onPress={() => setLocation(null)} style={{ marginLeft: 6 }}>
+                <Feather name="x" size={12} color="#fff" />
+              </Pressable>
+            </View>
+          </Draggable>
         )}
 
         {/* Saved + in-progress drawing strokes */}
@@ -842,7 +908,7 @@ export default function StoryShareScreen() {
         <Pressable onPress={handleEmoji} style={{ alignItems: 'center' }} hitSlop={10}>
           <Feather name="smile" size={24} color={emojiOpen ? '#1877F2' : '#fff'} />
         </Pressable>
-        <Pressable onPress={handleTextStyle} style={{ alignItems: 'center' }} hitSlop={10}>
+        <Pressable onPress={handleText} style={{ alignItems: 'center' }} hitSlop={10}>
           <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800' }}>A</Text>
         </Pressable>
         <Pressable onPress={handleDraw} style={{ alignItems: 'center' }} hitSlop={10}>

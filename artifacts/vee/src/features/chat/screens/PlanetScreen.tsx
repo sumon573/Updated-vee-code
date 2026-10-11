@@ -280,6 +280,18 @@ function PlanetImageItem({ item, active, overlay }: { item: PlanetItem; active: 
     <View style={{ width, height: height, backgroundColor: '#000' }}>
       {item.story.musicUrl && <PlanetBackgroundMusic uri={item.story.musicUrl} active={active} />}
       <Image source={{ uri: item.story.content }} style={{ width, height: '100%' }} resizeMode="cover" />
+      {/* Text overlay (2026-10-11) */}
+      {item.story.overlayText && (
+        <View style={{ position: 'absolute', top: '40%', left: 0, right: 0, alignItems: 'center' }}>
+          <Text style={{
+            color: '#fff', fontSize: 24, fontWeight: '800', textAlign: 'center',
+            textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 4, paddingHorizontal: 20,
+          }}>
+            {item.story.overlayText}
+          </Text>
+        </View>
+      )}
       <PlanetMediaOverlay story={item.story} />
       {overlay}
     </View>
