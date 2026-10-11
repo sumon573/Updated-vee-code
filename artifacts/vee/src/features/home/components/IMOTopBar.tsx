@@ -66,6 +66,8 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('chat')}
           activeOpacity={0.7}
+          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
+          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
           style={{ alignItems: 'center', paddingVertical: 4 }}
         >
           <View>
@@ -112,6 +114,8 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('voice')}
           activeOpacity={0.7}
+          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
+          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
           style={{ alignItems: 'center', paddingVertical: 4 }}
         >
           <Ionicons
@@ -136,6 +140,8 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('contacts')}
           activeOpacity={0.7}
+          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
+          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
           style={{ alignItems: 'center', paddingVertical: 4 }}
         >
           <Ionicons

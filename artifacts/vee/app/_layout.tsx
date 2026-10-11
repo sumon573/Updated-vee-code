@@ -58,6 +58,8 @@ import {
 } from '@/src/features/audio-call/services/firebaseCallService';
 import { isInteractionBlocked } from '@/src/services/blockService';
 import { tryGetApiBase } from '@/src/utils/platform';
+// NOTE 1 (2026-10-11): Global return-to-room bar for minimized voice rooms.
+import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
 
 // Expo can reject this call when the native splash screen has already been
 // dismissed (for example after a fast reload). Never leave that rejection
@@ -223,6 +225,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           myName={user.displayName ?? 'Vee User'}
         />
       )}
+      {/* NOTE 1 (2026-10-11): Return-to-room bar — renders only when a room is
+          minimized (component returns null otherwise). Mounted globally so the
+          Return button is reachable from any screen. */}
+      {user && <MinimizedRoomBar />}
     </>
   );
 }

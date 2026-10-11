@@ -24,8 +24,9 @@ import { subscribeFollowCounts } from '@/src/services/followService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import {
-  ACHIEVEMENTS, NAMEPLATES, HonorStats, evaluateAchievements,
+  NAMEPLATES, HonorStats, GrantedBadge,
 } from '@/src/data/honor';
+import { subscribeBadges } from '@/src/services/badgeService';
 
 const C = {
   bg: '#FFFFFF',
@@ -84,6 +85,13 @@ export default function HonorScreen() {
     });
   }, [user?.uid]);
 
+  // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
+  const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
+  useEffect(() => {
+    if (!user?.uid) { setGrantedBadges([]); return; }
+    return subscribeBadges(user.uid, setGrantedBadges);
+  }, [user?.uid]);
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -99,7 +107,9 @@ export default function HonorScreen() {
     following: followCounts.following,
     level: calcLevel(followCounts.followers, rooms.length, totalGifts, followCounts.following),
   };
-  const { earned, locked } = evaluateAchievements(stats);
+  // NOTE 7 (2026-10-11): demo badges removed — show only real granted badges
+  const earned = grantedBadges;
+  const locked: GrantedBadge[] = [];
   const ownedNameplates: string[] = profile?.ownedNameplates || [];
   const activeNameplate: string | undefined = (profile as any)?.activeNameplate;
 
@@ -154,7 +164,7 @@ export default function HonorScreen() {
             Achievement
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 24 }}>
-            {/* Earned first, in full color */}
+            {/* Earned first, in full color — NOTE 7: real granted badges only */}
             {earned.map((a) => (
               <View key={a.id} style={{ width: '25%', padding: 6, alignItems: 'center' }}>
                 <View style={{
@@ -165,11 +175,11 @@ export default function HonorScreen() {
                   <Text style={{ fontSize: 34 }}>{a.icon}</Text>
                 </View>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: C.text, marginTop: 5, textAlign: 'center' }}>
-                  {a.label}
+                  {a.name}
                 </Text>
               </View>
             ))}
-            {/* Locked: greyed with requirement */}
+            {/* Locked: none — demo badges removed (NOTE 7) */}
             {locked.map((a) => (
               <View key={a.id} style={{ width: '25%', padding: 6, alignItems: 'center' }}>
                 <View style={{
@@ -182,10 +192,7 @@ export default function HonorScreen() {
                     style={{ position: 'absolute', bottom: 6, right: 6 }} />
                 </View>
                 <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted, marginTop: 5, textAlign: 'center' }}>
-                  {a.label}
-                </Text>
-                <Text style={{ fontSize: 9, color: C.mutedDim, textAlign: 'center', marginTop: 1 }}>
-                  {a.requirement}
+                  {a.name}
                 </Text>
               </View>
             ))}
