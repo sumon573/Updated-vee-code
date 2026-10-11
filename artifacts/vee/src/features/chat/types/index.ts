@@ -84,5 +84,6 @@ export type Chat = {
   hasStory: boolean;
   storySeen: boolean;
   isPinned?: boolean;
+  isHidden?: boolean;
   isTyping?: boolean;
 };

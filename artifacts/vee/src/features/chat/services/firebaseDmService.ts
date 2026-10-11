@@ -213,13 +213,14 @@ export async function sendMessage(
   };
 
   await Promise.all([
-    // My entry: unreadCount stays 0 (I sent it)
+    // My entry: unreadCount stays 0 (I sent it), unhide if it was hidden
     update(ref(database, `userChats/${myUid}/${chatId}`), {
       ...meta,
       unreadCount: 0,
+      isHidden: false,
     }),
-    // Participant's entry: increment unread
-    incrementUnread(participantUid, chatId, meta),
+    // Participant's entry: increment unread, unhide if it was hidden
+    incrementUnread(participantUid, chatId, { ...meta, isHidden: false }),
   ]);
 
   // Fire-and-forget push — never blocks message delivery.
@@ -322,6 +323,7 @@ type ChatMetaUpdate = {
   lastMessageType: string;
   lastMessageTime: number;
   unreadCount: number;
+  isHidden?: boolean;
 };
 
 async function incrementUnread(
@@ -550,7 +552,8 @@ export function subscribeUserChats(
     const chats: Chat[] = [];
     snap.forEach((child) => {
       const sanitized = sanitizeChat(child.key!, child.val());
-      if (sanitized) chats.push(sanitized);
+      // Filter out hidden chats (they reappear on new message via isHidden:false)
+      if (sanitized && !sanitized.isHidden) chats.push(sanitized);
     });
     // Sort by lastMessageTime descending
     chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
