@@ -48,7 +48,6 @@ const C = {
 
 const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
 
-type Tab = 'phone' | 'google';
 type NoticeKind = 'error' | 'info';
 
 /** Keep only digits. */
@@ -87,7 +86,6 @@ export default function ImoLoginScreen() {
   const { t } = useTranslation();
   const { language, changeLanguage } = useLanguage();
 
-  const [tab, setTab] = useState<Tab>('phone');
   const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [national, setNational] = useState('');
   const [syncContacts, setSyncContacts] = useState(false);
@@ -224,7 +222,8 @@ export default function ImoLoginScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
           {/* ── Top bar ─────────────────────────────────────────────── */}
           <View
@@ -236,8 +235,8 @@ export default function ImoLoginScreen() {
               paddingBottom: 2,
             }}
           >
-            <Pressable onPress={handleBack} hitSlop={14} style={{ padding: 10 }}>
-              <Feather name="arrow-left" size={26} color="#000000" />
+            <Pressable onPress={handleBack} hitSlop={14} style={{ padding: 8 }}>
+              <Feather name="arrow-left" size={22} color="#000000" />
             </Pressable>
 
             <Pressable
@@ -248,63 +247,19 @@ export default function ImoLoginScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 8,
-                paddingVertical: 10,
+                gap: 6,
+                paddingVertical: 8,
               }}
             >
-              <Feather name="globe" size={30} color="#000000" />
-              <Text style={{ fontSize: 21, fontWeight: '700', color: '#000000' }}>
+              <Feather name="globe" size={18} color="#000000" />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000' }}>
                 {t('auth.phoneLogin.changeLanguage')}
               </Text>
             </Pressable>
 
-            <Pressable onPress={handleHelp} hitSlop={14} style={{ padding: 10 }}>
-              <Feather name="help-circle" size={30} color="#000000" />
+            <Pressable onPress={handleHelp} hitSlop={14} style={{ padding: 8 }}>
+              <Feather name="help-circle" size={20} color="#000000" />
             </Pressable>
-          </View>
-
-          {/* ── Tabs: Phone | Google ────────────────────────────────── */}
-          <View style={{ paddingHorizontal: 40, marginTop: 10, marginBottom: 4 }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                backgroundColor: C.tabBg,
-                borderRadius: 24,
-                padding: 4,
-              }}
-            >
-              {(['phone', 'google'] as Tab[]).map((key) => {
-                const active = tab === key;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => { setTab(key); clearNotice(); Haptics.selectionAsync(); }}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 10,
-                      borderRadius: 20,
-                      backgroundColor: active ? '#FFFFFF' : 'transparent',
-                      alignItems: 'center',
-                      shadowColor: '#000',
-                      shadowOpacity: active ? 0.08 : 0,
-                      shadowRadius: 6,
-                      shadowOffset: { width: 0, height: 2 },
-                      elevation: active ? 2 : 0,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: active ? '800' : '600',
-                        color: active ? C.text : C.muted,
-                      }}
-                    >
-                      {t(key === 'phone' ? 'auth.phoneLogin.phoneTab' : 'auth.phoneLogin.googleTab')}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
           </View>
 
           <ScrollView
@@ -312,8 +267,6 @@ export default function ImoLoginScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {tab === 'phone' ? (
-              <>
                 {/* ── Title ─────────────────────────────────────────── */}
                 <Text
                   style={{
@@ -436,8 +389,60 @@ export default function ImoLoginScreen() {
                   </View>
                 )}
 
+                {/* ── Google sign-in (native picker) ──────────────────── */}
+                <Pressable
+                  onPress={handleGoogle}
+                  disabled={googleLoading}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 56,
+                    borderRadius: 28,
+                    backgroundColor: pressed ? '#F5F5F7' : '#FFFFFF',
+                    borderWidth: 1.5,
+                    borderColor: '#DADCE0',
+                    gap: 12,
+                    marginTop: 24,
+                    shadowColor: '#000',
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 3 },
+                    elevation: 3,
+                    opacity: googleLoading ? 0.7 : 1,
+                  })}
+                >
+                  {googleLoading ? (
+                    <ActivityIndicator color={C.blue} />
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 22, fontWeight: '800', color: '#4285F4' }}>G</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
+                        {t('auth.phoneLogin.continueWithGoogle')}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+
+                {/* ── Or divider ────────────────────────────────────── */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 24,
+                    marginBottom: 8,
+                    gap: 12,
+                  }}
+                >
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#E8E8EC' }} />
+                  <Text style={{ fontSize: 14, color: C.muted, fontWeight: '600' }}>
+                    Or
+                  </Text>
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#E8E8EC' }} />
+                </View>
+
                 {/* Spacer pushes country/phone to the bottom like IMO */}
-                <View style={{ height: 120 }} />
+                <View style={{ height: 40 }} />
 
                 {/* ── Country selector ──────────────────────────────── */}
                 <Pressable
@@ -526,92 +531,6 @@ export default function ImoLoginScreen() {
                     )}
                   </Pressable>
                 </View>
-              </>
-            ) : (
-              <>
-                {/* ── Google tab ────────────────────────────────────── */}
-                <Text
-                  style={{
-                    fontSize: 28,
-                    fontWeight: '800',
-                    color: C.text,
-                    textAlign: 'center',
-                    marginTop: 40,
-                  }}
-                >
-                  {t('auth.phoneLogin.googleTab')}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 16,
-                    color: C.muted,
-                    textAlign: 'center',
-                    marginTop: 12,
-                    lineHeight: 24,
-                    paddingHorizontal: 20,
-                  }}
-                >
-                  {t('auth.phoneLogin.subtitle')}
-                </Text>
-
-                {!!notice && (
-                  <View
-                    style={{
-                      marginTop: 18,
-                      backgroundColor: C.infoBg,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: C.infoBorder,
-                      paddingHorizontal: 14,
-                      paddingVertical: 11,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 10,
-                    }}
-                  >
-                    <Feather name="info" size={17} color={C.blue} />
-                    <Text style={{ flex: 1, fontSize: 14, lineHeight: 20, color: C.text }}>
-                      {notice.text}
-                    </Text>
-                  </View>
-                )}
-
-                <View style={{ height: 60 }} />
-
-                <Pressable
-                  onPress={handleGoogle}
-                  disabled={googleLoading}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 58,
-                    borderRadius: 29,
-                    backgroundColor: pressed ? '#F5F5F7' : '#FFFFFF',
-                    borderWidth: 1.5,
-                    borderColor: '#DADCE0',
-                    gap: 12,
-                    shadowColor: '#000',
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 3 },
-                    elevation: 3,
-                    opacity: googleLoading ? 0.7 : 1,
-                  })}
-                >
-                  {googleLoading ? (
-                    <ActivityIndicator color={C.blue} />
-                  ) : (
-                    <>
-                      <Text style={{ fontSize: 24, fontWeight: '800', color: '#4285F4' }}>G</Text>
-                      <Text style={{ fontSize: 17, fontWeight: '600', color: '#3C4043' }}>
-                        {t('auth.phoneLogin.continueWithGoogle')}
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-              </>
-            )}
           </ScrollView>
         </KeyboardAvoidingView>
 

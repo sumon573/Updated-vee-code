@@ -112,15 +112,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const segs             = segments as string[];
     const inAuthGroup      = segs[0] === 'auth';
-    const onLanguageSelect = inAuthGroup && segs[1] === 'language-select';
     const onRoot           = segs.length === 0 || segs[0] === 'index';
 
     let destination: string | null = null;
-    if (!isLanguageSelected && !onLanguageSelect) {
-      // First launch — must pick a language before anything else.
-      destination = '/auth/language-select';
-    } else if (isLanguageSelected && !user && (!inAuthGroup || onRoot)) {
-      // Language done, not yet logged in.
+    // Language is selected from the login header (IMO-style) — no separate page.
+    if (!user && (!inAuthGroup || onRoot)) {
+      // Not yet logged in.
       destination = '/auth/login';
     } else if (user && (inAuthGroup || onRoot)) {
       // Already authenticated — leave auth screens and the root index spinner.
@@ -478,11 +475,6 @@ function RootLayoutNav() {
         }}
       >
         <Stack.Screen name="index" />
-        {/* Language selection — shown once before login */}
-        <Stack.Screen
-          name="auth/language-select"
-          options={{ animation: 'fade' }}
-        />
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/verify-otp" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/signup" />

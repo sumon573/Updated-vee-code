@@ -1,14 +1,16 @@
 /**
- * googleAuthService — Real Google sign-in via expo-web-browser (2026-10-11).
- * NO new native modules. Uses expo-web-browser (already in working build)
- * for the OAuth flow, then Firebase JS SDK signInWithCredential.
+ * googleAuthService — Native Google sign-in (2026-10-12).
+ * Uses @react-native-google-signin/google-signin for the NATIVE account
+ * picker (phone's Google accounts, IMO-style). Then Firebase JS SDK
+ * signInWithCredential with the ID token.
  *
- * Flow:
- * 1. Open Google OAuth in system browser via WebBrowser.openAuthSessionAsync
- * 2. Get ID token from redirect
- * 3. Sign in to Firebase with GoogleAuthProvider.credential(idToken)
+ * Sumon explicitly requested the native picker (no browser flow).
  */
-import * as WebBrowser from 'expo-web-browser';
+import {
+  GoogleSignin,
+  statusCodes,
+  type User as GoogleUser,
+} from '@react-native-google-signin/google-signin';
 import {
   GoogleAuthProvider,
   signInWithCredential,
@@ -16,46 +18,40 @@ import {
 } from 'firebase/auth';
 import { auth as jsAuth } from '@/src/config/firebase';
 
-WebBrowser.maybeCompleteAuthSession();
-
 /** Web OAuth client ID for vee-chat-36720. */
 export const GOOGLE_WEB_CLIENT_ID =
   '396323750389-0d2amdf6b5uhj38aedmsrjhbifih96uh.apps.googleusercontent.com';
 
-/** Redirect URI for Expo AuthSession proxy. */
-const REDIRECT_URI = 'https://auth.expo.io/@kidoge5908s-team/vee';
-
 export const GOOGLE_AUTH_NOT_WIRED = 'GOOGLE_AUTH_NOT_WIRED';
 export const GOOGLE_AUTH_CANCELLED = 'GOOGLE_AUTH_CANCELLED';
 
+let configured = false;
+
+/** Configure the native Google Sign-In module (call once). */
+function ensureConfigured() {
+  if (!configured) {
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      offlineAccess: false,
+    });
+    configured = true;
+  }
+}
+
 /**
- * Start Google sign-in via system browser OAuth.
- * Opens Google's account picker, returns after Firebase session is established.
+ * Start native Google sign-in.
+ * Shows the phone's Google accounts picker (native UI).
+ * Returns after Firebase session is established.
  */
 export async function signInWithGoogle(): Promise<User> {
-  // Build Google OAuth URL (implicit flow for ID token)
-  const authUrl =
-    'https://accounts.google.com/o/oauth2/v2/auth' +
-    `?client_id=${encodeURIComponent(GOOGLE_WEB_CLIENT_ID)}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    '&response_type=id_token' +
-    '&scope=' + encodeURIComponent('openid profile email') +
-    '&nonce=' + Math.random().toString(36).substring(2);
+  ensureConfigured();
 
-  const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI);
+  // Check if Play Services are available (Android)
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-  if (result.type !== 'success') {
-    throw Object.assign(
-      new Error('Google sign-in was cancelled.'),
-      { code: GOOGLE_AUTH_CANCELLED }
-    );
-  }
-
-  // Extract ID token from redirect URL fragment
-  const url = result.url;
-  const fragment = url.split('#')[1] || url.split('?')[1] || '';
-  const params = new URLSearchParams(fragment);
-  const idToken = params.get('id_token');
+  // This shows the NATIVE account picker
+  const response = await GoogleSignin.signIn();
+  const idToken = response.data?.idToken;
 
   if (!idToken) {
     throw new Error('Google sign-in did not return an ID token.');
@@ -78,10 +74,28 @@ export async function signInWithGoogleIdToken(idToken: string): Promise<User> {
   return user;
 }
 
-/** Map a Google-auth error to an i18n key (same pattern as authService). */
+/** Sign out from Google (native). */
+export async function signOutGoogle(): Promise<void> {
+  ensureConfigured();
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // Ignore — user may not have been signed in via Google
+  }
+}
+
+/** Map a Google-auth error to an i18n key. */
 export function getGoogleAuthErrorKey(error: unknown): string {
   const code = (error as { code?: string })?.code ?? '';
-  if (code === GOOGLE_AUTH_CANCELLED) return 'auth.errors.generic';
+  if (code === statusCodes.SIGN_IN_CANCELLED || code === GOOGLE_AUTH_CANCELLED) {
+    return 'auth.errors.generic';
+  }
+  if (code === statusCodes.IN_PROGRESS) {
+    return 'auth.errors.generic';
+  }
+  if (code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+    return 'auth.errors.networkFailed';
+  }
   if (code === GOOGLE_AUTH_NOT_WIRED) return 'auth.phoneLogin.googlePending';
   const message = (error as { message?: string })?.message ?? '';
   if (/cancelled/i.test(code + message)) return 'auth.errors.generic';
