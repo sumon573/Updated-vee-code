@@ -574,9 +574,16 @@ export function subscribeMyStories(
  * RC8-A: tries the transaction on both paths.
  */
 /**
- * Record a story view — ONE count per unique viewer (2026-10-11).
+ * Record a story view — ONE count per unique viewer (2026-10-11, hardened 2026-10-11).
  * Uses viewers/{viewerUid} dedup: only the first view from each user
  * increments viewCount. Repeated views (including self-views) do not inflate.
+ *
+ * Two-layer protection:
+ *   1. Client-side: get() check — if viewers/{uid} already exists, return early.
+ *      (Catches repeats even if the server rule is not yet deployed.)
+ *   2. Server-side: database.rules.json rejects set() when data.exists().
+ *      (Catches race conditions between simultaneous first views.)
+ *
  * Fire-and-forget; failures are non-critical.
  */
 export function recordStoryView(authorUid: string, storyId: string, viewerUid?: string): void {
@@ -586,6 +593,10 @@ export function recordStoryView(authorUid: string, storyId: string, viewerUid?: 
       if (viewerUid) {
         const viewerRef = ref(database, `${basePath}/${authorUid}/${storyId}/viewers/${viewerUid}`);
         try {
+          // Layer 1: client-side check — skip if already viewed.
+          const existing = await get(viewerRef);
+          if (existing.exists()) return;
+          // Layer 2: server rule (!data.exists()) rejects races.
           await set(viewerRef, true);
         } catch {
           // Already viewed (or no permission) — do NOT increment.

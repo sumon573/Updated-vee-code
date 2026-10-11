@@ -427,6 +427,10 @@
           "isTrending": {
             ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
             ".validate": "newData.isBoolean()"
+          },
+          "totalDiamonds": {
+            ".write": "auth != null",
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())"
           }
         },
         "seats": {

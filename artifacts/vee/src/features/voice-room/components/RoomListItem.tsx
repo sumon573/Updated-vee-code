@@ -27,9 +27,15 @@ const C = {
 const MAX_DP = 6;
 const DP = 24;
 
-type Props = { room: VoiceRoom; onPress?: () => void };
+type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number };
 
-export default function RoomListItem({ room, onPress }: Props) {
+/** Format distance: < 1km shows meters, else km with 1 decimal. */
+function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)}m`;
+  return `${km.toFixed(1)}km`;
+}
+
+export default function RoomListItem({ room, onPress, distanceKm }: Props) {
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, MAX_DP) ?? [];
   const isPrivate = room.isPublic === false;
@@ -82,6 +88,15 @@ export default function RoomListItem({ room, onPress }: Props) {
               <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600' }}>
                 {t('voiceRoom.listItem.members', { count: room.memberCount })}
               </Text>
+              {/* Nearby distance (2026-10-11): REAL owner distance from viewer */}
+              {distanceKm !== undefined && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6, gap: 3 }}>
+                  <Feather name="map-pin" size={11} color="#7C3AED" />
+                  <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '700' }}>
+                    {formatDistance(distanceKm)}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 

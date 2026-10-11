@@ -577,6 +577,15 @@ export default function VoiceRoomScreen() {
   const chatRef = useRef<FlatList<ChatMsg>>(null);
   /** Holds the id of the last auto-scroll setTimeout so it can be cancelled on unmount. */
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Chat history auto-clean (2026-10-11): per-user, client-side.
+   * 10 minutes after THIS user joins, and every 10 minutes after that,
+   * keep only the last 5 messages locally (older ones are hidden, not deleted
+   * from Firebase — other users are unaffected). Each user's timer starts
+   * from their own join time.
+   */
+  const historyCutoffTsRef = useRef<number>(0);
+  const historyCleanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chatInput,    setChatInput]    = useState('');
   const [replyingTo,   setReplyingTo]   = useState<ChatMsg | null>(null);
   /** Active @-mention query: non-null while the user is typing an @-prefixed word. */
@@ -740,13 +749,16 @@ export default function VoiceRoomScreen() {
   }, [roomId]);
 
   // Subscribe to room chat — Fix 11: track oldest key for pagination
+  // 2026-10-11: history auto-clean — hide messages older than the cutoff.
   useEffect(() => {
     return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
-      setMessages(fbMsgs.map(fbChatToMsg));
-      if (fbMsgs.length > 0) {
-        setChatOldestKey(fbMsgs[0].id);
+      const cutoff = historyCutoffTsRef.current;
+      const visible = cutoff > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= cutoff) : fbMsgs;
+      setMessages(visible.map(fbChatToMsg));
+      if (visible.length > 0) {
+        setChatOldestKey(visible[0].id);
         // If we got a full page (50), there might be older messages
-        setHasOlderMsgs(fbMsgs.length >= 50);
+        setHasOlderMsgs(visible.length >= 50);
       }
       // Clear any pending scroll timer before scheduling a new one
       if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
@@ -756,6 +768,30 @@ export default function VoiceRoomScreen() {
       }, 80);
     });
   }, [roomId, myUid]);
+
+  // Chat history auto-clean timer (2026-10-11): starts when THIS user joins.
+  // Every 10 minutes, keep only the last 5 messages (local view only).
+  useEffect(() => {
+    if (!hasJoined) return;
+    if (historyCleanTimerRef.current !== null) return; // already running
+    const TEN_MIN = 10 * 60 * 1000;
+    const clean = () => {
+      setMessages((prev) => {
+        if (prev.length <= 5) return prev;
+        const keep = prev.slice(-5);
+        // Hide everything older than the oldest kept message.
+        historyCutoffTsRef.current = keep[0].ts ?? 0;
+        return keep;
+      });
+    };
+    historyCleanTimerRef.current = setInterval(clean, TEN_MIN);
+    return () => {
+      if (historyCleanTimerRef.current !== null) {
+        clearInterval(historyCleanTimerRef.current);
+        historyCleanTimerRef.current = null;
+      }
+    };
+  }, [hasJoined]);
 
   /* ── mySeatIdx: declared early so all effects below can reference it safely ── */
   const mySeatIdx = useMemo(
@@ -1921,13 +1957,14 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Chat input ── */}
+        {/* ── Chat input (2026-10-11 polish): full-width, properly aligned — no indent */}
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 8,
           marginTop: 8, marginBottom: 6,
+          paddingHorizontal: 2,
         }}>
-          <ScalePress onPress={() => setEmojiPanelOpen(true)}>
-            <Feather name="smile" size={22} color={C.sub} />
+          <ScalePress onPress={() => setEmojiPanelOpen(true)} style={{ padding: 6 }}>
+            <Feather name="smile" size={24} color={C.sub} />
           </ScalePress>
 
           {/* @ Mention shortcut — opens picker for all live members */}
@@ -1937,22 +1974,24 @@ export default function VoiceRoomScreen() {
               setChatInput((prev: string) => prev + '@');
               setMentionQuery('');
             }}
+            hitSlop={8}
             style={{
-              width: 32, height: 32, borderRadius: 16,
+              width: 34, height: 34, borderRadius: 17,
               backgroundColor: accentColor + '22',
               borderWidth: 1, borderColor: accentColor + '44',
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>@</Text>
+            <Text style={{ color: accentColor, fontSize: 15, fontWeight: '900' }}>@</Text>
           </Pressable>
 
           <TextInput
             style={{
               flex: 1, color: C.text, fontSize: 14,
-              backgroundColor: C.card, borderRadius: 20,
-              paddingHorizontal: 14, paddingVertical: 8,
+              backgroundColor: C.card, borderRadius: 22,
+              paddingHorizontal: 16, paddingVertical: 10,
               borderWidth: 1, borderColor: C.borderFaint,
+              minHeight: 42,
             }}
             value={chatInput}
             onChangeText={handleChatInput}
@@ -1966,14 +2005,15 @@ export default function VoiceRoomScreen() {
           <Pressable
             onPress={sendMessage}
             disabled={sendingMsg}
+            hitSlop={8}
             style={{
-              width: 38, height: 38, borderRadius: 19,
+              width: 42, height: 42, borderRadius: 21,
               backgroundColor: chatInput.trim() ? accentColor : C.muted,
               alignItems: 'center', justifyContent: 'center',
               opacity: sendingMsg ? 0.5 : 1,
             }}
           >
-            <Feather name="send" size={15} color={C.text} />
+            <Feather name="send" size={16} color="#fff" />
           </Pressable>
         </View>
       </View>
@@ -2022,8 +2062,8 @@ export default function VoiceRoomScreen() {
           </View>
         </ScalePress>
 
-        {/* Speaker */}
-        <ScalePress onPress={toggleSpeaker}>
+        {/* Speaker (2026-10-11: enlarged touch target) */}
+        <ScalePress onPress={toggleSpeaker} style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={24} color={speakerOn ? C.text : C.sub} />
             <Text style={{ color: speakerOn ? C.text : C.sub, fontSize: 10, fontWeight: '700' }}>

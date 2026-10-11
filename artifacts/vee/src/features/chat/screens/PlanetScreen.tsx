@@ -323,6 +323,10 @@ export default function PlanetScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   // Views recorded once per story per session (prevents double-counting).
   const recordedViews = useRef<Set<string>>(new Set());
+  // Stable viewability config (2026-10-11): an inline object creates a new
+  // reference on every render, which can break onViewableItemsChanged in
+  // React Native and leave a scrolled-away video playing in the background.
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
   useEffect(() => {
     // NOTE 3: real public stories from Firebase, trending-ranked.
@@ -367,6 +371,19 @@ export default function PlanetScreen() {
       }
     }
   }).current;
+
+  // Deterministic backup (2026-10-11): derive the active item from the scroll
+  // offset when momentum settles. With pagingEnabled + snapToInterval={height},
+  // the settled offset is always a multiple of height. This guarantees a
+  // scrolled-away video is paused even if viewability callbacks misfire.
+  const onMomentumScrollEnd = useCallback((e: any) => {
+    const offsetY: number = e?.nativeEvent?.contentOffset?.y ?? 0;
+    const index = Math.round(offsetY / height);
+    const item = items[index];
+    if (item && item.key !== activeKey) {
+      setActiveKey(item.key);
+    }
+  }, [items, activeKey]);
 
   const renderItem = ({ item }: { item: PlanetItem }) => {
     const active = item.key === activeKey;
@@ -436,7 +453,8 @@ export default function PlanetScreen() {
           getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
           showsVerticalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+          viewabilityConfig={viewabilityConfig}
+          onMomentumScrollEnd={onMomentumScrollEnd}
         />
       )}
     </View>

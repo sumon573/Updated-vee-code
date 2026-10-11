@@ -972,8 +972,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     if (!engine) return;
     const newSpeaker = !speakerOnRef.current;
     speakerOnRef.current = newSpeaker;
+    // 2026-10-11: update UI state directly for instant feedback — do not rely
+    // solely on emitLocal()/onLocalStateChange round-trip.
+    setSpeakerOn(newSpeaker);
     engine.setSpeakerOn(newSpeaker).catch(() => {
-      // non-critical — authoritative state arrives via onLocalStateChange
+      // non-critical — state already updated above
     });
   }, []);
 

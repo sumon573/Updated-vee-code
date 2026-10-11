@@ -80,6 +80,8 @@ export type RoomInfo = {
   listenerCount: number;
   active: boolean;
   coverImageUrl?: string;
+  /** Total diamonds sent as gifts in this room (2026-10-11): drives Trending ranking. */
+  totalDiamonds?: number;
   /** Set when the room is deactivated (explicit close or server auto-close). */
   closedAt?: number;
   /** Optional geolocation of the room creator — stored at creation time. */
@@ -291,6 +293,7 @@ export async function createRoom(data: {
     isLocked: false,
     listenerCount: 0,
     active: true,
+    totalDiamonds: 0,
     ...(data.coverImageUrl ? { coverImageUrl: data.coverImageUrl } : {}),
     ...(data.location ? { location: data.location } : {}),
   };
@@ -1301,6 +1304,7 @@ export type RoomGiftEvent = {
 
 /**
  * Broadcast a gift animation event to all participants.
+ * Also increments the room's totalDiamonds (2026-10-11) — drives Trending ranking.
  */
 export async function sendRoomGiftEvent(
   roomId: string,
@@ -1308,6 +1312,12 @@ export async function sendRoomGiftEvent(
 ): Promise<void> {
   const giftRef = push(ref(database, `rooms/${roomId}/giftEvents`));
   await set(giftRef, { ...event, ts: Date.now() });
+  // Trending ranking signal: accumulate diamonds sent in this room.
+  // Fire-and-forget — the animation matters more than the counter.
+  runTransaction(
+    ref(database, `rooms/${roomId}/info/totalDiamonds`),
+    (current) => (typeof current === 'number' ? current : 0) + (event.coins || 0),
+  ).catch(() => {/* non-critical */});
 }
 
 /**

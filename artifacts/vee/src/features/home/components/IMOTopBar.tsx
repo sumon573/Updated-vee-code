@@ -66,9 +66,9 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('chat')}
           activeOpacity={0.7}
-          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
-          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
-          style={{ alignItems: 'center', paddingVertical: 4 }}
+          // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
+          hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
+          style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
         >
           <View>
             <Ionicons
@@ -114,9 +114,9 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('voice')}
           activeOpacity={0.7}
-          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
-          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
-          style={{ alignItems: 'center', paddingVertical: 4 }}
+          // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
+          hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
+          style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
         >
           <Ionicons
             name="megaphone"
@@ -140,9 +140,9 @@ export default function IMOTopBar({
         <TouchableOpacity
           onPress={() => onTabPress('contacts')}
           activeOpacity={0.7}
-          // NOTE 4 (2026-10-11): enlarged touch target — Sumon reported taps missing.
-          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
-          style={{ alignItems: 'center', paddingVertical: 4 }}
+          // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
+          hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
+          style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
         >
           <Ionicons
             name="people"

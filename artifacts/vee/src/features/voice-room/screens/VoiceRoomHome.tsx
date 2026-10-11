@@ -47,7 +47,8 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const NEARBY_MAX_KM = 50;
+const NEARBY_MAX_KM = 10;
+const NEARBY_MIN_KM = 0.5;
 
 const C = {
   text: '#000000',
@@ -347,39 +348,52 @@ export default function VoiceRoomHome({
 
   // Filter recommended rooms by active tab
   const recommended = (() => {
-    // ACTIVITY SORT (2026-10-09): every tab ranks by live activity —
-    // live rooms first, then by member count. No dead room outranks a live one.
+    // LIVE-AUDIENCE DEFINITION (2026-10-11): a room is "active" only when it
+    // has > 0 live audience (seats + listeners). Sumon's rule: rooms with NO
+    // live audience appear in NO category — only truly live rooms are listed.
+    const liveAudience = (r: RoomInfo) => (r.memberCount ?? 0) + (r.listenerCount ?? 0);
+    const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => liveAudience(r) > 0);
+    // TRENDING RANK (2026-10-11): most live audience first, then most diamonds
+    // sent. Global — every user worldwide sees the same Firebase-driven order.
+    const byTrendingRank = (rooms: RoomInfo[]) =>
+      [...rooms].sort((a, b) => {
+        const audDiff = liveAudience(b) - liveAudience(a);
+        if (audDiff !== 0) return audDiff;
+        return (b.totalDiamonds ?? 0) - (a.totalDiamonds ?? 0);
+      });
+    // ACTIVITY SORT (2026-10-09): every other tab ranks by live activity.
     const byActivity = (rooms: RoomInfo[]) =>
       [...rooms].sort((a, b) => {
         const liveDiff = Number(b.isLive ?? false) - Number(a.isLive ?? false);
         if (liveDiff !== 0) return liveDiff;
-        return (b.memberCount ?? 0) - (a.memberCount ?? 0);
+        return liveAudience(b) - liveAudience(a);
       });
     if (activeTab === 'new') {
-      // "New" = rooms created in the last 2 hours, sorted newest first
+      // "New" = live rooms created in the last 2 hours, sorted newest first
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-      return allRooms
+      return onlyLive(allRooms)
         .filter(r => r.createdAt >= twoHoursAgo)
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     }
     if (activeTab === 'trending') {
-      // 2026-10-09: trending = live rooms first, then by member count.
-      // Live status is the primary ranking signal.
-      return byActivity(allRooms.filter(r => r.isTrending || r.memberCount >= 3));
+      // 2026-10-11: trending = ONLY live rooms, ranked by audience then diamonds.
+      return byTrendingRank(onlyLive(allRooms));
     }
-    // Fix 6: Nearby — filter by geolocation proximity
+    // Nearby (2026-10-11): REAL owner distance 500m–10km. Only rooms whose
+    // owner is within this range appear; the distance shows on the card.
     if (activeTab === 'nearby') {
       if (!userLocation) return []; // awaiting location permission
-      return byActivity(allRooms.filter(r => {
+      return byActivity(onlyLive(allRooms).filter(r => {
         if (!r.location) return false;
-        return haversineKm(
+        const km = haversineKm(
           userLocation.lat, userLocation.lng,
           r.location.lat,  r.location.lng,
-        ) <= NEARBY_MAX_KM;
+        );
+        return km >= NEARBY_MIN_KM && km <= NEARBY_MAX_KM;
       }));
     }
-    // For all other tabs, match by category — still activity-sorted
-    return byActivity(allRooms.filter(r => r.category === activeTab));
+    // For all other tabs, match by category — still activity-sorted, live only
+    return byActivity(onlyLive(allRooms).filter(r => r.category === activeTab));
   })();
 
   const isLoading = myLoading || recLoading;
@@ -525,13 +539,20 @@ export default function VoiceRoomHome({
             )}
             {!(activeTab === 'nearby' && (locationLoading || locationDenied)) && (
               recommended.length > 0
-                ? recommended.map((r) => (
-                    <RoomListItem
-                      key={r.id}
-                      room={toVoiceRoom(r)}
-                      onPress={() => handleRoomPress(r)}
-                    />
-                  ))
+                ? recommended.map((r) => {
+                    // Nearby: compute REAL owner distance for the card (2026-10-11)
+                    const distanceKm = activeTab === 'nearby' && userLocation && r.location
+                      ? haversineKm(userLocation.lat, userLocation.lng, r.location.lat, r.location.lng)
+                      : undefined;
+                    return (
+                      <RoomListItem
+                        key={r.id}
+                        room={toVoiceRoom(r)}
+                        distanceKm={distanceKm}
+                        onPress={() => handleRoomPress(r)}
+                      />
+                    );
+                  })
                 : <EmptySection message={t('voiceRoom.home.noCategoryRooms')} />
             )}
           </>
