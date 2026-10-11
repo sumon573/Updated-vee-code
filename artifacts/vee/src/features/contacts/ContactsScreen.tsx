@@ -19,13 +19,14 @@ import { VeeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
-import { getBlockDirection, BlockDirection } from '@/src/services/blockService';
+import { getBlockDirection, BlockDirection, blockUser, unblockUser } from '@/src/services/blockService';
 import {
   FriendRequest, subscribeIncomingRequests, subscribeFriendUids,
   acceptFriendRequest, rejectFriendRequest, removeFriend,
   cancelFriendRequest, subscribeSentRequestUids,
 } from '@/src/services/friendRequestService';
 import { useTranslation } from 'react-i18next';
+import ContactLongPressMenu from './components/ContactLongPressMenu';
 
 const C = {
   bg: '#FFFFFF',
@@ -91,6 +92,37 @@ export default function ContactsScreen() {
   const [cancellingUid, setCancellingUid] = useState<string | null>(null);
 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+
+  // LONG-PRESS MENU (2026-10-11 fix): imo-style context menu for contacts.
+  const [menuContact, setMenuContact] = useState<VeeUser | null>(null);
+  const [menuBlocked, setMenuBlocked] = useState(false);
+
+  const handleContactLongPress = useCallback(async (targetUser: VeeUser) => {
+    if (!me?.uid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Check block status so the menu shows Block vs Unblock correctly.
+    const direction = await getBlockDirection(me.uid, targetUser.uid).catch(() => 'none' as BlockDirection);
+    setMenuBlocked(direction === 'byMe' || direction === 'mutual');
+    setMenuContact(targetUser);
+  }, [me?.uid]);
+
+  const closeContactMenu = useCallback(() => setMenuContact(null), []);
+
+  const handleMenuBlockToggle = useCallback(async () => {
+    if (!me?.uid || !menuContact) return;
+    const target = menuContact;
+    setMenuContact(null);
+    try {
+      if (menuBlocked) {
+        await unblockUser(me.uid, target.uid);
+      } else {
+        await blockUser(me.uid, target.uid, target.name, target.photoURL || undefined);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert(t('contacts.error'), t('contacts.blockError'));
+    }
+  }, [me?.uid, menuContact, menuBlocked, t]);
 
   // ─── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -695,6 +727,8 @@ export default function ContactsScreen() {
               renderItem={({ item }) => (
                 <Pressable
                   onPress={() => handleViewProfile(item)}
+                  onLongPress={() => handleContactLongPress(item)}
+                  delayLongPress={350}
                   style={{
                     flexDirection: 'row', alignItems: 'center',
                     backgroundColor: C.surface,
@@ -772,6 +806,35 @@ export default function ContactsScreen() {
         visible={searchModalOpen}
         onClose={() => setSearchModalOpen(false)}
         onSelectUser={handleUserFound}
+      />
+
+      {/* Long-press context menu (2026-10-11 fix) — imo style */}
+      <ContactLongPressMenu
+        visible={!!menuContact}
+        contactName={menuContact?.name ?? ''}
+        isBlocked={menuBlocked}
+        onChat={() => {
+          const c = menuContact;
+          setMenuContact(null);
+          if (c) handleMessage(c);
+        }}
+        onCall={() => {
+          const c = menuContact;
+          setMenuContact(null);
+          if (c) handleCall(c);
+        }}
+        onViewProfile={() => {
+          const c = menuContact;
+          setMenuContact(null);
+          if (c) handleViewProfile(c);
+        }}
+        onBlockToggle={handleMenuBlockToggle}
+        onUnfriend={() => {
+          const c = menuContact;
+          setMenuContact(null);
+          if (c) handleRemoveFriend(c);
+        }}
+        onClose={closeContactMenu}
       />
     </View>
   );

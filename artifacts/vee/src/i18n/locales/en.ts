@@ -737,6 +737,7 @@ const en = {
     acceptError: 'Could not accept request.',
     rejectError: 'Could not reject request.',
     removeError: 'Could not remove friend.',
+    blockError: 'Could not update block status. Try again.',
     unfollowError: 'Could not unfollow.',
     cancelRequest: 'Cancel',
     cancelRequestTitle: 'Cancel Request?',

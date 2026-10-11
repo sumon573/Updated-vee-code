@@ -17,6 +17,10 @@ export interface MinimizedCall {
     calleeUid?: string;
     remoteUid?: string;
     remoteName?: string;
+    // 2026-10-11 fix: myUid/myName must survive the minimize → return cycle,
+    // otherwise the returned screen can't do mute-sync, call history, etc.
+    myUid?: string;
+    myName?: string;
   };
 }
 
@@ -65,4 +69,35 @@ export function getPersistedCallSession(roomId: string): unknown | null {
 export function clearPersistedCallSession(): void {
   _persistedSession = null;
   _persistedRoomId = null;
+}
+
+// ─── Minimize intent flag (2026-10-11 fix) ───────────────────────────────────
+// Module-level flag set BEFORE navigating away, so every cleanup path
+// (unmount, timers, remote-ended) can tell "minimizing" apart from "ending"
+// even after the component's refs are gone. This fixes the race where
+// React Navigation's own back handler dismissed the modal before our
+// BackHandler ran — the screen unmounted without minimizeCall, and the
+// cleanup ended the call.
+let _isMinimizing = false;
+
+export function setCallMinimizing(v: boolean): void {
+  _isMinimizing = v;
+}
+
+export function isCallMinimizing(): boolean {
+  return _isMinimizing;
+}
+
+// ─── Call screen mount tracking (2026-10-11 fix) ─────────────────────────────
+// endCall(goBack=true) must only navigate when the call screen is actually
+// mounted. Otherwise (e.g. remote hangup while minimized) router.back()
+// would pop whatever screen the user is on.
+let _callScreenMounted = false;
+
+export function setCallScreenMounted(v: boolean): void {
+  _callScreenMounted = v;
+}
+
+export function isCallScreenMounted(): boolean {
+  return _callScreenMounted;
 }

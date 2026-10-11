@@ -61,6 +61,10 @@ import { tryGetApiBase } from '@/src/utils/platform';
 // NOTE 1 (2026-10-11): Global return-to-room bar for minimized voice rooms.
 import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
 import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBar';
+import {
+  isCallMinimizing,
+  getMinimizedCall,
+} from '@/src/features/audio-call/services/callMinimizeStore';
 
 // Expo can reject this call when the native splash screen has already been
 // dismissed (for example after a fast reload). Never leave that rejection
@@ -295,6 +299,14 @@ function IncomingCallListener({
         const status = (call as { status?: string } | null)?.status;
         // background: safe to swallow — signaling cleanup
         if (call && status !== 'accepted') removeCallSignal(uid).catch(() => {});
+        return;
+      }
+      // 2026-10-11 FIX: never pop the incoming-call modal for a stale
+      // 'accepted' signal while its call is minimized. After minimize the
+      // signal node (status='accepted') still exists; any re-fire would
+      // otherwise show the modal again and make minimize look broken.
+      if (call && (call as { status?: string }).status === 'accepted' &&
+          (isCallMinimizing() || getMinimizedCall())) {
         return;
       }
       // Block enforcement: auto-decline calls from blocked users (either way).

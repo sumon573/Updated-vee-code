@@ -21,11 +21,11 @@ import React, {
 } from 'react';
 import {
   View, Text, Pressable, Image, StatusBar, Alert,
-  Platform, PermissionsAndroid, BackHandler,
+  Platform, PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
@@ -33,12 +33,18 @@ import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { WebRTCCallSession } from './services/webrtcCallService';
 import { alertMicDeniedWithSettings } from '@/src/utils/permissionAlert';
 // 2026-10-11 Issue #8: call minimize — persist WebRTC session at module level.
+// 2026-10-11 FIX: module-level minimizing flag + mount tracking fix the race
+// where RN's own back handler dismissed the modal before our BackHandler ran.
 import {
   setMinimizedCall,
   getMinimizedCall,
   setPersistedCallSession,
   getPersistedCallSession,
   clearPersistedCallSession,
+  setCallMinimizing,
+  isCallMinimizing,
+  setCallScreenMounted,
+  isCallScreenMounted,
 } from './services/callMinimizeStore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -128,6 +134,7 @@ export default function AudioCallScreen({
   isReturning,
 }: AudioCallProps) {
   const router = useRouter();
+  const navigation = useNavigation();
   const { t } = useTranslation();
   // Keep screen on during the call — prevents the OS from sleeping the
   // device mid-call (2026-10-09).
@@ -214,6 +221,8 @@ export default function AudioCallScreen({
   const endCall = useCallback((goBack = true) => {
     if (cleaningUpRef.current) return;
     cleaningUpRef.current = true;
+    // 2026-10-11 FIX: a real hangup is never a minimize — reset the flag.
+    setCallMinimizing(false);
 
     // 2026-10-11 Issue #8: a real hangup discards any persisted session.
     clearPersistedCallSession();
@@ -279,11 +288,18 @@ export default function AudioCallScreen({
 
     if (goBack) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      router.back();
+      // 2026-10-11 FIX: only navigate when the call screen is actually
+      // mounted. Without this, a remote hangup while minimized would pop
+      // whatever screen the user is on.
+      if (isCallScreenMounted()) {
+        try {
+          router.back();
+        } catch { /* non-critical — already dismissed */ }
+      }
     }
   }, [role, calleeUid, roomId, router]);
 
-  // ── Minimize call (2026-10-11 Issue #8) ───────────────────────────────────
+  // ── Minimize call (2026-10-11 Issue #8, hardened 2026-10-11) ───────────────
   // Keeps the WebRTC session alive at module level, shows the floating
   // CallMinimizeBar, and navigates back. Audio continues. Returning via the
   // bar reattaches to the persisted session (no re-dial).
@@ -293,15 +309,23 @@ export default function AudioCallScreen({
       endCall(true);
       return;
     }
+    // 2026-10-11 FIX: set the module-level flag FIRST so every cleanup path
+    // (unmount, beforeRemove re-entry, timers) knows this is a minimize.
+    // The component ref alone was not enough — RN's own back handler could
+    // dismiss the modal before our BackHandler ran.
     isMinimizingRef.current = true;
+    setCallMinimizing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Persist the live WebRTC session so unmount doesn't hang up.
     const session = webrtcRef.current;
     if (session && roomId) {
       setPersistedCallSession(roomId, session);
     }
-    // Stop the UI timer (the bar shows its own duration).
+    // Stop ALL timers — a stale 45s/decline timer firing while minimized
+    // would otherwise end the call behind the user's back.
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    if (declineTimerRef.current) { clearTimeout(declineTimerRef.current); declineTimerRef.current = null; }
     setMinimizedCall({
       remoteName: displayName || remoteName || 'Call',
       remotePhotoURL: remotePhoto || remotePhotoURL || null,
@@ -313,22 +337,34 @@ export default function AudioCallScreen({
         ...(calleeUid ? { calleeUid } : {}),
         ...(remoteUid ? { remoteUid } : {}),
         ...(remoteName ? { remoteName } : {}),
+        // 2026-10-11 FIX: carry identity through the minimize → return
+        // cycle so the returned screen stays fully functional.
+        ...(myUid ? { myUid } : {}),
+        ...(myName ? { myName } : {}),
       },
     });
     router.back();
-  }, [roomId, role, calleeUid, remoteUid, remoteName, displayName, remotePhoto, remotePhotoURL, endCall, router]);
+  }, [roomId, role, calleeUid, remoteUid, remoteName, displayName, remotePhoto, remotePhotoURL, myUid, myName, endCall, router]);
 
   // ── Back button → MINIMIZE (2026-10-11 Issue #8, Sumon's order) ──────────
   // Pressing back during a connected call minimizes it (audio continues);
-  // the floating CallMinimizeBar lets the user return. Previously blocked.
+  // the floating CallMinimizeBar lets the user return.
+  // 2026-10-11 FIX: use navigation 'beforeRemove' instead of BackHandler.
+  // React Navigation's own back handler could win the race and dismiss the
+  // modal before our BackHandler ran — the screen unmounted without
+  // minimizeCall, and cleanup ended the call. beforeRemove intercepts EVERY
+  // dismissal path (hardware back, gesture, programmatic) reliably.
   useEffect(() => {
-    const onBackPress = () => {
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      // Already minimizing/ending — let the navigation proceed.
+      if (isMinimizingRef.current || isCallMinimizing() || cleaningUpRef.current) return;
+      // Only intercept connected calls — otherwise let back end normally.
+      if (callStateRef.current !== 'connected') return;
+      e.preventDefault();
       minimizeCall();
-      return true; // prevent default back behavior
-    };
-    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => sub.remove();
-  }, [minimizeCall]);
+    });
+    return unsub;
+  }, [navigation, minimizeCall]);
 
   // ── Fetch remote user's DP from Firebase (fallback if nav param missing) ──
   useEffect(() => {
@@ -351,6 +387,9 @@ export default function AudioCallScreen({
   useEffect(() => {
     mountedRef.current   = true;
     cleaningUpRef.current = false;
+    // 2026-10-11 FIX: track mount state at module level so endCall only
+    // navigates when this screen is actually on screen.
+    setCallScreenMounted(true);
 
     if (isExpoGo()) return;
 
@@ -361,6 +400,9 @@ export default function AudioCallScreen({
       if (persisted) {
         webrtcRef.current = persisted;
         isMinimizingRef.current = false;
+        // 2026-10-11 FIX: clear the module-level minimizing flag — we're
+        // back on the call screen, future unmounts must hang up normally.
+        setCallMinimizing(false);
         // Restore connected state — the call never dropped.
         callStateRef.current = 'connected';
         if (mountedRef.current) {
@@ -599,9 +641,13 @@ export default function AudioCallScreen({
       signalUnsubRef.current = null;
       onlineUnsubRef.current?.();
       onlineUnsubRef.current = null;
+      // 2026-10-11 FIX: track unmount at module level too.
+      setCallScreenMounted(false);
       // 2026-10-11 Issue #8: skip hangup when minimizing — the session
-      // persists at module level and audio continues.
-      if (!cleaningUpRef.current && !isMinimizingRef.current) endCall(false);
+      // persists at module level and audio continues. Check the module
+      // flag as well as the ref (belt and suspenders against the
+      // back-handler race).
+      if (!cleaningUpRef.current && !isMinimizingRef.current && !isCallMinimizing()) endCall(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid, myName]);

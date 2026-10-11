@@ -752,6 +752,7 @@ const hi = {
     noSentRequests: 'कोई भेजा गया Request नहीं',
     rejectError: 'अनुरोध अस्वीकार नहीं हो सका।',
     removeError: 'दोस्त नहीं हटाया जा सका।',
+    blockError: 'ब्लॉक स्थिति अपडेट नहीं हो सकी। पुनः प्रयास करें।',
     unfollowError: 'अनफ़ॉलो नहीं हो सका।',
     error: 'त्रुटि',
   },

@@ -54,6 +54,10 @@ export default function CallMinimizeBar() {
             ...(params.calleeUid ? { calleeUid: params.calleeUid } : {}),
             ...(params.remoteUid ? { remoteUid: params.remoteUid } : {}),
             ...(params.remoteName ? { remoteName: params.remoteName } : {}),
+            // 2026-10-11 FIX: carry identity back so the returned screen
+            // stays fully functional (mute-sync, call history, cleanup).
+            ...(params.myUid ? { myUid: params.myUid } : {}),
+            ...(params.myName ? { myName: params.myName } : {}),
             returning: 'true', // flag: rejoining minimized call, don't re-init
           },
         });
