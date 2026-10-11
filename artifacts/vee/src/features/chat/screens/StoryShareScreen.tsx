@@ -423,7 +423,7 @@ export default function StoryShareScreen() {
       let userAvatar = user.photoURL || undefined;
       try {
         const { get: dbGet, ref: dbRef } = await import('firebase/database');
-        const { database } = await import('@/src/services/firebaseConfig');
+        const { database } = await import('@/src/config/firebase');
         const nameSnap = await dbGet(dbRef(database, `users/${user.uid}/name`));
         if (nameSnap.exists() && nameSnap.val()) userName = nameSnap.val() as string;
         const avatarSnap = await dbGet(dbRef(database, `users/${user.uid}/photoURL`));

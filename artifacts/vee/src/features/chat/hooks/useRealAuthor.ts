@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get, ref } from 'firebase/database';
-import { database } from '@/src/services/firebaseConfig';
+import { database } from '@/src/config/firebase';
 
 // Cache to avoid refetching the same user repeatedly.
 const authorCache = new Map<string, { name: string; avatar?: string }>();
