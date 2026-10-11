@@ -66,7 +66,7 @@ function PlanetVideoItem({ item, active, overlay }: { item: PlanetItem; active: 
   }, [player]);
 
   return (
-    <View style={{ width, height: height - 100, backgroundColor: '#000' }}>
+    <View style={{ width, height: height, backgroundColor: '#000' }}>
       <VideoView
         player={player}
         style={{ width, height: '100%' }}
@@ -102,7 +102,7 @@ function PlanetAudioItem({ item, overlay }: { item: PlanetItem; overlay: React.R
   }, [player]);
 
   return (
-    <View style={{ width, height: height - 100, backgroundColor: '#000' }}>
+    <View style={{ width, height: height, backgroundColor: '#000' }}>
       <LinearGradient
         colors={['#1a1a2e', '#4C1D95']}
         style={{ width, height: '100%', alignItems: 'center', justifyContent: 'center', padding: 32 }}
@@ -259,7 +259,7 @@ function PlanetOverlay({
 
 function PlanetImageItem({ item, overlay }: { item: PlanetItem; overlay: React.ReactNode }) {
   return (
-    <View style={{ width, height: height - 100, backgroundColor: '#000' }}>
+    <View style={{ width, height: height, backgroundColor: '#000' }}>
       <Image source={{ uri: item.story.content }} style={{ width, height: '100%' }} resizeMode="cover" />
       <PlanetMediaOverlay story={item.story} />
       {overlay}
@@ -270,7 +270,7 @@ function PlanetImageItem({ item, overlay }: { item: PlanetItem; overlay: React.R
 function PlanetTextItem({ item, overlay }: { item: PlanetItem; overlay: React.ReactNode }) {
   const [c1, c2] = item.story.bgGradient ?? ['#7C3AED', '#4C1D95'];
   return (
-    <View style={{ width, height: height - 100, backgroundColor: '#000' }}>
+    <View style={{ width, height: height, backgroundColor: '#000' }}>
       <LinearGradient colors={[c1, c2]} style={{ width, height: '100%', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <Text style={{ color: item.story.textColor ?? '#fff', fontSize: 26, fontWeight: '800', textAlign: 'center' }}>
           {item.story.content}
@@ -399,6 +399,10 @@ export default function PlanetScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.key}
           pagingEnabled
+          snapToInterval={height}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
           showsVerticalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
