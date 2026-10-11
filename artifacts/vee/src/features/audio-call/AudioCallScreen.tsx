@@ -32,6 +32,14 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { WebRTCCallSession } from './services/webrtcCallService';
 import { alertMicDeniedWithSettings } from '@/src/utils/permissionAlert';
+// 2026-10-11 Issue #8: call minimize — persist WebRTC session at module level.
+import {
+  setMinimizedCall,
+  getMinimizedCall,
+  setPersistedCallSession,
+  getPersistedCallSession,
+  clearPersistedCallSession,
+} from './services/callMinimizeStore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +103,9 @@ export type AudioCallProps = {
   /** Caller's own photo URL — sent in the Firebase signal so callee's
    *  IncomingCallModal can show the caller's avatar. */
   myPhotoURL?: string;
+  /** 2026-10-11 Issue #8: true when returning from a minimized call —
+   *  reattach to the persisted WebRTC session instead of dialing anew. */
+  isReturning?: boolean;
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -114,6 +125,7 @@ export default function AudioCallScreen({
   roomId, role,
   remoteUid, remoteName, remotePhotoURL,
   calleeUid, myUid, myName, myPhotoURL,
+  isReturning,
 }: AudioCallProps) {
   const router = useRouter();
   const { t } = useTranslation();
@@ -124,6 +136,9 @@ export default function AudioCallScreen({
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);
   const mountedRef     = useRef(true);
   const cleaningUpRef  = useRef(false);
+  // 2026-10-11 Issue #8: true while minimizing — unmount cleanup must NOT
+  // hang up the call; the WebRTC session persists at module level.
+  const isMinimizingRef = useRef(false);
   const callStateRef   = useRef<CallState>(role === 'caller' ? 'calling' : 'connecting');
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,16 +187,8 @@ export default function AudioCallScreen({
 
   // BACK BUTTON → KEEP CALL (2026-10-10, Sumon's order): pressing back during
   // a call must NOT end it. Block the back action; the user stays on the call
-  // screen. Pressing the system Home button backgrounds the app and the call
-  // continues (like IMO/WhatsApp).
-  // NOTE: True in-app minimize (IMO-style floating badge) requires moving
-  // WebRTC to a global singleton — deferred to a dedicated architectural batch.
-  // The floating CallMinimizeBar component is ready for that batch.
-  useEffect(() => {
-    const onBackPress = () => true; // block — do not end call
-    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => sub.remove();
-  }, []);
+  // (The minimize version of this handler is registered after minimizeCall
+  // is defined below — 2026-10-11 Issue #8.)
   /** Remote user's photo — fetched from Firebase as fallback if the nav
    *  param is missing/stale, so the callee's DP always shows. */
   const [remotePhoto, setRemotePhoto] = useState<string | undefined>(remotePhotoURL);
@@ -207,6 +214,10 @@ export default function AudioCallScreen({
   const endCall = useCallback((goBack = true) => {
     if (cleaningUpRef.current) return;
     cleaningUpRef.current = true;
+
+    // 2026-10-11 Issue #8: a real hangup discards any persisted session.
+    clearPersistedCallSession();
+    setMinimizedCall(null);
 
     // Stop timers
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -272,6 +283,53 @@ export default function AudioCallScreen({
     }
   }, [role, calleeUid, roomId, router]);
 
+  // ── Minimize call (2026-10-11 Issue #8) ───────────────────────────────────
+  // Keeps the WebRTC session alive at module level, shows the floating
+  // CallMinimizeBar, and navigates back. Audio continues. Returning via the
+  // bar reattaches to the persisted session (no re-dial).
+  const minimizeCall = useCallback(() => {
+    // Only minimize an active/connected call — ringing calls end normally.
+    if (callStateRef.current !== 'connected') {
+      endCall(true);
+      return;
+    }
+    isMinimizingRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Persist the live WebRTC session so unmount doesn't hang up.
+    const session = webrtcRef.current;
+    if (session && roomId) {
+      setPersistedCallSession(roomId, session);
+    }
+    // Stop the UI timer (the bar shows its own duration).
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setMinimizedCall({
+      remoteName: displayName || remoteName || 'Call',
+      remotePhotoURL: remotePhoto || remotePhotoURL || null,
+      startedAt: Date.now() - elapsedRef.current * 1000,
+      callId: roomId || '',
+      params: {
+        roomId: roomId || '',
+        role,
+        ...(calleeUid ? { calleeUid } : {}),
+        ...(remoteUid ? { remoteUid } : {}),
+        ...(remoteName ? { remoteName } : {}),
+      },
+    });
+    router.back();
+  }, [roomId, role, calleeUid, remoteUid, remoteName, displayName, remotePhoto, remotePhotoURL, endCall, router]);
+
+  // ── Back button → MINIMIZE (2026-10-11 Issue #8, Sumon's order) ──────────
+  // Pressing back during a connected call minimizes it (audio continues);
+  // the floating CallMinimizeBar lets the user return. Previously blocked.
+  useEffect(() => {
+    const onBackPress = () => {
+      minimizeCall();
+      return true; // prevent default back behavior
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [minimizeCall]);
+
   // ── Fetch remote user's DP from Firebase (fallback if nav param missing) ──
   useEffect(() => {
     if (remotePhotoURL || !remoteUid) return;
@@ -295,6 +353,41 @@ export default function AudioCallScreen({
     cleaningUpRef.current = false;
 
     if (isExpoGo()) return;
+
+    // 2026-10-11 Issue #8: returning from minimized call — reattach to the
+    // persisted WebRTC session instead of dialing anew.
+    if (isReturning && roomId) {
+      const persisted = getPersistedCallSession(roomId) as WebRTCCallSession | null;
+      if (persisted) {
+        webrtcRef.current = persisted;
+        isMinimizingRef.current = false;
+        // Restore connected state — the call never dropped.
+        callStateRef.current = 'connected';
+        if (mountedRef.current) {
+          setCallState('connected');
+          // Resume the timer from the minimized duration.
+          const min = getMinimizedCall();
+          if (min) {
+            elapsedRef.current = Math.floor((Date.now() - min.startedAt) / 1000);
+            setElapsed(elapsedRef.current);
+          }
+          if (!timerRef.current) {
+            timerRef.current = setInterval(() => {
+              if (mountedRef.current) {
+                elapsedRef.current += 1;
+                setElapsed(e => e + 1);
+              }
+            }, 1000);
+          }
+        }
+        clearPersistedCallSession();
+        setMinimizedCall(null);
+        return;
+      }
+      // No persisted session (e.g. app was killed) — fall through to end.
+      endCall(true);
+      return;
+    }
 
     (async () => {
       const micGranted = await requestMicPermission({
@@ -506,7 +599,9 @@ export default function AudioCallScreen({
       signalUnsubRef.current = null;
       onlineUnsubRef.current?.();
       onlineUnsubRef.current = null;
-      if (!cleaningUpRef.current) endCall(false);
+      // 2026-10-11 Issue #8: skip hangup when minimizing — the session
+      // persists at module level and audio continues.
+      if (!cleaningUpRef.current && !isMinimizingRef.current) endCall(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid, myName]);
@@ -699,6 +794,23 @@ export default function AudioCallScreen({
               <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={26} color={C.text} />
             </Pressable>
           </View>
+
+          {/* Minimize (2026-10-11 Issue #8) — only during connected calls */}
+          {callState === 'connected' && (
+            <Pressable
+              onPress={minimizeCall}
+              hitSlop={10}
+              style={{
+                width: 56, height: 56, borderRadius: 28,
+                backgroundColor: 'rgba(255,255,255,0.10)',
+                borderWidth: 1.5,
+                borderColor: 'rgba(255,255,255,0.2)',
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Feather name="chevron-down" size={26} color={C.text} />
+            </Pressable>
+          )}
 
           {/* End call */}
           <Pressable

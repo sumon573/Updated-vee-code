@@ -530,6 +530,8 @@ export function sanitizeChat(chatId: string, raw: any): Chat | null {
     hasStory: raw.hasStory === true,
     storySeen: raw.storySeen === true,
     isPinned: raw.isPinned === true,
+    isMuted: raw.isMuted === true,
+    isHidden: raw.isHidden === true,
     isTyping: raw.isTyping === true,
   } as Chat;
 }
@@ -617,6 +619,26 @@ export async function pinChat(uid: string, chatId: string): Promise<void> {
 /** Unpin a chat for a user */
 export async function unpinChat(uid: string, chatId: string): Promise<void> {
   await update(ref(database, `userChats/${uid}/${chatId}`), { isPinned: false });
+}
+
+/** Mute a chat for a user (2026-10-11 Issue #6) */
+export async function muteChat(uid: string, chatId: string): Promise<void> {
+  await update(ref(database, `userChats/${uid}/${chatId}`), { isMuted: true });
+}
+
+/** Unmute a chat for a user (2026-10-11 Issue #6) */
+export async function unmuteChat(uid: string, chatId: string): Promise<void> {
+  await update(ref(database, `userChats/${uid}/${chatId}`), { isMuted: false });
+}
+
+/** Hide a chat for a user (2026-10-11 Issue #6) */
+export async function hideChat(uid: string, chatId: string): Promise<void> {
+  await update(ref(database, `userChats/${uid}/${chatId}`), { isHidden: true });
+}
+
+/** Unhide a chat for a user (2026-10-11 Issue #6) */
+export async function unhideChat(uid: string, chatId: string): Promise<void> {
+  await update(ref(database, `userChats/${uid}/${chatId}`), { isHidden: false });
 }
 
 /** Clear all messages in a chat (soft delete for one user) */

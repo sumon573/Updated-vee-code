@@ -42,3 +42,27 @@ export function subscribeMinimizedCall(listener: Listener): () => void {
     listeners.delete(listener);
   };
 }
+
+// ─── WebRTC session persistence (2026-10-11 Issue #8) ───────────────────────
+// When a call is minimized, the WebRTC session is stored here at module level
+// (like voice rooms persist the LiveKit engine) so audio continues after the
+// AudioCallScreen unmounts. Returning to the call reattaches to this session
+// instead of creating a new peer connection.
+
+let _persistedSession: unknown = null;
+let _persistedRoomId: string | null = null;
+
+export function setPersistedCallSession(roomId: string, session: unknown): void {
+  _persistedSession = session;
+  _persistedRoomId = roomId;
+}
+
+export function getPersistedCallSession(roomId: string): unknown | null {
+  if (_persistedRoomId !== roomId) return null;
+  return _persistedSession;
+}
+
+export function clearPersistedCallSession(): void {
+  _persistedSession = null;
+  _persistedRoomId = null;
+}

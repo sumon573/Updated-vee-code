@@ -8,6 +8,8 @@ import { Participant } from '../types/room';
 import { fmtDiamonds } from '../utils/format';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
+import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
+import { getUser } from '@/src/services/userService';
 
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
 export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, roomTopic, accent,
@@ -41,6 +43,63 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   const { t } = useTranslation();
   const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
 
+  // JOINED MEMBERS (2026-10-11 Issue #5): Room Info shows ALL joined members
+  // (owner → admin → members), not just currently-live participants.
+  const [joinedMembers, setJoinedMembers] = useState<JoinedMember[]>([]);
+  const [joinedProfiles, setJoinedProfiles] = useState<Record<string, { name: string; photoURL?: string }>>({});
+  useEffect(() => {
+    if (!visible || !roomId) return;
+    return subscribeRoomMembers(roomId, setJoinedMembers);
+  }, [visible, roomId]);
+  useEffect(() => {
+    if (joinedMembers.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        joinedMembers.map(async (m) => {
+          try {
+            const p = await getUser(m.uid);
+            return p ? [m.uid, { name: p.name || 'User', photoURL: p.photoURL || undefined }] as const : null;
+          } catch { return null; }
+        }),
+      );
+      if (cancelled) return;
+      const map: Record<string, { name: string; photoURL?: string }> = {};
+      for (const r of results) {
+        if (r) map[r[0]] = r[1];
+      }
+      setJoinedProfiles(map);
+    })();
+    return () => { cancelled = true; };
+  }, [joinedMembers]);
+
+  // Build display list: owner first, then admins, then members (by join time).
+  // Falls back to live allMembers if the joined index is empty.
+  const displayMembers: Participant[] = (() => {
+    if (joinedMembers.length === 0) return allMembers;
+    const roleRank = (r: string) => r === 'owner' ? 0 : r === 'admin' ? 1 : 2;
+    return [...joinedMembers]
+      .sort((a, b) => {
+        const rd = roleRank(a.role) - roleRank(b.role);
+        if (rd !== 0) return rd;
+        return a.joinedAt - b.joinedAt;
+      })
+      .map((m) => {
+        const prof = joinedProfiles[m.uid];
+        const live = allMembers.find((p) => p.id === m.uid);
+        return {
+          id: m.uid,
+          name: prof?.name || live?.name || 'User',
+          initials: (prof?.name || live?.name || 'U').charAt(0).toUpperCase(),
+          color: live?.color ?? '#7C3AED',
+          photoURL: prof?.photoURL || live?.photoURL,
+          speaking: live?.speaking ?? false,
+          muted: live?.muted ?? true,
+          role: (m.role === 'owner' ? 'host' : m.role) as Participant['role'],
+        } as Participant;
+      });
+  })();
+
   // Fetch owner info if not in allMembers (2026-10-09)
   useEffect(() => {
     const ownerInList = allMembers.find((m: Participant) => m.role === 'host');
@@ -63,10 +122,10 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     return () => { cancelled = true; };
   }, [allMembers, ownerId]);
 
-  const owner   = allMembers.find((m: Participant) => m.role === 'host');
-  const admins  = allMembers.filter((m: Participant) => m.role === 'admin');
+  const owner   = displayMembers.find((m: Participant) => m.role === 'host');
+  const admins  = displayMembers.filter((m: Participant) => m.role === 'admin');
   // Sort regular members by activity: speaking first, then unmuted, then by name
-  const regular = allMembers
+  const regular = displayMembers
     .filter((m: Participant) => m.role === 'member')
     .sort((a, b) => {
       if (a.speaking !== b.speaking) return a.speaking ? -1 : 1;
@@ -238,7 +297,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
             borderWidth: 1, borderColor: C.borderFaint, marginBottom: description ? 12 : 20 }}>
             <Row label={t('voiceRoom.info.roomId')}      value={roomId} />
             <Row label={t('voiceRoom.info.type')}        value={ROOM_META.type} />
-            <Row label={t('voiceRoom.info.members')}     value={t('voiceRoom.info.membersTotal', { count: allMembers.length })} />
+            <Row label={t('voiceRoom.info.members')}     value={t('voiceRoom.info.membersTotal', { count: displayMembers.length })} />
             <Row label={t('voiceRoom.info.coinsWeekly')} value={fmtDiamonds(weeklyEarned)} />
           </View>
 

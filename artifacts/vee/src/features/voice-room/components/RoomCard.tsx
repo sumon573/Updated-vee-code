@@ -6,9 +6,9 @@ import { VoiceRoom } from '../types/room';
 
 const SIZE = 84;
 
-type Props = { room: VoiceRoom; onPress?: () => void };
+type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number };
 
-export default function RoomCard({ room, onPress }: Props) {
+export default function RoomCard({ room, onPress, liveCount }: Props) {
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, 4) ?? [];
 
@@ -73,7 +73,7 @@ export default function RoomCard({ room, onPress }: Props) {
           }}>
             <Feather name="volume-2" size={8} color="#fff" />
             <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', marginLeft: 3 }}>
-              {room.memberCount}
+              {liveCount ?? room.memberCount}
             </Text>
           </View>
         </View>

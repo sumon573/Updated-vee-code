@@ -24,6 +24,9 @@ import {
 } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import * as Haptics from 'expo-haptics';
+// 2026-10-11 Issue #7: Nobel content renders INLINE in this tab — no extra
+// click to another screen.
+import NobelScreen from '@/src/features/nobel/NobelScreen';
 
 const C = {
   bg: '#FFFFFF',
@@ -39,11 +42,8 @@ const C = {
   errorText: '#B3261E',
 } as const;
 
-// Nobel rank ladder (product spec — informational only, no user data here).
-const NOBEL_RANKS = [
-  'Knight', 'Baron', 'Viscount', 'Count', 'Marquis',
-  'Duke', 'Royal Duke', 'King', 'SKing', 'SSKing',
-];
+// (2026-10-11 Issue #7: Nobel ranks now render inline via NobelScreen;
+// the static NOBEL_RANKS list was removed.)
 
 function FrameIcon({ icon }: { icon: string }) {
   if (/^https?:\/\//i.test(icon)) {
@@ -158,32 +158,10 @@ export default function DecorationScreen() {
           <ActivityIndicator color={C.blue} size="large" />
         </View>
       ) : tab === 'nobel' ? (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
-          <View style={{ backgroundColor: C.goldBg, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: C.goldBorder }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ fontSize: 28, marginRight: 10 }}>👑</Text>
-              <Text style={{ fontSize: 17, fontWeight: '800', color: C.text }}>Nobel</Text>
-            </View>
-            <Text style={{ fontSize: 14, color: C.text, lineHeight: 21 }}>
-              Nobel ranks are earned by sending diamonds as gifts in voice rooms.
-            </Text>
-            <Text style={{ fontSize: 13, color: C.muted, lineHeight: 20, marginTop: 12 }}>
-              {NOBEL_RANKS.join('  →  ')}
-            </Text>
-            {/* NOTE 10: the real Nobel screen now exists — deep-link to it. */}
-            <Pressable
-              onPress={() => router.push('/nobel')}
-              style={{
-                marginTop: 16, backgroundColor: C.blue, borderRadius: 14,
-                paddingVertical: 13, alignItems: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>
-                Open My Noble 👑
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
+        // 2026-10-11 Issue #7: Nobel content inline — no "Open My Noble" button.
+        <View style={{ flex: 1 }}>
+          <NobelScreen embedded />
+        </View>
       ) : frames.length > 0 ? (
         <ScrollView
           showsVerticalScrollIndicator={false}

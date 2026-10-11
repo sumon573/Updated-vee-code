@@ -41,7 +41,7 @@ function subLevelFor(xp: number, rankIdx: number): number {
   return Math.min(3, Math.floor(((xp - r.minXP) / span) * 3) + 1);
 }
 
-export default function NobelScreen() {
+export default function NobelScreen({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const { user } = useAuth();
   const [noble, setNoble] = useState<NobleState | null>(null);
@@ -160,7 +160,8 @@ export default function NobelScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Header */}
+      {/* Header — hidden when embedded in the Decoration tab (2026-10-11) */}
+      {!embedded && (
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
@@ -178,6 +179,7 @@ export default function NobelScreen() {
           <Feather name="award" size={22} color="#000" />
         </Pressable>
       </View>
+      )}
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {error ? (

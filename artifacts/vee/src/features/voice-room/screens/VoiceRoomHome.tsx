@@ -32,6 +32,7 @@ import {
   clearVoiceBreadcrumb,
 } from '../utils/voiceCrashBreadcrumb';
 import { VoiceRoom } from '../types/room';
+import { useLiveAudienceCounts } from '../hooks/useLiveAudienceCounts';
 import { useAuth } from '@/src/context/AuthContext';
 import * as Crypto from 'expo-crypto';
 
@@ -219,6 +220,16 @@ export default function VoiceRoomHome({
   const [allRooms,  setAllRooms]  = useState<RoomInfo[]>([]);
   const [recLoading, setRecLoading] = useState(true);
 
+  // REAL-TIME live audience (2026-10-11 Issue #1): cached info counts can go
+  // stale, so compute the true live count from actual seats+audience nodes.
+  // Entering the room counts — seat NOT required.
+  const liveCounts = useLiveAudienceCounts([...allRooms, ...myRooms].map(r => r.id));
+  const liveAudienceOf = (r: RoomInfo): number => {
+    const real = liveCounts[r.id];
+    if (real !== undefined) return real;
+    return (r.memberCount ?? 0) + (r.listenerCount ?? 0);
+  };
+
   const [activeTab, setActiveTab] = useState<RecommendedTab>('trending');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
@@ -349,9 +360,10 @@ export default function VoiceRoomHome({
   // Filter recommended rooms by active tab
   const recommended = (() => {
     // LIVE-AUDIENCE DEFINITION (2026-10-11): a room is "active" only when it
-    // has > 0 live audience (seats + listeners). Sumon's rule: rooms with NO
-    // live audience appear in NO category — only truly live rooms are listed.
-    const liveAudience = (r: RoomInfo) => (r.memberCount ?? 0) + (r.listenerCount ?? 0);
+    // has > 0 live audience (seats + listeners, real-time). Sumon's rule:
+    // rooms with NO live audience appear in NO category — only truly live
+    // rooms are listed.
+    const liveAudience = liveAudienceOf;
     const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => liveAudience(r) > 0);
     // TRENDING RANK (2026-10-11): most live audience first, then most diamonds
     // sent. Global — every user worldwide sees the same Firebase-driven order.
@@ -428,7 +440,7 @@ export default function VoiceRoomHome({
 
               {myRooms.map((r) => (
                 <View key={r.id} style={{ marginRight: 14 }}>
-                  <RoomCard room={toVoiceRoom(r)} onPress={() => handleRoomPress(r)} />
+                  <RoomCard room={toVoiceRoom(r)} liveCount={liveAudienceOf(r)} onPress={() => handleRoomPress(r)} />
                 </View>
               ))}
             </GHScrollView>
@@ -548,6 +560,7 @@ export default function VoiceRoomHome({
                       <RoomListItem
                         key={r.id}
                         room={toVoiceRoom(r)}
+                        liveCount={liveAudienceOf(r)}
                         distanceKm={distanceKm}
                         onPress={() => handleRoomPress(r)}
                       />

@@ -11,6 +11,13 @@ import { useAuth } from '@/src/context/AuthContext';
 import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats,
+  pinChat,
+  unpinChat,
+  muteChat,
+  unmuteChat,
+  hideChat,
+  unhideChat,
+  clearChat,
 } from '@/src/features/chat/services/firebaseDmService';
 // NOTE 5 (2026-10-11): offline-first chat list — cached history renders
 // instantly when offline, live subscription keeps it fresh on reconnect.
@@ -24,6 +31,7 @@ import { getUser } from '@/src/services/userService';
 import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
+import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu';
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
@@ -46,6 +54,33 @@ export default function IMOHomeScreen() {
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
+
+  // LIVE PROFILES (2026-10-11 Issue #4): real-time name + DP per chat
+  // participant. When someone changes their profile, the chat list updates
+  // immediately — no stale cached names/DPs.
+  const [liveProfiles, setLiveProfiles] = useState<Record<string, { name?: string; photoURL?: string }>>({});
+  useEffect(() => {
+    const uids = new Set<string>();
+    for (const c of chats) {
+      if (c.participantId) uids.add(c.participantId);
+    }
+    if (uids.size === 0) return;
+    const unsubs: Array<() => void> = [];
+    for (const uid of uids) {
+      unsubs.push(
+        subscribeUser(uid, (p) => {
+          if (!p) return;
+          setLiveProfiles((prev) => ({
+            ...prev,
+            [uid]: { name: p.name, photoURL: p.photoURL || undefined },
+          }));
+        }),
+      );
+    }
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [chats.map((c) => c.participantId).join(',')]);
 
   // Profile
   useEffect(() => {
@@ -76,18 +111,42 @@ export default function IMOHomeScreen() {
   }, [user?.uid]);
 
   // Stories (already loaded above via useStories)
-  // Convert to IMO format
-  const imoChats: IMOChat[] = chats.map((c) => ({
-    id: c.id,
-    name: c.participantName || 'Unknown',
-    photoURL: c.participantAvatar || avatarCache[c.participantId || ''] || null,
-    lastMessage: c.lastMessage || '',
-    lastMessageTime: formatTime(c.lastMessageTime),
-    unreadCount: c.unreadCount || 0,
-    isPinned: c.isPinned === true,
-    isMuted: false, // TODO: add mute support to Chat type if needed
-    participantId: c.participantId,
-  }));
+  // Convert to IMO format — live profile name/DP wins over cached values
+  // (2026-10-11 Issue #4).
+  const imoChats: IMOChat[] = chats
+    .filter((c) => !(c as any).isHidden) // hidden chats don't show in list
+    .map((c) => {
+    const live = c.participantId ? liveProfiles[c.participantId] : undefined;
+    return {
+      id: c.id,
+      name: live?.name || c.participantName || 'Unknown',
+      photoURL: live?.photoURL || c.participantAvatar || avatarCache[c.participantId || ''] || null,
+      lastMessage: c.lastMessage || '',
+      lastMessageTime: formatTime(c.lastMessageTime),
+      unreadCount: c.unreadCount || 0,
+      isPinned: c.isPinned === true,
+      isMuted: (c as any).isMuted === true,
+      participantId: c.participantId,
+    };
+  });
+
+  // LONG-PRESS MENU (2026-10-11 Issue #6): imo-style context menu state.
+  const [menuChat, setMenuChat] = useState<IMOChat | null>(null);
+  const handleLongPress = useCallback((chatId: string) => {
+    const chat = imoChats.find((c) => c.id === chatId);
+    if (chat) setMenuChat(chat);
+  }, [imoChats]);
+  const closeMenu = useCallback(() => setMenuChat(null), []);
+  const runMenuAction = useCallback(async (fn: () => Promise<void>) => {
+    const uid = user?.uid;
+    if (!uid || !menuChat) return;
+    setMenuChat(null);
+    try {
+      await fn();
+    } catch {
+      // Non-critical — Firebase write failed; UI stays consistent via subscription
+    }
+  }, [user?.uid, menuChat]);
 
   const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
     id: s.userId,
@@ -242,10 +301,28 @@ export default function IMOHomeScreen() {
           <IMOChatListItem
             chat={item}
             onPress={handleChatPress}
+            onLongPress={handleLongPress}
             onCallPress={handleCallPress}
           />
         )}
         style={{ flex: 1 }}
+      />
+      {/* Long-press context menu (2026-10-11 Issue #6) */}
+      <ChatLongPressMenu
+        visible={!!menuChat}
+        chatName={menuChat?.name ?? ''}
+        isPinned={menuChat?.isPinned ?? false}
+        isMuted={menuChat?.isMuted ?? false}
+        isHidden={false}
+        onPin={() => runMenuAction(() =>
+          (menuChat?.isPinned ? unpinChat(user!.uid, menuChat!.id) : pinChat(user!.uid, menuChat!.id))
+        )}
+        onMute={() => runMenuAction(() =>
+          (menuChat?.isMuted ? unmuteChat(user!.uid, menuChat!.id) : muteChat(user!.uid, menuChat!.id))
+        )}
+        onHide={() => runMenuAction(() => hideChat(user!.uid, menuChat!.id))}
+        onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
+        onClose={closeMenu}
       />
       <IMOBottomBar
         onAddPress={() => setActiveTab('voice')}

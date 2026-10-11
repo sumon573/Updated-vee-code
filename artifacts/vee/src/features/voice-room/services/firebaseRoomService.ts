@@ -655,6 +655,9 @@ export async function leaveAudience(
   // Cancel any pending onDisconnect before removing manually
   onDisconnect(audienceRef).cancel().catch(() => {/* non-critical */});
   await remove(audienceRef);
+  // 2026-10-11 Issue #1: refresh cached counts so room cards/filters
+  // never show stale audience numbers after someone leaves.
+  _updateCounts(roomId).catch(() => {});
 }
 
 // ─── Seat Management ─────────────────────────────────────────────────────────
@@ -1487,4 +1490,41 @@ async function _updateCounts(roomId: string): Promise<void> {
   } catch {
     // Non-critical — count will be corrected by next seat/audience change
   }
+}
+
+/** Joined member record from the roomMembers reverse index. */
+export type JoinedMember = {
+  uid: string;
+  role: 'owner' | 'admin' | 'member';
+  joinedAt: number;
+};
+
+/**
+ * Subscribe to ALL joined members of a room (2026-10-11 Issue #5).
+ * Uses the `roomMembers/{roomId}` reverse index — covers everyone who ever
+ * joined, not just those currently live in the room. The Room Info member
+ * list shows these (owner → admin → members), per Sumon's spec.
+ */
+export function subscribeRoomMembers(
+  roomId: string,
+  callback: (members: JoinedMember[]) => void,
+): () => void {
+  return onValue(ref(database, `roomMembers/${roomId}`), (snap) => {
+    const members: JoinedMember[] = [];
+    if (snap.exists()) {
+      snap.forEach((child) => {
+        const v = child.val() as { role?: string; joinedAt?: number } | null;
+        if (child.key) {
+          members.push({
+            uid: child.key,
+            role: (v?.role === 'owner' || v?.role === 'admin') ? v.role : 'member',
+            joinedAt: v?.joinedAt ?? 0,
+          });
+        }
+      });
+    }
+    callback(members);
+  }, () => {
+    callback([]);
+  });
 }

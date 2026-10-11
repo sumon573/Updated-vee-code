@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View, Platform } from 'react-native';
+import { Animated, Pressable, Text, View, Platform, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -127,33 +127,51 @@ export default function MinimizedRoomBar() {
         zIndex: 999,
       }}
     >
-      {/* Mic toggle — tap to talk/mute while minimized (2026-10-10) */}
-      <Pressable
-        onPress={handleMicToggle}
-        hitSlop={10}
+      {/* Room DP (2026-10-11 Issue #3): show the minimized room's profile
+          DP where the mute icon was — Sumon's order. */}
+      <View
         style={{
           width: 36,
           height: 36,
           borderRadius: 18,
-          backgroundColor: micColor + '22',
+          backgroundColor: C.primary + '33',
           borderWidth: 1.5,
-          borderColor: micColor + '66',
+          borderColor: C.border,
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: 10,
+          overflow: 'hidden',
         }}
       >
-        <Feather name={micMuted ? 'mic-off' : 'mic'} size={16} color={micColor} />
-      </Pressable>
+        {room.coverImageUrl ? (
+          <Image
+            source={{ uri: room.coverImageUrl }}
+            style={{ width: 36, height: 36 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Feather name="mic" size={16} color={C.muted} />
+        )}
+      </View>
 
-      {/* Room info */}
+      {/* Room info — name with mute/unmute status beside it (2026-10-11) */}
       <View style={{ flex: 1 }}>
-        <Text
-          style={{ color: C.text, fontSize: 13, fontWeight: '800' }}
-          numberOfLines={1}
-        >
-          {room.name}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text
+            style={{ color: C.text, fontSize: 13, fontWeight: '800', flexShrink: 1 }}
+            numberOfLines={1}
+          >
+            {room.name}
+          </Text>
+          {/* Mute/unmute status — tap to toggle while minimized */}
+          <Pressable onPress={handleMicToggle} hitSlop={10}>
+            <Feather
+              name={micMuted ? 'mic-off' : 'mic'}
+              size={13}
+              color={micColor}
+            />
+          </Pressable>
+        </View>
         <Text
           style={{ color: C.muted, fontSize: 11, marginTop: 1 }}
           numberOfLines={1}

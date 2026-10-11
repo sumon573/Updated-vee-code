@@ -27,7 +27,7 @@ const C = {
 const MAX_DP = 6;
 const DP = 24;
 
-type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number };
+type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number };
 
 /** Format distance: < 1km shows meters, else km with 1 decimal. */
 function formatDistance(km: number): string {
@@ -35,10 +35,12 @@ function formatDistance(km: number): string {
   return `${km.toFixed(1)}km`;
 }
 
-export default function RoomListItem({ room, onPress, distanceKm }: Props) {
+export default function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, MAX_DP) ?? [];
   const isPrivate = room.isPublic === false;
+  // 2026-10-11 Issue #1: show the TRUE live audience (everyone who entered,
+  // seat not required) — never the stale cached seat-only count.
 
   return (
     <ScalePress onPress={onPress}>
@@ -86,7 +88,7 @@ export default function RoomListItem({ room, onPress, distanceKm }: Props) {
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
               <Feather name="users" size={12} color={C.muted} />
               <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600' }}>
-                {t('voiceRoom.listItem.members', { count: room.memberCount })}
+                {t('voiceRoom.listItem.members', { count: liveCount ?? room.memberCount })}
               </Text>
               {/* Nearby distance (2026-10-11): REAL owner distance from viewer */}
               {distanceKm !== undefined && (
@@ -168,14 +170,14 @@ export default function RoomListItem({ room, onPress, distanceKm }: Props) {
                   marginLeft: -8,
                 }}>
                   <Text style={{ color: '#7C3AED', fontSize: 7, fontWeight: '900' }}>
-                    +{room.memberCount - previews.length}
+                    +{(liveCount ?? room.memberCount) - previews.length}
                   </Text>
                 </View>
               )}
             </View>
           ) : (
             <Text style={{ color: C.muted, fontSize: 12 }}>
-              {t('voiceRoom.listItem.members', { count: room.memberCount })}
+              {t('voiceRoom.listItem.members', { count: liveCount ?? room.memberCount })}
             </Text>
           )}
 

@@ -14,6 +14,8 @@ export type MinimizedRoom = {
   mySeatIdx: number;
   /** Whether the user's mic was muted at the time of minimize. */
   muted: boolean;
+  /** Room cover image URL — shown as the DP in the mini-player bar (2026-10-11). */
+  coverImageUrl?: string;
 } | null;
 
 let _minimizedRoom: MinimizedRoom = null;

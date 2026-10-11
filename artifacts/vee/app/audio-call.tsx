@@ -35,6 +35,7 @@ export default function AudioCallPage() {
     myUid,
     myName,
     myPhotoURL,
+    returning,
   } = useLocalSearchParams<{
     roomId: string;
     role: 'caller' | 'callee';
@@ -45,21 +46,25 @@ export default function AudioCallPage() {
     myUid: string;
     myName: string;
     myPhotoURL?: string;
+    returning?: string;
   }>();
 
   // Guard: a malformed deep link (e.g. vee://audio-call with missing params)
   // must not mount the call screen — with empty UIDs it would run a bogus
   // WebRTC session and write/remove signaling at the `calls/` root.
+  // 2026-10-11 Issue #8: when returning from a minimized call, the WebRTC
+  // session persists at module level — skip the param guard and reattach.
+  const isReturning = returning === 'true';
   const hasParams = !!roomId && !!remoteUid && !!calleeUid && !!myUid;
   useEffect(() => {
-    if (!hasParams) {
+    if (!hasParams && !isReturning) {
       Alert.alert(t('chat.error'), t('audioCall.invalidCall'), [
         { text: t('audioCall.ok'), onPress: () => router.back() },
       ]);
     }
-  }, [hasParams, t]);
+  }, [hasParams, isReturning, t]);
 
-  if (!hasParams) return null;
+  if (!hasParams && !isReturning) return null;
 
   return (
     <AudioCallScreen
@@ -72,6 +77,7 @@ export default function AudioCallPage() {
       myUid={myUid ?? ''}
       myName={myName ?? 'Vee User'}
       myPhotoURL={myPhotoURL}
+      isReturning={isReturning}
     />
   );
 }

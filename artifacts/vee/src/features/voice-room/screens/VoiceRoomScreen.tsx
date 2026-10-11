@@ -14,8 +14,8 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
-import { setMinimizedRoom } from '@/src/store/minimizedRoom';
-import { useLivekitVoiceRoom, setVoiceRoomMinimized } from '../useLivekitVoiceRoom';
+import { setMinimizedRoom, getMinimizedRoom } from '@/src/store/minimizedRoom';
+import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
@@ -182,6 +182,28 @@ export default function VoiceRoomScreen() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ── AUTO-LEAVE PREVIOUS ROOM (2026-10-11 Issue #2): If the user minimized
+     a DIFFERENT room and now opens this one, leave the old room completely —
+     disconnect its LiveKit engine, remove Firebase seat/audience entries, and
+     clear the mini-player. The user is only ever in ONE room at a time.
+     (Returning to the SAME room via "Return" is unaffected.) ── */
+  useEffect(() => {
+    if (!roomId || !myUid || myUid === 'anonymous') return;
+    const prev = getMinimizedRoom();
+    if (!prev || prev.id === roomId) return;
+    // Different room — tear down the old one.
+    try {
+      destroyPersistedVoiceRoomEngine();
+    } catch { /* non-critical */ }
+    if (prev.mySeatIdx >= 0) {
+      removeSeat(prev.id, prev.mySeatIdx).catch(() => {});
+    } else {
+      leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
+    }
+    setMinimizedRoom(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
   /** Called once the room info subscription confirms a live room. */
   const handleRoomInfoOk = useCallback(() => {
@@ -1387,10 +1409,11 @@ export default function VoiceRoomScreen() {
       myUid,
       mySeatIdx,
       muted,
+      ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}),
     });
     setExitModalOpen(false);
     router.back();
-  }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted]);
+  }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, roomImageUri]);
 
   // BACK BUTTON → MINIMIZE (2026-10-10, Sumon's order): pressing the phone's
   // back button while in a voice room minimizes instead of leaving.
