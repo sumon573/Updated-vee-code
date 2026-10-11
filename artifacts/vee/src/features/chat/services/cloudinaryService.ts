@@ -5,7 +5,6 @@
 
 export {
   uploadStoryImage,
-  uploadStoryVideo,
   uploadImage,
   deleteCloudinaryAsset,
   type CloudinaryUploadResult,
