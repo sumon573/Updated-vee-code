@@ -19,7 +19,6 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRealAuthor } from '../hooks/useRealAuthor';
-import { useAudioPlayer } from 'expo-audio';
 
 /** Background music for Planet photo/text stories (2026-10-11): plays only when active. */
 function PlanetBackgroundMusic({ uri, active }: { uri: string; active: boolean }) {
