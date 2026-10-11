@@ -4,11 +4,16 @@ import {
   ActionSheetIOS, Platform, Image, Dimensions,
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
+// NOTE 12 (2026-10-11): modern expo-file-system API (SDK 54). Remote media
+// must be downloaded to a local file first — MediaLibrary.saveToLibraryAsync
+// only accepts LOCAL file URIs; passing an https:// URL silently does nothing.
+import { File, Paths } from 'expo-file-system';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { DmMessage } from '../types/dm';
 import { addReaction, deleteMessage } from '../services/firebaseDmService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const { width } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
@@ -43,6 +48,56 @@ type Props = {
   onReply: (msg: DmMessage) => void;
   onMediaPress?: (uri: string, type: 'image' | 'video') => void;
 };
+
+/**
+ * NOTE 12 (2026-10-11): Save a remote (or local) media URI to the device gallery.
+ *
+ * Why this exists: `MediaLibrary.saveToLibraryAsync` only accepts a LOCAL file
+ * URI — passing a remote https:// URL silently fails (the old "download does
+ * nothing" bug). Remote URLs are first downloaded to the cache directory via
+ * expo-file-system's modern File API (SDK 54), then saved. Failures surface the
+ * ACTUAL error cause.
+ *
+ * NOTE: takes pre-resolved strings (not the i18next `t` function) — passing
+ * `t` directly trips a TypeScript 5.9 overload-resolution compiler crash.
+ */
+export interface SaveGalleryStrings {
+  permissionRequired: string;
+  galleryPermission: string;
+  saved: string;
+  msgSaveToGallery: string;
+  error: string;
+  saveToGalleryFailed: string;
+}
+
+export async function saveRemoteMediaToGallery(
+  uri: string,
+  s: SaveGalleryStrings,
+): Promise<void> {
+  try {
+    const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      if (canAskAgain === false) alertPermissionPermanentlyDenied(s.permissionRequired, s.galleryPermission);
+      else Alert.alert(s.permissionRequired, s.galleryPermission);
+      return;
+    }
+    let localUri = uri;
+    if (/^https?:\/\//i.test(uri)) {
+      // Cloudinary/signed URLs may carry query params — strip them for the extension.
+      const rawExt = (uri.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+      const ext = rawExt.replace(/[^a-z0-9]/g, '').slice(0, 4) || 'jpg';
+      const dest = new File(Paths.cache, `vee_dl_${Date.now()}.${ext}`);
+      // Rejects with UnableToDownload (incl. HTTP status) on non-2xx.
+      const downloaded = await File.downloadFileAsync(uri, dest);
+      if (!downloaded.exists) throw new Error('Downloaded file not found on device');
+      localUri = downloaded.uri;
+    }
+    await MediaLibrary.saveToLibraryAsync(localUri);
+    Alert.alert(s.saved, s.msgSaveToGallery);
+  } catch (err) {
+    Alert.alert(s.error, `${s.saveToGalleryFailed}\n\nReason: ${getErrorCause(err)}`);
+  }
+}
 
 // Memoized: the DM thread FlatList renders one of these per message.
 function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props) {
@@ -112,20 +167,17 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
     if (action === t('chat.msgDeleteForEveryone')) { deleteMessage(chatId, message.id, myUid, true).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); }); return; }
     if (action === t('chat.msgSaveToGallery')) {
       if (message.type !== 'image' && message.type !== 'video') return;
-      try {
-        const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== 'granted') {
-          const title = t('chat.permissionRequired');
-          const msg = t('chat.galleryPermission');
-          if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
-          else Alert.alert(title, msg);
-          return;
-        }
-        await MediaLibrary.saveToLibraryAsync(message.content);
-        Alert.alert(t('chat.saved'), t('chat.msgSaveToGallery'));
-      } catch {
-        Alert.alert(t('chat.error'), t('chat.saveToGalleryFailed'));
-      }
+      // NOTE 12 (2026-10-11): fixed — downloads remote URL to a local file
+      // first. Strings are resolved here rather than passing `t` itself, which
+      // trips a TypeScript 5.9 overload-resolution compiler crash.
+      await saveRemoteMediaToGallery(message.content, {
+        permissionRequired: t('chat.permissionRequired'),
+        galleryPermission: t('chat.galleryPermission'),
+        saved: t('chat.saved'),
+        msgSaveToGallery: t('chat.msgSaveToGallery'),
+        error: t('chat.error'),
+        saveToGalleryFailed: t('chat.saveToGalleryFailed'),
+      });
       return;
     }
   };
@@ -133,6 +185,12 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
   const bubbleBg  = isMe ? C.myBubble : C.theirBubble;
   const textColor = isMe ? C.myText : C.theirText;
   const align     = isMe ? 'flex-end' : 'flex-start';
+  // NOTE 12 (2026-10-11): media messages render edge-to-edge with no bubble
+  // chrome (no padding, no background, no border) — clean professional look.
+  // Timestamps/ticks below media use muted colors (no bubble bg to sit on).
+  const isMediaMsg = message.type === 'image' || message.type === 'video';
+  const timeColor = isMediaMsg ? C.muted : isMe ? 'rgba(255,255,255,0.75)' : C.muted;
+  const tickColor = isMediaMsg ? C.muted : C.sent;
 
   const reactions = message.reactions
     ? Object.entries(
@@ -162,11 +220,17 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
           </View>
         )}
 
-        {/* Main bubble */}
+        {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
         <Pressable
           onLongPress={handleLongPress}
           delayLongPress={200}
-          style={{
+          style={isMediaMsg ? {
+            backgroundColor: 'transparent',
+            borderRadius: 16,
+            paddingHorizontal: 0, paddingVertical: 0,
+            borderWidth: 0,
+            overflow: 'hidden',
+          } : {
             backgroundColor: bubbleBg,
             borderRadius: 18,
             borderBottomRightRadius: isMe ? 4 : 18,
@@ -183,7 +247,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
               <Image
                 source={{ uri: message.content }}
-                style={{ width: 200, height: 200, borderRadius: 12 }}
+                style={{ width: 220, height: 220, borderRadius: 16 }}
                 resizeMode="cover"
               />
             </Pressable>
@@ -191,10 +255,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             <Pressable
               onPress={() => onMediaPress?.(message.content, 'video')}
               style={{
-                width: 200, height: 140, borderRadius: 12,
+                width: 220, height: 150, borderRadius: 16,
                 backgroundColor: 'rgba(0,0,0,0.5)',
                 alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
               }}
             >
               <Feather name="play-circle" size={48} color="#fff" />
@@ -237,7 +300,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
           {/* Timestamp + seen */}
           {!message.deletedForEveryone && (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
-              <Text style={{ color: isMe ? 'rgba(255,255,255,0.75)' : C.muted, fontSize: 10 }}>
+              <Text style={{ color: timeColor, fontSize: 10 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
               {isMe && (
@@ -246,11 +309,11 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                 ) : message.status === 'delivered' ? (
                   // Double tick: two overlapping check icons
                   <View style={{ flexDirection: 'row', marginLeft: -4 }}>
-                    <Feather name="check" size={12} color={C.sent} />
-                    <Feather name="check" size={12} color={C.sent} style={{ marginLeft: -8 }} />
+                    <Feather name="check" size={12} color={tickColor} />
+                    <Feather name="check" size={12} color={tickColor} style={{ marginLeft: -8 }} />
                   </View>
                 ) : (
-                  <Feather name="check" size={12} color={C.sent} />
+                  <Feather name="check" size={12} color={tickColor} />
                 )
               )}
             </View>

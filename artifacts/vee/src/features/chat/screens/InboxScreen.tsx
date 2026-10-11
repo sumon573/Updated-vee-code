@@ -33,7 +33,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import MessageBubble from '../components/MessageBubble';
+import MessageBubble, { saveRemoteMediaToGallery } from '../components/MessageBubble';
 import {
   subscribeMessages, sendMessage, markAllSeen,
   subscribeTyping, subscribePresence, setTyping,
@@ -45,7 +45,6 @@ import { DmMessage, DmReplyPreview } from '../types/dm';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import { useAuth } from '@/src/context/AuthContext';
 import { submitReport } from '@/src/services/reportService';
-import * as MediaLibrary from 'expo-media-library';
 // RC6 fix Issue 5 + Issue 8
 import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
@@ -970,25 +969,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             >
               <Feather name="x" size={28} color="#fff" />
             </Pressable>
-            {/* Save to gallery button */}
+            {/* Save to gallery button — NOTE 12 (2026-10-11): shared helper
+                downloads remote URLs to a local file first, real error cause */}
             <Pressable
               style={{ position: 'absolute', top: 55, left: 20, zIndex: 10, padding: 8 }}
               onPress={async () => {
                 if (!mediaViewerUri) return;
-                const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
-                if (status !== 'granted') {
-                  const title = t('chat.permissionRequired');
-                  const msg = 'Gallery access is needed to save media.';
-                  if (canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
-                  else Alert.alert(title, msg);
-                  return;
-                }
-                try {
-                  await MediaLibrary.saveToLibraryAsync(mediaViewerUri);
-                  Alert.alert('✅ Saved', t('chat.msgSaveToGallery') + ' successfully.');
-                } catch {
-                  Alert.alert(t('chat.error'), 'Could not save image to gallery.');
-                }
+                await saveRemoteMediaToGallery(mediaViewerUri, {
+                  permissionRequired: t('chat.permissionRequired'),
+                  galleryPermission: 'Gallery access is needed to save media.',
+                  saved: t('chat.saved'),
+                  msgSaveToGallery: t('chat.msgSaveToGallery') + ' successfully.',
+                  error: t('chat.error'),
+                  saveToGalleryFailed: t('chat.saveToGalleryFailed'),
+                });
               }}
             >
               <Feather name="download" size={24} color="#fff" />
