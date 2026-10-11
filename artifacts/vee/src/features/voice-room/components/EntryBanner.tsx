@@ -2,6 +2,12 @@
  * EntryBanner — "X is Coming" join animation (2026-10-10, redesigned).
  * Matches IMO's entry effect: blue gradient pill badge with small DP and
  * name only (no ID). Slides in from the right. Auto-dismisses after 3s.
+ *
+ * NOTE 10 (2026-10-11): `fancy` renders the Noble "Fancy Entry Effects"
+ * variant (gold gradient + crown) — shown ONLY when the joiner holds the
+ * privilege (Marquis+ with maintenance secured). The flag is computed by
+ * the SENDER from their real noble state and broadcast with the entry
+ * event, so receivers just render it.
  */
 import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated } from 'react-native';
@@ -12,11 +18,13 @@ interface EntryBannerProps {
   name: string;
   /** The joiner's photo URL (optional) */
   photoURL?: string | null;
+  /** Noble fancy-entry variant (Marquis+ privilege, sender-verified) */
+  fancy?: boolean;
   /** Called when the banner should be dismissed */
   onDismiss: () => void;
 }
 
-export default function EntryBanner({ name, photoURL, onDismiss }: EntryBannerProps) {
+export default function EntryBanner({ name, photoURL, fancy, onDismiss }: EntryBannerProps) {
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -68,7 +76,7 @@ export default function EntryBanner({ name, photoURL, onDismiss }: EntryBannerPr
       pointerEvents="none"
     >
       <LinearGradient
-        colors={['#4DA6FF', '#1E6FCC']}
+        colors={fancy ? ['#FFD54F', '#FF8F00'] : ['#4DA6FF', '#1E6FCC']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={{
@@ -78,6 +86,8 @@ export default function EntryBanner({ name, photoURL, onDismiss }: EntryBannerPr
           paddingVertical: 6,
           paddingLeft: 6,
           paddingRight: 16,
+          borderWidth: fancy ? 2 : 0,
+          borderColor: fancy ? '#FFF8E1' : 'transparent',
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.25,
@@ -108,7 +118,7 @@ export default function EntryBanner({ name, photoURL, onDismiss }: EntryBannerPr
           </View>
         )}
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} numberOfLines={1}>
-          {name} is Coming
+          {fancy ? `👑 ${name} is Coming` : `${name} is Coming`}
         </Text>
       </LinearGradient>
     </Animated.View>

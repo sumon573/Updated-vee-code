@@ -5,8 +5,8 @@
  * - Frames: real granted frames ONLY — officially granted (by admin) or
  *   claimed from special events (users/{uid}/frames in Firebase). NO demo
  *   frames. Empty state until any exist. Tap an owned frame to equip it.
- * - Nobel: informational — Nobel ranks are earned by sending diamonds as
- *   gifts in voice rooms (the full Nobel screen ships separately).
+ * - Nobel: links to the real Nobel screen (/nobel) — Nobel ranks are earned
+ *   by sending diamonds as gifts in voice rooms (NOTE 10).
  *
  * Light mode only. All data is real — no demo content.
  */
@@ -170,6 +170,18 @@ export default function DecorationScreen() {
             <Text style={{ fontSize: 13, color: C.muted, lineHeight: 20, marginTop: 12 }}>
               {NOBEL_RANKS.join('  →  ')}
             </Text>
+            {/* NOTE 10: the real Nobel screen now exists — deep-link to it. */}
+            <Pressable
+              onPress={() => router.push('/nobel')}
+              style={{
+                marginTop: 16, backgroundColor: C.blue, borderRadius: 14,
+                paddingVertical: 13, alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>
+                Open My Noble 👑
+              </Text>
+            </Pressable>
           </View>
         </ScrollView>
       ) : frames.length > 0 ? (

@@ -375,6 +375,20 @@ async function sendGiftViaFirebase(
     // plus the UI's single-send flow make this acceptable.
   }
 
+  // Step 3b (NOTE 10, 2026-10-11): Nobel XP — diamonds sent as gifts count
+  // toward the sender's noble rank. Self-gifts are EXCLUDED (anti-farming).
+  // Idempotent: replayed gifts return early at Step 0, so this runs exactly
+  // once per idempotency key. Atomic under concurrency (runTransaction in
+  // recordNobleXP). Non-critical — the gift itself already completed.
+  if (toUid !== fromUid) {
+    try {
+      const { recordNobleXP } = await import('@/src/services/nobleService');
+      await recordNobleXP(fromUid, price);
+    } catch {
+      // XP write failed — gift stands; noble progress for this gift is lost.
+    }
+  }
+
   // Step 4: Write transaction history (best effort, non-blocking)
   const timestamp = Date.now();
   try {

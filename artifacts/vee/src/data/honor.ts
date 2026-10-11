@@ -15,7 +15,6 @@
  * Used by:
  *  - app/profile/index.tsx (Honor section preview)
  *  - app/profile/honor.tsx (Honor detail screen: Badge / Nameplate tabs)
- *  - app/profile/decoration.tsx (nameplate catalog)
  *  - src/services/badgeService.ts (official grant / event claim)
  */
 
@@ -56,17 +55,7 @@ export interface GrantedBadge {
   howToGet?: string;
 }
 
-export interface NameplateDef {
-  id: string;
-  name: string;
-  icon: string;
-  requirement: string;
-}
-
-// NOTE: Demo nameplate catalog kept for Half 1 (Note 9 cleanup is in Half 2).
-// These are shown as locked/unowned until real nameplates exist.
-export const NAMEPLATES: NameplateDef[] = [
-  { id: 'vip',    name: 'VIP',        icon: '⭐', requirement: 'Receive 50 gifts' },
-  { id: 'star',   name: 'Rising Star', icon: '🌟', requirement: 'Reach Lv.3' },
-  { id: 'legend', name: 'Legend',     icon: '🏆', requirement: 'Reach Lv.15' },
-];
+// NOTE 9 (2026-10-11): demo nameplate catalog REMOVED per Sumon's order.
+// Nameplates are granted ONLY officially, claimed from special events, or
+// earned from Noble ranks — they live in users/{uid}/nameplates in Firebase
+// (see badgeService). The Honor page renders them from real data.

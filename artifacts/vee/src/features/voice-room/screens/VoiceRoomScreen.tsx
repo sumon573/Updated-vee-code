@@ -231,7 +231,7 @@ export default function VoiceRoomScreen() {
   const [audience,      setAudience]     = useState<Participant[]>([]);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
   // Entry effect: "X is Coming" banner (2026-10-10)
-  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null } | null>(null);
+  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; fancy?: boolean } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
@@ -452,16 +452,30 @@ export default function VoiceRoomScreen() {
       hasShownSelfEntryRef.current = true;
       // Use myName/myPhotoURL (from RTDB profile) — not auth which may be empty
       const displayName = myName || 'User';
-      setEntryBanner({
-        name: displayName,
-        photoURL: myPhotoURL || null,
-      });
-      // Broadcast entry to all participants
-      sendRoomEntryEvent(roomId, {
-        uid: myUid,
-        name: displayName,
-        photoURL: myPhotoURL || null,
-      }).catch(() => {/* non-critical */});
+      // NOTE 10 (2026-10-11): Noble "Fancy Entry Effects" — computed from the
+      // joiner's REAL noble state (Marquis+ with maintenance secured).
+      (async () => {
+        let fancyEntry = false;
+        try {
+          const { getNobleState } = await import('@/src/services/nobleService');
+          const noble = await getNobleState(myUid);
+          fancyEntry = !!noble && noble.rankIndex >= 4 && !noble.lapsed;
+        } catch {
+          // Noble read failed — fall back to the standard entry effect.
+        }
+        setEntryBanner({
+          name: displayName,
+          photoURL: myPhotoURL || null,
+          fancy: fancyEntry,
+        });
+        // Broadcast entry to all participants
+        sendRoomEntryEvent(roomId, {
+          uid: myUid,
+          name: displayName,
+          photoURL: myPhotoURL || null,
+          fancyEntry,
+        }).catch(() => {/* non-critical */});
+      })();
     }
   }, [hasJoined, myUid, myProfile, myName, myPhotoURL, roomId]);
 
@@ -481,6 +495,7 @@ export default function VoiceRoomScreen() {
       setEntryBanner({
         name: entry.name || 'User',
         photoURL: entry.photoURL || null,
+        fancy: entry.fancyEntry === true,
       });
     });
   }, [roomId, myUid]);
@@ -2176,6 +2191,7 @@ export default function VoiceRoomScreen() {
         <EntryBanner
           name={entryBanner.name}
           photoURL={entryBanner.photoURL}
+          fancy={entryBanner.fancy}
           onDismiss={() => setEntryBanner(null)}
         />
       ) : null}

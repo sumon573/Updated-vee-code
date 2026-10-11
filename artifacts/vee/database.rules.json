@@ -73,6 +73,13 @@
         "officialBadge": {
           ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
           ".validate": "newData.hasChildren(['grantedBy', 'grantedAt'])"
+        },
+        // Noble state (2026-10-11, NOTE 10): written ONLY by the owner via
+        // the atomic recordNobleXP transaction (XP from real gifts sent;
+        // self-gifts excluded). Type validation prevents corrupted records
+        // that could crash the app (2026-10-08 lesson).
+        "noble": {
+          ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
         }
       }
     },

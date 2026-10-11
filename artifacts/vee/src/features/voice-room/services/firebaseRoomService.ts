@@ -1243,6 +1243,12 @@ export type RoomEntryEvent = {
   name: string;
   photoURL?: string | null;
   ts: number;
+  /**
+   * NOTE 10 (2026-10-11): Noble "Fancy Entry Effects" — true when the joiner
+   * holds the privilege (Marquis+ with maintenance secured). Computed by the
+   * SENDER from their real noble state; receivers render the fancy variant.
+   */
+  fancyEntry?: boolean;
 };
 
 /**
