@@ -205,13 +205,15 @@
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
         "$storyId": {
+          // Increment-only counters (2026-10-11): app uses +1 transactions.
+          // Prevents forging arbitrary view/share counts via direct writes.
           "viewCount": {
             ".write": "auth != null",
-            ".validate": "newData.isNumber() && newData.val() >= 0"
+            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
           },
           "shareCount": {
             ".write": "auth != null",
-            ".validate": "newData.isNumber() && newData.val() >= 0"
+            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
           },
           "reactions": {
             "$reactorUid": {
@@ -246,13 +248,15 @@
         ".read": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
         ".write": "auth != null && auth.uid === $uid",
         "$storyId": {
+          // Increment-only counters (2026-10-11): app uses +1 transactions.
+          // Prevents forging arbitrary view/share counts via direct writes.
           "viewCount": {
             ".write": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
-            ".validate": "newData.isNumber() && newData.val() >= 0"
+            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
           },
           "shareCount": {
             ".write": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
-            ".validate": "newData.isNumber() && newData.val() >= 0"
+            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
           },
           "reactions": {
             "$reactorUid": {
