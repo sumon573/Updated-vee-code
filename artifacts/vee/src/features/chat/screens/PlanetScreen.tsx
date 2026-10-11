@@ -18,6 +18,7 @@ import {
   Dimensions, ActivityIndicator, Share, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useRealAuthor } from '../hooks/useRealAuthor';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -169,9 +170,11 @@ function PlanetOverlay({
   const likeCount = Object.keys(reactions).length;
   const shareCount = item.story.shareCount ?? 0;
   const viewCount = item.story.viewCount ?? 0;
+  // Real author name/avatar (2026-10-11): resolves from RTDB if stored name is placeholder.
+  const author = useRealAuthor(item.userId, item.userName, item.userAvatar);
 
   const handleUserPress = () => {
-    router.push({ pathname: '/user-profile', params: { uid: item.userId, name: item.userName } });
+    router.push({ pathname: '/user-profile', params: { uid: item.userId, name: author.name } });
   };
 
   const handleLike = async () => {
@@ -232,16 +235,16 @@ function PlanetOverlay({
       {/* Bottom-left user info */}
       <View style={{ position: 'absolute', left: 12, bottom: 100, right: 80 }}>
         <Pressable onPress={handleUserPress} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-          {item.userAvatar ? (
-            <Image source={{ uri: item.userAvatar }} style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }} />
+          {author.avatar ? (
+            <Image source={{ uri: author.avatar }} style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }} />
           ) : (
             <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
               <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
-                {item.userName.charAt(0).toUpperCase()}
+                {author.name.charAt(0).toUpperCase()}
               </Text>
             </View>
           )}
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{item.userName}</Text>
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{author.name}</Text>
         </Pressable>
         <View style={{ backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center' }}>
           <Feather name="globe" size={12} color="#000" style={{ marginRight: 6 }} />

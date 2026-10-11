@@ -109,13 +109,21 @@ export function useStories(): UseStoriesResult {
     // Auth photoURL is only set for Google sign-in; profile photo edits inside
     // Vee go to RTDB (users/{uid}/photoURL) and do NOT update Auth photoURL.
     let avatarUrl: string | undefined = user.photoURL ?? undefined;
+    let displayName = user.displayName ?? 'You';
     try {
       const snap = await get(ref(database, `users/${user.uid}/photoURL`));
       if (snap.exists() && snap.val()) {
         avatarUrl = snap.val() as string;
       }
     } catch { /* non-critical — fallback to Auth photoURL */ }
-    await publishStory(user.uid, user.displayName ?? 'You', avatarUrl, payload);
+    try {
+      // Real name from RTDB (2026-10-11): Auth displayName may be unset/stale.
+      const nameSnap = await get(ref(database, `users/${user.uid}/name`));
+      if (nameSnap.exists() && nameSnap.val()) {
+        displayName = nameSnap.val() as string;
+      }
+    } catch { /* non-critical — fallback to Auth displayName */ }
+    await publishStory(user.uid, displayName, avatarUrl, payload);
   }, [user]);
 
   const recordView = useCallback((authorUid: string, storyId: string) => {

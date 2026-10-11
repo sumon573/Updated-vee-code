@@ -14,6 +14,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAudioPlayer } from 'expo-audio';
 import Svg, { Polyline } from 'react-native-svg';
 import { UserStories, Story, DrawingStroke } from '../types';
+import { useRealAuthor } from '../hooks/useRealAuthor';
 import { STORY_REACTIONS } from '../data/storyConstants';
 import { storyEffectTint } from '../data/storyEffects';
 import { getErrorCause } from '@/src/utils/errorDisplay';
@@ -177,6 +178,8 @@ function StoryCard({
   onReact, onComment,
 }: StoryCardProps) {
   const { t } = useTranslation();
+  // Real author name/avatar (2026-10-11): resolves from RTDB if stored name is placeholder.
+  const author = useRealAuthor(userStories.userId, userStories.userName, userStories.userAvatar);
   const [reactionOpen, setReactionOpen] = useState(false);
   const [userReaction, setUserReaction] = useState<string | null>(
     () => (currentUserId ? story.reactions?.[currentUserId] ?? null : null),
@@ -286,20 +289,20 @@ function StoryCard({
               alignItems: 'center', justifyContent: 'center', marginRight: 10,
               overflow: 'hidden',
             }}>
-              {userStories.userAvatar ? (
+              {author.avatar ? (
                 <Image
-                  source={{ uri: userStories.userAvatar }}
+                  source={{ uri: author.avatar }}
                   style={{ width: 38, height: 38, borderRadius: 19 }}
                 />
               ) : (
                 <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>
-                  {userStories.userName[0]?.toUpperCase()}
+                  {author.name[0]?.toUpperCase()}
                 </Text>
               )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>
-                {userStories.userName}
+                {author.name}
               </Text>
               <Text style={{ color: C.muted, fontSize: 11 }}>{timeAgo(story.createdAt)}</Text>
             </View>
@@ -467,7 +470,7 @@ function StoryCard({
             }}>
               <TextInput
                 style={{ flex: 1, color: '#fff', fontSize: 14 }}
-                placeholder={t('chat.storyReplyPlaceholder', { name: userStories.userName })}
+                placeholder={t('chat.storyReplyPlaceholder', { name: author.name })}
                 placeholderTextColor={C.muted}
                 value={reply}
                 onChangeText={setReply}

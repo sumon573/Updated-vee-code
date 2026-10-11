@@ -398,8 +398,17 @@ export default function StoryShareScreen() {
       // Everyone → public (My Story + Planet). My Contact → contacts only,
       // enforced server-side by contactStories/ Firebase rules (never Planet).
       const privacy = audience === 'everyone' ? 'public' : 'contacts';
-      const userName = user.displayName || 'Vee User';
-      const userAvatar = user.photoURL || undefined;
+      // Real name/avatar from RTDB (2026-10-11): Auth fields may be unset/stale.
+      let userName = user.displayName || 'Vee User';
+      let userAvatar = user.photoURL || undefined;
+      try {
+        const { get: dbGet, ref: dbRef } = await import('firebase/database');
+        const { database } = await import('@/src/services/firebaseConfig');
+        const nameSnap = await dbGet(dbRef(database, `users/${user.uid}/name`));
+        if (nameSnap.exists() && nameSnap.val()) userName = nameSnap.val() as string;
+        const avatarSnap = await dbGet(dbRef(database, `users/${user.uid}/photoURL`));
+        if (avatarSnap.exists() && avatarSnap.val()) userAvatar = avatarSnap.val() as string;
+      } catch { /* non-critical — fallback to Auth fields */ }
       const style = TEXT_STYLES[textStyleIdx];
       const common = {
         bgGradient: [bgColor, bgColor] as [string, string],
