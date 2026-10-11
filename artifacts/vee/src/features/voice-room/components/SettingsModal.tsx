@@ -21,6 +21,7 @@ import { storeRoomPin } from '../services/firebaseRoomService';
 export function SettingsModal({
   visible, onClose, isOwnerOrAdmin,
   topic, setTopic,
+  description, setDescription,
   activeThemeId, onThemeChange,
   onOpenHistory, accent,
   roomIsPublic, roomIsLocked,
@@ -28,6 +29,8 @@ export function SettingsModal({
 }: {
   visible: boolean; onClose: () => void; isOwnerOrAdmin: boolean;
   topic: string; setTopic: (t: string) => void;
+  /** Room description — editable alongside topic (2026-10-11). */
+  description: string; setDescription: (d: string) => void;
   activeThemeId: string; onThemeChange: (id: string) => void;
   onOpenHistory: () => void; accent: string;
   /** Current persisted value of isPublic from Firebase room info. */
@@ -41,6 +44,7 @@ export function SettingsModal({
 }) {
   const { t } = useTranslation();
   const [localTopic, setLocalTopic] = useState(topic);
+  const [localDescription, setLocalDescription] = useState(description);
   const [isPublic,   setIsPublic]   = useState(roomIsPublic);
   const [lockRoom,   setLockRoom]   = useState(roomIsLocked);
   const [showThemes, setShowThemes] = useState(false);
@@ -52,15 +56,18 @@ export function SettingsModal({
   useEffect(() => {
     if (visible) {
       setLocalTopic(topic);
+      setLocalDescription(description);
       setIsPublic(roomIsPublic);
       setLockRoom(roomIsLocked);
       setNewPin('');
     }
-  }, [visible, topic, roomIsPublic, roomIsLocked]);
+  }, [visible, topic, description, roomIsPublic, roomIsLocked]);
 
   const handleSave = () => {
     const trimmedTopic = localTopic.trim() || topic;
+    const trimmedDesc = localDescription.trim();
     setTopic(trimmedTopic);
+    setDescription(trimmedDesc);
     onSaveSettings(isPublic, lockRoom);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();
@@ -134,6 +141,24 @@ export function SettingsModal({
             style={{ backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 16,
               paddingVertical: 12, color: C.text, fontSize: 14, borderWidth: 1,
               borderColor: isOwnerOrAdmin ? accent + '55' : C.borderFaint, marginBottom: 16 }}
+          />
+
+          {/* Description (2026-10-11) */}
+          <Text style={{ color: C.sub, fontSize: 13, marginBottom: 8, fontWeight: '700' }}>
+            {t('voiceRoom.settings.descriptionLabel')}
+          </Text>
+          <TextInput
+            value={localDescription}
+            onChangeText={setLocalDescription}
+            placeholder={t('voiceRoom.settings.descriptionPlaceholder')}
+            placeholderTextColor={C.muted}
+            editable={isOwnerOrAdmin}
+            multiline
+            numberOfLines={3}
+            style={{ backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 16,
+              paddingVertical: 12, color: C.text, fontSize: 14, borderWidth: 1,
+              borderColor: isOwnerOrAdmin ? accent + '55' : C.borderFaint, marginBottom: 16,
+              minHeight: 80, textAlignVertical: 'top' }}
           />
 
           {/* Toggles — Public Room + Lock Room (Firebase-persisted on Save) */}

@@ -918,7 +918,7 @@ export async function disbandRoom(roomId: string): Promise<void> {
 /** Update room settings (name, topic, isPublic, isLocked, coverImageUrl). */
 export async function updateRoomSettings(
   roomId: string,
-  data: { name?: string; topic?: string; isPublic?: boolean; isLocked?: boolean; coverImageUrl?: string; themeId?: string; hashedPin?: string },
+  data: { name?: string; topic?: string; description?: string; isPublic?: boolean; isLocked?: boolean; coverImageUrl?: string; themeId?: string; hashedPin?: string },
 ): Promise<void> {
   await update(ref(database, `rooms/${roomId}/info`), data);
 }

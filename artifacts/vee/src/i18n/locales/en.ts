@@ -262,6 +262,8 @@ const en = {
     settings: {
       title: 'Room Settings',
       topicLabel: 'Room Topic',
+      descriptionLabel: 'Room Description',
+      descriptionPlaceholder: 'Describe your room...',
       publicRoom: 'Public Room',
       publicRoomSub: 'Anyone can join',
       muteNewJoiners: 'Mute new joiners',

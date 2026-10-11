@@ -2196,6 +2196,13 @@ export default function VoiceRoomScreen() {
             Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
           });
         }}
+        description={roomDescription}
+        setDescription={(newDesc) => {
+          setRoomDescription(newDesc);
+          updateRoomSettings(roomId, { description: newDesc }).catch(() => {
+            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
+          });
+        }}
         activeThemeId={activeThemeId}
         onThemeChange={(newThemeId) => {
           // Optimistic local update + Firebase sync so ALL users see the change.

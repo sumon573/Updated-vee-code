@@ -266,6 +266,8 @@ const hi = {
     settings: {
       title: 'रूम सेटिंग्स',
       topicLabel: 'रूम का विषय',
+      descriptionLabel: 'रूम का विवरण',
+      descriptionPlaceholder: 'अपने रूम का वर्णन लिखें...',
       publicRoom: 'सार्वजनिक रूम',
       publicRoomSub: 'कोई भी शामिल हो सकता है',
       muteNewJoiners: 'नए सदस्यों को म्यूट करें',

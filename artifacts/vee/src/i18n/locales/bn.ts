@@ -266,6 +266,8 @@ const bn = {
     settings: {
       title: 'রুম সেটিংস',
       topicLabel: 'রুমের বিষয়',
+      descriptionLabel: 'রুমের বর্ণনা',
+      descriptionPlaceholder: 'আপনার রুমের বর্ণনা লিখুন...',
       publicRoom: 'পাবলিক রুম',
       publicRoomSub: 'যে কেউ যোগ দিতে পারবে',
       muteNewJoiners: 'নতুনদের মিউট করুন',

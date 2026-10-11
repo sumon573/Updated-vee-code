@@ -36,18 +36,20 @@ export const SeatCard = memo(function SeatCard({
       onPress={onPress}
       style={{ alignItems: 'center', width: '100%', paddingVertical: 4, paddingHorizontal: 2 }}
     >
-      {/* ── Seat number badge ── */}
-      <View style={{
-        position: 'absolute', top: 8, left: '12%', zIndex: 10,
-        width: 17, height: 17, borderRadius: 8.5,
-        backgroundColor: isOwner ? C.gold : isAdmin ? accent : accent + '55',
-        alignItems: 'center', justifyContent: 'center',
-        shadowColor: isOwner ? C.gold : accent,
-        shadowOpacity: 0.6, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
-        elevation: 3,
-      }}>
-        <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{seatNum}</Text>
-      </View>
+      {/* ── Seat number badge — only on EMPTY seats (2026-10-11: hidden when occupied) ── */}
+      {!member && (
+        <View style={{
+          position: 'absolute', top: 8, left: '12%', zIndex: 10,
+          width: 17, height: 17, borderRadius: 8.5,
+          backgroundColor: accent + '55',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: accent,
+          shadowOpacity: 0.6, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
+          elevation: 3,
+        }}>
+          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{seatNum}</Text>
+        </View>
+      )}
 
       {/* ── Lock badge ── */}
       {locked && (
