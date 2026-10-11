@@ -2,6 +2,14 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager } from 'react-native';
 
 /**
+ * CRASH CAUSE DISPLAY (2026-10-11, Sumon's rule): every JS error must show
+ * its real cause on screen. Installed FIRST, before anything else.
+ * NOTE: native startup crashes (before JS loads) cannot be caught by JS.
+ */
+import { installGlobalCrashHandler, CrashOverlay } from '@/src/utils/crashReporter';
+installGlobalCrashHandler();
+
+/**
  * PERMANENT GUARD (2026-10-09): RTL layout is disabled for the entire app.
  * Selecting Arabic used to call I18nManager.forceRTL(true), which mirrored
  * every screen and left the app permanently garbled. No screen was ever
@@ -237,6 +245,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       {/* 2026-10-11 Issue #8: Minimized call badge — renders only when a call
           is minimized. Mounted globally so it's reachable from any screen. */}
       {user && <CallMinimizeBar />}
+      {/* 2026-10-11: Crash-cause display — shows real JS error cause on screen. */}
+      <CrashOverlay />
     </>
   );
 }
