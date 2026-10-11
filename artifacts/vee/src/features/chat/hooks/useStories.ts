@@ -127,8 +127,8 @@ export function useStories(): UseStoriesResult {
   }, [user]);
 
   const recordView = useCallback((authorUid: string, storyId: string) => {
-    recordStoryView(authorUid, storyId);
-  }, []);
+    recordStoryView(authorUid, storyId, user?.uid);
+  }, [user?.uid]);
 
   const react = useCallback(async (authorUid: string, storyId: string, emoji: string) => {
     if (!user?.uid) return;

@@ -555,15 +555,35 @@ export function subscribeMyStories(
  * Increment view count (fire-and-forget).
  * RC8-A: tries the transaction on both paths.
  */
-export function recordStoryView(authorUid: string, storyId: string): void {
-  const tryPath = (basePath: string) =>
-    runTransaction(
-      ref(database, `${basePath}/${authorUid}/${storyId}/viewCount`),
-      (current) => {
-        if (current === null) return undefined;
-        return (typeof current === 'number' ? current : 0) + 1;
-      },
-    ).catch(() => {/* non-critical */});
+/**
+ * Record a story view — ONE count per unique viewer (2026-10-11).
+ * Uses viewers/{viewerUid} dedup: only the first view from each user
+ * increments viewCount. Repeated views (including self-views) do not inflate.
+ * Fire-and-forget; failures are non-critical.
+ */
+export function recordStoryView(authorUid: string, storyId: string, viewerUid?: string): void {
+  const tryPath = async (basePath: string) => {
+    try {
+      // Dedup: mark viewer (succeeds only if not already recorded).
+      if (viewerUid) {
+        const viewerRef = ref(database, `${basePath}/${authorUid}/${storyId}/viewers/${viewerUid}`);
+        try {
+          await set(viewerRef, true);
+        } catch {
+          // Already viewed (or no permission) — do NOT increment.
+          return;
+        }
+      }
+      // New unique viewer — increment count.
+      await runTransaction(
+        ref(database, `${basePath}/${authorUid}/${storyId}/viewCount`),
+        (current) => {
+          if (current === null) return undefined;
+          return (typeof current === 'number' ? current : 0) + 1;
+        },
+      );
+    } catch { /* non-critical */ }
+  };
 
   tryPath('stories');
   tryPath('contactStories');

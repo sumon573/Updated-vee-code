@@ -215,6 +215,15 @@
             ".write": "auth != null",
             ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
           },
+          // Unique viewers (2026-10-11): one entry per viewer UID.
+          // Only the viewer themselves can add their entry, and only once.
+          // App increments viewCount only when this write succeeds.
+          "viewers": {
+            "$viewerUid": {
+              ".write": "auth != null && auth.uid === $viewerUid && !data.exists()",
+              ".validate": "newData.val() === true"
+            }
+          },
           "reactions": {
             "$reactorUid": {
               ".write": "auth != null && auth.uid === $reactorUid",
@@ -257,6 +266,13 @@
           "shareCount": {
             ".write": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
             ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
+          },
+          // Unique viewers (2026-10-11): one entry per viewer UID.
+          "viewers": {
+            "$viewerUid": {
+              ".write": "auth != null && auth.uid === $viewerUid && !data.exists() && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
+              ".validate": "newData.val() === true"
+            }
           },
           "reactions": {
             "$reactorUid": {

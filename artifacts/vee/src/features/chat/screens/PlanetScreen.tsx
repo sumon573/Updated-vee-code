@@ -328,11 +328,11 @@ export default function PlanetScreen() {
     if (viewableItems?.length > 0) {
       const item = viewableItems[0].item as PlanetItem;
       setActiveKey(item.key);
-      // Persist the view (once per story per session).
+      // Persist the view (once per unique viewer via viewers/{uid} dedup).
       const viewKey = `${item.userId}/${item.story.id}`;
       if (!recordedViews.current.has(viewKey)) {
         recordedViews.current.add(viewKey);
-        recordStoryView(item.userId, item.story.id);
+        recordStoryView(item.userId, item.story.id, user?.uid);
       }
     }
   }).current;
