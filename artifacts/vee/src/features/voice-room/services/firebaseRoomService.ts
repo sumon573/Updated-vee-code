@@ -485,8 +485,9 @@ export function subscribeMyRoomsCombined(
       // Show only rooms that still exist AND are active. Disbanded rooms
       // (null info) and inactive/closed rooms are hidden from My Rooms.
       .filter((r): r is RoomInfo => !!r && r.active === true);
-    // Owned rooms: show only if they still exist (not disbanded).
-    const owned = ownedRooms.filter((r) => !!r);
+    // Owned rooms: show only if they still exist (not disbanded) AND active.
+    // Per Sumon 2026-10-12: closed rooms appear NOWHERE in the app.
+    const owned = ownedRooms.filter((r) => !!r && r.active === true);
     callback([...owned, ...joined]);
   }
 
