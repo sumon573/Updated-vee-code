@@ -64,6 +64,9 @@ export type RoomInfo = {
   description: string;
   themeColor: string;
   memberCount: number;
+  /** Total live in room (seated + audience) — for list/trending. memberCount stays seated-only for Room Info. */
+  liveCount?: number;
+  listenerCount?: number;
   maxMembers: number;
   isLive: boolean;
   isTrending: boolean;
@@ -1481,11 +1484,15 @@ async function _updateCounts(roomId: string): Promise<void> {
       audSnap.forEach(() => { listenerCount++; });
     }
 
+    // liveCount = everyone in the room (seated + audience) — for room list/trending.
+    // memberCount stays seated-only for Room Info (per Sumon 2026-10-12).
+    const liveCount = memberCount + listenerCount;
     await update(ref(database, `rooms/${roomId}/info`), {
       memberCount,
       listenerCount,
+      liveCount,
       memberPreviews: memberPreviews.slice(0, 6),
-      isTrending: memberCount >= 5,
+      isTrending: liveCount >= 5,
     });
   } catch {
     // Non-critical — count will be corrected by next seat/audience change

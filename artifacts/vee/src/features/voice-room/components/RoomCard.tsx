@@ -73,7 +73,7 @@ export default function RoomCard({ room, onPress, liveCount }: Props) {
           }}>
             <Feather name="volume-2" size={8} color="#fff" />
             <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', marginLeft: 3 }}>
-              {liveCount ?? room.memberCount}
+              {liveCount ?? room.liveCount ?? room.memberCount}
             </Text>
           </View>
         </View>

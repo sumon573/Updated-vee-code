@@ -88,7 +88,7 @@ export default function RoomListItem({ room, onPress, distanceKm, liveCount }: P
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
               <Feather name="users" size={12} color={C.muted} />
               <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600' }}>
-                {t('voiceRoom.listItem.members', { count: liveCount ?? room.memberCount })}
+                {t('voiceRoom.listItem.members', { count: liveCount ?? room.liveCount ?? room.memberCount })}
               </Text>
               {/* Nearby distance (2026-10-11): REAL owner distance from viewer */}
               {distanceKm !== undefined && (
@@ -177,7 +177,7 @@ export default function RoomListItem({ room, onPress, distanceKm, liveCount }: P
             </View>
           ) : (
             <Text style={{ color: C.muted, fontSize: 12 }}>
-              {t('voiceRoom.listItem.members', { count: liveCount ?? room.memberCount })}
+              {t('voiceRoom.listItem.members', { count: liveCount ?? room.liveCount ?? room.memberCount })}
             </Text>
           )}
 
