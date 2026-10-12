@@ -22,9 +22,9 @@
  * Supports viewing another user's honor via ?uid= — validity is hidden then.
  * Light mode only. Errors show their actual cause.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, ActivityIndicator, Modal, Image, Alert,
+  View, Text, ScrollView, Pressable, ActivityIndicator, Modal, Image, Alert, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -68,6 +68,20 @@ export default function HonorScreen() {
   const [tab, setTab] = useState<'nameplate' | 'badge'>('badge');
   const [selected, setSelected] = useState<GrantedBadge | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 2026-10-13 (Sumon): spring animation for badge detail — badge "moves a bit" on open.
+  const badgeScale = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (selected) {
+      badgeScale.setValue(0.5);
+      Animated.spring(badgeScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [selected, badgeScale]);
 
   useEffect(() => {
     if (!viewUid) {
@@ -325,7 +339,8 @@ export default function HonorScreen() {
         </ScrollView>
       )}
 
-      {/* Badge detail modal */}
+      {/* Badge detail modal — imo style (2026-10-13 Sumon): dark bg, large badge
+          with spring animation, name, description, "First obtained on". */}
       <Modal
         visible={!!selected}
         transparent
@@ -334,57 +349,57 @@ export default function HonorScreen() {
       >
         <Pressable
           style={{
-            flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+            flex: 1, backgroundColor: 'rgba(0,0,0,0.92)',
             alignItems: 'center', justifyContent: 'center', padding: 32,
           }}
           onPress={() => setSelected(null)}
         >
           <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', backgroundColor: C.bg, borderRadius: 20,
-              padding: 24, alignItems: 'center',
-            }}
+            onPress={() => setSelected(null)}
+            style={{ position: 'absolute', top: 48, left: 24, padding: 6 }}
+            hitSlop={8}
           >
-            <Pressable
-              onPress={() => setSelected(null)}
-              style={{ position: 'absolute', top: 12, right: 12, padding: 6 }}
-              hitSlop={8}
-            >
-              <Feather name="x" size={20} color={C.muted} />
-            </Pressable>
-            <View style={{
-              width: 96, height: 96, borderRadius: 20,
-              backgroundColor: C.goldBg, borderWidth: 1.5, borderColor: C.goldBorder,
-              alignItems: 'center', justifyContent: 'center', marginTop: 8,
-            }}>
-              <Text style={{ fontSize: 52 }}>{selected?.icon}</Text>
-            </View>
-            <Text style={{ fontSize: 19, fontWeight: '800', color: C.text, marginTop: 14, textAlign: 'center' }}>
+            <Feather name="x" size={28} color="#FFFFFF" />
+          </Pressable>
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ alignItems: 'center' }}>
+            {/* Badge with spring "moves a bit" animation */}
+            <Animated.View style={{ transform: [{ scale: badgeScale }] }}>
+              <View style={{
+                width: 140, height: 140, borderRadius: 28,
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: '#007AFF', shadowOpacity: 0.4, shadowRadius: 20,
+                shadowOffset: { width: 0, height: 0 }, elevation: 10,
+              }}>
+                <Text style={{ fontSize: 72 }}>{selected?.icon}</Text>
+              </View>
+            </Animated.View>
+            <Text style={{ fontSize: 26, fontWeight: '800', fontStyle: 'italic', color: '#FFFFFF', marginTop: 24, textAlign: 'center' }}>
               {selected?.name}
             </Text>
             {/* Validity — badge OWNER only */}
-            {isOwn && (
+            {isOwn && selected?.validity && (
               <View style={{
-                marginTop: 10, backgroundColor: C.card,
+                marginTop: 12, backgroundColor: 'rgba(255,255,255,0.12)',
                 borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6,
               }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#8A6D00' }}>
-                  {formatValidity(selected?.validity)}
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFD60A' }}>
+                  {formatValidity(selected.validity)}
                 </Text>
               </View>
             )}
             {(selected?.description || selected?.howToGet) ? (
               <Text style={{
-                fontSize: 13, color: C.muted, textAlign: 'center',
-                marginTop: 12, lineHeight: 19,
+                fontSize: 15, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', textAlign: 'center',
+                marginTop: 16, lineHeight: 22, paddingHorizontal: 20,
               }}>
-                How to get this badge: {selected?.description || selected?.howToGet}
+                {selected?.description || selected?.howToGet}
               </Text>
             ) : null}
             {/* Obtained date — visible to everyone */}
             <Text style={{
-              fontSize: 13, color: C.muted, fontStyle: 'italic', marginTop: 14,
+              fontSize: 15, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', marginTop: 20,
             }}>
               First obtained on {formatObtainedDate(selected?.obtainedAt || 0)}
             </Text>
