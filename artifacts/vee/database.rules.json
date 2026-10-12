@@ -64,6 +64,19 @@
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
+        // SECURITY FIX (2026-10-13, Sumon): badges/frames/nameplates are
+        // ADMIN-ONLY writes. Previously they inherited the parent
+        // `auth.uid === $uid` rule, letting any user self-grant any badge
+        // (including Vee Official). Now only admins can grant via panel.
+        "badges": {
+          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
+        },
+        "frames": {
+          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
+        },
+        "nameplates": {
+          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
+        },
         "role": {
           ".write": "auth.token.role === 'superAdmin'"
         },
