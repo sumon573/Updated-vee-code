@@ -43,7 +43,8 @@ export default function VIDSearchScreen() {
   const handleAddFriend = () => {
     if (!result) return;
     // Navigate to user profile to send friend request
-    router.push(`/user-profile?uid=${result.uid}` as any);
+    const fallbackName = result.name || (result.email ? result.email.split('@')[0] : '');
+    router.push(`/user-profile?uid=${result.uid}&name=${encodeURIComponent(fallbackName)}` as any);
   };
 
   return (

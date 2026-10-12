@@ -387,7 +387,7 @@ export default function ProfileScreen({
     );
   }
 
-  const displayName = profile?.name || (isMe ? user?.displayName : targetName) || 'User';
+  const displayName = profile?.name || (isMe ? user?.displayName : (targetName || (profile?.email ? profile.email.split('@')[0] : null))) || 'User';
   const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
   const vId = profile?.vId || '';
   const bio = profile?.bio || '';
