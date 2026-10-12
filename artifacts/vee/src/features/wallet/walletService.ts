@@ -92,7 +92,9 @@ export async function recordRechargeTransaction(
       counterpartName: '',
       roomId: null,
       newBalance,
-      ts: Date.now(),
+      // P0-2 (2026-10-12): must be `timestamp` — the rules require it and
+      // `ts` was silently rejected, so recharge history was never recorded.
+      timestamp: Date.now(),
     });
   } catch {
     // non-critical — balance was already credited by the server
@@ -274,6 +276,14 @@ export function subscribeWalletBalance(
  *
  * Gift prices: 1=10, 2=25, 3=50, 4=100, 5=200, 6=500, 7=1000, 8=2000
  */
+/** Gift catalog prices (diamonds). Module-level so both the Firebase
+ * fallback and the server-ok path in sendGift() can resolve the price
+ * (P1-1, 2026-10-12: Noble XP must accrue on the server gift path too). */
+const GIFT_PRICES: Record<string, number> = {
+  '1': 10, '2': 25, '3': 50, '4': 100,
+  '5': 200, '6': 500, '7': 1000, '8': 2000,
+};
+
 async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
@@ -286,10 +296,6 @@ async function sendGiftViaFirebase(
   const fromUid = auth.currentUser?.uid;
   if (!fromUid) throw new GiftError('Not authenticated');
 
-  const GIFT_PRICES: Record<string, number> = {
-    '1': 10, '2': 25, '3': 50, '4': 100,
-    '5': 200, '6': 500, '7': 1000, '8': 2000,
-  };
   const price = GIFT_PRICES[giftId];
   if (!price) throw new GiftError('Invalid gift');
 
@@ -475,6 +481,19 @@ export async function sendGift({
       receipt?: unknown;
     };
     if (data.ok) {
+      // P1-1 (2026-10-12): Noble XP on the PRIMARY (VPS) gift path too.
+      // The fallback path is mutually exclusive, so this runs exactly once
+      // per gift. Self-gifts excluded (anti-farming), mirroring the fallback.
+      const serverFromUid = auth.currentUser?.uid;
+      const serverPrice = GIFT_PRICES[giftId];
+      if (serverFromUid && serverPrice && toUid !== serverFromUid) {
+        try {
+          const { recordNobleXP } = await import('@/src/services/nobleService');
+          await recordNobleXP(serverFromUid, serverPrice);
+        } catch {
+          // XP write failed — gift stands; noble progress for this gift is lost.
+        }
+      }
       return {
         ok: true,
         newBalance: typeof data.newBalance === 'number' ? data.newBalance : 0,
@@ -550,9 +569,14 @@ export function subscribeTransactionHistory(
           // FIX (2026-10-10): Map recharge fields (diamonds/emoji/giftName)
           // — recharge records use diamonds directly, not the gift catalog.
           const isRecharge = txType === 'recharge';
+          // P2-7 (2026-10-12): the Firebase fallback writes `diamonds`
+          // (never `coins`/`price`), so read it FIRST — otherwise fallback
+          // gift history always showed 0.
           const diamondsVal = isRecharge
             ? (typeof raw.diamonds === 'number' ? raw.diamonds : 0)
-            : (typeof raw.coins === 'number' ? raw.coins : (typeof raw.price === 'number' ? raw.price : 0));
+            : (typeof raw.diamonds === 'number' ? raw.diamonds
+              : (typeof raw.coins === 'number' ? raw.coins
+                : (typeof raw.price === 'number' ? raw.price : 0)));
           txs.push({
             id: child.key!,
             type: txType as WalletTransaction['type'],

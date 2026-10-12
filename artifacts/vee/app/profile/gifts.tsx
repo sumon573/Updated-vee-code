@@ -68,6 +68,8 @@ type Tab = 'display' | 'board';
 interface Contributor {
   uid: string;
   count: number;
+  /** Total diamonds sent (price x count) — the ranking key (P2-3). */
+  value: number;
 }
 
 function initials(name: string): string {
@@ -173,20 +175,25 @@ export default function GiftDisplayScreen() {
 
   // Contributors: aggregate by sender uid. The api-server writes `fromUid`;
   // fall back to the typed `counterpartUid` for any legacy shape.
+  // P2-3 (2026-10-12): rank by total diamond VALUE (price x count), not raw
+  // gift count — a single 2000-diamond gift outranks ten 10-diamond gifts.
   const contributorList = useMemo<Contributor[]>(() => {
-    const counts: Record<string, number> = {};
+    const agg: Record<string, { count: number; value: number }> = {};
     for (const t of receivedTxs) {
       const raw = t as unknown as { fromUid?: unknown };
       const sender =
         (typeof raw.fromUid === 'string' && raw.fromUid.length > 0 ? raw.fromUid : null) ??
         (typeof t.counterpartUid === 'string' && t.counterpartUid.length > 0 ? t.counterpartUid : null);
       if (sender && sender !== uid) {
-        counts[sender] = (counts[sender] ?? 0) + 1;
+        const entry = agg[sender] ?? { count: 0, value: 0 };
+        entry.count += 1;
+        entry.value += Math.abs(typeof t.diamonds === 'number' ? t.diamonds : 0);
+        agg[sender] = entry;
       }
     }
-    return Object.entries(counts)
-      .map(([senderUid, count]) => ({ uid: senderUid, count }))
-      .sort((a, b) => b.count - a.count)
+    return Object.entries(agg)
+      .map(([senderUid, { count, value }]) => ({ uid: senderUid, count, value }))
+      .sort((a, b) => b.value - a.value || b.count - a.count)
       .slice(0, 20);
   }, [receivedTxs, uid]);
 

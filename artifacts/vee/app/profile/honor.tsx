@@ -159,7 +159,11 @@ export default function HonorScreen() {
     );
   }
 
-  const displayName = profile?.name || 'Vee User';
+  // P1-7 (2026-10-12): email-prefix fallback instead of hardcoded 'Vee User'
+  const displayName =
+    profile?.name ||
+    (profile?.email ? profile.email.split('@')[0] : null) ||
+    'User';
   const photoURL = profile?.photoURL || null;
 
   return (

@@ -29,7 +29,8 @@ import { StoreScreen } from '@/src/features/store/StoreScreen';
 
 const C = {
   bg: '#FFFFFF',
-  primary: '#7C3AED',
+  primary: '#007AFF',
+  primaryBg: '#E3F2FD',
   glow: '#8B5CF6',
   text: '#000000',
   muted: '#8E8E93',
@@ -188,7 +189,7 @@ export default function TopUpScreen() {
                 onPress={() => setMainTab(tb)}
                 style={{
                   flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-                  backgroundColor: mainTab === tb ? C.primary : 'transparent',
+                  backgroundColor: mainTab === tb ? C.primaryBg : 'transparent',
                 }}
               >
                 <Text style={{
@@ -218,7 +219,7 @@ export default function TopUpScreen() {
                 {configError ?? t('topup.unavailable')}
               </Text>
               <Pressable onPress={() => void loadConfig()} style={styles.retryBtn}>
-                <Text style={{ color: C.text, fontWeight: '700' }}>{'Retry'}</Text>
+                <Text style={{ color: C.primary, fontWeight: '700' }}>{'Retry'}</Text>
               </Pressable>
             </View>
           ) : (
@@ -230,7 +231,7 @@ export default function TopUpScreen() {
                   {t('topup.step1Sub')}
                 </Text>
                 <View style={{
-                  backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 12,
+                  backgroundColor: C.surface, borderRadius: 12,
                   padding: 12, borderWidth: 1, borderColor: C.border,
                 }}>
                   <Text selectable style={{
@@ -286,7 +287,7 @@ export default function TopUpScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   style={{
-                    backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 12,
+                    backgroundColor: C.surface, borderRadius: 12,
                     padding: 14, color: C.text, fontSize: 13,
                     borderWidth: 1, borderColor: C.border,
                     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
@@ -296,15 +297,15 @@ export default function TopUpScreen() {
                   onPress={() => void handleSubmit()}
                   disabled={submitting}
                   style={{
-                    backgroundColor: C.primary, borderRadius: 14,
+                    backgroundColor: C.primaryBg, borderRadius: 14,
                     padding: 16, alignItems: 'center', marginTop: 14,
                     opacity: submitting ? 0.6 : 1,
                   }}
                 >
                   {submitting ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color={C.primary} />
                   ) : (
-                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
+                    <Text style={{ color: C.primary, fontSize: 16, fontWeight: '900' }}>
                       {t('topup.verifyBtn', { diamonds: (pkg?.diamonds ?? 0).toLocaleString() })}
                     </Text>
                   )}
@@ -350,7 +351,7 @@ const styles = {
     borderColor: 'rgba(139,92,246,0.35)',
   },
   retryBtn: {
-    backgroundColor: C.primary,
+    backgroundColor: C.primaryBg,
     borderRadius: 12,
     padding: 12,
     alignItems: 'center' as const,

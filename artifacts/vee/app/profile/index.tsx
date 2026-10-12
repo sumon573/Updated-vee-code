@@ -20,7 +20,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
 import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
-import { subscribeBadges } from '@/src/services/badgeService';
+import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
 import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
 import {
@@ -207,6 +207,9 @@ export default function ProfileScreen({
   const [uploadingDp, setUploadingDp] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
+  // P1-4/P1-5 (2026-10-12): frames for the DP overlay + real owned counts
+  const [grantedFrames, setGrantedFrames] = useState<GrantedFrame[]>([]);
+  const [grantedNameplates, setGrantedNameplates] = useState<GrantedNameplate[]>([]);
   // ── Other-user action buttons state (only used when !isMe) ──
   const [isFollowingTarget, setIsFollowingTarget] = useState(false);
   const [friendStatus, setFriendStatus] = useState<FriendStatus>('none');
@@ -229,6 +232,15 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) { setGrantedBadges([]); return; }
     return subscribeBadges(displayUid, setGrantedBadges);
+  }, [displayUid]);
+
+  // P1-4/P1-5 (2026-10-12): subscribe to frames + nameplates (expiry-filtered
+  // inside the service — expired items are visible nowhere).
+  useEffect(() => {
+    if (!displayUid) { setGrantedFrames([]); setGrantedNameplates([]); return; }
+    const unsubF = subscribeFrames(displayUid, setGrantedFrames);
+    const unsubN = subscribeNameplates(displayUid, setGrantedNameplates);
+    return () => { unsubF(); unsubN(); };
   }, [displayUid]);
 
   useEffect(() => {
@@ -451,23 +463,53 @@ export default function ProfileScreen({
         </Pressable>
 
         {/* ─── Avatar (overlapping) — NOTE 11 (2026-10-11): tap opens full-screen DP viewer ─── */}
+        {/* P1-4 (2026-10-12): equipped avatar frame renders as an overlay. URL
+            frames overlay the image; emoji frames get a gold ring. Expired
+            frames never reach here (expiry-filtered in subscribeFrames). */}
         <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <Pressable onPress={() => setShowDpViewer(true)} hitSlop={6}>
-              {photoURL ? (
-                <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
-              ) : (
-                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
-                </View>
-              )}
+              <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
+                {photoURL ? (
+                  <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
+                ) : (
+                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
+                  </View>
+                )}
+                {(() => {
+                  const activeFrameObj = profile?.activeFrame
+                    ? grantedFrames.find((f) => f.id === profile.activeFrame)
+                    : undefined;
+                  if (!activeFrameObj) return null;
+                  if (/^https?:\/\//i.test(activeFrameObj.icon)) {
+                    return (
+                      <Image
+                        source={{ uri: activeFrameObj.icon }}
+                        style={{ position: 'absolute', width: 92, height: 92 }}
+                        resizeMode="contain"
+                      />
+                    );
+                  }
+                  return (
+                    <View style={{ position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#FFD54A' }} />
+                  );
+                })()}
+              </View>
             </Pressable>
           </View>
         </View>
 
         {/* ─── Name ─── */}
+        {/* P1-6 (2026-10-12): official verified blue tick — shown only when
+            Sumon granted officialBadge. Other badges live in the Badge section. */}
         <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
+            {profile?.officialBadge ? (
+              <Feather name="check-circle" size={20} color="#1E9BF0" style={{ marginLeft: 6 }} />
+            ) : null}
+          </View>
           {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
         </View>
 
@@ -556,7 +598,7 @@ export default function ProfileScreen({
             </Pressable>
           </ScrollView>
         ) : (
-          <Pressable onPress={() => router.push('/profile/honor')}>
+          <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}>
             <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
               No badges yet
             </Text>
@@ -564,7 +606,7 @@ export default function ProfileScreen({
         )}
 
         {/* ─── Decoration ─── */}
-        <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
+        <SectionHeader title="Decoration" count={grantedFrames.length + grantedNameplates.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
           <Pressable
             onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
@@ -574,7 +616,7 @@ export default function ProfileScreen({
               <Text style={{ fontSize: 36 }}>🖼️</Text>
             </View>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedFrames?.length || 0} owned</Text>
+            <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
           </Pressable>
           <Pressable
             onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
@@ -584,7 +626,7 @@ export default function ProfileScreen({
               <Text style={{ fontSize: 36 }}>🏷️</Text>
             </View>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nameplates</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedNameplates?.length || 0} owned</Text>
+            <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedNameplates.length} owned</Text>
           </Pressable>
         </View>
 

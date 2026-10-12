@@ -14,6 +14,15 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
+        // SECURITY FIX (2026-10-12, P1-3): protected fields can only be changed
+        // by a platform admin. Previously the owner-write above made the
+        // deeper admin-only rules on banned/role/diamonds/officialBadge
+        // ineffective (RTDB .write cascades down), so a user could unban
+        // themselves, self-grant a role/diamonds, or self-verify.
+        // NOTE: badges/frames/nameplates stay client-writable (noble rank
+        // rewards + future event claims are granted client-side); the
+        // high-impact fields below are what this locks down.
+        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val())",
         // PERMANENT FIX (2026-10-08): Validate data types to prevent corrupted
         // records that crash the app. These rules reject malformed writes at
         // the database level, so bad data can never be stored.
@@ -569,14 +578,20 @@
         "balance": {
           // GIFT FIX (2026-10-10): Allow client-side gift transactions as fallback
           // when the VPS api-server is unreachable/outdated. The sender can only
-          // DECREASE their own balance by a valid gift price; anyone can INCREASE
-          // a balance by a valid gift price (recipient credit). Valid prices:
-          // 10, 25, 50, 100, 200, 500, 1000, 2000.
-          // FIX v2 (2026-10-10): also allow CREATING a balance node with exactly
-          // a gift price — previously gifts to users without a wallet node were
-          // always denied (data.exists() = false), so some recipients could
-          // never receive gifts.
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400 || newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)) || (!data.exists() && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400 || newData.val() == 10 || newData.val() == 25 || newData.val() == 50 || newData.val() == 100 || newData.val() == 200 || newData.val() == 500 || newData.val() == 1000 || newData.val() == 2000)))"
+          // DECREASE their own balance by a valid gift price.
+          // SECURITY FIX (2026-10-12): the increase branch previously allowed
+          // ANY authenticated user to mint FULL gift prices (10..2000) into ANY
+          // balance. Now: recipient credits use the 70% commission amounts
+          // (7/17/35/70/140/350/700/1400) by anyone; full-price increases are
+          // allowed ONLY on the writer's OWN balance (gift fallback refund
+          // path). Balance creation is 70% amounts only (first-gift credit).
+          // The 70% branch requires writer != balance owner (a sender credits
+          // a RECIPIENT; self-gifts skip the credit step in app code), which
+          // closes self-minting via commission amounts. RESIDUAL: an attacker
+          // can still mint FULL prices into their OWN balance via the refund
+          // path — indistinguishable from a legit refund at the rules layer;
+          // a complete fix needs server-authoritative gifts.
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && (newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)))"
         },
         "weeklyEarned": {
           ".write": false
@@ -586,13 +601,21 @@
         },
         "transactions": {
           // GIFT FIX (2026-10-10): Allow gift history writes from client fallback.
-          // Sender writes to both own and recipient's history. Validated by
-          // requiring a valid gift type and diamonds amount.
-          // FIX (2026-10-10): Also allow 'recharge' type for diamond top-ups.
-          // Wallet screen shows ONLY recharges; gift history lives on Profile.
+          // Sender writes to both own and recipient's history.
+          // FIX (2026-10-12, P0-1): .read for any signed-in user — RTDB reads
+          // are OR'd down the path, so this grants other users' Gifts sections
+          // even though wallets/$uid/.read stays owner-only. Without this the
+          // Gifts section and Gift Board were always empty (silent deny).
+          ".read": "auth != null",
           ".write": "auth != null",
           "$txId": {
-            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && (newData.child('type').val() === 'gift_sent' || newData.child('type').val() === 'gift_received' || newData.child('type').val() === 'recharge')"
+            // P1-9 (2026-10-12): per-type validation so forged history can't
+            // be written. gift_sent = negative full gift price (sender debit
+            // record, written by the sender). gift_received = 70% commission
+            // amounts (or legacy full prices) AND fromUid must be the writer
+            // (only the sender writes the recipient's received record).
+            // recharge = any positive amount (packages are server-configured).
+            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && ((newData.child('type').val() === 'gift_sent' && (newData.child('diamonds').val() == -10 || newData.child('diamonds').val() == -25 || newData.child('diamonds').val() == -50 || newData.child('diamonds').val() == -100 || newData.child('diamonds').val() == -200 || newData.child('diamonds').val() == -500 || newData.child('diamonds').val() == -1000 || newData.child('diamonds').val() == -2000)) || (newData.child('type').val() === 'gift_received' && (newData.child('diamonds').val() == 7 || newData.child('diamonds').val() == 17 || newData.child('diamonds').val() == 35 || newData.child('diamonds').val() == 70 || newData.child('diamonds').val() == 140 || newData.child('diamonds').val() == 350 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1400 || newData.child('diamonds').val() == 10 || newData.child('diamonds').val() == 25 || newData.child('diamonds').val() == 50 || newData.child('diamonds').val() == 100 || newData.child('diamonds').val() == 200 || newData.child('diamonds').val() == 500 || newData.child('diamonds').val() == 1000 || newData.child('diamonds').val() == 2000) && newData.child('fromUid').val() === auth.uid) || (newData.child('type').val() === 'recharge' && newData.child('diamonds').isNumber() && newData.child('diamonds').val() > 0))"
           }
         }
       }
@@ -612,8 +635,11 @@
     "platformRevenue": {
       ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
       "giftCommission": {
-        ".write": "auth != null && newData.isNumber() && newData.val() >= 0",
-        ".validate": "newData.isNumber()"
+        // P1-8 (2026-10-12): monotonic — anyone could previously OVERWRITE
+        // the total with any number. Now only non-decreasing writes pass.
+        // The client uses increment() which is compatible.
+        ".write": "auth != null",
+        ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())"
       }
     },
 

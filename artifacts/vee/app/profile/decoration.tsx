@@ -20,6 +20,7 @@ import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
 import {
   subscribeFrames,
   formatObtainedDate,
+  formatValidity,
   type GrantedFrame,
 } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
@@ -120,6 +121,17 @@ export default function DecorationScreen() {
 
   const activeFrame = profile?.activeFrame;
 
+  // P1-2 (2026-10-12): if the equipped frame expired (or was removed), clear
+  // the pointer — an expired frame must be visible nowhere, including as the
+  // equipped one. `frames` here is already expiry-filtered by subscribeFrames.
+  useEffect(() => {
+    if (!isMe || !user?.uid || !activeFrame) return;
+    if (!frames.some((f) => f.id === activeFrame)) {
+      // null deletes the field via Firebase update()
+      updateUser(user.uid, { activeFrame: null as unknown as undefined }).catch(() => {});
+    }
+  }, [isMe, user?.uid, activeFrame, frames]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
@@ -192,6 +204,13 @@ export default function DecorationScreen() {
                     Obtained {formatObtainedDate(frame.obtainedAt)}
                     {frame.source === 'event' ? ' · Event reward' : ' · Official'}
                   </Text>
+                  {/* P1-10 (2026-10-12): validity visible to the owner only,
+                      mirroring honor.tsx — visitors see just the obtained date. */}
+                  {isMe && (
+                    <Text style={{ fontSize: 11, color: '#8A6D00', marginTop: 2, fontWeight: '700' }}>
+                      {formatValidity(frame.validity)}
+                    </Text>
+                  )}
                 </View>
                 {isActive ? (
                   <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>

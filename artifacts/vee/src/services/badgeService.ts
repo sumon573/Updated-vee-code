@@ -78,7 +78,11 @@ function subscribeList<T extends { id: string }>(
   );
 }
 
-/** Subscribe to a user's real granted badges. */
+/** Subscribe to a user's real granted badges.
+ * P1-2 (2026-10-12): expired items are filtered out HERE, at the single
+ * choke point — an expired badge/frame must be visible NOWHERE, per the
+ * product rule. The expired record stays in the DB (history/audit) but
+ * never reaches any UI. */
 export function subscribeBadges(
   uid: string,
   callback: (badges: GrantedBadge[]) => void,
@@ -87,28 +91,37 @@ export function subscribeBadges(
     callback(
       items
         .filter((b) => typeof (b as any).icon === 'string')
+        .filter((b) => isStillValid(b.validity))
         .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
     ),
   );
 }
 
-/** Subscribe to a user's real granted nameplates. */
+/** Subscribe to a user's real granted nameplates (expired filtered — P1-2). */
 export function subscribeNameplates(
   uid: string,
   callback: (plates: GrantedNameplate[]) => void,
 ): () => void {
   return subscribeList<GrantedNameplate>(uid, 'nameplates', (items) =>
-    callback(items.sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0))),
+    callback(
+      items
+        .filter((pl) => isStillValid(pl.validity))
+        .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
+    ),
   );
 }
 
-/** Subscribe to a user's real granted frames. */
+/** Subscribe to a user's real granted frames (expired filtered — P1-2). */
 export function subscribeFrames(
   uid: string,
   callback: (frames: GrantedFrame[]) => void,
 ): () => void {
   return subscribeList<GrantedFrame>(uid, 'frames', (items) =>
-    callback(items.sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0))),
+    callback(
+      items
+        .filter((f) => isStillValid(f.validity))
+        .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
+    ),
   );
 }
 

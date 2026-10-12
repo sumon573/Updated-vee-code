@@ -21,7 +21,8 @@ import { useTranslation } from 'react-i18next';
 
 const C = {
   bg: '#FFFFFF',
-  primary: '#7C3AED',
+  primary: '#007AFF',
+  primaryBg: '#E3F2FD',
   glow: '#8B5CF6',
   text: '#000000',
   muted: '#8E8E93',
@@ -195,7 +196,7 @@ export default function WalletScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: C.primary,
+                backgroundColor: C.primaryBg,
                 borderRadius: 14,
                 paddingVertical: 13,
                 paddingHorizontal: 32,
@@ -203,8 +204,8 @@ export default function WalletScreen() {
                 gap: 8,
               }}
             >
-              <Feather name="plus-circle" size={18} color="#fff" />
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
+              <Feather name="plus-circle" size={18} color={C.primary} />
+              <Text style={{ color: C.primary, fontSize: 16, fontWeight: '900' }}>
                 {t('wallet.topUp')}
               </Text>
             </Pressable>

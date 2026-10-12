@@ -79,10 +79,6 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     );
   };
 
-  const showRankings = () => {
-    Alert.alert('Noble Rankings', 'The noble leaderboard is not available yet.');
-  };
-
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
@@ -175,9 +171,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
         <Pressable hitSlop={12} style={{ marginRight: 16 }} onPress={showAbout}>
           <Feather name="help-circle" size={22} color="#000" />
         </Pressable>
-        <Pressable hitSlop={12} onPress={showRankings}>
-          <Feather name="award" size={22} color="#000" />
-        </Pressable>
+
       </View>
       )}
 
