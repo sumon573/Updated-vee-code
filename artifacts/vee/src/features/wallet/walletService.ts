@@ -404,6 +404,22 @@ async function sendGiftViaFirebase(
     } catch {
       // Commission tracking failed — gift stands; revenue record lost
     }
+  } else {
+    // 2026-10-12 (Sumon's order): self-gift returns 70% (commission deducted).
+    // Sender pays full price, gets back recipientAmount (70%). Net loss = 30%.
+    try {
+      await set(senderBalRef, increment(recipientAmount));
+    } catch {
+      // Self-credit failed — the debit stands; user lost full price.
+      // Log but don't throw (gift was "sent" to self).
+    }
+    // Record platform commission on self-gifts too
+    try {
+      const commissionRef = ref(database, `platformRevenue/giftCommission`);
+      await set(commissionRef, increment(platformCommission));
+    } catch {
+      // Non-critical
+    }
   }
 
   // Step 3: Finalize idempotency record (claim was written at Step 0).
