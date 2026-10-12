@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Modal, ActivityIndicator, Image } from 'react-native';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -334,8 +334,12 @@ export function GiftsModal({
                       borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
                     <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: m.color + '33',
                       alignItems: 'center', justifyContent: 'center', borderWidth: 2,
-                      borderColor: isSel ? m.color : m.color + '55', marginRight: 12 }}>
-                      <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
+                      borderColor: isSel ? m.color : m.color + '55', marginRight: 12, overflow: 'hidden' }}>
+                      {m.photoURL ? (
+                        <Image source={{ uri: m.photoURL }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      ) : (
+                        <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name}</Text>

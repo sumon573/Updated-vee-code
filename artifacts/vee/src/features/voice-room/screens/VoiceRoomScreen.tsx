@@ -2277,7 +2277,7 @@ export default function VoiceRoomScreen() {
         visible={giftsOpen}
         onClose={() => { setGiftsOpen(false); setGiftsRecipient(null); }}
         onGiftSent={handleGiftSent}
-        members={allMembers}
+        members={seatMembers}
         initialRecipient={giftsRecipient}
         walletBalance={walletBalance}
         myUid={myUid}
