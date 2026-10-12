@@ -813,7 +813,7 @@ export async function sweepStaleSeats(roomId: string): Promise<void> {
     }
     const now = Date.now();
     const STALE_MS = 5 * 60 * 1000;
-    const stalePaths: Record<string, null> = {};
+    const staleKeys: string[] = [];
     seatsSnap.forEach((child) => {
       const s = child.val() as { userId?: string; seatTs?: number } | null;
       if (!s || !s.userId) return;
@@ -822,11 +822,22 @@ export async function sweepStaleSeats(roomId: string): Promise<void> {
       // Missing heartbeat (pre-heartbeat seat) → treat as stale only if very
       // old room data; heartbeat seats use the 5-min window.
       if (now - ts > STALE_MS) {
-        stalePaths[`rooms/${roomId}/seats/${child.key}`] = null;
+        staleKeys.push(child.key as string);
       }
     });
-    if (Object.keys(stalePaths).length > 0) {
-      await update(ref(database), stalePaths);
+    // 2026-10-12 rules-audit fix: delete seats ONE BY ONE, not via multi-path
+    // update. Seat delete requires seat-owner/room-owner/admin (rules), so a
+    // regular member's multi-path update would fail ATOMICALLY (all-or-nothing)
+    // with PERMISSION_DENIED. Per-seat deletes let permitted deletions succeed
+    // while others fail silently (best-effort).
+    for (const key of staleKeys) {
+      try {
+        await remove(ref(database, `rooms/${roomId}/seats/${key}`));
+      } catch {
+        // PERMISSION_DENIED or gone already — best-effort, continue
+      }
+    }
+    if (staleKeys.length > 0) {
       _updateCounts(roomId).catch(() => {});
     }
   } catch {
