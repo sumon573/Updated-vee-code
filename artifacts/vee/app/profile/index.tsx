@@ -396,8 +396,8 @@ export default function ProfileScreen({
           </View>
         </View>
 
-        {/* ─── Cover (tappable to change via Edit) ─── */}
-        <Pressable onPress={() => router.push('/profile/edit')}>
+        {/* ─── Cover (tappable to change via Edit — own profile only) ─── */}
+        <Pressable onPress={() => { if (isMe) router.push('/profile/edit'); }}>
           <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
             {profile?.coverImageUrl ? (
               <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
