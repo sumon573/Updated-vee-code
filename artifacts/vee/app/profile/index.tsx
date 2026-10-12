@@ -367,8 +367,10 @@ export default function ProfileScreen({
         if (snap.exists()) {
           snap.forEach((child) => {
             const tx = child.val() as { type?: string; diamonds?: number } | null;
+            // 2026-10-12 review fix: gift_sent stores diamonds as NEGATIVE
+            // (it's a debit) — use abs() or the level becomes NaN.
             if (tx?.type === 'gift_sent' && typeof tx.diamonds === 'number') {
-              total += tx.diamonds;
+              total += Math.abs(tx.diamonds);
             }
           });
         }
