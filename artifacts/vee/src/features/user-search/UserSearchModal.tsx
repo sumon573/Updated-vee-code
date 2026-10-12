@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import LottieView from 'lottie-react-native';
 import * as Haptics from 'expo-haptics';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
@@ -71,15 +72,13 @@ function UserAvatar({ user }: { user: VeeUser }) {
   const initials = displayName !== '?'
     ? displayName.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
-  if (user.photoURL) {
-    return (
-      <Image
-        source={{ uri: user.photoURL }}
-        style={{ width: 48, height: 48, borderRadius: 24 }}
-      />
-    );
-  }
-  return (
+  const frameType = (user as any).activeFrame;
+  const avatar = user.photoURL ? (
+    <Image
+      source={{ uri: user.photoURL }}
+      style={{ width: 48, height: 48, borderRadius: 24 }}
+    />
+  ) : (
     <View style={{
       width: 48, height: 48, borderRadius: 24,
       backgroundColor: 'rgba(139,92,246,0.3)',
@@ -88,6 +87,21 @@ function UserAvatar({ user }: { user: VeeUser }) {
       <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>{initials}</Text>
     </View>
   );
+  // 2026-10-13 (Sumon): Show equipped frame on search avatars too.
+  if (frameType && frameType !== 'none') {
+    return (
+      <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+        {avatar}
+        <LottieView
+          source={require('@/assets/animations/vee-official-frame.json')}
+          autoPlay
+          loop
+          style={{ position: 'absolute', width: 65, height: 65 }}
+        />
+      </View>
+    );
+  }
+  return avatar;
 }
 
 export default function UserSearchModal({ visible, onClose, onSelectUser }: Props) {
