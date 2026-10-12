@@ -128,7 +128,7 @@ export function LeaderboardModal({
         const v = child.val() as { name?: string; photoURL?: string; weeklySent?: number };
         list.push({
           uid: child.key!,
-          name: v.name ?? 'Vee User',
+          name: v.name || 'Vee User',
           photoURL: v.photoURL,
           weeklySent: typeof v.weeklySent === 'number' ? v.weeklySent : 0,
         });
@@ -162,7 +162,7 @@ export function LeaderboardModal({
         const v = child.val() as { name?: string; photoURL?: string; weeklyEarned?: number };
         list.push({
           uid: child.key!,
-          name: v.name ?? 'Vee User',
+          name: v.name || 'Vee User',
           photoURL: v.photoURL,
           weeklyEarned: typeof v.weeklyEarned === 'number' ? v.weeklyEarned : 0,
         });

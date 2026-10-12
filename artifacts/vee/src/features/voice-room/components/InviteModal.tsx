@@ -71,8 +71,8 @@ export function InviteModal({
               const v = userSnap.val() as { name?: string; online?: boolean };
               loaded.push({
                 uid,
-                name: v.name ?? t('voiceRoom.screen.defaultUserName'),
-                initials: getInitials(v.name ?? 'V'),
+                name: v.name || t('voiceRoom.screen.defaultUserName'),
+                initials: getInitials(v.name || 'V'),
                 color: getColor(uid),
                 online: v.online === true,
               });
