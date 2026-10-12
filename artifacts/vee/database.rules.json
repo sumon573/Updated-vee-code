@@ -553,7 +553,7 @@
           // a gift price — previously gifts to users without a wallet node were
           // always denied (data.exists() = false), so some recipients could
           // never receive gifts.
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && (newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)) || (!data.exists() && (newData.val() == 10 || newData.val() == 25 || newData.val() == 50 || newData.val() == 100 || newData.val() == 200 || newData.val() == 500 || newData.val() == 1000 || newData.val() == 2000)))"
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400 || newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)) || (!data.exists() && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400 || newData.val() == 10 || newData.val() == 25 || newData.val() == 50 || newData.val() == 100 || newData.val() == 200 || newData.val() == 500 || newData.val() == 1000 || newData.val() == 2000)))"
         },
         "weeklyEarned": {
           ".write": false
@@ -581,6 +581,19 @@
     // debiting, so a retried gift can never double-charge. Create-only; only
     // the sender can read their own records.
     // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // platformRevenue — tracks platform commission from gifts (2026-10-12).
+    // 30% of each gift price goes here. Write-only via increment(); readable
+    // by admins only.
+    // ─────────────────────────────────────────────────────────────────────
+    "platformRevenue": {
+      ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
+      "giftCommission": {
+        ".write": "auth != null && newData.isNumber() && newData.val() >= 0",
+        ".validate": "newData.isNumber()"
+      }
+    },
+
     "giftFallbackTx": {
       "$key": {
         ".read": "auth != null && (!data.exists() || data.child('fromUid').val() === auth.uid)",

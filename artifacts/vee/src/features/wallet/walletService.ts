@@ -293,6 +293,13 @@ async function sendGiftViaFirebase(
   const price = GIFT_PRICES[giftId];
   if (!price) throw new GiftError('Invalid gift');
 
+  // PLATFORM COMMISSION (2026-10-12): 30% platform fee on gifts.
+  // Sender pays full price; recipient receives 70%; platform keeps 30%.
+  // Example: 10 diamond gift → recipient gets 7, platform keeps 3.
+  const PLATFORM_COMMISSION_RATE = 0.30;
+  const recipientAmount = Math.floor(price * (1 - PLATFORM_COMMISSION_RATE));
+  const platformCommission = price - recipientAmount;
+
   const coerceBalance = (current: unknown): number => {
     if (typeof current === 'number') return current;
     if (typeof current === 'string') return parseFloat(current) || 0;
@@ -352,13 +359,21 @@ async function sendGiftViaFirebase(
   if (toUid !== fromUid) {
     const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
     try {
-      await set(recipientBalRef, increment(price));
+      // Recipient receives 70% (platform keeps 30% commission)
+      await set(recipientBalRef, increment(recipientAmount));
     } catch {
       // Recipient credit failed — refund sender (best effort)
       await runTransaction(senderBalRef, (current) => {
         return coerceBalance(current) + price;
       }).catch(() => {});
       throw new GiftError('Failed to credit recipient');
+    }
+    // Record platform commission (best effort — gift already completed)
+    try {
+      const commissionRef = ref(database, `platformRevenue/giftCommission`);
+      await set(commissionRef, increment(platformCommission));
+    } catch {
+      // Commission tracking failed — gift stands; revenue record lost
     }
   }
 
@@ -405,11 +420,14 @@ async function sendGiftViaFirebase(
       const recipientTxRef = push(ref(database, `wallets/${toUid}/transactions`));
       await set(recipientTxRef, {
         type: 'gift_received',
-        diamonds: price,
+        diamonds: recipientAmount,
         fromUid,
         giftId,
         timestamp,
         createdAt: serverTimestamp(),
+        // Platform commission info (for transparency)
+        originalPrice: price,
+        platformCommission,
       });
     }
   } catch {
