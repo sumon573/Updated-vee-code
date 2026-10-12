@@ -665,8 +665,11 @@
     "giftFallbackTx": {
       "$key": {
         ".read": "auth != null && (!data.exists() || data.child('fromUid').val() === auth.uid)",
-        ".write": "auth != null && !data.exists() && newData.child('fromUid').val() === auth.uid",
-        ".validate": "newData.hasChildren(['fromUid', 'toUid', 'giftId', 'price', 'ts', 'newBalance']) && newData.child('price').isNumber()"
+        // 2026-10-12 audit fix: allow owner to UPDATE their own claim
+        // (Step 0 creates with status='processing', Step 3 finalizes).
+        // Create: fromUid must match. Update: fromUid must match existing.
+        ".write": "auth != null && ((!data.exists() && newData.child('fromUid').val() === auth.uid) || (data.exists() && data.child('fromUid').val() === auth.uid && newData.child('fromUid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['fromUid', 'toUid', 'giftId', 'price', 'ts']) && newData.child('price').isNumber()"
       }
     },
 
