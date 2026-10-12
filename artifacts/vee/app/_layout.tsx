@@ -7,6 +7,7 @@ import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager } f
  * NOTE: native startup crashes (before JS loads) cannot be caught by JS.
  */
 import { installGlobalCrashHandler, CrashOverlay } from '@/src/utils/crashReporter';
+import { HonorCelebration } from '@/src/components/HonorCelebration';
 installGlobalCrashHandler();
 
 /**
@@ -697,6 +698,8 @@ export default function RootLayout() {
                   <GestureHandlerRootView style={{ flex: 1 }}>
                     <AuthGuard>
                       <RootLayoutNav />
+                      {/* 2026-10-13 (Sumon): Honor/Frame grant celebration */}
+                      <HonorCelebration />
                     </AuthGuard>
                   </GestureHandlerRootView>
                 </QueryClientProvider>
