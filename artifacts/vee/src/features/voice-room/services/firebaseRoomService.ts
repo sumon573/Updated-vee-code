@@ -93,6 +93,9 @@ export type RoomInfo = {
   closedAt?: number;
   /** Optional geolocation of the room creator — stored at creation time. */
   location?: { lat: number; lng: number };
+  /** PIN version — bumped on every PIN change (2026-10-12, Sumon). Clients
+   *  cache the verified version; a bump forces re-entry with the NEW pin. */
+  pinVersion?: number;
   /** Synced room theme id (e.g. 'cosmic'). Changed by owner/admin, visible to all. */
   themeId?: string;
 };
@@ -1483,9 +1486,21 @@ export async function getUserRoomCounts(
 /**
  * Store a SHA-256 hashed PIN for a private room.
  * Stored at roomPins/{roomId}, never inside room info.
+ * 2026-10-12 (Sumon): also bumps rooms/{roomId}/info/pinVersion — clients
+ * cache the verified version, so a PIN change forces everyone to re-enter
+ * the NEW pin (old sessions stop working).
  */
 export async function storeRoomPin(roomId: string, hashedPin: string): Promise<void> {
-  await set(ref(database, `roomPins/${roomId}`), { hashedPin, updatedAt: Date.now() });
+  const now = Date.now();
+  await set(ref(database, `roomPins/${roomId}`), { hashedPin, updatedAt: now });
+  // Best-effort version bump (owner-only write per rules).
+  try {
+    const infoSnap = await get(ref(database, `rooms/${roomId}/info/pinVersion`));
+    const cur = typeof infoSnap.val() === 'number' ? infoSnap.val() : 0;
+    await set(ref(database, `rooms/${roomId}/info/pinVersion`), cur + 1);
+  } catch {
+    // non-critical — PIN still stored; version bump is best-effort
+  }
 }
 
 /**

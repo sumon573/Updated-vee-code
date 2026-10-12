@@ -85,9 +85,19 @@ import {
 ═══════════════════════════════════════════ */
 
 // P0 security (2026-10-12): session-scoped cache of private rooms whose PIN
-// was verified. Prevents re-prompting on minimize → return while keeping the
-// gate effective for fresh deep-links.
-const pinVerifiedRooms = new Set<string>();
+// Session PIN cache — remembers which private rooms this device already
+// unlocked, so minimize → return doesn't re-prompt. Prevents re-prompting
+// on minimize → return while keeping the gate effective for fresh deep-links.
+// 2026-10-12 (Sumon): versioned — Map<roomId, pinVersion>. If the owner
+// changes the PIN (info/pinVersion bumps), the cached version mismatches and
+// the user must enter the NEW pin. Old PIN stops working everywhere.
+const pinVerifiedRooms = new Map<string, number>();
+
+/** 2026-10-12 (Sumon): version-aware check — a PIN change (pinVersion bump)
+ *  invalidates previously-verified sessions on ALL devices. */
+function isPinVerified(roomId: string, pinVersion: number): boolean {
+  return pinVerifiedRooms.get(roomId) === pinVersion;
+}
 
 // P1 anti-spam (2026-10-12): per-room last-send timestamps for the 1.5s
 // chat throttle. Module-level so rapid re-renders can't reset it.
@@ -255,10 +265,11 @@ export default function VoiceRoomScreen() {
     const info = pinInfoRef.current;
     if (!info) return;
     pinEvaluatedForRef.current = roomId;
+    const pinVersion = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
     const needsPin =
       info.isPublic !== true &&
       info.ownerId !== myUid &&
-      !pinVerifiedRooms.has(roomId);
+      !isPinVerified(roomId, pinVersion);
     const nextGate = needsPin ? 'open' : 'passed';
     pinGateRef.current = nextGate;
     setPinGate(nextGate);
@@ -538,7 +549,7 @@ export default function VoiceRoomScreen() {
   const pinGateRef = useRef<'checking' | 'open' | 'passed'>('checking');
   const pinEvaluatedForRef = useRef<string | null>(null);
   // Latest room info for PIN-gate re-evaluation when myUid loads late.
-  const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string } | null>(null);
+  const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string; pinVersion?: number } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
@@ -562,7 +573,10 @@ export default function VoiceRoomScreen() {
       const hashed = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pinInput);
       const ok = await verifyRoomPin(roomId, hashed);
       if (ok) {
-        pinVerifiedRooms.add(roomId);
+        // Cache the CURRENT pin version — a later PIN change bumps the
+        // version and forces re-entry (Sumon 2026-10-12).
+        const curVer = typeof pinInfoRef.current?.pinVersion === 'number' ? pinInfoRef.current.pinVersion : 0;
+        pinVerifiedRooms.set(roomId, curVer);
         pinGateRef.current = 'passed';
         setPinGate('passed');
         setPinInput('');
@@ -832,13 +846,29 @@ export default function VoiceRoomScreen() {
       // 2026-10-12 review fix: don't evaluate until myUid is loaded — an
       // empty myUid would wrongly gate the room owner. Stash info so a
       // late myUid can re-evaluate (see effect below).
-      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId };
+      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0 };
+      // 2026-10-12 (Sumon): if the owner changed the PIN mid-session
+      // (pinVersion bumped past our verified version), force re-entry with
+      // the NEW pin — the old PIN must stop working everywhere.
+      const curPinVer = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
+      if (
+        pinGateRef.current === 'passed' &&
+        info.isPublic !== true &&
+        info.ownerId !== myUidRef.current &&
+        !isPinVerified(roomId, curPinVer)
+      ) {
+        pinGateRef.current = 'open';
+        setPinGate('open');
+        setPinInput('');
+        setPinError('');
+      }
       if (pinEvaluatedForRef.current !== roomId && myUidRef.current) {
         pinEvaluatedForRef.current = roomId;
+        const pinVersion = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
         const needsPin =
           info.isPublic !== true &&
           info.ownerId !== myUidRef.current &&
-          !pinVerifiedRooms.has(roomId);
+          !isPinVerified(roomId, pinVersion);
         const nextGate = needsPin ? 'open' : 'passed';
         pinGateRef.current = nextGate;
         setPinGate(nextGate);
