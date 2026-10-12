@@ -9,13 +9,12 @@
  * Styled for the voice room's dark theme.
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import {
   View, Text, Modal, Pressable, FlatList, TextInput, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { subscribeUser, VeeUser } from '@/src/services/userService';
 import type { Participant } from '@/src/features/voice-room/types/room';
 
 const C = {
@@ -77,8 +76,7 @@ function RoleBadge({ role }: { role: 'host' | 'admin' | 'member' }) {
 export default function RoomMembersModal({
   visible, onClose, ownerId, seats, audience, onManageMember,
 }: Props) {
-  // Fallback: owner profile if the owner is not currently seated/in audience
-  const [ownerProfile, setOwnerProfile] = useState<VeeUser | null>(null);
+
 
   const seatMembers = useMemo(
     () => seats.filter((s): s is Participant => s !== null),
@@ -106,24 +104,12 @@ export default function RoomMembersModal({
     [all, ownerId],
   );
 
-  // If the owner isn't in the room right now, load their real profile so the
-  // Owner row still shows (never a fake placeholder).
-  useEffect(() => {
-    if (!visible || owner || !ownerId) { setOwnerProfile(null); return; }
-    const unsub = subscribeUser(ownerId, setOwnerProfile);
-    return unsub;
-  }, [visible, owner, ownerId]);
+  // Per Sumon 2026-10-12: NO owner fallback — Live Audience shows ONLY
+  // those actually live in the room.
 
-  const ownerRow: Participant | null = owner ?? (ownerProfile ? {
-    id: ownerProfile.uid,
-    name: ownerProfile.name || 'Owner',
-    initials: (ownerProfile.name || 'O').split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2),
-    color: C.gold,
-    photoURL: ownerProfile.photoURL || undefined,
-    speaking: false,
-    muted: true,
-    role: 'host',
-  } : null);
+  // Per Sumon 2026-10-12: owner appears ONLY if actually live in the room.
+  // No fallback for offline owners.
+  const ownerRow: Participant | null = owner;
 
   const total = (ownerRow ? 1 : 0) + admins.length + members.length;
 
