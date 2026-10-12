@@ -106,6 +106,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const redirectInFlightRef = useRef<string | null>(null);
+  // 2026-10-12 audit fix (HIGH PUSH-1): pending notification deep link,
+  // consumed once navigation is ready (see effect below).
+  const pendingDeepLinkRef = useRef<(() => void) | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
@@ -175,6 +178,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (!destination) {
       redirectInFlightRef.current = null;
     }
+
+    // 2026-10-12 audit fix (HIGH PUSH-1): consume a stashed notification deep
+    // link now that navigation is ready. Runs after the auth redirect so the
+    // deep link wins (e.g., tap push → land directly in the chat/room).
+    if (!authLoading && !langLoading && rootNavigationState?.key && pendingDeepLinkRef.current) {
+      const fn = pendingDeepLinkRef.current;
+      pendingDeepLinkRef.current = null;
+      // Defer one tick so the auth redirect (if any) settles first.
+      setTimeout(fn, 100);
+    }
   }, [
     user,
     authLoading,
@@ -225,16 +238,27 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     let unsubFn: (() => void) | undefined;
     let cancelled = false;
 
+    // 2026-10-12 audit fix (HIGH PUSH-1): on cold start, router.push() can be
+    // lost (navigation not ready). Stash the pending deep link; the
+    // auth-redirect effect below consumes it once rootNavigationState is ready.
+    const stashPendingLink = (fn: () => void) => {
+      if (rootNavigationState?.key) {
+        fn();
+      } else {
+        pendingDeepLinkRef.current = fn;
+      }
+    };
+
     // RC8-B2: Added onRoom handler for seat-approved / room-invite / seat-invite
     // notifications so tapping them navigates directly to the voice room.
     registerNotificationOpenedHandler(
-      (chatId) => router.push(`/inbox/${chatId}` as any),
-      (roomId) => router.push({ pathname: '/voice-room', params: { roomId } } as any),
-      () => router.push('/chat' as any),
+      (chatId) => stashPendingLink(() => router.push(`/inbox/${chatId}` as any)),
+      (roomId) => stashPendingLink(() => router.push({ pathname: '/voice-room', params: { roomId } } as any)),
+      () => stashPendingLink(() => router.push('/chat' as any)),
       // Incoming call: just bring app to foreground; the call UI is driven by
       // the live call listener (app/_layout.tsx handleIncomingCall), not by params.
       // Pushing /audio-call with partial params would hit the invalid-call guard.
-      () => router.push('/chat' as any),
+      () => stashPendingLink(() => router.push('/chat' as any)),
     ).then((unsub) => {
       if (cancelled) {
         unsub();

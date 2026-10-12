@@ -4,6 +4,7 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
 import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
@@ -172,12 +173,26 @@ export function GiftsModal({
     // during the 1.6s success animation (would allow double-charge).
     let didSucceed = false;
     try {
-      // Idempotency: ONE key per (recipient, gift) ATTEMPT, generated up-front
-      // and reused across retries of this send action. A retry with the same
-      // key can never charge twice — the server dedupes on the key.
-      const keys = new Map<string, string>(
-        recipients.map(r => [r.id, Crypto.randomUUID()]),
-      );
+      // Idempotency: ONE key per (recipient, gift), PERSISTED across attempts.
+      // 2026-10-12 audit fix (CRITICAL C2): keys were regenerated on every
+      // handleSend(). If the app crashed after charge but before confirmation,
+      // the retry used a NEW key → double-charge. Now: reuse the pending key
+      // from AsyncStorage; clear it only on confirmed success.
+      const keys = new Map<string, string>();
+      for (const r of recipients) {
+        const storeKey = `pendingGiftKey:${myUid}:${r.id}:${g.id}`;
+        let key: string | null = null;
+        try {
+          key = await AsyncStorage.getItem(storeKey);
+        } catch { /* non-critical */ }
+        if (!key) {
+          key = Crypto.randomUUID();
+          try {
+            await AsyncStorage.setItem(storeKey, key);
+          } catch { /* non-critical */ }
+        }
+        keys.set(r.id, key);
+      }
       const senderAvatar = members.find(m => m.id === myUid)?.photoURL;
 
       const succeeded: Participant[] = [];
@@ -210,6 +225,11 @@ export function GiftsModal({
           continue;
         }
         succeeded.push(r);
+        // 2026-10-12 audit fix (C2): clear the persisted idempotency key —
+        // the gift is confirmed, a future attempt must use a fresh key.
+        try {
+          await AsyncStorage.removeItem(`pendingGiftKey:${myUid}:${r.id}:${g.id}`);
+        } catch { /* non-critical */ }
 
         // Best-effort feed entry — the gift is already charged. Fire and
         // forget: onGiftSent below must NOT wait for the RTDB echo.

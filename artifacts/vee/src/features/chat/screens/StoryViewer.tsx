@@ -476,7 +476,7 @@ function StoryCard({
         reactions={story.reactions ?? {}}
         currentUserId={currentUserId}
         currentUserName={currentUserName}
-        onClose={() => setShowComments(false)}
+        onClose={() => { setShowComments(false); onCommentBlur?.(); }}
         onSendComment={async (text, replyTo) => {
           if (!currentUserId) throw new Error('Not authenticated');
           await addStoryComment(story.userId, story.id, {
@@ -535,7 +535,7 @@ function StoryCard({
                 <Text style={{ color: C.muted, fontSize: 11 }}>{t('chat.storyReact')}</Text>
               </Pressable>
 
-              <Pressable onPress={() => setShowComments(true)} style={{ alignItems: 'center', gap: 4 }}>
+              <Pressable onPress={() => { setShowComments(true); onCommentFocus?.(); }} style={{ alignItems: 'center', gap: 4 }}>
                 <View style={{
                   width: 44, height: 44, borderRadius: 22,
                   backgroundColor: C.glass, borderWidth: 1, borderColor: C.glassBorder,

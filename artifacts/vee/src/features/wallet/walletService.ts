@@ -312,26 +312,39 @@ async function sendGiftViaFirebase(
     return 0;
   };
 
-  // Step 0: Idempotency — claim this key BEFORE debiting. If already claimed
-  // (retry), return the stored result instead of charging again.
+  // Step 0: Idempotency — ATOMICALLY claim this key BEFORE debiting.
+  // 2026-10-12 audit fix (CRITICAL): the old code only READ the claim here
+  // and WROTE it at Step 3 (after debit). Two concurrent invocations could
+  // both pass the read → both debit → double-charge. Now: runTransaction
+  // claims the key atomically; if already claimed, return the replayed result.
   const claimRef = ref(database, `giftFallbackTx/${idempotencyKey}`);
-  try {
-    const existing = await get(claimRef);
-    if (existing.exists()) {
-      const rec = existing.val() as { fromUid?: string; newBalance?: number; giftId?: string; price?: number };
-      if (rec.fromUid === fromUid) {
-        return {
-          ok: true,
-          newBalance: typeof rec.newBalance === 'number' ? rec.newBalance : 0,
-          receipt: { via: 'firebase-direct', giftId, price, replayed: true },
-        };
+  const claimResult = await runTransaction(claimRef, (current) => {
+    if (current !== null) return; // Already claimed — abort, replay below
+    // Claim it: mark as in-progress. newBalance filled at Step 3.
+    return { fromUid, toUid, giftId, price, status: 'processing', ts: Date.now() };
+  }).catch(() => null);
+  if (claimResult && !claimResult.committed) {
+    // Key was already claimed — fetch the record and replay.
+    try {
+      const existing = await get(claimRef);
+      if (existing.exists()) {
+        const rec = existing.val() as { fromUid?: string; newBalance?: number; status?: string };
+        if (rec.fromUid === fromUid) {
+          return {
+            ok: true,
+            newBalance: typeof rec.newBalance === 'number' ? rec.newBalance : 0,
+            receipt: { via: 'firebase-direct', giftId, price, replayed: true },
+          };
+        }
       }
-      // Key belongs to someone else — must not reuse it.
-      throw new GiftError('Invalid idempotency key');
+    } catch {
+      // Read failed — fall through to GiftError below
     }
-  } catch (e) {
-    if (e instanceof GiftError) throw e;
-    // Read failed (offline?) — proceed; the claim write below will decide.
+    throw new GiftError('Gift already processing');
+  }
+  if (!claimResult) {
+    // Transaction itself failed (offline?) — cannot safely proceed.
+    throw new GiftError('Cannot verify gift status, please retry');
   }
 
   // Step 1: Decrement sender's balance (atomic, validated by rules:
@@ -383,17 +396,17 @@ async function sendGiftViaFirebase(
     }
   }
 
-  // Step 3: Record idempotency (best effort — gift already completed).
+  // Step 3: Finalize idempotency record (claim was written at Step 0).
   try {
     await set(claimRef, {
       fromUid, toUid, giftId, price,
+      status: 'completed',
       ts: Date.now(),
       createdAt: serverTimestamp(),
       newBalance,
     });
   } catch {
-    // Non-critical — a retry would re-debit, but the balance check above
-    // plus the UI's single-send flow make this acceptable.
+    // Non-critical — the gift completed; a retry will replay via Step 0.
   }
 
   // Step 3b (NOTE 10, 2026-10-11): Nobel XP — diamonds sent as gifts count

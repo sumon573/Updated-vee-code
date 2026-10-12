@@ -432,17 +432,21 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         }
       : undefined;
 
-    setInputText('');
-    setReplyTarget(null);
+    // 2026-10-12 audit fix (HIGH DM-1): do NOT clear input before the send
+    // is acked. If the app is killed mid-send, the message is lost forever
+    // (no RTDB disk persistence). Clear only on success.
+    const savedReplyTarget = replyTarget;
     shouldScrollRef.current = true;
     setTyping(chatId, myUid, false);
 
     try {
       await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined);
+      // Success — now clear.
+      setInputText('');
+      setReplyTarget(null);
     } catch (e) {
-      // Restore the typed text on failure (only if the user hasn't typed
-      // something new meanwhile) so a failed send doesn't eat the message.
-      setInputText((prev) => (prev ? prev : text));
+      // Restore the reply target too (was previously dropped silently).
+      if (savedReplyTarget) setReplyTarget(savedReplyTarget);
       if (e instanceof BlockedInteractionError) {
         const d = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
         setBlockDirection(d);
