@@ -741,7 +741,7 @@
         ".read": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         ".write": "auth != null && !newData.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         "$uid": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+          ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
           ".validate": "!newData.exists() || (newData.child('joinedAt').isNumber() && newData.child('role').isString())"
         }
       }
