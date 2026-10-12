@@ -66,7 +66,6 @@ export type RoomInfo = {
   memberCount: number;
   /** Total live in room (seated + audience) — for list/trending. memberCount stays seated-only for Room Info. */
   liveCount?: number;
-  listenerCount?: number;
   maxMembers: number;
   isLive: boolean;
   isTrending: boolean;

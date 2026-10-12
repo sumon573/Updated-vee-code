@@ -33,6 +33,7 @@ export interface UseStoriesResult {
   comment: (authorUid: string, storyId: string, text: string) => Promise<void>;
   remove: (storyId: string) => Promise<void>;
   markGroupSeen: (userId: string) => void;
+  getContactUids: () => Set<string>;
 }
 
 export function useStories(): UseStoriesResult {

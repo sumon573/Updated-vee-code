@@ -13,6 +13,9 @@ export type VoiceRoom = {
   topic: string;
   themeColor: string;
   memberCount: number;
+  /** Total live (seated + audience) — for list/trending display */
+  liveCount?: number;
+  listenerCount?: number;
   maxMembers: number;
   isLive: boolean;
   isTrending?: boolean;
