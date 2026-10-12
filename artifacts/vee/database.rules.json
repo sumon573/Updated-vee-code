@@ -88,6 +88,12 @@
         // self-gifts excluded). Type validation prevents corrupted records
         // that could crash the app (2026-10-08 lesson).
         "noble": {
+          // 2026-10-12 audit fix (HIGH): Noble XP was self-writable — any user
+          // could set arbitrary XP/rank. Now: XP can only INCREASE by at most
+          // the max gift price (2000) per write, and rankIndex must be
+          // consistent with the XP. Grinding via many small writes is still
+          // possible client-side; full server-authority is the complete fix.
+          ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
           ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
         }
       }
@@ -438,7 +444,11 @@
             ".validate": "newData.isBoolean()"
           },
           "totalDiamonds": {
-            ".write": "auth != null",
+            // TRENDING-MANIPULATION FIX (2026-10-12): previously ANY authenticated
+            // user could inflate ANY room's totalDiamonds via REST. Now only
+            // room members (audience/seat holders are in audience), the owner,
+            // room admins, or platform roles can increment. Non-decreasing kept.
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
             ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())"
           }
         },
@@ -456,7 +466,7 @@
             //   themselves to admin via a crafted seat update, because the
             //   update branch of .validate was just `true`)
             // - seatIndex must be 0-19 (prevents phantom seats at arbitrary indices)
-            ".write": "auth != null && ($seatIndex.matches(/^(0|1|2|3|4|5|6|7|8|9|1[0-9])$/) && ((!data.exists() && newData.child('userId').val() === auth.uid) || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator'))",
+            ".write": "auth != null && ($seatIndex.matches(/^(0|1|2|3|4|5|6|7|8|9|1[0-9])$/) && ((!data.exists() && newData.child('userId').val() === auth.uid && root.child('roomBlocks').child($roomId).child(auth.uid).child('action').val() !== 'room-block' && (!root.child('rooms').child($roomId).child('lockedSeats').child($seatIndex).exists() || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists())) || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator'))",
             ".validate": "!newData.exists() || (newData.child('userId').isString() && (!data.exists() ? ((newData.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists()) && (!newData.child('role').exists() || newData.child('role').val() === 'member' || newData.child('role').val() === 'speaker' || (newData.child('role').val() === 'host' && root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid) || (newData.child('role').val() === 'admin' && newData.child('userId').val() === auth.uid && root.child('rooms').child($roomId).child('admins').child(auth.uid).exists()))) : (newData.child('role').val() === data.child('role').val() || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')))"
           }
         },
@@ -478,8 +488,12 @@
           }
         },
         "audience": {
+          // BLOCK EVASION FIX (2026-10-12): a room-blocked user could re-add
+          // themselves via REST (auth.uid === $uid). Self-join is now denied
+          // when roomBlocks/$roomId/$uid has action === 'room-block'.
+          // Owner/admin/platform writes are unaffected (needed for kick/unblock).
           "$uid": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
+            ".write": "auth != null && ((auth.uid === $uid && root.child('roomBlocks').child($roomId).child($uid).child('action').val() !== 'room-block') || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
           }
         },
         "lockedSeats": {
@@ -489,9 +503,14 @@
           ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
         },
         "chat": {
+          // CHAT SPAM FIX (2026-10-12): previously ANY authenticated user could
+          // write to ANY room's chat via REST (even as 'system'), bypassing
+          // room-block/comment-block. Now the writer must be a room member
+          // (audience — seat holders keep their audience record), the owner,
+          // a room admin, or a platform role. 500-char cap added.
           "$msgId": {
-            ".write": "auth != null",
-            ".validate": "!newData.exists() || ((newData.child('senderId').val() === auth.uid || newData.child('senderId').val() === 'system') && newData.child('text').isString() && newData.child('ts').isNumber())"
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+            ".validate": "!newData.exists() || ((newData.child('senderId').val() === auth.uid || newData.child('senderId').val() === 'system') && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('ts').isNumber())"
           }
         },
         "giftFeed": {
@@ -591,7 +610,10 @@
           // can still mint FULL prices into their OWN balance via the refund
           // path — indistinguishable from a legit refund at the rules layer;
           // a complete fix needs server-authoritative gifts.
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && (newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000)))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)))"
+          // 2026-10-12 audit fix (M2): allow owner to normalize a legacy
+          // STRING balance to a number (one-way migration; otherwise string-
+          // balance users have fully broken wallets — no writes work).
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && ((newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000) || (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400))))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)) || (auth.uid === $uid && data.exists() && data.isString()))"
         },
         "weeklyEarned": {
           ".write": false
@@ -646,8 +668,11 @@
     "giftFallbackTx": {
       "$key": {
         ".read": "auth != null && (!data.exists() || data.child('fromUid').val() === auth.uid)",
-        ".write": "auth != null && !data.exists() && newData.child('fromUid').val() === auth.uid",
-        ".validate": "newData.hasChildren(['fromUid', 'toUid', 'giftId', 'price', 'ts', 'newBalance']) && newData.child('price').isNumber()"
+        // 2026-10-12 audit fix: allow owner to UPDATE their own claim
+        // (Step 0 creates with status='processing', Step 3 finalizes).
+        // Create: fromUid must match. Update: fromUid must match existing.
+        ".write": "auth != null && ((!data.exists() && newData.child('fromUid').val() === auth.uid) || (data.exists() && data.child('fromUid').val() === auth.uid && newData.child('fromUid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['fromUid', 'toUid', 'giftId', 'price', 'ts']) && newData.child('price').isNumber()"
       }
     },
 
@@ -728,7 +753,7 @@
         ".read": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         ".write": "auth != null && !newData.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         "$uid": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+          ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
           ".validate": "!newData.exists() || (newData.child('joinedAt').isNumber() && newData.child('role').isString())"
         }
       }
@@ -773,6 +798,13 @@
       ".read": "auth != null",
       ".write": false,
       ".indexOn": ["weeklyEarned"]
+    },
+    // LEADERBOARD FIX (2026-10-12): leaderboard_senders had NO rules —
+    // top-level ".read": false made Top Senders permanently empty.
+    "leaderboard_senders": {
+      ".read": "auth != null",
+      ".write": false,
+      ".indexOn": ["weeklySent"]
     },
 
     // ─────────────────────────────────────────────────────────────────────
