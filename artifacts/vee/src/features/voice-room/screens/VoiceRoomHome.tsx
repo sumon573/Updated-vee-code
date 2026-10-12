@@ -643,7 +643,7 @@ export default function VoiceRoomHome({
                 return matches.map(room => (
                   <RoomListItem
                     key={room.id}
-                    room={room}
+                    room={toVoiceRoom(room)}
                     onPress={() => {
                       setRoomSearchOpen(false);
                       setRoomSearchQuery('');
