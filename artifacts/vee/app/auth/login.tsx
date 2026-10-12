@@ -136,7 +136,7 @@ export default function ImoLoginScreen() {
   function handleEmail() {
     clearNotice();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/auth/signup');
+    router.push('/auth/email-login');
   }
 
   // ─── Header actions ─────────────────────────────────────────────────────────

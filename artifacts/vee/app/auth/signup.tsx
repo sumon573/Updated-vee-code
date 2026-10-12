@@ -321,7 +321,7 @@ export default function SignupScreen() {
 
           <View style={{ height: 14 }} />
 
-          <ScalePress onPress={() => router.replace('/auth/login')}>
+          <ScalePress onPress={() => router.replace('/auth/email-login')}>
             <View style={{
               height: 58, borderRadius: 32, borderWidth: 1.6, borderColor: C.primary,
               alignItems: 'center', justifyContent: 'center',

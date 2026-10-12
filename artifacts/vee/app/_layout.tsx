@@ -518,6 +518,7 @@ function RootLayoutNav() {
         <Stack.Screen name="index" />
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/complete-profile" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="auth/email-login" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/signup" />
         <Stack.Screen name="auth/forgot-password" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="home/index" />
