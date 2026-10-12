@@ -59,7 +59,10 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
         joinedMembers.map(async (m) => {
           try {
             const p = await getUser(m.uid);
-            return p ? [m.uid, { name: p.name || 'User', photoURL: p.photoURL || undefined }] as const : null;
+            if (!p) return null;
+            // Name fallback: DB name → email prefix → 'User' (Google users may have empty name)
+            const fallbackName = p.name || (p.email ? p.email.split('@')[0] : null) || 'User';
+            return [m.uid, { name: fallbackName, photoURL: p.photoURL || undefined }] as const;
           } catch { return null; }
         }),
       );
