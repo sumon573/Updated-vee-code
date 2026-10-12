@@ -457,6 +457,7 @@ export default function VoiceRoomScreen() {
                   initials: myInitials, color: myColor,
                   muted: true, role: 'member',
                   ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+                  ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
                 });
               } catch {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
@@ -1506,6 +1507,8 @@ export default function VoiceRoomScreen() {
       initials: myInitials,
       color: myColor,
       ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+      // 2026-10-13 (Sumon): Include active frame so seats show it.
+      ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
       // CRITICAL-4 fix: preserve current mute state when moving between seats;
       // start muted only on first join from audience (mySeatIdx < 0).
       muted: mySeatIdx >= 0 ? muted : true,
