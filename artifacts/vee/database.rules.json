@@ -14,6 +14,15 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
+        // SECURITY FIX (2026-10-12, P1-3): protected fields can only be changed
+        // by a platform admin. Previously the owner-write above made the
+        // deeper admin-only rules on banned/role/diamonds/officialBadge
+        // ineffective (RTDB .write cascades down), so a user could unban
+        // themselves, self-grant a role/diamonds, or self-verify.
+        // NOTE: badges/frames/nameplates stay client-writable (noble rank
+        // rewards + future event claims are granted client-side); the
+        // high-impact fields below are what this locks down.
+        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val())",
         // PERMANENT FIX (2026-10-08): Validate data types to prevent corrupted
         // records that crash the app. These rules reject malformed writes at
         // the database level, so bad data can never be stored.
