@@ -28,6 +28,7 @@ import {
   cleanupStaleReservations,
   type RoomInfo,
 } from '@/src/features/voice-room/services/firebaseRoomService';
+import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -70,8 +71,8 @@ function RoleBadge({ role }: { role: UserRole }) {
 // ─── Room card ────────────────────────────────────────────────────────────────
 
 function RoomCard({
-  room, role, onDelete,
-}: { room: RoomInfo; role: UserRole; onDelete?: () => void }) {
+  room, role, onDelete, onRoomPress,
+}: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void }) {
   // Backward compatible: rooms created before the `active` flag existed
   // (or with a missing field) are treated as active. Only an explicit
   // `active: false` means closed.
@@ -86,7 +87,7 @@ function RoomCard({
       );
       return;
     }
-    router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
+    onRoomPress(room);
   };
 
   // DISBAND FIX (2026-10-10): closed rooms could never be removed — tapping
@@ -176,6 +177,8 @@ export default function ProfileRoomsScreen() {
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleMap, setRoleMap] = useState<Record<string, UserRole>>({});
+  // PIN gate for private rooms
+  const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
 
   useEffect(() => {
     if (!targetUid) { setLoading(false); return; }
@@ -215,7 +218,9 @@ export default function ProfileRoomsScreen() {
   }, [targetUid]);
 
   const getRole = (room: RoomInfo): UserRole => {
-    if (room.ownerId === user?.uid) return 'owner';
+    // Show the PROFILE OWNER's role (targetUid), not the viewer's.
+    // roleMap is already from userRooms/{targetUid}.
+    if (room.ownerId === targetUid) return 'owner';
     return roleMap[room.id] ?? 'member';
   };
 
@@ -287,6 +292,9 @@ export default function ProfileRoomsScreen() {
                 room={item}
                 role={role}
                 onDelete={role === 'owner' && isClosed ? () => handleDeleteClosed(item) : undefined}
+                onRoomPress={(room) => requestRoomAccess(room, () => {
+                  router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
+                })}
               />
             );
           }}
@@ -294,6 +302,7 @@ export default function ProfileRoomsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+      {pinDialog}
     </SafeAreaView>
   );
 }

@@ -30,13 +30,21 @@ import {
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
+import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
+import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
 import { useTranslation } from 'react-i18next';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
 const GIFTS: Record<string, string> = {
   '1': '💝', '2': '🌹', '3': '🎁', '4': '💎',
   '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆',
+};
+
+// Gift diamond prices (for ranking "big gifts" in the 1-line preview)
+const GIFT_RANK_PRICE: Record<string, number> = {
+  '1': 10, '2': 25, '3': 50, '4': 100,
+  '5': 200, '6': 500, '7': 1000, '8': 2000,
 };
 
 // IMO light-mode colors
@@ -139,6 +147,18 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
             <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>👥 {item.memberCount}</Text>
           </View>
         )}
+        {/* Private/Public icon — top-right corner, same as trending */}
+        <View style={{
+          position: 'absolute', top: 6, right: 6,
+          backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
+          padding: 4,
+        }}>
+          {item.isPrivate ? (
+            <Feather name="lock" size={12} color="#F59E0B" />
+          ) : (
+            <Feather name="globe" size={12} color="#10B981" />
+          )}
+        </View>
       </View>
       <Text style={{ fontSize: 12, color: C.text, marginTop: 6, fontWeight: '600' }} numberOfLines={1}>
         {item.name || 'Room'}
@@ -152,12 +172,17 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
 export default function ProfileScreen({
   onNavigateToContacts,
   targetUid,
+  targetName,
 }: {
   onNavigateToContacts?: () => void;
   /** When set, renders ANOTHER user's profile with the IDENTICAL layout.
    *  Only differences: no settings icon, three-dots shows their vId,
    *  bottom action buttons instead of Edit. */
   targetUid?: string;
+  /** Display name passed from the navigation source (e.g. member list).
+   *  Used as fallback when the target's DB name is empty — NEVER falls
+   *  back to the viewer's own name. */
+  targetName?: string;
 } = {}) {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
@@ -169,6 +194,9 @@ export default function ProfileScreen({
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  const [nobleState, setNobleState] = useState<NobleState | null>(null);
+  // PIN gate for private rooms (enforced from EVERYWHERE)
+  const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
   // (Gift History section removed 2026-10-10 per Sumon: gifts live ONLY inside
   // /profile/gifts with x2/x3 aggregation, not on the profile screen.)
   const [vidCopied, setVidCopied] = useState(false);
@@ -207,6 +235,19 @@ export default function ProfileScreen({
     if (!displayUid) return;
     return subscribeMyRoomsCombined(displayUid, setRooms);
   }, [displayUid]);
+
+  // Nobel tier — always shows the user's current rank name
+  useEffect(() => {
+    if (!displayUid) { setNobleState(null); return; }
+    return subscribeNoble(displayUid, setNobleState);
+  }, [displayUid]);
+
+  // ── Private room PIN enforcement (from EVERYWHERE) ──
+  const handleRoomPress = useCallback((room: any) => {
+    requestRoomAccess(room, () => {
+      router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
+    });
+  }, [requestRoomAccess]);
 
   useEffect(() => {
     if (!displayUid) return;
@@ -346,8 +387,8 @@ export default function ProfileScreen({
     );
   }
 
-  const displayName = profile?.name || user?.displayName || 'User';
-  const photoURL = profile?.photoURL || user?.photoURL;
+  const displayName = profile?.name || (isMe ? user?.displayName : targetName) || 'User';
+  const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
   const vId = profile?.vId || '';
   const bio = profile?.bio || '';
   const giftEntries = Object.entries(receivedGifts);
@@ -432,7 +473,7 @@ export default function ProfileScreen({
 
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
-          <BadgePill label="Non-Noble" />
+          <BadgePill label={nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.name ?? 'Non-Noble' : 'Non-Noble'} />
           <BadgePill label={`Lv.${userLevel}`} icon="🏅" />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
@@ -455,27 +496,33 @@ export default function ProfileScreen({
                 <RoomCard
                   key={item.id || String(i)}
                   item={item}
-                  onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
+                  onPress={() => handleRoomPress(item)}
                 />
               ))}
             </ScrollView>
           </>
         )}
 
-        {/* ─── Gifts ─── */}
+        {/* ─── Gifts — 1 LINE ONLY: top 4 biggest by total diamond value.
+            Tap anywhere → full gifts page. ─── */}
         {giftEntries.length > 0 && (
           <>
             <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-              {giftEntries.slice(0, 8).map(([giftId, count]) => (
-                <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                  <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
+            <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
+              <View style={{ flexDirection: 'row', paddingHorizontal: 12 }}>
+                {[...giftEntries]
+                  .sort((a, b) => (GIFT_RANK_PRICE[b[0]] || 0) * b[1] - (GIFT_RANK_PRICE[a[0]] || 0) * a[1])
+                  .slice(0, 4)
+                  .map(([giftId, count]) => (
+                  <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
                   </View>
-                  <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            </Pressable>
           </>
         )}
 
@@ -487,21 +534,27 @@ export default function ProfileScreen({
           onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
         />
         {grantedBadges.length > 0 ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+            nestedScrollEnabled
+            directionalLockEnabled
+          >
             <Pressable
               onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
-              style={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%' }}
+              style={{ flexDirection: 'row' }}
             >
               {grantedBadges.map((h) => (
-                <View key={h.id} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                  <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
+                  <View style={{ width: 72, aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 36 }}>{h.icon}</Text>
                   </View>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{h.name}</Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
                 </View>
               ))}
             </Pressable>
-          </View>
+          </ScrollView>
         ) : (
           <Pressable onPress={() => router.push('/profile/honor')}>
             <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
@@ -538,6 +591,9 @@ export default function ProfileScreen({
         {/* ─── Bottom padding for Edit button ─── */}
         <View style={{ height: 90 }} />
       </ScrollView>
+
+      {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
+      {pinDialog}
 
       {/* ─── Bottom Action: Edit (own) or Chat/Add + Follow (other user) ─── */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border }}>

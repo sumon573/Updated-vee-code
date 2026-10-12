@@ -647,7 +647,7 @@ export default function VoiceRoomHome({
                     onPress={() => {
                       setRoomSearchOpen(false);
                       setRoomSearchQuery('');
-                      goToRoom(room.id);
+                      handleRoomPress(room);
                     }}
                   />
                 ));

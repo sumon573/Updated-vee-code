@@ -28,5 +28,5 @@ export default function UserProfileRoute() {
 
   if (!uid) return null;
 
-  return <ProfileScreen targetUid={uid} />;
+  return <ProfileScreen targetUid={uid} targetName={name} />;
 }

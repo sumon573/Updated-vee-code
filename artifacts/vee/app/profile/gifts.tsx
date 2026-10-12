@@ -217,8 +217,8 @@ export default function GiftDisplayScreen() {
     };
   }, [contributorList, contributors]);
 
-  const displayName = profile?.name || user?.displayName || 'User';
-  const photoURL = profile?.photoURL || user?.photoURL;
+  const displayName = profile?.name || (isMe ? user?.displayName : (profile?.email ? profile.email.split('@')[0] : null)) || 'User';
+  const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
 
   const renderGiftCell = useCallback(
     ([giftId, count]: [string, number], dimmed: boolean) => (
@@ -393,8 +393,10 @@ export default function GiftDisplayScreen() {
             <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
               {contributorList.map((c, i) => {
                 const u = contributors[c.uid];
-                const name = u?.name || 'User';
-                const avatar = u?.photoURL;
+                // Name fallback: DB name → email prefix → 'User'.
+                // (Google/Gmail users may have empty DB name.)
+                const name = u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
+                const avatar = u?.photoURL || undefined;
                 return (
                   <View
                     key={c.uid}

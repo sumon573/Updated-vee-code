@@ -131,9 +131,10 @@ export default function DecorationScreen() {
         </Text>
       </View>
 
-      {/* Tabs: Frames | Nobel (NOTE 9: Nameplates renamed to Nobel) */}
+      {/* Tabs: Frames | Nobel (NOTE 9: Nameplates renamed to Nobel).
+          Nobel tab is OWNER-ONLY — visitors see only the Nobel name on the profile. */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 12 }}>
-        {(['frames', 'nobel'] as const).map((t) => (
+        {(isMe ? (['frames', 'nobel'] as const) : (['frames'] as const)).map((t) => (
           <Pressable
             key={t}
             onPress={() => setTab(t)}
