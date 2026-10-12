@@ -42,7 +42,7 @@ export async function signInWithGoogle(): Promise<User> {
     '&scope=' + encodeURIComponent('openid profile email') +
     '&nonce=' + Math.random().toString(36).substring(2);
 
-  const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI);
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, 'vee://oauth');
 
   if (result.type !== 'success') {
     throw Object.assign(
@@ -51,7 +51,7 @@ export async function signInWithGoogle(): Promise<User> {
     );
   }
 
-  // Extract ID token from redirect URL fragment
+  // Extract ID token from redirect URL (vee://oauth?id_token=... from our handler)
   const url = result.url;
   const fragment = url.split('#')[1] || url.split('?')[1] || '';
   const params = new URLSearchParams(fragment);
