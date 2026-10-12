@@ -15,6 +15,25 @@ import { ref, onValue, set } from 'firebase/database';
 import { database } from '../config/firebase';
 import type { GrantedBadge } from '../data/honor';
 
+/**
+ * 2026-10-13 (Sumon): Ranking — official/special items at top.
+ * Order: 1) "Vee Official" badge/frame first, 2) other official source,
+ * 3) rest by newest. Applies to badges, frames, nameplates.
+ */
+function rankHonors<T extends { name?: string; source?: string; obtainedAt?: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aIsVeeOfficial = (a.name || '').toLowerCase().includes('vee official') ? 0 : 1;
+    const bIsVeeOfficial = (b.name || '').toLowerCase().includes('vee official') ? 0 : 1;
+    if (aIsVeeOfficial !== bIsVeeOfficial) return aIsVeeOfficial - bIsVeeOfficial;
+
+    const aIsOfficial = a.source === 'official' ? 0 : 1;
+    const bIsOfficial = b.source === 'official' ? 0 : 1;
+    if (aIsOfficial !== bIsOfficial) return aIsOfficial - bIsOfficial;
+
+    return (b.obtainedAt || 0) - (a.obtainedAt || 0);
+  });
+}
+
 export interface GrantedNameplate {
   id: string;
   name: string;
@@ -89,11 +108,12 @@ export function subscribeBadges(
 ): () => void {
   return subscribeList<GrantedBadge>(uid, 'badges', (items) =>
     callback(
-      items
-        .filter((b) => typeof (b as any).icon === 'string')
-        .filter((b) => isStillValid(b.validity))
-        .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
-    ),
+      rankHonors(
+        items
+          .filter((b) => typeof (b as any).icon === 'string')
+          .filter((b) => isStillValid(b.validity))
+      )
+    )
   );
 }
 
@@ -104,9 +124,7 @@ export function subscribeNameplates(
 ): () => void {
   return subscribeList<GrantedNameplate>(uid, 'nameplates', (items) =>
     callback(
-      items
-        .filter((pl) => isStillValid(pl.validity))
-        .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
+      rankHonors(items.filter((pl) => isStillValid(pl.validity))),
     ),
   );
 }
@@ -118,9 +136,7 @@ export function subscribeFrames(
 ): () => void {
   return subscribeList<GrantedFrame>(uid, 'frames', (items) =>
     callback(
-      items
-        .filter((f) => isStillValid(f.validity))
-        .sort((a, b) => (b.obtainedAt || 0) - (a.obtainedAt || 0)),
+      rankHonors(items.filter((f) => isStillValid(f.validity))),
     ),
   );
 }
