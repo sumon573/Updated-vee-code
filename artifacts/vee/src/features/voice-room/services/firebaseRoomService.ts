@@ -905,10 +905,14 @@ export async function removeSeat(
     // audience record — seated users keep their audience record, and the
     // owner's self-heal would otherwise resurrect admin powers for a
     // departed admin by re-adding them to the registry.
-    await update(ref(database, `rooms/${roomId}`), {
-      [`seats/${seatIndex}`]: null,
-      [`admins/${demoteUid}`]: null,
-      [`audience/${demoteUid}/role`]: 'member',
+    // 2026-10-12 review fix #2: also sync roomMembers/{roomId}/{uid}/role —
+    // Room Info reads roles from there; a kicked admin would otherwise still
+    // appear under "Admin" until rejoin. Note roomMembers lives at DB root.
+    await update(ref(database), {
+      [`rooms/${roomId}/seats/${seatIndex}`]: null,
+      [`rooms/${roomId}/admins/${demoteUid}`]: null,
+      [`rooms/${roomId}/audience/${demoteUid}/role`]: 'member',
+      [`roomMembers/${roomId}/${demoteUid}/role`]: 'member',
     });
   } else {
     await remove(seatRef);
@@ -1500,15 +1504,16 @@ export async function getUserRoomCounts(
  * 2026-10-12 (Sumon): also bumps rooms/{roomId}/info/pinVersion — clients
  * cache the verified version, so a PIN change forces everyone to re-enter
  * the NEW pin (old sessions stop working).
+ * 2026-10-12 review fix: use atomic increment() — read-modify-write could
+ * lose a bump on rapid double-changes.
  */
 export async function storeRoomPin(roomId: string, hashedPin: string): Promise<void> {
+  const { increment } = await import('firebase/database');
   const now = Date.now();
   await set(ref(database, `roomPins/${roomId}`), { hashedPin, updatedAt: now });
-  // Best-effort version bump (owner-only write per rules).
+  // Atomic version bump (owner-only write per rules). Best-effort.
   try {
-    const infoSnap = await get(ref(database, `rooms/${roomId}/info/pinVersion`));
-    const cur = typeof infoSnap.val() === 'number' ? infoSnap.val() : 0;
-    await set(ref(database, `rooms/${roomId}/info/pinVersion`), cur + 1);
+    await set(ref(database, `rooms/${roomId}/info/pinVersion`), increment(1));
   } catch {
     // non-critical — PIN still stored; version bump is best-effort
   }
