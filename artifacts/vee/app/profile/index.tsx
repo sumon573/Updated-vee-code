@@ -22,7 +22,13 @@ import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudi
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges } from '@/src/services/badgeService';
 import { GrantedBadge } from '@/src/data/honor';
-import { subscribeFollowCounts } from '@/src/services/followService';
+import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
+import {
+  sendFriendRequest, cancelFriendRequest, acceptFriendRequest,
+  subscribeFriendStatus, FriendStatus,
+} from '@/src/services/friendRequestService';
+import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
+import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
@@ -145,11 +151,19 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
 
 export default function ProfileScreen({
   onNavigateToContacts,
+  targetUid,
 }: {
   onNavigateToContacts?: () => void;
+  /** When set, renders ANOTHER user's profile with the IDENTICAL layout.
+   *  Only differences: no settings icon, three-dots shows their vId,
+   *  bottom action buttons instead of Edit. */
+  targetUid?: string;
 } = {}) {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
+  // The UID whose profile data we display (own or another user's)
+  const displayUid = targetUid ?? user?.uid;
+  const isMe = !targetUid || targetUid === user?.uid;
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
@@ -165,33 +179,38 @@ export default function ProfileScreen({
   const [uploadingDp, setUploadingDp] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
+  // ── Other-user action buttons state (only used when !isMe) ──
+  const [isFollowingTarget, setIsFollowingTarget] = useState(false);
+  const [friendStatus, setFriendStatus] = useState<FriendStatus>('none');
+  const [isBlockedTarget, setIsBlockedTarget] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    if (!user?.uid) { setLoading(false); return; }
-    const unsub = subscribeUser(user.uid, (u) => { setProfile(u); setLoading(false); });
+    if (!displayUid) { setLoading(false); return; }
+    const unsub = subscribeUser(displayUid, (u) => { setProfile(u); setLoading(false); });
     const timeout = setTimeout(() => setLoading(false), 3000);
     return () => { clearTimeout(timeout); unsub(); };
-  }, [user?.uid]);
+  }, [displayUid]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    return subscribeFollowCounts(user.uid, setFollowCounts);
-  }, [user?.uid]);
+    if (!displayUid) return;
+    return subscribeFollowCounts(displayUid, setFollowCounts);
+  }, [displayUid]);
 
   // NOTE 7 (2026-10-11): subscribe to real granted badges (official/event only)
   useEffect(() => {
-    if (!user?.uid) { setGrantedBadges([]); return; }
-    return subscribeBadges(user.uid, setGrantedBadges);
-  }, [user?.uid]);
+    if (!displayUid) { setGrantedBadges([]); return; }
+    return subscribeBadges(displayUid, setGrantedBadges);
+  }, [displayUid]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    return subscribeMyRoomsCombined(user.uid, setRooms);
-  }, [user?.uid]);
+    if (!displayUid) return;
+    return subscribeMyRoomsCombined(displayUid, setRooms);
+  }, [displayUid]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    return subscribeTransactionHistory(user.uid, (txs) => {
+    if (!displayUid) return;
+    return subscribeTransactionHistory(displayUid, (txs) => {
       const counts: Record<string, number> = {};
       for (const tx of txs) {
         if (tx.type === 'gift_received' && tx.giftId) {
@@ -200,11 +219,66 @@ export default function ProfileScreen({
       }
       setReceivedGifts(counts);
     });
-  }, [user?.uid]);
+  }, [displayUid]);
 
   useEffect(() => {
     return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
   }, []);
+
+  // ── Other-user: subscribe to follow/friend/block status ──
+  useEffect(() => {
+    if (isMe || !user?.uid || !displayUid) return;
+    const unsub1 = subscribeIsFollowing(user.uid, displayUid, setIsFollowingTarget);
+    const unsub2 = subscribeFriendStatus(user.uid, displayUid, setFriendStatus);
+    isBlockedByMe(user.uid, displayUid).then(setIsBlockedTarget).catch(() => {});
+    return () => { unsub1(); unsub2(); };
+  }, [isMe, user?.uid, displayUid]);
+
+  // ── Other-user: action handlers ──
+  const handleLeftAction = useCallback(async () => {
+    if (!user?.uid || !displayUid || actionLoading) return;
+    setActionLoading(true);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (isBlockedTarget) {
+        await unblockUser(user.uid, displayUid);
+        setIsBlockedTarget(false);
+      } else if (friendStatus === 'friends') {
+        router.push(`/inbox/${buildChatId(user.uid, displayUid)}`);
+      } else if (friendStatus === 'request-received') {
+        await acceptFriendRequest(displayUid, user.uid);
+      } else if (friendStatus === 'request-sent') {
+        await cancelFriendRequest(user.uid, displayUid);
+      } else {
+        // NOTE: sendFriendRequest needs the full VeeUser; build minimal from auth + profile
+        await sendFriendRequest(
+          { uid: user.uid, name: user.displayName ?? 'User' } as any,
+          displayUid
+        );
+      }
+    } catch (e) {
+      Alert.alert(t('userProfile.error', 'Error'), String(e));
+    } finally {
+      setActionLoading(false);
+    }
+  }, [user?.uid, displayUid, friendStatus, isBlockedTarget, actionLoading, t]);
+
+  const handleRightAction = useCallback(async () => {
+    if (!user?.uid || !displayUid || actionLoading) return;
+    setActionLoading(true);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (isFollowingTarget) {
+        await unfollowUser(user.uid, displayUid);
+      } else {
+        await followUser(user.uid, displayUid);
+      }
+    } catch (e) {
+      Alert.alert(t('userProfile.error', 'Error'), String(e));
+    } finally {
+      setActionLoading(false);
+    }
+  }, [user?.uid, displayUid, isFollowingTarget, actionLoading, t]);
 
   const handleCopyVid = useCallback(async () => {
     const id = profile?.vId;
@@ -311,9 +385,11 @@ export default function ProfileScreen({
             <Feather name="arrow-left" size={24} color={C.text} />
           </Pressable>
           <View style={{ flexDirection: 'row' }}>
-            <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
-              <Feather name="settings" size={22} color={C.text} />
-            </Pressable>
+            {isMe && (
+              <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
+                <Feather name="settings" size={22} color={C.text} />
+              </Pressable>
+            )}
             <Pressable onPress={() => setShowVidMenu(true)} style={{ padding: 8 }} hitSlop={8}>
               <Feather name="more-horizontal" size={22} color={C.text} />
             </Pressable>
@@ -463,15 +539,68 @@ export default function ProfileScreen({
         <View style={{ height: 90 }} />
       </ScrollView>
 
-      {/* ─── Edit Button (fixed at bottom, IMO style) ─── */}
+      {/* ─── Bottom Action: Edit (own) or Chat/Add + Follow (other user) ─── */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border }}>
-        <Pressable
-          onPress={() => router.push('/profile/edit')}
-          style={{ backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Feather name="edit-2" size={18} color={C.blue} />
-          <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>Edit</Text>
-        </Pressable>
+        {isMe ? (
+          <Pressable
+            onPress={() => router.push('/profile/edit')}
+            style={{ backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Feather name="edit-2" size={18} color={C.blue} />
+            <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>Edit</Text>
+          </Pressable>
+        ) : (
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Pressable
+              onPress={handleLeftAction}
+              disabled={actionLoading}
+              style={{
+                flex: 1, backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                opacity: actionLoading ? 0.6 : 1,
+              }}
+            >
+              {actionLoading ? (
+                <ActivityIndicator size="small" color={C.blue} />
+              ) : (
+                <>
+                  <Feather
+                    name={
+                      isBlockedTarget ? 'unlock'
+                      : friendStatus === 'friends' ? 'message-circle'
+                      : friendStatus === 'request-received' ? 'user-check'
+                      : friendStatus === 'request-sent' ? 'x'
+                      : 'user-plus'
+                    }
+                    size={18} color={C.blue}
+                  />
+                  <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>
+                    {isBlockedTarget ? t('userProfile.unblock', 'Unblock')
+                      : friendStatus === 'friends' ? t('userProfile.chat', 'Chat')
+                      : friendStatus === 'request-received' ? t('userProfile.accept', 'Accept')
+                      : friendStatus === 'request-sent' ? t('userProfile.cancelRequest', 'Cancel Request')
+                      : t('userProfile.add', 'Add')}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={handleRightAction}
+              disabled={actionLoading}
+              style={{
+                flex: 1, backgroundColor: isFollowingTarget ? C.card : C.blueLight,
+                borderRadius: 16, paddingVertical: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                opacity: actionLoading ? 0.6 : 1,
+              }}
+            >
+              <Feather name={isFollowingTarget ? 'check' : 'plus'} size={18} color={C.blue} />
+              <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>
+                {isFollowingTarget ? t('userProfile.following', 'Following') : t('userProfile.follow', 'Follow')}
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {/* ─── vId Menu Modal ─── */}
@@ -526,7 +655,8 @@ export default function ProfileScreen({
               <Text style={{ fontSize: 64, fontWeight: '800', color: '#fff' }}>{displayName[0]?.toUpperCase()}</Text>
             </View>
           )}
-          {/* Change button below the DP */}
+          {/* Change button below the DP (own profile only) */}
+          {isMe && (
           <Pressable
             onPress={handleChangeDp}
             disabled={uploadingDp}
@@ -546,6 +676,7 @@ export default function ProfileScreen({
               {uploadingDp ? 'Uploading…' : 'Change'}
             </Text>
           </Pressable>
+          )}
         </View>
       </Modal>
     </SafeAreaView>
