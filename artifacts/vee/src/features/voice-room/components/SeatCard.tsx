@@ -91,6 +91,7 @@ export const SeatCard = memo(function SeatCard({
               speaking={member.speaking}
               accent={accent}
               photoURL={member.photoURL}
+              frameType={(member as any).activeFrame}
             />
             {/* Mic status dot */}
             <View style={{
