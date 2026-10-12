@@ -123,8 +123,11 @@
     "extra": {
       "router": {
         "origin": "https://vee.app"
+      },
+      "eas": {
+        "projectId": "4595eaee-1a36-48cd-ac5c-7461a0f3fe98"
       }
     },
-    "owner": "sewikiv588s-team"
+    "owner": "loxiki4644s-team"
   }
 }
