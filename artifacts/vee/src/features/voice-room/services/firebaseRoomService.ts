@@ -887,9 +887,14 @@ export async function removeSeat(
   onDisconnect(seatRef).cancel().catch(() => {/* non-critical */});
   if (demoteUid) {
     // Atomic: seat removal + admin revoke succeed or fail together.
+    // 2026-10-12 review fix: also clear the stale 'admin' role label on the
+    // audience record — seated users keep their audience record, and the
+    // owner's self-heal would otherwise resurrect admin powers for a
+    // departed admin by re-adding them to the registry.
     await update(ref(database, `rooms/${roomId}`), {
       [`seats/${seatIndex}`]: null,
       [`admins/${demoteUid}`]: null,
+      [`audience/${demoteUid}/role`]: 'member',
     });
   } else {
     await remove(seatRef);
