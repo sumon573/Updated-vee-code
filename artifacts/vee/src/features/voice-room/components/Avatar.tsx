@@ -60,7 +60,7 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
       {/* 2026-10-13 (Sumon): Animated frame overlay — auto-fits to avatar size */}
       {frameType && frameType !== 'none' && (
         <LottieView
-          source={require('../../../assets/animations/vee-official-frame.json')}
+          source={require('../../../../assets/animations/vee-official-frame.json')}
           autoPlay
           loop
           style={{
