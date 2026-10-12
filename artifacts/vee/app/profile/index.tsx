@@ -788,9 +788,15 @@ export default function ProfileScreen({
             onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
             style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
-            <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 36 }}>🖼️</Text>
-            </View>
+            {/* Frames: premium gradient tile with white frame icon */}
+            <LinearGradient
+              colors={['#8B5CF6', '#A78BFA']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Feather name="image" size={32} color="#FFFFFF" />
+            </LinearGradient>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
             <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
           </Pressable>
@@ -798,9 +804,15 @@ export default function ProfileScreen({
             onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
             style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
-            <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 36 }}>🏷️</Text>
-            </View>
+            {/* Nameplates: premium gradient tile with white tag icon */}
+            <LinearGradient
+              colors={['#F59E0B', '#FBBF24']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Feather name="tag" size={32} color="#FFFFFF" />
+            </LinearGradient>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nameplates</Text>
             <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedNameplates.length} owned</Text>
           </Pressable>
