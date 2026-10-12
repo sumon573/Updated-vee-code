@@ -9,6 +9,7 @@ import {
   View, Text, Alert, Modal,
   ActivityIndicator, Image, Pressable, FlatList, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -77,6 +78,126 @@ function SectionHeader({ title, count, onPress }: { title: string; count?: numbe
 }
 
 // ─── Badge Pill (IMO style) ───
+
+// ─── Premium Level Badge (2026-10-12, Sumon concept) ───
+// Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
+// Each tier has its own premium gradient; the level NUMBER shows inside.
+// Subtle drifting mist particles (winter-fog style) for the premium feel.
+// Level grows SLOWLY from diamond sending + voice-room activity.
+
+export type LevelTier = 'bronze' | 'silver' | 'gold' | 'max';
+
+export function getLevelTier(level: number): LevelTier {
+  if (level >= 100) return 'max';
+  if (level >= 61) return 'gold';
+  if (level >= 31) return 'silver';
+  return 'bronze';
+}
+
+const TIER_STYLE: Record<LevelTier, { colors: [string, string, string]; label: string; glow: string }> = {
+  bronze: {
+    colors: ['#8C6239', '#CD7F32', '#F0B46A'],
+    label: 'Bronze',
+    glow: 'rgba(205,127,50,0.35)',
+  },
+  silver: {
+    colors: ['#7E8FA0', '#B8C6D4', '#EDF2F7'],
+    label: 'Silver',
+    glow: 'rgba(184,198,212,0.4)',
+  },
+  gold: {
+    colors: ['#9A6B0F', '#E8B91A', '#FFE873'],
+    label: 'Gold',
+    glow: 'rgba(232,185,26,0.45)',
+  },
+  max: {
+    colors: ['#5B1A9E', '#9D4EDD', '#FFD700'],
+    label: 'Max',
+    glow: 'rgba(157,78,221,0.5)',
+  },
+};
+
+/** One drifting mist particle. */
+function MistParticle({ delay, size, left, duration }: { delay: number; size: number; left: number; duration: number }) {
+  const drift = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(drift, { toValue: -1, duration, useNativeDriver: true }),
+          Animated.sequence([
+            Animated.timing(fade, { toValue: 0.55, duration: duration * 0.4, useNativeDriver: true }),
+            Animated.timing(fade, { toValue: 0, duration: duration * 0.6, useNativeDriver: true }),
+          ]),
+        ]),
+        Animated.timing(drift, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [delay, duration, drift, fade]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left,
+        bottom: 2,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: '#FFFFFF',
+        opacity: fade,
+        transform: [{ translateY: drift.interpolate({ inputRange: [-1, 0], outputRange: [-22, 0] }) }],
+      }}
+    />
+  );
+}
+
+function LevelBadge({ level }: { level: number }) {
+  const tier = getLevelTier(level);
+  const style = TIER_STYLE[tier];
+  return (
+    <View style={{ marginRight: 6, marginBottom: 6 }}>
+      <LinearGradient
+        colors={style.colors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          borderRadius: 14,
+          paddingHorizontal: 12,
+          paddingVertical: 7,
+          flexDirection: 'row',
+          alignItems: 'center',
+          overflow: 'hidden',
+          shadowColor: style.glow,
+          shadowOpacity: 0.9,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 6,
+        }}
+      >
+        {/* Mist particles */}
+        <MistParticle delay={0} size={7} left={10} duration={5200} />
+        <MistParticle delay={1700} size={5} left={34} duration={6400} />
+        <MistParticle delay={3200} size={8} left={58} duration={5800} />
+        {/* Level number */}
+        <Text style={{ fontSize: 17, fontWeight: '900', color: '#FFFFFF', marginRight: 5, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
+          {level}
+        </Text>
+        <View>
+          <Text style={{ fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5, lineHeight: 11 }}>
+            LEVEL
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF', lineHeight: 14 }}>
+            {style.label}
+          </Text>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+}
 
 function BadgePill({ label, icon }: { label: string; icon?: string }) {
   return (
@@ -194,6 +315,9 @@ export default function ProfileScreen({
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  // 2026-10-12 (Sumon): diamonds sent — primary XP driver for the slow,
+  // premium level system (1 XP per diamond sent as gift).
+  const [diamondsSent, setDiamondsSent] = useState(0);
   const [nobleState, setNobleState] = useState<NobleState | null>(null);
   // PIN gate for private rooms (enforced from EVERYWHERE)
   const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
@@ -226,6 +350,34 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) return;
     return subscribeFollowCounts(displayUid, setFollowCounts);
+  }, [displayUid]);
+
+  // 2026-10-12 (Sumon): subscribe to diamonds sent (gift_sent transactions)
+  // for the premium level system. Best-effort — level falls back gracefully.
+  useEffect(() => {
+    if (!displayUid) { setDiamondsSent(0); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, get } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `wallets/${displayUid}/transactions`));
+        if (cancelled) return;
+        let total = 0;
+        if (snap.exists()) {
+          snap.forEach((child) => {
+            const tx = child.val() as { type?: string; diamonds?: number } | null;
+            if (tx?.type === 'gift_sent' && typeof tx.diamonds === 'number') {
+              total += tx.diamonds;
+            }
+          });
+        }
+        if (!cancelled) setDiamondsSent(total);
+      } catch {
+        // background: safe to swallow — level uses fallback
+      }
+    })();
+    return () => { cancelled = true; };
   }, [displayUid]);
 
   // NOTE 7 (2026-10-11): subscribe to real granted badges (official/event only)
@@ -409,16 +561,17 @@ export default function ProfileScreen({
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
-  // ─── Real Level System (based on actual activity) ───
-  // XP: 10 per follower, 20 per room, 5 per gift received, 2 per following
-  // Level thresholds: Lv.1=0, Lv.2=100, Lv.3=250, Lv.4=500, Lv.5=1000, then +1000 per level
+  // ─── Premium Level System (2026-10-12, Sumon concept) ───
+  // SLOW progression based on diamond sending + voice-room activity.
+  // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
+  // Level curve (quadratic — each level needs progressively more):
+  //   cumulative XP for level N = 5 * N^2  (Lv.30 ≈ 4,500 XP, Lv.60 ≈ 18,000, Lv.100 = 50,000)
+  // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
   const calculateLevel = (): number => {
-    const xp = (followCounts.followers * 10) + (rooms.length * 20) + (totalGifts * 5) + (followCounts.following * 2);
-    if (xp < 100) return 1;
-    if (xp < 250) return 2;
-    if (xp < 500) return 3;
-    if (xp < 1000) return 4;
-    return Math.min(99, 5 + Math.floor((xp - 1000) / 1000));
+    const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);
+    // Invert: N = sqrt(xp / 5), floor, min 1, max 100.
+    const level = Math.floor(Math.sqrt(xp / 5)) + 1;
+    return Math.min(100, Math.max(1, level));
   };
   const userLevel = calculateLevel();
 
@@ -519,7 +672,7 @@ export default function ProfileScreen({
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
           <BadgePill label={nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.name ?? 'Non-Noble' : 'Non-Noble'} />
-          <BadgePill label={`Lv.${userLevel}`} icon="🏅" />
+          <LevelBadge level={userLevel} />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
           </Pressable>
