@@ -342,7 +342,7 @@ export function GiftsModal({
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
+                      <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name || 'User'}</Text>
                       <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }}>
                         {roleLabelFor(m)}
                       </Text>

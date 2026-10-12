@@ -150,7 +150,7 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const myName = myProfile?.name ?? user?.displayName ?? t('voiceRoom.screen.defaultUserName');
+  const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
   const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
   const myColor = getUserColor(myUid);
   const myInitials = getInitials(myName);
