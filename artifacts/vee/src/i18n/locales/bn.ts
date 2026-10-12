@@ -85,7 +85,6 @@ const bn = {
       contactsPermissionDenied: 'কন্টাক্ট অনুমতি দেওয়া হয়নি। পরে Settings থেকে চালু করতে পারবেন।',
       countrySearchPlaceholder: 'দেশ খুঁজুন',
       noCountriesFound: 'কোনো দেশ পাওয়া যায়নি',
-      phonePlaceholder: '1XXX-XXXXXX',
       errorInvalidPhone: 'সঠিক ফোন নম্বর দিন।',
       continueWithGoogle: 'Google দিয়ে চালিয়ে যান',
       googlePending: 'Google সাইন-ইন পরের ধাপে যুক্ত হবে।',

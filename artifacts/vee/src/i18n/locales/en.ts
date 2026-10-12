@@ -85,7 +85,6 @@ const en = {
       contactsPermissionDenied: 'Contacts permission was denied. You can enable it later from Settings.',
       countrySearchPlaceholder: 'Search countries',
       noCountriesFound: 'No countries found',
-      phonePlaceholder: '1XXX-XXXXXX',
       errorInvalidPhone: 'Please enter a valid phone number.',
       continueWithGoogle: 'Continue with Google',
       googlePending: 'Google sign-in will be wired in the next step.',

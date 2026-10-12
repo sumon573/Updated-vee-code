@@ -85,7 +85,6 @@ const hi = {
       contactsPermissionDenied: 'संपर्क अनुमति नहीं दी गई। आप इसे बाद में Settings से चालू कर सकते हैं।',
       countrySearchPlaceholder: 'देश खोजें',
       noCountriesFound: 'कोई देश नहीं मिला',
-      phonePlaceholder: '1XXX-XXXXXX',
       errorInvalidPhone: 'कृपया सही फ़ोन नंबर दर्ज करें।',
       continueWithGoogle: 'Google से जारी रखें',
       googlePending: 'Google साइन-इन अगले चरण में जोड़ा जाएगा।',
