@@ -26,6 +26,9 @@ import {
 } from '@/src/services/friendRequestService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
+import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
+import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
+import { subscribeBadges } from '@/src/services/badgeService';
 import { useTranslation } from 'react-i18next';
 
 const C = {
@@ -74,6 +77,9 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
   const [myProfile, setMyProfile] = useState<VeeUser | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  const [grantedBadges, setGrantedBadges] = useState<any[]>([]);
 
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
@@ -123,6 +129,30 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
     // background: safe to swallow — block button defaults to unblocked on failure
     isBlockedByMe(myUid, uid).then(setIsBlocked).catch(() => {});
   }, [myUid, uid]);
+
+  // Load other user's rooms, gifts, badges (imo-style full profile)
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeMyRoomsCombined(uid, setRooms);
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeTransactionHistory(uid, (txs: any[]) => {
+      const counts: Record<string, number> = {};
+      for (const tx of txs) {
+        if (tx.type === 'gift_received' && tx.giftId) {
+          counts[tx.giftId] = (counts[tx.giftId] ?? 0) + 1;
+        }
+      }
+      setReceivedGifts(counts);
+    });
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeBadges(uid, setGrantedBadges);
+  }, [uid]);
 
   const handleFriendAction = useCallback(async () => {
     if (!myUid || myUid === uid || !myProfile) return;
@@ -250,99 +280,82 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             <Text style={{ color: C.text, fontSize: 18, fontWeight: '800', flex: 1 }} numberOfLines={1}>
               {displayName}
             </Text>
+            {!isMe && (
+              <Pressable
+                onPress={() => {
+                  Alert.alert(
+                    displayName,
+                    '',
+                    [
+                      {
+                        text: isBlocked ? t('userProfile.unblock', 'Unblock') : t('userProfile.block', 'Block'),
+                        style: isBlocked ? 'default' : 'destructive',
+                        onPress: () => handleBlock(),
+                      },
+                      { text: t('common.cancel', 'Cancel'), style: 'cancel' },
+                    ],
+                  );
+                }}
+                hitSlop={14}
+              >
+                <Feather name="more-vertical" size={22} color={C.text} />
+              </Pressable>
+            )}
           </View>
 
-          {/* Avatar + Info */}
-          <View style={{
-            alignItems: 'center',
-            paddingTop: 24, paddingBottom: 28,
-            paddingHorizontal: 20,
-          }}>
-            {/* Avatar */}
-            {photoURL ? (
-              <Image
-                source={{ uri: photoURL }}
-                style={{
-                  width: 100, height: 100, borderRadius: 50,
-                  borderWidth: 3, borderColor: C.glow,
-                }}
-              />
+          {/* Cover (imo style) */}
+          <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
+            {profile?.coverImageUrl ? (
+              <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
             ) : (
-              <View style={{
-                width: 100, height: 100, borderRadius: 50,
-                backgroundColor: 'rgba(139,92,246,0.25)',
-                borderWidth: 3, borderColor: C.glow,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Text style={{ color: '#fff', fontSize: 34, fontWeight: '900' }}>{initials}</Text>
+              <View style={{ flex: 1, backgroundColor: '#EFEFF4', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 48 }}>🌅</Text>
               </View>
             )}
+          </View>
 
-            {/* Name + Official Verified Badge */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14 }}>
-              <Text style={{
-                color: C.text, fontSize: 22, fontWeight: '900',
-                textAlign: 'center',
-              }}>
-                {displayName}
-              </Text>
+          {/* Avatar (overlapping, imo style) */}
+          <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              {photoURL ? (
+                <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#FFFFFF' }} />
+              ) : (
+                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F4FD', borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: '#0A7CC2' }}>{initials}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Name + Bio (imo style, left-aligned) */}
+          <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
               {profile?.officialBadge && (
-                <View style={{
-                  marginLeft: 6, backgroundColor: '#1DA1F2', borderRadius: 10,
-                  width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
-                }}>
+                <View style={{ marginLeft: 6, backgroundColor: '#1DA1F2', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name="check" size={13} color="#fff" />
                 </View>
               )}
             </View>
-
-            {/* Short ID gold badge */}
-            {profile?.shortId ? (
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6,
-              }}>
-                <View style={{
-                  backgroundColor: '#FFD700', borderRadius: 10,
-                  paddingHorizontal: 12, paddingVertical: 4,
-                  flexDirection: 'row', alignItems: 'center',
-                }}>
-                  <Text style={{ color: '#000', fontSize: 13, fontWeight: '900' }}>
-                    🆔 {profile.shortId}
-                  </Text>
-                </View>
-              </View>
-            ) : null}
-
-            {/* VID */}
-            {vId ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                <Feather name="hash" size={12} color={C.mutedDim} />
-                <Text style={{ color: C.mutedDim, fontSize: 13 }}>{vId}</Text>
-              </View>
-            ) : null}
-
-            {/* Bio */}
-            {bio ? (
-              <Text style={{
-                color: C.muted, fontSize: 14, textAlign: 'center',
-                lineHeight: 20, marginTop: 10, paddingHorizontal: 20,
-              }}>
-                {bio}
-              </Text>
-            ) : null}
-
-            {/* Online */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
-              <View style={{
-                width: 8, height: 8, borderRadius: 4,
-                backgroundColor: isOnline ? C.online : C.mutedDim,
-              }} />
-              <Text style={{
-                fontSize: 12, fontWeight: '700',
-                color: isOnline ? C.online : C.mutedDim,
-              }}>
+            {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
+            {/* Online status */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isOnline ? C.online : C.mutedDim }} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: isOnline ? C.online : C.mutedDim }}>
                 {isOnline ? t('userProfile.online') : t('userProfile.offline')}
               </Text>
+            </View>
+          </View>
+
+          {/* Badge Pills (imo style) */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12, gap: 8 }}>
+            {grantedBadges.slice(0, 3).map((badge, i) => (
+              <View key={i} style={{ backgroundColor: '#FFF8E1', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#FFE0B2' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#E65100' }}>{badge.name || badge}</Text>
+              </View>
+            ))}
+            <View style={{ backgroundColor: '#E8F4FD', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#0A7CC2' }}>⭐ {followCounts.followers} Follower</Text>
             </View>
           </View>
 
@@ -352,84 +365,84 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             <StatBox label={t('userProfile.statFollowing')} value={followCounts.following} />
           </View>
 
-          {/* Action buttons */}
+          {/* Action buttons — imo style: 2 buttons side by side */}
           {!isMe && (
             <View style={{
               flexDirection: 'row', gap: 12,
               marginHorizontal: 20, marginBottom: 24,
             }}>
-              {/* Follow / Unfollow */}
+              {/* Left: Chat / Add / Accept / Cancel / Unblock */}
+              <Pressable
+                onPress={() => {
+                  if (isBlocked) {
+                    handleBlock();
+                  } else if (friendStatus === 'friends') {
+                    const chatId = buildChatId(myUid, uid);
+                    router.push(`/inbox/${chatId}` as any);
+                  } else {
+                    handleFriendAction();
+                  }
+                }}
+                disabled={friendActionLoading || blockLoading || (!myProfile && !isBlocked && friendStatus !== 'friends')}
+                style={{
+                  flex: 1, paddingVertical: 14, borderRadius: 16,
+                  backgroundColor: '#E8F4FD',
+                  alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'row', gap: 8,
+                }}
+              >
+                {(friendActionLoading || blockLoading) ? (
+                  <ActivityIndicator color="#0A7CC2" size="small" />
+                ) : (
+                  <>
+                    <Feather
+                      name={
+                        isBlocked ? 'slash'
+                          : friendStatus === 'friends' ? 'message-circle'
+                          : friendStatus === 'request-received' ? 'user-check'
+                          : friendStatus === 'request-sent' ? 'x'
+                          : 'user-plus'
+                      }
+                      size={18}
+                      color="#0A7CC2"
+                    />
+                    <Text style={{ color: '#0A7CC2', fontSize: 16, fontWeight: '700' }}>
+                      {isBlocked
+                        ? t('userProfile.unblock', 'Unblock')
+                        : friendStatus === 'friends'
+                        ? t('userProfile.chat', 'Chat')
+                        : friendStatus === 'request-received'
+                        ? t('userProfile.accept', 'Accept')
+                        : friendStatus === 'request-sent'
+                        ? t('userProfile.cancelRequest', 'Cancel Request')
+                        : t('userProfile.add', 'Add')}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+
+              {/* Right: Follow / Following */}
               <Pressable
                 onPress={handleFollow}
                 disabled={followLoading}
                 style={{
                   flex: 1, paddingVertical: 14, borderRadius: 16,
-                  backgroundColor: isFollowing ? 'transparent' : C.primary,
-                  borderWidth: isFollowing ? 1.5 : 0,
-                  borderColor: isFollowing ? C.mutedDim : 'transparent',
+                  backgroundColor: '#E8F4FD',
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: isFollowing ? 'transparent' : C.glow,
-                  shadowOpacity: 0.4, shadowRadius: 12,
-                  shadowOffset: { width: 0, height: 4 }, elevation: isFollowing ? 0 : 8,
+                  flexDirection: 'row', gap: 8,
                 }}
               >
                 {followLoading ? (
-                  <ActivityIndicator color={isFollowing ? C.muted : '#fff'} size="small" />
-                ) : (
-                  <Text style={{
-                    color: isFollowing ? C.muted : '#fff',
-                    fontSize: 15, fontWeight: '800',
-                  }}>
-                    {isFollowing ? t('userProfile.following') : t('userProfile.follow')}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-          {/* Friend request action */}
-          {!isMe && (
-            <View style={{ marginHorizontal: 20, marginTop: -12, marginBottom: 24 }}>
-              <Pressable
-                onPress={handleFriendAction}
-                disabled={friendActionLoading || !myProfile}
-                style={{
-                  paddingVertical: 14, borderRadius: 16,
-                  backgroundColor: friendStatus === 'friends' ? 'rgba(34,197,94,0.12)'
-                    : friendStatus === 'request-received' ? C.primary
-                    : 'transparent',
-                  borderWidth: 1.5,
-                  borderColor: friendStatus === 'friends' ? C.online
-                    : friendStatus === 'request-received' ? C.primary
-                    : C.mutedDim,
-                  alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
-              >
-                {friendActionLoading ? (
-                  <ActivityIndicator color={C.muted} size="small" />
+                  <ActivityIndicator color="#0A7CC2" size="small" />
                 ) : (
                   <>
                     <Feather
-                      name={
-                        friendStatus === 'friends' ? 'user-check'
-                          : friendStatus === 'request-sent' ? 'clock'
-                          : 'user-plus'
-                      }
-                      size={16}
-                      color={friendStatus === 'friends' ? C.online : friendStatus === 'request-received' ? '#fff' : C.muted}
+                      name={isFollowing ? 'check' : 'plus'}
+                      size={18}
+                      color="#0A7CC2"
                     />
-                    <Text style={{
-                      color: friendStatus === 'friends' ? C.online : friendStatus === 'request-received' ? '#fff' : C.muted,
-                      fontSize: 14, fontWeight: '800',
-                    }}>
-                      {friendStatus === 'friends'
-                        ? t('userProfile.alreadyFriends')
-                        : friendStatus === 'request-sent'
-                        ? t('userProfile.cancelRequest')
-                        : friendStatus === 'request-received'
-                        ? t('userProfile.acceptFriendRequest')
-                        : t('userProfile.addFriend')}
+                    <Text style={{ color: '#0A7CC2', fontSize: 16, fontWeight: '700' }}>
+                      {isFollowing ? t('userProfile.following', 'Following') : t('userProfile.follow', 'Follow')}
                     </Text>
                   </>
                 )}
@@ -437,32 +450,52 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             </View>
           )}
 
-          {/* Block / Unblock button */}
-          {!isMe && (
-            <View style={{ marginHorizontal: 20, marginTop: -12, marginBottom: 24 }}>
-              <Pressable
-                onPress={handleBlock}
-                disabled={blockLoading}
-                style={{
-                  paddingVertical: 12, borderRadius: 16,
-                  borderWidth: 1.5, borderColor: isBlocked ? 'rgba(239,68,68,0.35)' : 'rgba(239,68,68,0.25)',
-                  backgroundColor: isBlocked ? 'rgba(239,68,68,0.08)' : 'transparent',
-                  alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
-              >
-                {blockLoading ? (
-                  <ActivityIndicator color={C.red} size="small" />
-                ) : (
-                  <>
-                    <Feather name="slash" size={15} color={C.red} />
-                    <Text style={{ color: C.red, fontSize: 13, fontWeight: '800' }}>
-                      {isBlocked ? 'Unblock User' : 'Block User'}
+          {/* VoiceClub Rooms (imo style) */}
+          {rooms.length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>VoiceClub Room</Text>
+                <Text style={{ fontSize: 14, color: C.muted }}>{rooms.length} ›</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }} nestedScrollEnabled>
+                {rooms.slice(0, 10).map((item, i) => (
+                  <Pressable
+                    key={item.id || String(i)}
+                    onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
+                    style={{ width: 120, marginRight: 12 }}
+                  >
+                    <View style={{ width: 120, height: 120, borderRadius: 16, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 40 }}>🎙️</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 6 }} numberOfLines={1}>
+                      {item.name || 'Room'}
                     </Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* Gifts (imo style) */}
+          {Object.keys(receivedGifts).length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 16, marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>Gifts</Text>
+                <Text style={{ fontSize: 14, color: C.muted }}>
+                  {Object.values(receivedGifts).reduce((s, c) => s + c, 0)} ›
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+                {Object.entries(receivedGifts).slice(0, 8).map(([giftId, count]) => (
+                  <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#F2F2F7', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 36 }}>🎁</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
           )}
 
           {/* Divider */}
