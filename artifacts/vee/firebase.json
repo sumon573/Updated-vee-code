@@ -1,1 +1,1 @@
-{"database":{"rules":"database.rules.json"}}
+{"database":{"rules":"database.rules.json"},"hosting":{"ignore":["firebase.json","**/.*","**/node_modules/**"],"public":"public"}}
