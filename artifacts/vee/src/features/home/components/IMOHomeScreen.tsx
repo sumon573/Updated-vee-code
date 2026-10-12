@@ -247,8 +247,8 @@ export default function IMOHomeScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <IMOTopBar
-          profilePhotoURL={profile?.photoURL}
-          profileInitials={profile?.name?.charAt(0) || '?'}
+          profilePhotoURL={profile?.photoURL || user?.photoURL}
+          profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
           activeTab={activeTab}
           chatBadgeCount={totalUnread}
           onProfilePress={() => router.push('/profile' as any)}
@@ -265,8 +265,8 @@ export default function IMOHomeScreen() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <IMOTopBar
-          profilePhotoURL={profile?.photoURL}
-          profileInitials={profile?.name?.charAt(0) || '?'}
+          profilePhotoURL={profile?.photoURL || user?.photoURL}
+          profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
           activeTab={activeTab}
           chatBadgeCount={totalUnread}
           onProfilePress={() => router.push('/profile' as any)}
@@ -282,8 +282,8 @@ export default function IMOHomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <IMOTopBar
-        profilePhotoURL={profile?.photoURL}
-        profileInitials={profile?.name?.charAt(0) || '?'}
+        profilePhotoURL={profile?.photoURL || user?.photoURL}
+        profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
         activeTab={activeTab}
         chatBadgeCount={totalUnread}
         onProfilePress={() => router.push('/profile' as any)}
