@@ -38,9 +38,6 @@
         "bio": {
           ".validate": "newData.isString()"
         },
-        "hasActiveStory": {
-          ".validate": "newData.isBoolean()"
-        },
         "banned": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
           ".validate": "newData.isBoolean()"
@@ -212,11 +209,11 @@
           // Prevents forging arbitrary view/share counts via direct writes.
           "viewCount": {
             ".write": "auth != null",
-            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
+            ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
           },
           "shareCount": {
             ".write": "auth != null",
-            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
+            ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
           },
           // Unique viewers (2026-10-11): one entry per viewer UID.
           // Only the viewer themselves can add their entry, and only once.
@@ -264,11 +261,11 @@
           // Prevents forging arbitrary view/share counts via direct writes.
           "viewCount": {
             ".write": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
-            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
+            ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
           },
           "shareCount": {
             ".write": "auth != null && (auth.uid === $uid || root.child('friends').child($uid).child(auth.uid).val() === true)",
-            ".validate": "newData.isNumber() && data.exists() && newData.val() === data.val() + 1"
+            ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
           },
           // Unique viewers (2026-10-11): one entry per viewer UID.
           "viewers": {
