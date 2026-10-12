@@ -123,9 +123,6 @@
     "extra": {
       "router": {
         "origin": "https://vee.app"
-      },
-      "eas": {
-        "projectId": "5fd1cb3f-16bf-4089-b5b7-c9696b59ef6d"
       }
     },
     "owner": "sewikiv588s-team"
