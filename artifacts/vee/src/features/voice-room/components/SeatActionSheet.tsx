@@ -8,7 +8,8 @@ import { Participant, Role } from '../types/room';
 
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
 export function SeatActionSheet({ visible, seatIdx, member, myRole, myId, locked, audience, onClose,
-  onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onMention, accent }: {
+  onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onUnblock, onMention, accent,
+  isRoomBlocked }: {
   visible: boolean; seatIdx: number; member?: Participant | null;
   myRole: Role; myId: string; locked: boolean; audience: Participant[];
   onClose: () => void;
@@ -16,6 +17,10 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myId, locked
   onDown: () => void; onJoin: () => void; onMute: () => void;
   onSetAdmin: () => void; onDismissAdmin: () => void;
   onBlock: () => void;
+  /** Unblock (toggle when the member is currently room-blocked) */
+  onUnblock: () => void;
+  /** True when the member currently holds an active room-block */
+  isRoomBlocked?: boolean;
   /** Inserts "@MemberName " into the chat input. */
   onMention: () => void;
   accent: string;
@@ -140,13 +145,18 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myId, locked
     });
   }
 
-  // Room Block
+  // Room Block <-> Unblock toggle (2026-10-12)
   if (canManage) {
     actions.push({
-      icon: 'slash',
-      label: t('voiceRoom.seatAction.roomBlock'),
+      icon: isRoomBlocked ? 'check-circle' : 'slash',
+      label: isRoomBlocked
+        ? t('voiceRoom.memberManage.unblockRoom')
+        : t('voiceRoom.seatAction.roomBlock'),
       sub: t('voiceRoom.seatAction.roomBlockSub'),
-      color: C.red, bg: C.red + '18', border: C.red + '44', onPress: onBlock,
+      color: isRoomBlocked ? '#22C55E' : C.red,
+      bg: isRoomBlocked ? '#22C55E18' : C.red + '18',
+      border: isRoomBlocked ? '#22C55E44' : C.red + '44',
+      onPress: isRoomBlocked ? onUnblock : onBlock,
     });
   }
 

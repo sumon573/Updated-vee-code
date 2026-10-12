@@ -7,13 +7,20 @@ import { Participant, Role } from '../types/room';
 
 /* ─────────────────────────── Member Manage Modal ─────────────────────────── */
 export function MemberManageModal({
-  member, myRole, myId, onClose, onGift, onMention, onBlock, onReport, onSetAdmin, onDismissAdmin,
+  member, myRole, myId, onClose, onGift, onMention, onBlock, onUnblock, onReport, onSetAdmin, onDismissAdmin,
   onViewProfile, onViewOtherProfile, onEditProfile,
   onDown, onDownFromSeat, isSeated,
+  isCommentBlocked, isRoomBlocked,
 }: {
   member: Participant | null; myRole: Role; myId: string; onClose: () => void;
   onGift: () => void; onMention: (name: string) => void;
   onBlock: (action: 'room-block' | 'comment-block') => void;
+  /** Unblock the member (shown as a toggle when they are currently blocked) */
+  onUnblock: () => void;
+  /** True when the member currently holds an active comment-block */
+  isCommentBlocked?: boolean;
+  /** True when the member currently holds an active room-block */
+  isRoomBlocked?: boolean;
   onReport?: (memberId: string, memberName: string) => void;
   onSetAdmin: () => void; onDismissAdmin: () => void;
   onViewProfile: () => void;
@@ -204,22 +211,28 @@ export function MemberManageModal({
 
         {canManage && (
           <>
-            <Pressable onPress={() => onBlock('comment-block')}
-              style={{ backgroundColor: C.card, borderRadius: 14, paddingVertical: 12, marginBottom: 8,
+            {/* Comment block <-> unblock toggle (2026-10-12): the sheet always
+                reflects the member's CURRENT state — blocked shows Unblock. */}
+            <Pressable onPress={() => { if (isCommentBlocked) onUnblock(); else onBlock('comment-block'); }}
+              style={{ backgroundColor: isCommentBlocked ? 'rgba(34,197,94,0.1)' : C.card, borderRadius: 14, paddingVertical: 12, marginBottom: 8,
                 alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
-                borderWidth: 1, borderColor: C.borderFaint }}>
-              <Feather name="message-square" size={15} color={C.sub} />
-              <Text style={{ color: C.sub, fontWeight: '700' }}>
-                {t('voiceRoom.memberManage.commentBlock')}
+                borderWidth: 1, borderColor: isCommentBlocked ? 'rgba(34,197,94,0.35)' : C.borderFaint }}>
+              <Feather name={isCommentBlocked ? 'check-circle' : 'message-square'} size={15} color={isCommentBlocked ? '#22C55E' : C.sub} />
+              <Text style={{ color: isCommentBlocked ? '#22C55E' : C.sub, fontWeight: '700' }}>
+                {isCommentBlocked
+                  ? t('voiceRoom.memberManage.unblockComment')
+                  : t('voiceRoom.memberManage.commentBlock')}
               </Text>
             </Pressable>
-            <Pressable onPress={() => onBlock('room-block')}
-              style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 14, paddingVertical: 12, marginBottom: 8,
+            <Pressable onPress={() => { if (isRoomBlocked) onUnblock(); else onBlock('room-block'); }}
+              style={{ backgroundColor: isRoomBlocked ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: 14, paddingVertical: 12, marginBottom: 8,
                 alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
-                borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
-              <Feather name="slash" size={15} color={C.red} />
-              <Text style={{ color: C.red, fontWeight: '700' }}>
-                {t('voiceRoom.memberManage.roomBlock')}
+                borderWidth: 1, borderColor: isRoomBlocked ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.3)' }}>
+              <Feather name={isRoomBlocked ? 'check-circle' : 'slash'} size={15} color={isRoomBlocked ? '#22C55E' : C.red} />
+              <Text style={{ color: isRoomBlocked ? '#22C55E' : C.red, fontWeight: '700' }}>
+                {isRoomBlocked
+                  ? t('voiceRoom.memberManage.unblockRoom')
+                  : t('voiceRoom.memberManage.roomBlock')}
               </Text>
             </Pressable>
           </>

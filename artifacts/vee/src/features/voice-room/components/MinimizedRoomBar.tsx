@@ -52,6 +52,36 @@ export default function MinimizedRoomBar() {
     return unsub;
   }, []);
 
+  // 2026-10-12: room-block while minimized — tear down the minimized
+  // session. Without this a blocked-while-minimized user would keep the
+  // mini-player and a live mic after being removed from the room.
+  useEffect(() => {
+    if (!room?.id || !room?.myUid) return;
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        if (cancelled) return;
+        unsub = onValue(
+          ref(database, `roomBlocks/${room.id}/${room.myUid}`),
+          (snap) => {
+            const v = snap.val() as { action?: string } | null;
+            if (v && v.action === 'room-block') {
+              try { destroyPersistedVoiceRoomEngine(); } catch { /* non-critical */ }
+              setMinimizedRoom(null);
+            }
+          },
+        );
+      } catch { /* non-critical */ }
+    })();
+    return () => {
+      cancelled = true;
+      try { unsub?.(); } catch { /* non-critical */ }
+    };
+  }, [room?.id, room?.myUid]);
+
   // Mic toggle for minimized room (2026-10-10): talk/mute while minimized.
   // NOTE: Hooks MUST stay before the `if (!room) return null` below (React Rules).
   const [micMuted, setMicMuted] = useState<boolean>(() => getMinimizedRoom()?.muted ?? true);

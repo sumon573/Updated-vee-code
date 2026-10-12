@@ -793,6 +793,29 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  // 2026-10-12 (Sumon): force-leave when *I* am room-blocked mid-session.
+  // The join-time check only bounces blocked users at entry; without this a
+  // user blocked while inside would linger in the room. Comment-blocks do
+  // NOT trigger this (chat-only restriction — the input already shows it).
+  const forceLeftRef = useRef(false);
+  useEffect(() => {
+    if (!hasJoined || forceLeftRef.current) return;
+    const myBlock = blockedRecs.find(
+      (r: BlockRecord) => r.id === myUid && r.isActive && r.action === 'room-block',
+    );
+    if (!myBlock) return;
+    forceLeftRef.current = true;
+    hasLeftRef.current = true;
+    try { stopPublishing(); } catch { /* non-critical */ }
+    try { stopUserStream(myUid); } catch { /* non-critical */ }
+    // Navigate first (Android alert-before-nav can block the pop), then inform.
+    router.back();
+    Alert.alert(
+      t('voiceRoom.screen.removedTitle'),
+      t('voiceRoom.screen.removedMsg'),
+    );
+  }, [blockedRecs, hasJoined, myUid, stopPublishing, stopUserStream, t]);
+
   // Subscribe to Firebase-persisted room blocks
   useEffect(() => {
     return subscribeRoomBlocks(roomId, (blocksMap) => {
@@ -1471,15 +1494,33 @@ export default function VoiceRoomScreen() {
     // Comment-block keeps everything else intact (chat-only restriction).
     const demoteUid = action === 'room-block' && member.role === 'admin' ? memberId : undefined;
 
-    const kick = inSeat
-      ? (() => {
+    // 2026-10-12 FIX (Sumon): room-block FULLY removes the user from the room.
+    // Previously only the seat was removed — but seated users keep their
+    // audience record (joinSeat never clears it), so the "blocked" user stayed
+    // in the room as audience. Now both are removed atomically where possible.
+    // The victim's client is force-leaved via the roomBlocks subscription.
+    const kick = (async () => {
+      if (action === 'room-block') {
+        const ops: Array<Promise<unknown>> = [];
+        if (inSeat) {
           const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
-          return removeSeat(roomId, seatIdx, demoteUid);
-        })()
-      : removeAudienceMember(roomId, memberId).then(() => {
-          // Audience admin room-blocked → also revoke powers.
-          if (demoteUid) return revokeRoomAdmin(roomId, demoteUid);
-        });
+          ops.push(removeSeat(roomId, seatIdx, demoteUid));
+        }
+        // Always clear the audience record too — belt-and-braces, since a
+        // seated user normally still holds one.
+        ops.push(
+          removeAudienceMember(roomId, memberId).then(() => {
+            if (demoteUid) return revokeRoomAdmin(roomId, demoteUid);
+          }),
+        );
+        await Promise.all(ops);
+      } else if (inSeat) {
+        const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
+        await removeSeat(roomId, seatIdx, demoteUid);
+      } else {
+        await removeAudienceMember(roomId, memberId);
+      }
+    })();
 
     const blockRecord: RoomBlockRecord = {
       userId: member.id,
@@ -2453,6 +2494,8 @@ export default function VoiceRoomScreen() {
         onDismissAdmin={() => { if (seatActionMember) dismissAdmin(seatActionMember.id); setSeatActionOpen(false); }}
         onMention={() => { if (seatActionMember) { handleMention(seatActionMember.name); setSeatActionOpen(false); } }}
         onBlock={() => { if (seatActionMember) { blockUser(seatActionMember.id, 'room-block'); setSeatActionOpen(false); } }}
+        onUnblock={() => { if (seatActionMember) { unblockUser(seatActionMember.id); setSeatActionOpen(false); } }}
+        isRoomBlocked={!!seatActionMember && blockedRecs.some((r: BlockRecord) => r.id === seatActionMember.id && r.isActive && r.action === 'room-block')}
         onLock={() => { lockSeat(seatActionIdx); setSeatActionOpen(false); }}
         onUnlock={() => { unlockSeat(seatActionIdx); setSeatActionOpen(false); }}
         onInvite={() => { setInvToSeatIdx(seatActionIdx); setSeatActionOpen(false); setInvToSeatOpen(true); }}
@@ -2519,6 +2562,9 @@ export default function VoiceRoomScreen() {
         onGift={() => { setGiftsRecipient(activeMember); setActiveMember(null); setGiftsOpen(true); }}
         onMention={handleMention}
         onBlock={(action) => { if (activeMember) blockUser(activeMember.id, action); setActiveMember(null); }}
+        onUnblock={() => { if (activeMember) unblockUser(activeMember.id); setActiveMember(null); }}
+        isCommentBlocked={!!activeMember && blockedRecs.some((r: BlockRecord) => r.id === activeMember.id && r.isActive && r.action === 'comment-block')}
+        isRoomBlocked={!!activeMember && blockedRecs.some((r: BlockRecord) => r.id === activeMember.id && r.isActive && r.action === 'room-block')}
         onReport={(memberId, memberName) => {
           submitReport({
             reporterUid: myUid,
