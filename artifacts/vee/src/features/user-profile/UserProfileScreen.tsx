@@ -365,6 +365,54 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             <StatBox label={t('userProfile.statFollowing')} value={followCounts.following} />
           </View>
 
+          {/* VoiceClub Rooms (imo style) */}
+          {rooms.length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>VoiceClub Room</Text>
+                <Text style={{ fontSize: 14, color: C.muted }}>{rooms.length} ›</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }} nestedScrollEnabled>
+                {rooms.slice(0, 10).map((item, i) => (
+                  <Pressable
+                    key={item.id || String(i)}
+                    onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
+                    style={{ width: 120, marginRight: 12 }}
+                  >
+                    <View style={{ width: 120, height: 120, borderRadius: 16, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 40 }}>🎙️</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 6 }} numberOfLines={1}>
+                      {item.name || 'Room'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* Gifts (imo style) */}
+          {Object.keys(receivedGifts).length > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 16, marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>Gifts</Text>
+                <Text style={{ fontSize: 14, color: C.muted }}>
+                  {Object.values(receivedGifts).reduce((s, c) => s + c, 0)} ›
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+                {Object.entries(receivedGifts).slice(0, 8).map(([giftId, count]) => (
+                  <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#F2F2F7', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 36 }}>🎁</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           {/* Action buttons — imo style: 2 buttons side by side */}
           {!isMe && (
             <View style={{
@@ -450,53 +498,6 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             </View>
           )}
 
-          {/* VoiceClub Rooms (imo style) */}
-          {rooms.length > 0 && (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>VoiceClub Room</Text>
-                <Text style={{ fontSize: 14, color: C.muted }}>{rooms.length} ›</Text>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }} nestedScrollEnabled>
-                {rooms.slice(0, 10).map((item, i) => (
-                  <Pressable
-                    key={item.id || String(i)}
-                    onPress={() => router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never)}
-                    style={{ width: 120, marginRight: 12 }}
-                  >
-                    <View style={{ width: 120, height: 120, borderRadius: 16, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 40 }}>🎙️</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginTop: 6 }} numberOfLines={1}>
-                      {item.name || 'Room'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Gifts (imo style) */}
-          {Object.keys(receivedGifts).length > 0 && (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 16, marginBottom: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>Gifts</Text>
-                <Text style={{ fontSize: 14, color: C.muted }}>
-                  {Object.values(receivedGifts).reduce((s, c) => s + c, 0)} ›
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-                {Object.entries(receivedGifts).slice(0, 8).map(([giftId, count]) => (
-                  <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: '#F2F2F7', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 36 }}>🎁</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
 
           {/* Divider */}
           <View style={{
