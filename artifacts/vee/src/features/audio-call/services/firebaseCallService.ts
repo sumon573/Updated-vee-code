@@ -48,18 +48,18 @@ export async function initiateCall(
   calleeUid: string,
   data: Omit<IncomingCall, 'createdAt'>,
 ): Promise<void> {
-  await set(ref(database, `calls/${calleeUid}`), {
-    ...data,
-    createdAt: Date.now(),
-  });
-  // P1 fix (2026-10-12): if the caller's app dies while ringing, the callee's
-  // incoming-call modal would ring forever. onDisconnect removes the signal
-  // automatically so the callee's listener clears the modal.
+  // P1 fix (2026-10-12, review refinement): register onDisconnect BEFORE the
+  // set — a caller dying in the ms between set and onDisconnect would leave
+  // the callee ringing forever (the exact scenario this guards).
   try {
     await onDisconnect(ref(database, `calls/${calleeUid}`)).remove();
   } catch {
     // background: safe to swallow — callee modal still clears on timeout/cancel
   }
+  await set(ref(database, `calls/${calleeUid}`), {
+    ...data,
+    createdAt: Date.now(),
+  });
   // Push notification so the callee's phone rings even if the app is
   // closed/backgrounded. The incoming-call screen opens via the click handler.
   sendPushNotification(

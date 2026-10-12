@@ -247,6 +247,24 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  // 2026-10-12 review fix: if the room info arrived before myUid loaded,
+  // the PIN gate skipped evaluation — re-evaluate now that auth is ready.
+  useEffect(() => {
+    if (!myUid || myUid === 'anonymous') return;
+    if (pinEvaluatedForRef.current === roomId) return;
+    const info = pinInfoRef.current;
+    if (!info) return;
+    pinEvaluatedForRef.current = roomId;
+    const needsPin =
+      info.isPublic !== true &&
+      info.ownerId !== myUid &&
+      !pinVerifiedRooms.has(roomId);
+    const nextGate = needsPin ? 'open' : 'passed';
+    pinGateRef.current = nextGate;
+    setPinGate(nextGate);
+    if (nextGate === 'passed') handleRoomInfoOk();
+  }, [myUid, roomId, handleRoomInfoOk]);
+
   /* ── LiveKit real audio ── */
   const {
     joined: voiceJoined,
@@ -519,6 +537,8 @@ export default function VoiceRoomScreen() {
   const [pinGate, setPinGate] = useState<'checking' | 'open' | 'passed'>('checking');
   const pinGateRef = useRef<'checking' | 'open' | 'passed'>('checking');
   const pinEvaluatedForRef = useRef<string | null>(null);
+  // Latest room info for PIN-gate re-evaluation when myUid loads late.
+  const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
@@ -809,7 +829,11 @@ export default function VoiceRoomScreen() {
       // P0 security (2026-10-12): evaluate the in-screen PIN gate once per
       // room load. Private room + not owner + not verified this session →
       // block all joins/voice until the correct PIN is entered.
-      if (pinEvaluatedForRef.current !== roomId) {
+      // 2026-10-12 review fix: don't evaluate until myUid is loaded — an
+      // empty myUid would wrongly gate the room owner. Stash info so a
+      // late myUid can re-evaluate (see effect below).
+      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId };
+      if (pinEvaluatedForRef.current !== roomId && myUidRef.current) {
         pinEvaluatedForRef.current = roomId;
         const needsPin =
           info.isPublic !== true &&
@@ -1786,10 +1810,11 @@ export default function VoiceRoomScreen() {
     if (!text || sendingMsgRef.current) return;
     // P1 anti-spam (2026-10-12): throttle to one message per 1.5s per room.
     // Module-level map so it survives re-renders; silent drop keeps the UX snappy.
+    // 2026-10-12 review fix: stamp AFTER the block-check so a blocked attempt
+    // doesn't consume the throttle window.
     const now = Date.now();
     const lastSent = lastChatSendAt.get(roomId) ?? 0;
     if (now - lastSent < 1500) return;
-    lastChatSendAt.set(roomId, now);
     // Instant client-side guard (the input is already disabled, but the
     // service also enforces this server-side as the source of truth).
     if (amChatBlocked) {
@@ -1799,6 +1824,7 @@ export default function VoiceRoomScreen() {
       );
       return;
     }
+    lastChatSendAt.set(roomId, now);
     sendingMsgRef.current = true;
     setSendingMsg(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

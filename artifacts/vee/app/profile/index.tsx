@@ -565,7 +565,7 @@ export default function ProfileScreen({
   // SLOW progression based on diamond sending + voice-room activity.
   // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
   // Level curve (quadratic — each level needs progressively more):
-  //   cumulative XP for level N = 5 * N^2  (Lv.30 ≈ 4,500 XP, Lv.60 ≈ 18,000, Lv.100 = 50,000)
+  //   cumulative XP for level N = 5 * (N-1)^2  (Lv.30 ≈ 4,205 XP, Lv.60 ≈ 17,405, Lv.100 = 49,005)
   // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
   const calculateLevel = (): number => {
     const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);

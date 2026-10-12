@@ -32,6 +32,7 @@ import {
 import { database, auth } from '@/src/config/firebase';
 import { tryGetApiBase } from '@/src/utils/platform';
 import { getApiBase } from '@/src/utils/platform';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import { MemberPreview, VoiceRoom } from '../types/room';
 import { sendPushNotification } from '@/src/services/notifyService';
 import { canReceiveRoomInvite } from '@/src/services/privacyService';
@@ -795,14 +796,25 @@ export async function refreshSeatHeartbeat(roomId: string, seatIndex: number): P
  */
 export async function sweepStaleSeats(roomId: string): Promise<void> {
   try {
-    const snap = await get(ref(database, `rooms/${roomId}/seats`));
-    if (!snap.exists()) return;
+    const [seatsSnap, audienceSnap] = await Promise.all([
+      get(ref(database, `rooms/${roomId}/seats`)),
+      get(ref(database, `rooms/${roomId}/audience`)),
+    ]);
+    if (!seatsSnap.exists()) return;
+    // 2026-10-12 review fix: a minimized user keeps their seat with live
+    // audio but their screen (and heartbeat) is unmounted. Never sweep a
+    // seat whose holder still has a live audience presence record.
+    const liveAudience = new Set<string>();
+    if (audienceSnap.exists()) {
+      audienceSnap.forEach((child) => { liveAudience.add(child.key as string); });
+    }
     const now = Date.now();
     const STALE_MS = 5 * 60 * 1000;
     const stalePaths: Record<string, null> = {};
-    snap.forEach((child) => {
+    seatsSnap.forEach((child) => {
       const s = child.val() as { userId?: string; seatTs?: number } | null;
       if (!s || !s.userId) return;
+      if (liveAudience.has(s.userId)) return; // still in room (may be minimized)
       const ts = typeof s.seatTs === 'number' ? s.seatTs : 0;
       // Missing heartbeat (pre-heartbeat seat) → treat as stale only if very
       // old room data; heartbeat seats use the 5-min window.
@@ -1473,27 +1485,32 @@ export async function storeRoomPin(roomId: string, hashedPin: string): Promise<v
 
 /**
  * Verify a hashed PIN for a private room.
- * Returns true when the PIN hash matches, false otherwise.
+ * Returns true when the PIN hash matches, false when the PIN is wrong.
+ * THROWS on transport failure (no token, no api base, network error,
+ * non-OK HTTP) so callers never misreport "Incorrect PIN" for a
+ * connectivity problem. (2026-10-12 review fix.)
  *
  * Uses server-side verification via /api/rooms/verify-pin (deployed 2026-10-06).
  * Direct Firebase read no longer works for non-owners (rules hardened).
  */
 export async function verifyRoomPin(roomId: string, hashedPin: string): Promise<boolean> {
+  const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+  const apiBase = tryGetApiBase();
+  if (!idToken) throw new Error('Not signed in — cannot verify PIN.');
+  if (!apiBase) throw new Error('Server unreachable — cannot verify PIN.');
+  let res: Response;
   try {
-    const idToken = await auth.currentUser?.getIdToken().catch(() => null);
-    const apiBase = tryGetApiBase();
-    if (!idToken || !apiBase) return false;
-    const res = await fetch(`${apiBase}/api/rooms/verify-pin`, {
+    res = await fetch(`${apiBase}/api/rooms/verify-pin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
       body: JSON.stringify({ roomId, hashedPin }),
     });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data?.ok === true;
-  } catch {
-    return false;
+  } catch (e) {
+    throw new Error(`Network error while verifying PIN: ${getErrorCause(e)}`);
   }
+  if (!res.ok) throw new Error(`PIN verification failed (server ${res.status}).`);
+  const data = await res.json().catch(() => null);
+  return data?.ok === true;
 }
 
 /**
