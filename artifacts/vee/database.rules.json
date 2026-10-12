@@ -414,18 +414,18 @@
         "info": {
           ".write": "auth != null && (!data.exists() || data.child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
           "memberCount": {
-            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
             ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20"
           },
           "listenerCount": {
-            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
             ".validate": "newData.isNumber() && newData.val() >= 0"
           },
           "memberPreviews": {
-            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
           },
           "isTrending": {
-            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
             ".validate": "newData.isBoolean()"
           },
           "totalDiamonds": {
@@ -440,19 +440,41 @@
             // - CREATE: role cannot be 'host'/'admin'/'moderator' (prevents self-promotion)
             //   EXCEPT: room owner can create host seat (for createRoom)
             //   Only room owner or platform admins can assign privileged roles
-            // - UPDATE: only seat holder, room owner, or admins
+            // - UPDATE: only seat holder, room owner, room admins (via the
+            //   rooms/$roomId/admins registry), or platform admins
+            // - ROLE CHANGES on update: room owner or platform admins ONLY
+            //   (2026-10-12 fix — previously ANY seated member could promote
+            //   themselves to admin via a crafted seat update, because the
+            //   update branch of .validate was just `true`)
             // - seatIndex must be 0-19 (prevents phantom seats at arbitrary indices)
-            ".write": "auth != null && ($seatIndex.matches(/^(0|1|2|3|4|5|6|7|8|9|1[0-9])$/) && ((!data.exists() && newData.child('userId').val() === auth.uid) || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator'))",
-            ".validate": "!newData.exists() || (newData.child('userId').isString() && (!data.exists() ? ((newData.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid) && (!newData.child('role').exists() || newData.child('role').val() === 'member' || newData.child('role').val() === 'speaker' || (newData.child('role').val() === 'host' && root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid))) : true))"
+            ".write": "auth != null && ($seatIndex.matches(/^(0|1|2|3|4|5|6|7|8|9|1[0-9])$/) && ((!data.exists() && newData.child('userId').val() === auth.uid) || data.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator'))",
+            ".validate": "!newData.exists() || (newData.child('userId').isString() && (!data.exists() ? ((newData.child('userId').val() === auth.uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid) && (!newData.child('role').exists() || newData.child('role').val() === 'member' || newData.child('role').val() === 'speaker' || (newData.child('role').val() === 'host' && root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid))) : (newData.child('role').val() === data.child('role').val() || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')))"
+          }
+        },
+        "admins": {
+          // Room-level admin registry (2026-10-12). The room owner (or a
+          // platform admin) grants room-admin powers by writing `true` here.
+          // Powers are checked against THIS node — never against the seat
+          // role alone — because seat data is partly user-writable and a
+          // crafted client could otherwise claim admin powers.
+          // - CREATE: room owner or platform admin only.
+          // - DELETE: additionally allowed for room admins, so kick/leave
+          //   cleanup works when the kicker is an admin, not the owner.
+          // - No-op writes (deleting a non-existent entry) are always allowed
+          //   so multi-path kick updates never fail on a missing entry.
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')) || (data.exists() && !newData.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')))",
+            ".validate": "!newData.exists() || newData.val() === true"
           }
         },
         "audience": {
           "$uid": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
+            ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
           }
         },
         "lockedSeats": {
-          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
         },
         "counts": {
           ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
@@ -497,7 +519,7 @@
       "$roomId": {
         ".read": "auth != null",
         "$uid": {
-          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')"
         }
       }
     },
@@ -507,9 +529,10 @@
         "$reqId": {
           // SECURITY HARDENING (2026-10-06):
           // - CREATE: only the requester can create (userId must match auth.uid)
-          // - UPDATE (approve/reject): only room owner, admins, or moderators
+          // - UPDATE (approve/reject): only room owner, room admins (via the
+          //   rooms/$roomId/admins registry, 2026-10-12), or platform admins.
           //   Previously ANY authenticated user could approve/reject requests!
-          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')))",
+          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')))",
           // RC8-B1 Security Fix: userId must match auth.uid on CREATE so that a user
           // cannot impersonate another user in a seat request. On UPDATE (owner
           // approving/rejecting), the userId field must remain unchanged from its
