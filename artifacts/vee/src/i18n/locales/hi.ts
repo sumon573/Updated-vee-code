@@ -225,6 +225,7 @@ const hi = {
       // TODO i18n: English fallbacks — need proper Hindi translations
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',
+      muteFailedWithCause: 'म्यूट स्थिति बदली नहीं जा सकी। कारण: {{cause}}',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} रूम में शामिल हुए 🎉',
       inviteMember: '{{name}} को आमंत्रित करें',

@@ -19,7 +19,7 @@ import { storeRoomPin } from '../services/firebaseRoomService';
  * "Mute New Joiners" toggle has been removed as per product decision.
  */
 export function SettingsModal({
-  visible, onClose, isOwnerOrAdmin,
+  visible, onClose, isOwnerOrAdmin, canEdit,
   topic, setTopic,
   description, setDescription,
   activeThemeId, onThemeChange,
@@ -28,6 +28,13 @@ export function SettingsModal({
   onSaveSettings, roomId,
 }: {
   visible: boolean; onClose: () => void; isOwnerOrAdmin: boolean;
+  /**
+   * 2026-10-12: room settings (topic/description/privacy/PIN/theme) are
+   * OWNER-only — the security rules deny admin writes to rooms/$roomId/info
+   * and roomPins, so the UI must not offer editing to admins. Admins keep
+   * full moderation powers; they can still VIEW settings + operation history.
+   */
+  canEdit: boolean;
   topic: string; setTopic: (t: string) => void;
   /** Room description — editable alongside topic (2026-10-11). */
   description: string; setDescription: (d: string) => void;
@@ -137,10 +144,10 @@ export function SettingsModal({
             value={localTopic}
             onChangeText={setLocalTopic}
             placeholderTextColor={C.muted}
-            editable={isOwnerOrAdmin}
+            editable={canEdit}
             style={{ backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 16,
               paddingVertical: 12, color: C.text, fontSize: 14, borderWidth: 1,
-              borderColor: isOwnerOrAdmin ? accent + '55' : C.borderFaint, marginBottom: 16 }}
+              borderColor: canEdit ? accent + '55' : C.borderFaint, marginBottom: 16 }}
           />
 
           {/* Description (2026-10-11) */}
@@ -152,12 +159,12 @@ export function SettingsModal({
             onChangeText={setLocalDescription}
             placeholder={t('voiceRoom.settings.descriptionPlaceholder')}
             placeholderTextColor={C.muted}
-            editable={isOwnerOrAdmin}
+            editable={canEdit}
             multiline
             numberOfLines={3}
             style={{ backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 16,
               paddingVertical: 12, color: C.text, fontSize: 14, borderWidth: 1,
-              borderColor: isOwnerOrAdmin ? accent + '55' : C.borderFaint, marginBottom: 16,
+              borderColor: canEdit ? accent + '55' : C.borderFaint, marginBottom: 16,
               minHeight: 80, textAlignVertical: 'top' }}
           />
 
@@ -171,16 +178,16 @@ export function SettingsModal({
               </View>
               <Switch
                 value={row.val}
-                onValueChange={isOwnerOrAdmin ? row.set : undefined}
+                onValueChange={canEdit ? row.set : undefined}
                 trackColor={{ false: C.muted, true: accent }}
                 thumbColor={C.text}
-                disabled={!isOwnerOrAdmin}
+                disabled={!canEdit}
               />
             </View>
           ))}
 
           {/* Room PIN — private rooms only, owner/admin can change the 4-digit password */}
-          {!isPublic && isOwnerOrAdmin && (
+          {!isPublic && canEdit && (
             <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>
               <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
                 {t('voiceRoom.settings.pinLabel')}
@@ -225,7 +232,7 @@ export function SettingsModal({
           <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>
             <Pressable
               onPress={() => {
-                if (!isOwnerOrAdmin) {
+                if (!canEdit) {
                   Alert.alert(t('voiceRoom.settings.permissionDenied'), t('voiceRoom.settings.permissionDeniedMsg'));
                   return;
                 }
@@ -239,7 +246,7 @@ export function SettingsModal({
                   {t('voiceRoom.settings.themeLabel')}
                 </Text>
                 <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                  {isOwnerOrAdmin ? t('voiceRoom.settings.themeTapHint') : t('voiceRoom.settings.themeAdminOnly')}
+                  {canEdit ? t('voiceRoom.settings.themeTapHint') : t('voiceRoom.settings.themeAdminOnly')}
                 </Text>
               </View>
               <View style={{
@@ -253,10 +260,10 @@ export function SettingsModal({
                 </Text>
               </View>
               <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={16}
-                color={isOwnerOrAdmin ? C.sub : C.muted} />
+                color={canEdit ? C.sub : C.muted} />
             </Pressable>
 
-            {showThemes && isOwnerOrAdmin && (
+            {showThemes && canEdit && (
               <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {ROOM_THEMES.map(theme => {
                   const isActive = activeThemeId === theme.id;
@@ -313,13 +320,16 @@ export function SettingsModal({
                 {t('voiceRoom.settings.cancel')}
               </Text>
             </Pressable>
-            <Pressable onPress={handleSave}
-              style={{ flex: 2, backgroundColor: accent, borderRadius: 14,
-                paddingVertical: 14, alignItems: 'center' }}>
-              <Text style={{ color: C.text, fontWeight: '800', fontSize: 15 }}>
-                {t('voiceRoom.settings.save')}
-              </Text>
-            </Pressable>
+            {/* 2026-10-12: Save is owner-only (admins get a read-only view). */}
+            {canEdit && (
+              <Pressable onPress={handleSave}
+                style={{ flex: 2, backgroundColor: accent, borderRadius: 14,
+                  paddingVertical: 14, alignItems: 'center' }}>
+                <Text style={{ color: C.text, fontWeight: '800', fontSize: 15 }}>
+                  {t('voiceRoom.settings.save')}
+                </Text>
+              </Pressable>
+            )}
           </View>
         </ScrollView>
       </View>

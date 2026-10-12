@@ -808,15 +808,45 @@ export async function setSeatRole(
   await update(seatRef, { role });
 }
 
-/** Remove a member from a seat (kick). */
+/** Remove a member from a seat (kick). If demoteUid is provided, the user's
+ * room-admin grant is revoked atomically in the same multi-path update, so a
+ * kicked admin can never retain moderation powers. */
 export async function removeSeat(
   roomId: string,
   seatIndex: number,
+  demoteUid?: string,
 ): Promise<void> {
   const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
   onDisconnect(seatRef).cancel().catch(() => {/* non-critical */});
-  await remove(seatRef);
+  if (demoteUid) {
+    // Atomic: seat removal + admin revoke succeed or fail together.
+    await update(ref(database, `rooms/${roomId}`), {
+      [`seats/${seatIndex}`]: null,
+      [`admins/${demoteUid}`]: null,
+    });
+  } else {
+    await remove(seatRef);
+  }
   _updateCounts(roomId).catch(() => {}); // best-effort
+}
+
+/**
+ * Grant room-admin powers (2026-10-12). Writes to the rooms/$roomId/admins
+ * registry — the source of truth the security rules check. Must be paired
+ * with setSeatRole(..., 'admin') so the seat label matches the powers.
+ * Only the room owner (or platform admin) can grant.
+ */
+export async function grantRoomAdmin(roomId: string, uid: string): Promise<void> {
+  await set(ref(database, `rooms/${roomId}/admins/${uid}`), true);
+}
+
+/**
+ * Revoke room-admin powers. Paired with setSeatRole(..., 'member').
+ * Only the room owner (or platform admin) can revoke directly; room admins
+ * may only trigger this implicitly via kick (removeSeat with demoteUid).
+ */
+export async function revokeRoomAdmin(roomId: string, uid: string): Promise<void> {
+  await remove(ref(database, `rooms/${roomId}/admins/${uid}`));
 }
 
 /** Remove a member from audience (kick). */

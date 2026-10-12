@@ -172,6 +172,7 @@ const ar = {
       // TODO i18n: English fallbacks — need proper Arabic translations
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',
+      muteFailedWithCause: 'تعذر تغيير حالة الكتم. السبب: {{cause}}',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} انضم إلى الغرفة 🎉',
       inviteMember: 'دعوة {{name}}',

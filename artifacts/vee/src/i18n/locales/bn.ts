@@ -225,6 +225,7 @@ const bn = {
       // TODO i18n: English fallbacks — need proper Bengali translations
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',
+      muteFailedWithCause: 'মিউট অবস্থা বদলানো যায়নি। কারণ: {{cause}}',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} রুমে যোগ দিয়েছেন 🎉',
       inviteMember: '{{name}}-কে আমন্ত্রণ',

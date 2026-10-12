@@ -224,6 +224,7 @@ const en = {
       error: 'Error',
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',
+      muteFailedWithCause: 'Could not change mute state. Reason: {{cause}}',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} joined the room 🎉',
       inviteMember: 'Invite {{name}}',

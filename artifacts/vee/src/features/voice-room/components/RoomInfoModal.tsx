@@ -142,7 +142,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
 
   // PERMISSION FIX (2026-10-09): only owner/admin can edit room name or image.
   // Regular members see a static name with no edit affordance.
-  const canEdit = isOwner === true || isAdmin === true;
+  // 2026-10-12: room name/cover are OWNER-only. Admins were offered editing
+  // here, but the security rules (rooms/$roomId/info/.write) deny them —
+  // UI must never offer what the rules deny. Admins keep full moderation
+  // powers (mute/unmute/kick/block/lock), not room identity.
+  const canEdit = isOwner === true;
 
   useEffect(() => { if (!editingName) setNameInput(roomName); }, [roomName, editingName]);
 

@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { ref, get, onValue } from 'firebase/database';
+import { ref, get, onValue, update } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +21,7 @@ import { getUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { submitReport } from '@/src/services/reportService';
 
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo } from '../types/room';
@@ -52,6 +53,7 @@ import {
   joinRoomAsAudience, leaveAudience, takeSeat, leaveSeat as fbLeaveSeat,
   setSeatMute, setSeatRole, removeSeat, removeAudienceMember,
   lockSeat as fbLockSeat, unlockSeat as fbUnlockSeat, setAudienceRole,
+  grantRoomAdmin, revokeRoomAdmin,
   closeRoom, updateRoomSettings, getUserColor, getInitials,
   disbandRoom,
   // Seat Request System (Firebase-persisted)
@@ -205,9 +207,15 @@ export default function VoiceRoomScreen() {
       destroyPersistedVoiceRoomEngine();
     } catch { /* non-critical */ }
     if (prev.mySeatIdx >= 0) {
-      removeSeat(prev.id, prev.mySeatIdx).catch(() => {});
+      // 2026-10-12: revoke admin powers too if the user was an admin —
+      // otherwise the admins-node entry goes stale with live powers.
+      const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
+      removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
     } else {
       leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
+      if (prev.role === 'admin') {
+        revokeRoomAdmin(prev.id, prev.myUid || myUid).catch(() => {});
+      }
     }
     setMinimizedRoom(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -295,6 +303,10 @@ export default function VoiceRoomScreen() {
   // Fix 5: Ref for seats used inside emoji reaction subscription callback
   const seatsRef = useRef<Array<Participant | null>>(Array(10).fill(null));
   useEffect(() => { seatsRef.current = seats; }, [seats]);
+  // 2026-10-12: Ref for audience used inside the room-info self-heal
+  // (admin registry repair needs the latest audience roles).
+  const audienceRef = useRef<Participant[]>([]);
+  useEffect(() => { audienceRef.current = audience; }, [audience]);
 
   /**
    * CRITICAL-1 fix (minimize/restore): After returning from the minimized bar,
@@ -736,6 +748,35 @@ export default function VoiceRoomScreen() {
         if (mySeatNow && mySeatNow.role !== 'host') {
           setSeatRole(roomId, mySeatIdxNow, 'host').catch(() => {});
         }
+        // 2026-10-12: backfill + repair the rooms/$roomId/admins registry.
+        // Any member labelled 'admin' (seat or audience) must hold the powers
+        // the security rules check. Runs on every info update but only
+        // writes for members missing from the registry (additive only —
+        // removals go through dismiss/kick/leave so a stale label can never
+        // resurrect powers here).
+        try {
+          const adminIds = new Set<string>();
+          for (const s of seatsRef.current) {
+            if (s && s.role === 'admin' && s.id !== myUidRef.current) adminIds.add(s.id);
+          }
+          for (const m of audienceRef.current) {
+            if (m.role === 'admin' && m.id !== myUidRef.current) adminIds.add(m.id);
+          }
+          if (adminIds.size > 0) {
+            get(ref(database, `rooms/${roomId}/admins`)).then((snap) => {
+              const existing = new Set<string>(snap.exists() ? Object.keys(snap.val() ?? {}) : []);
+              const missing = [...adminIds].filter((id) => !existing.has(id));
+              if (missing.length === 0) return;
+              const updates: Record<string, true> = {};
+              for (const id of missing) updates[id] = true;
+              update(ref(database, `rooms/${roomId}/admins`), updates).catch(() => {
+                // background: safe to swallow — repaired on next info update
+              });
+            }).catch(() => {});
+          }
+        } catch {
+          // background: safe to swallow — admin registry repair is best-effort
+        }
       }
       setRoomImageUri(info.coverImageUrl ?? null);
       setRoomIsPublic(info.isPublic);
@@ -1061,11 +1102,18 @@ export default function VoiceRoomScreen() {
 
   const myRole: Role = useMemo(() => {
     const mySeat = seats.find((s: Participant | null) => s?.id === myUid);
+    if (mySeat?.role) return mySeat.role;
+    // 2026-10-12: admins moved to the audience keep their powers (the
+    // rooms/$roomId/admins registry), so the audience record's role must
+    // count too — otherwise a moved-down admin loses the moderation UI
+    // while still holding the powers.
+    const myAud = audience.find((m: Participant) => m.id === myUid);
+    if (myAud?.role === 'admin') return 'admin';
     // Fall back to ownerId when the user currently has no seat (e.g. the
     // host stepped down from their seat) so the owner never gets
     // misdetected as a plain member and loses host-only capabilities.
-    return mySeat?.role ?? (ownerId && ownerId === myUid ? 'host' : 'member');
-  }, [seats, myUid, ownerId]);
+    return (ownerId && ownerId === myUid ? 'host' : 'member');
+  }, [seats, audience, myUid, ownerId]);
 
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
 
@@ -1188,18 +1236,34 @@ export default function VoiceRoomScreen() {
 
   const muteToggleMember = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
-    setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
-      if (s?.id !== memberId) return s;
-      const newMuted = !s.muted;
-      if (newMuted) muteRemoteUser(memberId);
-      else playUserStream(memberId);
-      if (seatIdx >= 0) {
-        setSeatMute(roomId, seatIdx, newMuted).catch(() => {});
-      }
-      return { ...s, muted: newMuted };
-    }));
+    const seat = seatIdx >= 0 ? seats[seatIdx] : null;
+    if (!seat || seatIdx < 0) return;
+    const prevMuted = seat.muted ?? false;
+    const newMuted = !prevMuted;
+    if (newMuted) muteRemoteUser(memberId);
+    else playUserStream(memberId);
+    // Optimistic UI — reverted below if the Firebase write fails, so the
+    // icon never lies about the real moderation state (2026-10-12 fix:
+    // admin writes used to be silently denied by the security rules).
+    setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
+      (i === seatIdx && s ? { ...s, muted: newMuted } : s),
+    ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [muteRemoteUser, playUserStream, seats, roomId]);
+    setSeatMute(roomId, seatIdx, newMuted).catch((e: unknown) => {
+      // Write failed (e.g. permission denied) — revert the optimistic
+      // update, restore the remote stream state, and show the real cause.
+      setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
+        (i === seatIdx && s ? { ...s, muted: prevMuted } : s),
+      ));
+      if (newMuted) playUserStream(memberId);
+      else muteRemoteUser(memberId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [muteRemoteUser, playUserStream, seats, roomId, t]);
 
   const downFromSeat = useCallback((seatIdx: number) => {
     const member = seats[seatIdx];
@@ -1211,6 +1275,8 @@ export default function VoiceRoomScreen() {
     }
     // Issue 6: pass full member data (including photoURL + role) so the user
     // is properly restored to the Live Audience list with their profile photo.
+    // 2026-10-12: an admin moved down keeps their admin powers (title is
+    // independent of stage position); surface failures instead of swallowing.
     fbLeaveSeat(roomId, seatIdx, member.id, {
       userId: member.id,
       userName: member.name,
@@ -1218,9 +1284,16 @@ export default function VoiceRoomScreen() {
       color: member.color,
       ...(member.photoURL ? { photoURL: member.photoURL } : {}),
       ...(member.role && member.role !== 'host' ? { role: member.role } : {}),
-    }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [seats, myUid, roomId, stopPublishing, stopUserStream]);
+    }).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [seats, myUid, roomId, stopPublishing, stopUserStream, t]);
 
   const joinSeat = useCallback(async (seatIdx: number) => {
     // Already sitting in this seat — nothing to do. (takeSeat's transaction
@@ -1315,38 +1388,78 @@ export default function VoiceRoomScreen() {
   }, [roomId]);
 
   const lockSeat = useCallback((seatIdx: number) => {
-    fbLockSeat(roomId, seatIdx).catch(() => {});
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [roomId]);
+    // 2026-10-12: surface failures — a silent catch here hid the fact that
+    // room admins were denied by the security rules for weeks.
+    fbLockSeat(roomId, seatIdx).then(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [roomId, t]);
 
   const unlockSeat = useCallback((seatIdx: number) => {
-    fbUnlockSeat(roomId, seatIdx).catch(() => {});
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [roomId]);
+    fbUnlockSeat(roomId, seatIdx).then(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [roomId, t]);
 
   const setAdminRole = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
+    // Room-admin powers live in the rooms/$roomId/admins registry (checked by
+    // the security rules); the seat role is only the visible label. Both are
+    // written together — powers without label (or label without powers) is a
+    // broken state, so a failure here is surfaced, never swallowed.
+    const writes: Array<Promise<unknown>> = [];
     if (seatIdx >= 0) {
-      setSeatRole(roomId, seatIdx, 'admin').catch(() => {});
+      writes.push(setSeatRole(roomId, seatIdx, 'admin'));
     }
     const inAudience = audience.find((m: Participant) => m.id === memberId);
     if (inAudience) {
-      setAudienceRole(roomId, memberId, 'admin').catch(() => {});
+      writes.push(setAudienceRole(roomId, memberId, 'admin'));
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [seats, audience, roomId]);
+    writes.push(grantRoomAdmin(roomId, memberId));
+    Promise.all(writes).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [seats, audience, roomId, t]);
 
   const dismissAdmin = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
+    const writes: Array<Promise<unknown>> = [];
     if (seatIdx >= 0) {
-      setSeatRole(roomId, seatIdx, 'member').catch(() => {});
+      writes.push(setSeatRole(roomId, seatIdx, 'member'));
     }
     const inAudience = audience.find((m: Participant) => m.id === memberId);
     if (inAudience) {
-      setAudienceRole(roomId, memberId, 'member').catch(() => {});
+      writes.push(setAudienceRole(roomId, memberId, 'member'));
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [seats, audience, roomId]);
+    writes.push(revokeRoomAdmin(roomId, memberId));
+    Promise.all(writes).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [seats, audience, roomId, t]);
 
   const blockUser = useCallback((memberId: string, action: 'room-block' | 'comment-block') => {
     const inSeat = seats.find((s: Participant | null) => s?.id === memberId);
@@ -1354,12 +1467,19 @@ export default function VoiceRoomScreen() {
     const member = inSeat ?? inAud;
     if (!member) return;
 
-    if (inSeat) {
-      const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
-      removeSeat(roomId, seatIdx).catch(() => {});
-    } else {
-      removeAudienceMember(roomId, memberId).catch(() => {});
-    }
+    // 2026-10-12: a room-blocked admin must lose their admin powers too.
+    // Comment-block keeps everything else intact (chat-only restriction).
+    const demoteUid = action === 'room-block' && member.role === 'admin' ? memberId : undefined;
+
+    const kick = inSeat
+      ? (() => {
+          const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
+          return removeSeat(roomId, seatIdx, demoteUid);
+        })()
+      : removeAudienceMember(roomId, memberId).then(() => {
+          // Audience admin room-blocked → also revoke powers.
+          if (demoteUid) return revokeRoomAdmin(roomId, demoteUid);
+        });
 
     const blockRecord: RoomBlockRecord = {
       userId: member.id,
@@ -1371,23 +1491,40 @@ export default function VoiceRoomScreen() {
       byName: myName,
       action,
     };
-    blockUserInRoom(roomId, blockRecord).catch(() => {});
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    Alert.alert(
-      t('voiceRoom.screen.userBlockedDone'),
-      action === 'room-block'
-        ? t('voiceRoom.screen.userRoomBlocked', { name: member.name })
-        : t('voiceRoom.screen.userCommentBlocked', { name: member.name }),
-    );
+    // 2026-10-12: never claim success before the writes land — the old code
+    // showed "blocked" even when every write was permission-denied.
+    Promise.all([kick, blockUserInRoom(roomId, blockRecord)]).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.userBlockedDone'),
+        action === 'room-block'
+          ? t('voiceRoom.screen.userRoomBlocked', { name: member.name })
+          : t('voiceRoom.screen.userCommentBlocked', { name: member.name }),
+      );
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
   }, [seats, audience, roomId, myUid, myName, t]);
 
   const unblockUser = useCallback((userId: string) => {
     const record = blockedRecs.find((r: BlockRecord) => r.id === userId && r.isActive);
     if (!record) return;
-    unblockUserInRoom(roomId, userId).catch(() => {});
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [blockedRecs, roomId]);
+    // 2026-10-12: surface failures — unblock used to look successful while denied.
+    unblockUserInRoom(roomId, userId).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [blockedRecs, roomId, t]);
 
   // Fix 1: Send seat invite via Firebase instead of directly placing the user
   const inviteToSeat = useCallback((memberId: string, seatIdx: number) => {
@@ -1428,9 +1565,17 @@ export default function VoiceRoomScreen() {
 
     if (mySeatIdx >= 0) {
       stopPublishing();
-      removeSeat(roomId, mySeatIdx).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
+      // 2026-10-12: an admin leaving surrenders their admin powers atomically
+      // with the seat removal (removeSeat handles both in one update).
+      const demoteUid = myRole === 'admin' ? myUid : undefined;
+      removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
     } else if (hasJoined) {
       leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
+      // Audience admin leaving: drop powers too (best-effort; owner self-heal
+      // never re-adds since the label is gone with the audience record).
+      if (myRole === 'admin') {
+        revokeRoomAdmin(roomId, myUid).catch(() => {});
+      }
     }
     // Issue 8 fix: Rooms persist until the owner explicitly deletes them from
     // Settings. Do NOT auto-close when the host leaves — other users can still
@@ -1456,11 +1601,12 @@ export default function VoiceRoomScreen() {
       myUid,
       mySeatIdx,
       muted,
+      role:     myRole,
       ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}),
     });
     setExitModalOpen(false);
     router.back();
-  }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, roomImageUri]);
+  }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, myRole, roomImageUri]);
 
   // BACK BUTTON → MINIMIZE (2026-10-10, Sumon's order): pressing the phone's
   // back button while in a voice room minimizes instead of leaving.
@@ -1772,8 +1918,13 @@ export default function VoiceRoomScreen() {
                                 ts: Date.now(),
                               }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
                               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            } catch {
-                              Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.approveError'));
+                            } catch (e) {
+                              // 2026-10-12: show the real cause, not a generic message.
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                              Alert.alert(
+                                t('voiceRoom.screen.error'),
+                                t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+                              );
                             }
                           },
                         },
@@ -1781,8 +1932,17 @@ export default function VoiceRoomScreen() {
                           text: t('voiceRoom.screen.reject'),
                           style: 'destructive',
                           onPress: () => {
-                            rejectSeatRequest(roomId, req.id).catch(() => {});
-                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                            // 2026-10-12: surface failures — a silent catch hid
+                            // denied writes here too.
+                            rejectSeatRequest(roomId, req.id).then(() => {
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                            }).catch((e: unknown) => {
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                              Alert.alert(
+                                t('voiceRoom.screen.error'),
+                                t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+                              );
+                            });
                           },
                         },
                         { text: t('voiceRoom.screen.later'), style: 'cancel' },
@@ -2240,6 +2400,7 @@ export default function VoiceRoomScreen() {
         visible={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        canEdit={myRole === 'host'}
         topic={roomTopic}
         setTopic={(newTopic) => {
           setRoomTopic(newTopic);

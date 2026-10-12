@@ -14,6 +14,9 @@ export type MinimizedRoom = {
   mySeatIdx: number;
   /** Whether the user's mic was muted at the time of minimize. */
   muted: boolean;
+  /** The user's room role at minimize time — needed to revoke admin powers
+   * if the seat is torn down while opening a different room (2026-10-12). */
+  role?: string;
   /** Room cover image URL — shown as the DP in the mini-player bar (2026-10-11). */
   coverImageUrl?: string;
 } | null;
