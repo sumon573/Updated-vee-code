@@ -10,6 +10,7 @@
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, Alert, ActivityIndicator, Modal, TextInput, Pressable, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
@@ -233,6 +234,9 @@ export default function VoiceRoomHome({
   const [activeTab, setActiveTab] = useState<RecommendedTab>('trending');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  // Room ID search (Sumon 2026-10-12)
+  const [roomSearchOpen, setRoomSearchOpen] = useState(false);
+  const [roomSearchQuery, setRoomSearchQuery] = useState('');
 
   // Crash diagnostic: if the previous session died while entering a voice
   // room, the breadcrumb survives (a clean unmount clears it). Report the
@@ -423,7 +427,13 @@ export default function VoiceRoomHome({
         ) : (
           <>
             {/* ═══ MY ROOMS ═══ */}
-            <SectionTitle title={t('voiceRoom.home.myRooms')} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
+              <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{t('voiceRoom.home.myRooms')}</Text>
+              {/* Room ID search (Sumon 2026-10-12) */}
+              <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
+                <Feather name="search" size={22} color={C.text} />
+              </Pressable>
+            </View>
 
             <GHScrollView
               horizontal
@@ -577,6 +587,75 @@ export default function VoiceRoomHome({
         visible={leaderboardOpen}
         onClose={() => setLeaderboardOpen(false)}
       />
+
+      {/* Room ID Search Modal (Sumon 2026-10-12) */}
+      <Modal
+        visible={roomSearchOpen}
+        animationType="slide"
+        onRequestClose={() => { setRoomSearchOpen(false); setRoomSearchQuery(''); }}
+      >
+        <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+          <SafeAreaView style={{ flex: 1 }}>
+            {/* IMO-style search bar */}
+            <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#F0F0F0',
+                borderRadius: 24,
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+              }}>
+                <Pressable onPress={() => { setRoomSearchOpen(false); setRoomSearchQuery(''); }} style={{ marginRight: 8 }}>
+                  <Feather name="arrow-left" size={22} color="#616161" />
+                </Pressable>
+                <TextInput
+                  placeholder="Search by Room ID"
+                  value={roomSearchQuery}
+                  onChangeText={setRoomSearchQuery}
+                  autoFocus
+                  style={{ flex: 1, fontSize: 16, color: '#212121' }}
+                  placeholderTextColor="#9E9E9E"
+                />
+                {roomSearchQuery.length > 0 && (
+                  <Pressable onPress={() => setRoomSearchQuery('')}>
+                    <Feather name="x-circle" size={20} color="#9E9E9E" />
+                  </Pressable>
+                )}
+              </View>
+            </View>
+            {/* Search results - filter by Room ID only */}
+            <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
+              {(() => {
+                const q = roomSearchQuery.trim().toLowerCase();
+                if (!q) return (
+                  <Text style={{ color: C.muted, textAlign: 'center', marginTop: 40 }}>
+                    Enter a Room ID to search
+                  </Text>
+                );
+                const all = [...myRooms, ...allRooms];
+                const matches = all.filter(r => r.id.toLowerCase().includes(q));
+                if (matches.length === 0) return (
+                  <Text style={{ color: C.muted, textAlign: 'center', marginTop: 40 }}>
+                    No rooms found with ID "{roomSearchQuery}"
+                  </Text>
+                );
+                return matches.map(room => (
+                  <RoomListItem
+                    key={room.id}
+                    room={room}
+                    onPress={() => {
+                      setRoomSearchOpen(false);
+                      setRoomSearchQuery('');
+                      goToRoom(room.id);
+                    }}
+                  />
+                ));
+              })()}
+            </ScrollView>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       {/* PIN Dialog for Private Rooms */}
       <Modal
