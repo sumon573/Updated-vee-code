@@ -1504,19 +1504,18 @@ export async function getUserRoomCounts(
  * 2026-10-12 (Sumon): also bumps rooms/{roomId}/info/pinVersion — clients
  * cache the verified version, so a PIN change forces everyone to re-enter
  * the NEW pin (old sessions stop working).
- * 2026-10-12 review fix: use atomic increment() — read-modify-write could
- * lose a bump on rapid double-changes.
+ * 2026-10-12 review fix: SINGLE atomic multi-path update — if the PIN hash
+ * and version bump aren't all-or-nothing, a blip could change the PIN
+ * without bumping the version, leaving old sessions valid.
  */
 export async function storeRoomPin(roomId: string, hashedPin: string): Promise<void> {
   const { increment } = await import('firebase/database');
   const now = Date.now();
-  await set(ref(database, `roomPins/${roomId}`), { hashedPin, updatedAt: now });
-  // Atomic version bump (owner-only write per rules). Best-effort.
-  try {
-    await set(ref(database, `rooms/${roomId}/info/pinVersion`), increment(1));
-  } catch {
-    // non-critical — PIN still stored; version bump is best-effort
-  }
+  await update(ref(database), {
+    [`roomPins/${roomId}/hashedPin`]: hashedPin,
+    [`roomPins/${roomId}/updatedAt`]: now,
+    [`rooms/${roomId}/info/pinVersion`]: increment(1),
+  });
 }
 
 /**
