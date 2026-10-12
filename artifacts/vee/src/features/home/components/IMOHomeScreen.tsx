@@ -4,10 +4,11 @@
  * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, Text } from 'react-native';
+import { View, FlatList, Text, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
+import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats,
@@ -245,6 +246,11 @@ export default function IMOHomeScreen() {
 
   const handleCallPress = useCallback((chat: IMOChat) => {
     if (!user?.uid || !chat.participantId) return;
+    // P1 fix (2026-10-12): busy guard — never dial while a call is active/minimized.
+    if (getMinimizedCall()) {
+      Alert.alert('ইতিমধ্যে একটি কলে আছেন', 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।');
+      return;
+    }
     const callRoomId = buildCallRoomId(user.uid, chat.participantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(chat.participantId)}&remoteName=${encodeURIComponent(chat.name)}&calleeUid=${encodeURIComponent(chat.participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
     if (chat.photoURL) url += `&remotePhotoURL=${encodeURIComponent(chat.photoURL)}`;

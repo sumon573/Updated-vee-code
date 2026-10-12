@@ -140,9 +140,10 @@ export function useStories(): UseStoriesResult {
     if (!user?.uid) throw new Error('Not authenticated');
     await addStoryComment(authorUid, storyId, {
       userId: user.uid,
-      userName: user.displayName ?? 'You',
+      // P1 fix (2026-10-12): || not ?? — empty-string displayName must fall back.
+      userName: user.displayName || 'You',
       text,
-      userAvatar: user.photoURL ?? undefined,
+      userAvatar: user.photoURL || undefined,
     });
   }, [user]);
 

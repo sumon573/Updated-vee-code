@@ -20,6 +20,7 @@ import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
 import { getBlockDirection, BlockDirection, blockUser, unblockUser } from '@/src/services/blockService';
+import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import {
   FriendRequest, subscribeIncomingRequests, subscribeFriendUids,
   acceptFriendRequest, rejectFriendRequest, removeFriend,
@@ -335,6 +336,11 @@ export default function ContactsScreen() {
   /** Audio call — navigate to the 1-to-1 audio call screen as caller. */
   const handleCall = useCallback(async (targetUser: VeeUser) => {
     if (!me?.uid) return;
+    // P1 fix (2026-10-12): busy guard — never dial while a call is active/minimized.
+    if (getMinimizedCall()) {
+      Alert.alert(t('audioCall.alreadyInCallTitle'), t('audioCall.alreadyInCallMsg'));
+      return;
+    }
     // Block enforcement: cannot call if blocked either way.
     const direction = await getBlockDirection(me.uid, targetUser.uid).catch(() => 'none' as BlockDirection);
     if (direction !== 'none') {

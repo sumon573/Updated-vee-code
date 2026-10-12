@@ -13,7 +13,7 @@
  *   // render {pinDialog} at the root of your screen
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { View, Text, Modal, Pressable, TextInput } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
@@ -34,8 +34,14 @@ export function usePrivateRoomGate() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
+  // P1 fix (2026-10-12): double-tap guard. The `pinVerifying` state read has a
+  // stale closure — two rapid taps could both pass the guard and push two
+  // room screens (double audio). A ref is immune to the closure.
+  const pinSubmittingRef = useRef(false);
 
   const closeDialog = useCallback(() => {
+    pinSubmittingRef.current = false;
+    setPinVerifying(false);
     setPinDialogRoom(null);
     setPendingAction(null);
     setPinInput('');
@@ -63,11 +69,12 @@ export function usePrivateRoomGate() {
   }, [user?.uid]);
 
   const handlePinSubmit = useCallback(async () => {
-    if (!pinDialogRoom) return;
+    if (!pinDialogRoom || pinSubmittingRef.current) return;
     if (pinInput.length !== 4 || !/^\d{4}$/.test(pinInput)) {
       setPinError('Please enter a 4-digit numeric PIN.');
       return;
     }
+    pinSubmittingRef.current = true;
     setPinVerifying(true);
     try {
       const hashed = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pinInput);
@@ -83,6 +90,7 @@ export function usePrivateRoomGate() {
       setPinError('Verification failed. Please try again.');
     } finally {
       setPinVerifying(false);
+      pinSubmittingRef.current = false;
     }
   }, [pinDialogRoom, pinInput, pendingAction, closeDialog]);
 

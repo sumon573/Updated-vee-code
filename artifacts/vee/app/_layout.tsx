@@ -30,6 +30,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nextProvider } from 'react-i18next';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorFallback, ErrorFallbackProps } from '@/components/ErrorFallback';
+import { withTimeout } from '@/src/utils/withTimeout';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -118,11 +120,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const profile = await getUser(user.uid);
-        if (!cancelled) {
-          setHasProfile(!!profile);
-          setProfileChecked(true);
-        }
+        // P1 fix (2026-10-12): bound the profile read at 8s — a stalled
+        // connection previously left the user on index.tsx's spinner forever.
+        // Timeout is fail-open (treated like a read error): assume the profile
+        // exists so a slow network never blocks an existing user.
+        const result = await withTimeout(getUser(user.uid), 8000);
+        if (cancelled) return;
+        setHasProfile(result.timedOut ? true : !!result.value);
+        setProfileChecked(true);
       } catch {
         // On error, assume profile exists to avoid blocking existing users.
         // New users will be caught on next app start if profile creation failed.
@@ -258,8 +263,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // block will always resolve in a bounded amount of time.
   if (authLoading || langLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#07020F', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#7C3AED" size="large" />
+      // P1 fix (2026-10-12): white loading screen per the light-mode-everywhere rule.
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color="#007AFF" size="large" />
       </View>
     );
   }
@@ -273,7 +279,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       {user && (
         <IncomingCallListener
           uid={user.uid}
-          myName={user.displayName ?? 'Vee User'}
+          myName={user.displayName || 'Vee User'}
         />
       )}
       {/* NOTE 1 (2026-10-11): Return-to-room bar — renders only when a room is
@@ -357,6 +363,14 @@ function IncomingCallListener({
           (isCallMinimizing() || getMinimizedCall())) {
         return;
       }
+      // P1 fix (2026-10-12): busy guard — a NEW incoming call while a call
+      // is minimized must not pop the modal. Accepting it would navigate to
+      // /audio-call and orphan the minimized session (leaked mic + peer
+      // connection). Auto-decline as busy instead.
+      if (call && (call as { status?: string }).status !== 'accepted' && getMinimizedCall()) {
+        removeCallSignal(uid).catch(() => {});
+        return;
+      }
       // Block enforcement: auto-decline calls from blocked users (either way).
       if (call) {
         const blocked = await isInteractionBlocked(uid, call.callerId).catch(() => false);
@@ -371,6 +385,13 @@ function IncomingCallListener({
 
   const handleAccept = useCallback(() => {
     if (!incoming) return;
+    // P1 fix (2026-10-12): last-moment busy guard — never accept over a
+    // minimized call (race: modal popped just before minimize completed).
+    if (getMinimizedCall()) {
+      setIncoming(null);
+      removeCallSignal(uid).catch(() => {});
+      return;
+    }
     const call = incoming;
     setIncoming(null);
     // FIX (2026-10-10): Mark as accepted instead of deleting.
@@ -507,11 +528,11 @@ function IncomingCallListener({
 function RootLayoutNav() {
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#07020F' },
+          contentStyle: { backgroundColor: '#FFFFFF' },
           animation: 'fade_from_bottom',
         }}
       >
@@ -593,6 +614,20 @@ function RootLayoutNav() {
 
 // ─── Root Layout ─────────────────────────────────────────────────────────────
 
+// P0 fix (2026-10-12): the crash screen's own SafeAreaProvider. The
+// ErrorBoundary now sits OUTSIDE the app's SafeAreaProvider, so when it
+// catches a render throw in I18nextProvider/LanguageProvider/SafeAreaProvider,
+// the fallback must not depend on the (possibly never-mounted) provider above
+// it — useSafeAreaInsets() throws without one. This wrapper gives the crash
+// screen its own safe-area context.
+function RootErrorFallback(props: ErrorFallbackProps) {
+  return (
+    <SafeAreaProvider>
+      <ErrorFallback {...props} />
+    </SafeAreaProvider>
+  );
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
@@ -615,13 +650,16 @@ export default function RootLayout() {
   }, []);
 
   return (
-    // I18nextProvider makes the i18n instance available to useTranslation()
-    <I18nextProvider i18n={i18n}>
-      <LanguageProvider>
-        <SafeAreaProvider>
-          {/* BUG 18 fix: ErrorBoundary at the root catches all unhandled render
-              errors and shows a recovery UI instead of freezing the app. */}
-          <ErrorBoundary>
+    // P0 fix (2026-10-12): ErrorBoundary is the OUTERMOST wrapper. It used to
+    // sit inside I18nextProvider → LanguageProvider → SafeAreaProvider, so a
+    // render throw in any of those killed the JS thread with no recovery UI.
+    // BUG 18 fix: ErrorBoundary at the root catches all unhandled render
+    // errors and shows a recovery UI instead of freezing the app.
+    <ErrorBoundary FallbackComponent={RootErrorFallback}>
+      {/* I18nextProvider makes the i18n instance available to useTranslation() */}
+      <I18nextProvider i18n={i18n}>
+        <LanguageProvider>
+          <SafeAreaProvider>
             <AuthProvider>
               {/* Issue 7: ThemeProvider inside AuthProvider so it can read user uid */}
               <ThemeProvider>
@@ -634,9 +672,9 @@ export default function RootLayout() {
                 </QueryClientProvider>
               </ThemeProvider>
             </AuthProvider>
-          </ErrorBoundary>
-        </SafeAreaProvider>
-      </LanguageProvider>
-    </I18nextProvider>
+          </SafeAreaProvider>
+        </LanguageProvider>
+      </I18nextProvider>
+    </ErrorBoundary>
   );
 }

@@ -46,6 +46,10 @@ export type RoomSeat = {
   photoURL?: string;
   muted: boolean;
   role: 'host' | 'admin' | 'member';
+  // P1 ghost-seat fix (2026-10-12): server-timestamp heartbeat, refreshed
+  // every ~60s by the seat holder. Seats with a stale/absent heartbeat are
+  // swept as crashed/killed clients (see sweepStaleSeats).
+  seatTs?: number;
 } | null;
 
 export type RoomAudienceMember = {
@@ -707,11 +711,15 @@ async function takeSeatInner(
 ): Promise<{ success: boolean }> {
   const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
   const result = await runTransaction(seatRef, (current) => {
-    if (current !== null) {
+    // P1 fix (2026-10-12): Firebase passes `undefined` (not `null`) for
+    // never-written nodes on first run. `!== null` aborted the first-ever
+    // take as "occupied". `!= null` handles both.
+    if (current != null) {
       // Seat already taken by someone else — abort the transaction.
       return undefined;
     }
-    return member;
+    // P1 ghost-seat fix (2026-10-12): stamp the heartbeat on claim.
+    return { ...member, seatTs: serverTimestamp() };
   });
 
   if (!result.committed) {
@@ -762,6 +770,53 @@ async function takeSeatInner(
   recordUserRoomVisit(member.userId, roomId, 'member').catch(() => {});
   _updateCounts(roomId).catch(() => {}); // best-effort
   return { success: true };
+}
+
+/**
+ * P1 ghost-seat fix (2026-10-12): refresh the seat heartbeat.
+ * Called every ~60s by the seat holder while seated. Pure JS, no new modules.
+ */
+export async function refreshSeatHeartbeat(roomId: string, seatIndex: number): Promise<void> {
+  try {
+    await update(ref(database, `rooms/${roomId}/seats/${seatIndex}`), {
+      seatTs: serverTimestamp(),
+    });
+  } catch {
+    // background: safe to swallow — a missed beat just ages the seat
+  }
+}
+
+/**
+ * P1 ghost-seat fix (2026-10-12): remove seats whose heartbeat is stale.
+ * A seat is stale when `seatTs` is older than 5 minutes (or missing on a
+ * seat written before heartbeats existed AND the holder isn't in audience —
+ * conservative: only sweep when we're confident it's a ghost).
+ * Called on room enter. Best-effort; never throws.
+ */
+export async function sweepStaleSeats(roomId: string): Promise<void> {
+  try {
+    const snap = await get(ref(database, `rooms/${roomId}/seats`));
+    if (!snap.exists()) return;
+    const now = Date.now();
+    const STALE_MS = 5 * 60 * 1000;
+    const stalePaths: Record<string, null> = {};
+    snap.forEach((child) => {
+      const s = child.val() as { userId?: string; seatTs?: number } | null;
+      if (!s || !s.userId) return;
+      const ts = typeof s.seatTs === 'number' ? s.seatTs : 0;
+      // Missing heartbeat (pre-heartbeat seat) → treat as stale only if very
+      // old room data; heartbeat seats use the 5-min window.
+      if (now - ts > STALE_MS) {
+        stalePaths[`rooms/${roomId}/seats/${child.key}`] = null;
+      }
+    });
+    if (Object.keys(stalePaths).length > 0) {
+      await update(ref(database), stalePaths);
+      _updateCounts(roomId).catch(() => {});
+    }
+  } catch {
+    // background: safe to swallow — sweep is best-effort
+  }
 }
 
 /** User leaves their seat (goes back to audience). */

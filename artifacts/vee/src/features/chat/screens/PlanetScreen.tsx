@@ -349,7 +349,10 @@ export default function PlanetScreen() {
         setItems(flat);
         setLoading(false);
         setLoadError(null);
-        if (flat.length > 0 && !activeKey) setActiveKey(flat[0].key);
+        // P1 fix (2026-10-12): functional update — the mount-time closure
+        // captured activeKey as null forever, so every like/comment/view
+        // reset the feed to the first story. Only default when unset.
+        if (flat.length > 0) setActiveKey((prev) => prev ?? flat[0].key);
       });
     } catch (error) {
       setLoading(false);

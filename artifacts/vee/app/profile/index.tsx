@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
-import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
+import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/userService';
 import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
@@ -299,15 +299,18 @@ export default function ProfileScreen({
       } else if (friendStatus === 'friends') {
         router.push(`/inbox/${buildChatId(user.uid, displayUid)}`);
       } else if (friendStatus === 'request-received') {
-        await acceptFriendRequest(displayUid, user.uid);
+        // P1 fix (2026-10-12): signature is (myUid, fromUid) — accepter first.
+        // Previously swapped: the acceptance push went to the accepter.
+        await acceptFriendRequest(user.uid, displayUid);
       } else if (friendStatus === 'request-sent') {
         await cancelFriendRequest(user.uid, displayUid);
       } else {
-        // NOTE: sendFriendRequest needs the full VeeUser; build minimal from auth + profile
-        await sendFriendRequest(
-          { uid: user.uid, name: user.displayName ?? 'User' } as any,
-          displayUid
-        );
+        // P1 fix (2026-10-12): sendFriendRequest needs the FULL VeeUser
+        // (vId + photoURL). A minimal {uid, name} object produced
+        // fromVId: undefined and the RTDB set() threw every time.
+        const fullProfile = await getUser(user.uid);
+        if (!fullProfile) throw new Error(t('userProfile.tryAgain', 'Please try again.'));
+        await sendFriendRequest(fullProfile, displayUid);
       }
     } catch (e) {
       Alert.alert(t('userProfile.error', 'Error'), String(e));

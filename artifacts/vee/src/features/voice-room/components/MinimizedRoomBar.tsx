@@ -82,6 +82,36 @@ export default function MinimizedRoomBar() {
     };
   }, [room?.id, room?.myUid]);
 
+  // P1 fix (2026-10-12): disband while minimized — tear down. Without this,
+  // if the owner closes the room while we're minimized, the bar lingers and
+  // the persisted LiveKit engine keeps audio alive in a dead room.
+  useEffect(() => {
+    if (!room?.id) return;
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        if (cancelled) return;
+        unsub = onValue(
+          ref(database, `rooms/${room.id}/info`),
+          (snap) => {
+            const v = snap.val() as { active?: boolean } | null;
+            if (!v || v.active === false) {
+              try { destroyPersistedVoiceRoomEngine(); } catch { /* non-critical */ }
+              setMinimizedRoom(null);
+            }
+          },
+        );
+      } catch { /* non-critical */ }
+    })();
+    return () => {
+      cancelled = true;
+      try { unsub?.(); } catch { /* non-critical */ }
+    };
+  }, [room?.id]);
+
   // Mic toggle for minimized room (2026-10-10): talk/mute while minimized.
   // NOTE: Hooks MUST stay before the `if (!room) return null` below (React Rules).
   const [micMuted, setMicMuted] = useState<boolean>(() => getMinimizedRoom()?.muted ?? true);

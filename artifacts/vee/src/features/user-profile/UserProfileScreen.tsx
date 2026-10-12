@@ -252,7 +252,8 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
     );
   }
 
-  const displayName = profile?.name ?? fallbackName ?? 'Unknown';
+  // P1 fix (2026-10-12): || not ?? — Firebase can hold an empty-string name.
+  const displayName = profile?.name || fallbackName || 'Unknown';
   const photoURL    = profile?.photoURL;
   const bio         = profile?.bio ?? '';
   const vId         = profile?.vId ?? '';

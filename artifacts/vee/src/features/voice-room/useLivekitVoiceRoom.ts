@@ -272,7 +272,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       });
       list.push({
         userId: p.identity,
-        userName: p.name ?? p.identity,
+        // P1 fix (2026-10-12): || not ?? — LiveKit can carry an empty-string name.
+        userName: p.name || p.identity,
         subscribed,
         speaking: this.speakingIds.has(p.identity),
         muted,

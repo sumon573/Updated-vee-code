@@ -14,7 +14,7 @@
  *   Caller  → on timeout or manual end → cancelCall() removes the node + leaves the call
  */
 
-import { ref, set, remove, onValue } from 'firebase/database';
+import { ref, set, remove, onValue, onDisconnect } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { sendPushNotification } from '@/src/services/notifyService';
 
@@ -52,6 +52,14 @@ export async function initiateCall(
     ...data,
     createdAt: Date.now(),
   });
+  // P1 fix (2026-10-12): if the caller's app dies while ringing, the callee's
+  // incoming-call modal would ring forever. onDisconnect removes the signal
+  // automatically so the callee's listener clears the modal.
+  try {
+    await onDisconnect(ref(database, `calls/${calleeUid}`)).remove();
+  } catch {
+    // background: safe to swallow — callee modal still clears on timeout/cancel
+  }
   // Push notification so the callee's phone rings even if the app is
   // closed/backgrounded. The incoming-call screen opens via the click handler.
   sendPushNotification(

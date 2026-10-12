@@ -227,7 +227,16 @@ const hi = {
       settingsSaveError: 'Could not save room settings. Try again.',
       muteFailedWithCause: 'म्यूट स्थिति बदली नहीं जा सकी। कारण: {{cause}}',
       removedTitle: 'रूम से निकाल दिया गया',
-      removedMsg: 'होस्ट ने आपको इस रूम से निकाल दिया है।',
+removedMsg: 'होस्ट ने आपको इस रूम से निकाल दिया है।',
+      pinGateTitle: 'प्राइवेट रूम',
+      pinGateMsg: 'इस प्राइवेट रूम में जॉइन करने के लिए 4 अंकों का पिन डालें।',
+      pinInvalid: 'कृपया 4 अंकों का पिन डालें।',
+      pinIncorrect: 'गलत पिन। फिर से कोशिश करें।',
+      pinVerifyFailed: 'सत्यापन विफल। कारण: {{cause}}',
+      pinNumbersOnly: 'सिर्फ अंक',
+      pinVerifying: 'सत्यापित हो रहा है…',
+      pinJoin: 'रूम जॉइन करें',
+      pinCancel: 'रद्द करें',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} रूम में शामिल हुए 🎉',
       inviteMember: '{{name}} को आमंत्रित करें',
@@ -878,6 +887,8 @@ const hi = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
+    alreadyInCallTitle: 'पहले से ही कॉल पर हैं',
+    alreadyInCallMsg: 'आप पहले से ही एक कॉल पर हैं। नई कॉल शुरू करने से पहले वर्तमान कॉल समाप्त करें।',
   },
 } as const;
 

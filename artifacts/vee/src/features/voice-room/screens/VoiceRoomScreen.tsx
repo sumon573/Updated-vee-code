@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, FlatList, Alert, Pressable,
   Animated, Platform, TextInput, ActivityIndicator, Image,
-  BackHandler,
+  BackHandler, Modal,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -63,10 +63,13 @@ import {
   blockUserInRoom, unblockUserInRoom, subscribeRoomBlocks, isUserBlockedInRoom,
   type RoomBlockRecord,
   type RoomSeat, type RoomAudienceMember,
+  verifyRoomPin,
   // Fix 1: Seat invite system
   sendSeatInvite, subscribeSeatInvites, removeSeatInvite, type SeatInvite,
   // Fix 5: Emoji reaction broadcast
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
+  // P1 ghost-seat fix (2026-10-12): heartbeat + stale sweep
+  refreshSeatHeartbeat, sweepStaleSeats,
   // Entry broadcast (2026-10-10): all users see everyone's entry
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   // Gift animation broadcast (2026-10-10): all users see gift fly animations
@@ -80,6 +83,15 @@ import {
 /* ═══════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════ */
+
+// P0 security (2026-10-12): session-scoped cache of private rooms whose PIN
+// was verified. Prevents re-prompting on minimize → return while keeping the
+// gate effective for fresh deep-links.
+const pinVerifiedRooms = new Set<string>();
+
+// P1 anti-spam (2026-10-12): per-room last-send timestamps for the 1.5s
+// chat throttle. Module-level so rapid re-renders can't reset it.
+const lastChatSendAt = new Map<string, number>();
 
 function fbSeatToParticipant(
   seat: NonNullable<RoomSeat>,
@@ -497,6 +509,62 @@ export default function VoiceRoomScreen() {
   /* ── Join state ── */
   const [hasJoined, setHasJoined] = useState(false);
 
+  // ── P0 security (2026-10-12): in-screen private-room PIN gate ──
+  // Direct deep-links (invite links, push-notification taps, profile room
+  // taps) navigate straight to /voice-room, bypassing the list-level
+  // PrivateRoomGate. Enforce the 4-digit PIN inside this screen BEFORE any
+  // audience join, chat presence, or voice init can run.
+  // Session cache: rooms verified once per app session don't re-prompt
+  // (covers minimize → return without weakening the gate).
+  const [pinGate, setPinGate] = useState<'checking' | 'open' | 'passed'>('checking');
+  const pinGateRef = useRef<'checking' | 'open' | 'passed'>('checking');
+  const pinEvaluatedForRef = useRef<string | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pinVerifying, setPinVerifying] = useState(false);
+  const pinSubmittingRef = useRef(false); // double-tap submit guard
+
+  /**
+   * P0 security (2026-10-12): verify the in-screen PIN gate.
+   * Double-tap guarded; network/transport failures surface their real cause
+   * (never misreported as "Incorrect PIN").
+   */
+  const submitPinGate = useCallback(async () => {
+    if (pinSubmittingRef.current || pinVerifying) return;
+    if (pinInput.length !== 4 || !/^\d{4}$/.test(pinInput)) {
+      setPinError(t('voiceRoom.screen.pinInvalid'));
+      return;
+    }
+    pinSubmittingRef.current = true;
+    setPinVerifying(true);
+    try {
+      const Crypto = await import('expo-crypto');
+      const hashed = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pinInput);
+      const ok = await verifyRoomPin(roomId, hashed);
+      if (ok) {
+        pinVerifiedRooms.add(roomId);
+        pinGateRef.current = 'passed';
+        setPinGate('passed');
+        setPinInput('');
+        setPinError('');
+        // PIN passed after info already arrived — kick off voice init now.
+        handleRoomInfoOk();
+      } else {
+        setPinError(t('voiceRoom.screen.pinIncorrect'));
+      }
+    } catch (e) {
+      setPinError(t('voiceRoom.screen.pinVerifyFailed', { cause: getErrorCause(e) }));
+    } finally {
+      setPinVerifying(false);
+      pinSubmittingRef.current = false;
+    }
+  }, [pinInput, pinVerifying, roomId, handleRoomInfoOk, t]);
+
+  /** User cancelled the PIN gate — leave the room screen. */
+  const cancelPinGate = useCallback(() => {
+    router.back();
+  }, [router]);
+
   // ENTRY EFFECT (2026-10-10): Show "X is Coming" banner when the local user
   // joins too, so they see the effect working (not just when others join).
   // ALSO broadcast the entry so ALL room participants see it.
@@ -593,7 +661,8 @@ export default function VoiceRoomScreen() {
   // every time. userRooms is never cleared on leave: if it exists, this
   // user has joined before and enters directly as audience, no Join tap.
   useEffect(() => {
-    if (!roomId || !myUid || hasJoined) return;
+    // P0 security: no join-state resolution before the PIN gate passes.
+    if (!roomId || !myUid || hasJoined || pinGate !== 'passed') return;
     let cancelled = false;
     (async () => {
       try {
@@ -627,7 +696,7 @@ export default function VoiceRoomScreen() {
       } catch { /* non-critical */ }
     })();
     return () => { cancelled = true; };
-  }, [roomId, myUid, hasJoined]);
+  }, [roomId, myUid, hasJoined, pinGate]);
 
   /* ── Chat ── */
   const [messages,   setMessages]   = useState<ChatMsg[]>([]);
@@ -737,6 +806,19 @@ export default function VoiceRoomScreen() {
       setRoomName(info.name);
       setRoomTopic(info.topic);
       setOwnerId(info.ownerId);
+      // P0 security (2026-10-12): evaluate the in-screen PIN gate once per
+      // room load. Private room + not owner + not verified this session →
+      // block all joins/voice until the correct PIN is entered.
+      if (pinEvaluatedForRef.current !== roomId) {
+        pinEvaluatedForRef.current = roomId;
+        const needsPin =
+          info.isPublic !== true &&
+          info.ownerId !== myUidRef.current &&
+          !pinVerifiedRooms.has(roomId);
+        const nextGate = needsPin ? 'open' : 'passed';
+        pinGateRef.current = nextGate;
+        setPinGate(nextGate);
+      }
       // Self-heal: if WE are the owner but our seat says 'member'/'admin'
       // (e.g. seated before ownerId loaded), correct it in Firebase.
       // Runs on every info update but only writes when actually wrong.
@@ -788,7 +870,8 @@ export default function VoiceRoomScreen() {
         setActiveThemeId(info.themeId);
       }
       // Room is live — begin the staged native voice init.
-      handleRoomInfoOk();
+      // P0 security: never start voice before the PIN gate passes.
+      if (pinGateRef.current === 'passed') handleRoomInfoOk();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
@@ -935,6 +1018,21 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     mySeatIdxRef.current = mySeatIdx;
   }, [mySeatIdx]);
+
+  // P1 ghost-seat fix (2026-10-12): heartbeat while seated. Refreshes the
+  // seat's server timestamp every 60s so crashed/killed clients' seats can
+  // be swept. Also sweeps stale seats once on room enter.
+  useEffect(() => {
+    sweepStaleSeats(roomId).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+  useEffect(() => {
+    if (mySeatIdx < 0) return;
+    const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx).catch(() => {});
+    beat(); // immediate first beat on seating
+    const timer = setInterval(beat, 60_000);
+    return () => clearInterval(timer);
+  }, [roomId, mySeatIdx]);
 
   /**
    * Auto-publish guard: fires at most once per room session.
@@ -1451,6 +1549,14 @@ export default function VoiceRoomScreen() {
       writes.push(setAudienceRole(roomId, memberId, 'admin'));
     }
     writes.push(grantRoomAdmin(roomId, memberId));
+    // P1 fix (2026-10-12): RoomInfoModal orders owner → admin → members from
+    // the roomMembers reverse index. Sync the role there too, or a promoted
+    // admin stays listed under "members" until they rejoin.
+    writes.push(
+      update(ref(database), { [`roomMembers/${roomId}/${memberId}/role`]: 'admin' }).catch(() => {
+        // best-effort: index sync must not fail the promotion
+      }),
+    );
     Promise.all(writes).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }).catch((e: unknown) => {
@@ -1473,6 +1579,13 @@ export default function VoiceRoomScreen() {
       writes.push(setAudienceRole(roomId, memberId, 'member'));
     }
     writes.push(revokeRoomAdmin(roomId, memberId));
+    // P1 fix (2026-10-12): keep the roomMembers reverse index in sync so
+    // Room Info ordering updates immediately on demotion too.
+    writes.push(
+      update(ref(database), { [`roomMembers/${roomId}/${memberId}/role`]: 'member' }).catch(() => {
+        // best-effort: index sync must not fail the demotion
+      }),
+    );
     Promise.all(writes).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }).catch((e: unknown) => {
@@ -1671,6 +1784,12 @@ export default function VoiceRoomScreen() {
   const sendMessage = useCallback(async () => {
     const text = chatInput.trim();
     if (!text || sendingMsgRef.current) return;
+    // P1 anti-spam (2026-10-12): throttle to one message per 1.5s per room.
+    // Module-level map so it survives re-renders; silent drop keeps the UX snappy.
+    const now = Date.now();
+    const lastSent = lastChatSendAt.get(roomId) ?? 0;
+    if (now - lastSent < 1500) return;
+    lastChatSendAt.set(roomId, now);
     // Instant client-side guard (the input is already disabled, but the
     // service also enforces this server-side as the source of truth).
     if (amChatBlocked) {
@@ -2283,6 +2402,7 @@ export default function VoiceRoomScreen() {
             blurOnSubmit={false}
             returnKeyType="send"
             editable={!amChatBlocked}
+            maxLength={500}
           />
 
           <Pressable
@@ -2602,6 +2722,81 @@ export default function VoiceRoomScreen() {
         onMinimize={handleMinimize}
         roomName={roomName}
       />
+      {/* P0 security (2026-10-12): in-screen PIN gate overlay. Blocks the
+          entire room UI until the correct 4-digit PIN is entered — closes
+          the deep-link bypass (invite/notification/profile taps). */}
+      <Modal
+        visible={pinGate === 'open'}
+        animationType="fade"
+        transparent={false}
+        onRequestClose={cancelPinGate}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }} edges={['top', 'bottom']}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+            <View style={{
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 20,
+            }}>
+              <Feather name="lock" size={30} color="#007AFF" />
+            </View>
+            <Text style={{ color: '#000000', fontSize: 20, fontWeight: '900', marginBottom: 6, textAlign: 'center' }} numberOfLines={1}>
+              {roomName || t('voiceRoom.screen.pinGateTitle')}
+            </Text>
+            <Text style={{ color: '#8E8E93', fontSize: 14, marginBottom: 24, textAlign: 'center' }}>
+              {t('voiceRoom.screen.pinGateMsg')}
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: '#F2F2F7', borderRadius: 14, borderWidth: 1.5,
+                borderColor: pinError ? '#FF4B4B' : '#E3F2FD',
+                color: '#000000', fontSize: 28, fontWeight: '800',
+                textAlign: 'center', letterSpacing: 16,
+                paddingVertical: 14, marginBottom: 8, width: 220,
+              }}
+              placeholder="••••"
+              placeholderTextColor="#C7C7CC"
+              value={pinInput}
+              onChangeText={(txt) => {
+                const digits = txt.replace(/[^0-9]/g, '').slice(0, 4);
+                setPinInput(digits);
+                if (pinError) setPinError('');
+              }}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              autoFocus
+              editable={!pinVerifying}
+              onSubmitEditing={submitPinGate}
+            />
+            {pinError ? (
+              <Text style={{ color: '#FF4B4B', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>{pinError}</Text>
+            ) : (
+              <Text style={{ color: '#C7C7CC', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>
+                {t('voiceRoom.screen.pinNumbersOnly')}
+              </Text>
+            )}
+            <Pressable
+              onPress={submitPinGate}
+              disabled={pinVerifying || pinInput.length !== 4}
+              style={{
+                backgroundColor: '#E3F2FD', borderRadius: 14,
+                paddingVertical: 14, paddingHorizontal: 48, marginBottom: 12,
+                opacity: (pinVerifying || pinInput.length !== 4) ? 0.5 : 1,
+              }}
+            >
+              <Text style={{ color: '#007AFF', fontSize: 16, fontWeight: '800' }}>
+                {pinVerifying ? t('voiceRoom.screen.pinVerifying') : t('voiceRoom.screen.pinJoin')}
+              </Text>
+            </Pressable>
+            <Pressable onPress={cancelPinGate} style={{ paddingVertical: 10 }}>
+              <Text style={{ color: '#8E8E93', fontSize: 15, fontWeight: '600' }}>
+                {t('voiceRoom.screen.pinCancel')}
+              </Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }

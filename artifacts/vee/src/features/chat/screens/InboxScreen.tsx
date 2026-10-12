@@ -52,6 +52,7 @@ import { submitReport } from '@/src/services/reportService';
 // RC6 fix Issue 5 + Issue 8
 import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
+import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 // RC8-A: actual block user implementation
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 import { canViewOnlineStatus, canViewLastSeen } from '@/src/services/privacyService';
@@ -657,6 +658,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // RC6 fix Issue 8: navigate to real audio-call screen instead of Alert
   const handleVoiceCall = useCallback(async () => {
     if (!user) return;
+    // P1 fix (2026-10-12): busy guard — dialing while a call is minimized
+    // would create a second WebRTC session and orphan the first (leaked mic).
+    if (getMinimizedCall()) {
+      Alert.alert(t('audioCall.alreadyInCallTitle'), t('audioCall.alreadyInCallMsg'));
+      return;
+    }
     // Block enforcement: cannot call if blocked either way.
     const direction = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
     if (direction !== 'none') {

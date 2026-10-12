@@ -213,10 +213,11 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         category,
         themeColor: profileColor,
         hostId: user.uid,
-        hostName: user.displayName ?? t('voiceRoom.screen.defaultUserName'),
+        hostName: user.displayName || t('voiceRoom.screen.defaultUserName'),
         // RC6 fix Issue 5: pass host's photoURL so seat 0 shows the avatar
         // immediately after room creation without a separate fetch.
-        hostPhotoURL: user.photoURL ?? undefined,
+        // P1 fix (2026-10-12): || not ?? — an empty-string photoURL is useless.
+        hostPhotoURL: user.photoURL || undefined,
         coverImageUrl,
         location,
         hashedPin,

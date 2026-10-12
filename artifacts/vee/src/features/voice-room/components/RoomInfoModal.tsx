@@ -114,9 +114,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
         const { database } = await import('@/src/config/firebase');
         const snap = await get(ref(database, `users/${ownerId}`));
         if (!cancelled && snap.exists()) {
-          const data = snap.val() as { displayName?: string; photoURL?: string };
+          // P1 fix (2026-10-12): the DB field is `name` — nothing ever writes
+          // `displayName`, so this always fell back to 'Room Owner'.
+          const data = snap.val() as { name?: string; photoURL?: string };
           setOwnerInfo({
-            name: data.displayName ?? 'Room Owner',
+            name: data.name || 'Room Owner',
             photoURL: data.photoURL,
           });
         }

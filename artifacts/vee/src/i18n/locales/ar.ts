@@ -174,7 +174,16 @@ const ar = {
       settingsSaveError: 'Could not save room settings. Try again.',
       muteFailedWithCause: 'تعذر تغيير حالة الكتم. السبب: {{cause}}',
       removedTitle: 'تمت إزالتك من الغرفة',
-      removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المضيف.',
+removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المضيف.',
+      pinGateTitle: 'غرفة خاصة',
+      pinGateMsg: 'أدخل الرقم السري المكون من 4 أرقام للانضمام إلى هذه الغرفة الخاصة.',
+      pinInvalid: 'يرجى إدخال رقم سري من 4 أرقام.',
+      pinIncorrect: 'رقم سري غير صحيح. حاول مرة أخرى.',
+      pinVerifyFailed: 'فشل التحقق. السبب: {{cause}}',
+      pinNumbersOnly: 'أرقام فقط',
+      pinVerifying: 'جارٍ التحقق…',
+      pinJoin: 'انضم إلى الغرفة',
+      pinCancel: 'إلغاء',
       inviteSendError: 'Could not send invite. Try again.',
       joinedRoom: '{{name}} انضم إلى الغرفة 🎉',
       inviteMember: 'دعوة {{name}}',
@@ -815,6 +824,8 @@ const ar = {
     callEndedTitle: 'Call ended',
     audioNoticeTitle: 'Audio',
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
+    alreadyInCallTitle: 'أنت في مكالمة بالفعل',
+    alreadyInCallMsg: 'أنت في مكالمة حالياً. أنهِ المكالمة الحالية قبل بدء مكالمة جديدة.',
   },
 } as const;
 

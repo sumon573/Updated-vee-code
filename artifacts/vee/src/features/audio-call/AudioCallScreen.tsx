@@ -182,7 +182,9 @@ export default function AudioCallScreen({
       try {
         const { get, ref } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
-        const snap = await get(ref(database, `users/${uid}/displayName`));
+        // P1 fix (2026-10-12): the DB field is `name` — `displayName` is never
+        // written, so this fetch always missed.
+        const snap = await get(ref(database, `users/${uid}/name`));
         if (!cancelled && snap.exists()) {
           const name = snap.val() as string;
           if (name && name.trim()) setDisplayName(name);

@@ -8,7 +8,7 @@
  * All data is real — no demo.
  */
 import { useState, useMemo, useCallback } from 'react';
-import { View, Text, TextInput, FlatList, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, FlatList, Image, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,6 +16,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { Chat } from '@/src/features/chat/types';
 import { subscribeUserChats } from '@/src/features/chat/services/firebaseDmService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
+import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { getUser } from '@/src/services/userService';
 import { useEffect } from 'react';
 
@@ -75,6 +76,11 @@ export default function IMOSearchScreen() {
 
   const handleCall = useCallback((chat: Chat) => {
     if (!user?.uid || !chat.participantId) return;
+    // P1 fix (2026-10-12): busy guard — never dial while a call is active/minimized.
+    if (getMinimizedCall()) {
+      Alert.alert('ইতিমধ্যে একটি কলে আছেন', 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।');
+      return;
+    }
     const callRoomId = buildCallRoomId(user.uid, chat.participantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(chat.participantId)}&remoteName=${encodeURIComponent(chat.participantName || 'User')}&calleeUid=${encodeURIComponent(chat.participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
     if (chat.participantAvatar) url += `&remotePhotoURL=${encodeURIComponent(chat.participantAvatar)}`;
