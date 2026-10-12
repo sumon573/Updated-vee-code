@@ -186,6 +186,17 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const { t } = useTranslation();
   const myUid = user?.uid ?? 'unknown';
 
+  // 2026-10-12 (Sumon): notification title must show the account's REAL name.
+  // user.displayName (Firebase Auth) can be empty/stale (Google-login bug
+  // class) — the source of truth is the RTDB profile `name`.
+  const [myRealName, setMyRealName] = useState<string>('');
+  useEffect(() => {
+    if (!user?.uid) return;
+    return subscribeUser(user.uid, (profile) => {
+      if (profile?.name) setMyRealName(profile.name);
+    });
+  }, [user?.uid]);
+
   // FIX (2026-10-09): Derive participantId from chatId when not provided.
   // Notification deep-links only pass chatId (format: sortedUids joined by '_').
   // Without this, the header shows "User" and profile shows "User not found".
@@ -427,7 +438,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     setTyping(chatId, myUid, false);
 
     try {
-      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, user?.displayName ?? undefined);
+      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined);
     } catch (e) {
       // Restore the typed text on failure (only if the user hasn't typed
       // something new meanwhile) so a failed send doesn't eat the message.
@@ -494,7 +505,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
     try {
       const uploaded = await uploadImage(asset.uri, { folder: 'vee/dm' });
-      await sendMessage(chatId, myUid, effectiveParticipantId, uploaded.url, 'image', undefined, uploaded.publicId, user?.displayName ?? undefined);
+      await sendMessage(chatId, myUid, effectiveParticipantId, uploaded.url, 'image', undefined, uploaded.publicId, myRealName || user?.displayName || undefined);
     } catch (err) {
       Alert.alert(t('chat.uploadFailed'), err instanceof Error ? err.message : t('chat.photoSendFailed'));
     } finally {
@@ -678,7 +689,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const callRoomId = buildCallRoomId(myUid, effectiveParticipantId);
-    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(user.displayName ?? 'Vee User')}`;
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(myRealName || user.displayName || 'Vee User')}`;
     if (participantPhotoURL) url += `&remotePhotoURL=${encodeURIComponent(participantPhotoURL)}`;
     if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
     router.push(url as never);
