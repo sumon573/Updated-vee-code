@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
 import {
@@ -60,6 +60,9 @@ function FrameIcon({ icon }: { icon: string }) {
 
 export default function DecorationScreen() {
   const { user } = useAuth();
+  const { uid: paramUid } = useLocalSearchParams<{ uid?: string }>();
+  const targetUid = paramUid ?? user?.uid;
+  const isMe = !paramUid || paramUid === user?.uid;
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [frames, setFrames] = useState<GrantedFrame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +72,7 @@ export default function DecorationScreen() {
   const [tab, setTab] = useState<'frames' | 'nobel'>('frames');
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!targetUid) {
       setLoading(false);
       return;
     }
@@ -80,14 +83,14 @@ export default function DecorationScreen() {
     const maybeDone = () => {
       if (profileDone && framesDone) setLoading(false);
     };
-    const unsubProfile = subscribeUser(user.uid, (u) => {
+    const unsubProfile = subscribeUser(targetUid, (u) => {
       profileDone = true;
       setProfile(u);
       maybeDone();
     });
     let unsubFrames: () => void = () => {};
     try {
-      unsubFrames = subscribeFrames(user.uid, (f) => {
+      unsubFrames = subscribeFrames(targetUid, (f) => {
         framesDone = true;
         setFrames(f);
         maybeDone();
@@ -103,10 +106,10 @@ export default function DecorationScreen() {
       unsubProfile();
       unsubFrames();
     };
-  }, [user?.uid]);
+  }, [targetUid]);
 
   const handleEquip = async (id: string) => {
-    if (!user?.uid) return;
+    if (!isMe || !user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await updateUser(user.uid, { activeFrame: id });
@@ -193,9 +196,9 @@ export default function DecorationScreen() {
                   <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
                   </View>
-                ) : (
+                ) : isMe ? (
                   <Text style={{ fontSize: 13, fontWeight: '600', color: C.blue }}>Tap to equip</Text>
-                )}
+                ) : null}
               </Pressable>
             );
           })}

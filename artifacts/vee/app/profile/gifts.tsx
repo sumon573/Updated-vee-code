@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribeUser,
@@ -77,7 +77,10 @@ function initials(name: string): string {
 
 export default function GiftDisplayScreen() {
   const { user } = useAuth();
-  const uid = user?.uid;
+  const { uid: paramUid } = useLocalSearchParams<{ uid?: string }>();
+  // When viewing another user's profile, show THEIR gifts
+  const uid = paramUid ?? user?.uid;
+  const isMe = !paramUid || paramUid === user?.uid;
 
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [txs, setTxs] = useState<WalletTransaction[]>([]);

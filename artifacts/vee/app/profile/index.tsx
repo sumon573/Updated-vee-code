@@ -442,7 +442,7 @@ export default function ProfileScreen({
         {/* ─── VoiceClub Room ─── */}
         {rooms.length > 0 && (
           <>
-            <SectionHeader title="VoiceClub Room" count={rooms.length} onPress={() => router.push('/profile/rooms')} />
+            <SectionHeader title="VoiceClub Room" count={rooms.length} onPress={() => router.push(isMe ? '/profile/rooms' : `/profile/rooms?uid=${displayUid}`)} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -465,7 +465,7 @@ export default function ProfileScreen({
         {/* ─── Gifts ─── */}
         {giftEntries.length > 0 && (
           <>
-            <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push('/profile/gifts')} />
+            <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
               {giftEntries.slice(0, 8).map(([giftId, count]) => (
                 <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
@@ -484,12 +484,12 @@ export default function ProfileScreen({
         <SectionHeader
           title="Honor"
           count={grantedBadges.length}
-          onPress={() => router.push('/profile/honor')}
+          onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
         />
         {grantedBadges.length > 0 ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
             <Pressable
-              onPress={() => router.push('/profile/honor')}
+              onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
               style={{ flexDirection: 'row', flexWrap: 'wrap', width: '100%' }}
             >
               {grantedBadges.map((h) => (
@@ -511,10 +511,10 @@ export default function ProfileScreen({
         )}
 
         {/* ─── Decoration ─── */}
-        <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push('/profile/decoration')} />
+        <SectionHeader title="Decoration" count={(profile?.ownedFrames?.length || 0) + (profile?.ownedNameplates?.length || 0)} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
           <Pressable
-            onPress={() => router.push('/profile/decoration')}
+            onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
             style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
             <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
@@ -524,7 +524,7 @@ export default function ProfileScreen({
             <Text style={{ fontSize: 11, color: C.mutedLight }}>{profile?.ownedFrames?.length || 0} owned</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.push('/profile/decoration')}
+            onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
             style={{ width: '25%', padding: 4, alignItems: 'center' }}
           >
             <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>

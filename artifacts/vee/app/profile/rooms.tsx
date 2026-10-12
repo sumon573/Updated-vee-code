@@ -16,7 +16,7 @@ import {
   ActivityIndicator, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ref as dbRef, onValue } from 'firebase/database';
@@ -170,20 +170,23 @@ function RoomCard({
 export default function ProfileRoomsScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
+  const { uid: paramUid } = useLocalSearchParams<{ uid?: string }>();
+  // When viewing another user's profile, show THEIR rooms
+  const targetUid = paramUid ?? user?.uid;
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleMap, setRoleMap] = useState<Record<string, UserRole>>({});
 
   useEffect(() => {
-    if (!user?.uid) { setLoading(false); return; }
+    if (!targetUid) { setLoading(false); return; }
 
     // FIX (2026-10-10): Silently delete stale {_reserving:true} placeholder
     // rooms left by failed creations (old two-step flow). One-shot, best-effort.
-    cleanupStaleReservations(user.uid).catch(() => {});
+    if (!paramUid) cleanupStaleReservations(targetUid).catch(() => {});
 
     // Subscribe to the user's role map from Firebase
     const unsubRoles = onValue(
-      dbRef(database, `userRooms/${user.uid}`),
+      dbRef(database, `userRooms/${targetUid}`),
       (snap) => {
         const map: Record<string, UserRole> = {};
         if (snap.exists()) {
@@ -197,7 +200,7 @@ export default function ProfileRoomsScreen() {
     );
 
     // Subscribe to combined room list (created + joined)
-    const unsubRooms = subscribeMyRoomsCombined(user.uid, (r) => {
+    const unsubRooms = subscribeMyRoomsCombined(targetUid, (r) => {
       setRooms(r);
       setLoading(false);
     });
@@ -209,7 +212,7 @@ export default function ProfileRoomsScreen() {
     const timeout = setTimeout(() => setLoading(false), 3000);
 
     return () => { clearTimeout(timeout); unsubRoles(); unsubRooms(); };
-  }, [user?.uid]);
+  }, [targetUid]);
 
   const getRole = (room: RoomInfo): UserRole => {
     if (room.ownerId === user?.uid) return 'owner';
