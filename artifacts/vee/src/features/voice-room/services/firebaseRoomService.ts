@@ -1515,6 +1515,9 @@ export async function storeRoomPin(roomId: string, hashedPin: string): Promise<v
     [`roomPins/${roomId}/hashedPin`]: hashedPin,
     [`roomPins/${roomId}/updatedAt`]: now,
     [`rooms/${roomId}/info/pinVersion`]: increment(1),
+    // 2026-10-12 (Sumon bug): setting a PIN must also mark the room as
+    // private — otherwise isPublic stays true and the PIN gate is skipped.
+    [`rooms/${roomId}/info/isPublic`]: false,
   });
 }
 
