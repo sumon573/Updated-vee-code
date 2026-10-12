@@ -88,6 +88,12 @@
         // self-gifts excluded). Type validation prevents corrupted records
         // that could crash the app (2026-10-08 lesson).
         "noble": {
+          // 2026-10-12 audit fix (HIGH): Noble XP was self-writable — any user
+          // could set arbitrary XP/rank. Now: XP can only INCREASE by at most
+          // the max gift price (2000) per write, and rankIndex must be
+          // consistent with the XP. Grinding via many small writes is still
+          // possible client-side; full server-authority is the complete fix.
+          ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
           ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
         }
       }
