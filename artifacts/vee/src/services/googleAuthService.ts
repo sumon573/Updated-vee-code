@@ -23,7 +23,7 @@ export const GOOGLE_WEB_CLIENT_ID =
   '396323750389-0d2amdf6b5uhj38aedmsrjhbifih96uh.apps.googleusercontent.com';
 
 /** Redirect URI for Expo AuthSession proxy. */
-const REDIRECT_URI = 'https://auth.expo.io/@kidoge5908s-team/vee';
+const REDIRECT_URI = 'https://auth.expo.io/@sewikiv588s-team/vee';
 
 export const GOOGLE_AUTH_NOT_WIRED = 'GOOGLE_AUTH_NOT_WIRED';
 export const GOOGLE_AUTH_CANCELLED = 'GOOGLE_AUTH_CANCELLED';
