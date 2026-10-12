@@ -158,6 +158,9 @@ function MistParticle({ delay, size, left, duration }: { delay: number; size: nu
 function LevelBadge({ level }: { level: number }) {
   const tier = getLevelTier(level);
   const style = TIER_STYLE[tier];
+  // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
+  // "Bronze Lv 17" format. Premium gradient kept, mist particles removed
+  // for the compact size.
   return (
     <View style={{ marginRight: 6, marginBottom: 6 }}>
       <LinearGradient
@@ -165,35 +168,17 @@ function LevelBadge({ level }: { level: number }) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          borderRadius: 14,
-          paddingHorizontal: 12,
-          paddingVertical: 7,
+          borderRadius: 12,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
           flexDirection: 'row',
           alignItems: 'center',
           overflow: 'hidden',
-          shadowColor: style.glow,
-          shadowOpacity: 0.9,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 6,
         }}
       >
-        {/* Mist particles */}
-        <MistParticle delay={0} size={7} left={10} duration={5200} />
-        <MistParticle delay={1700} size={5} left={34} duration={6400} />
-        <MistParticle delay={3200} size={8} left={58} duration={5800} />
-        {/* Level number */}
-        <Text style={{ fontSize: 17, fontWeight: '900', color: '#FFFFFF', marginRight: 5, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 }}>
-          {level}
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+          {style.label} Lv {level}
         </Text>
-        <View>
-          <Text style={{ fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5, lineHeight: 11 }}>
-            LEVEL
-          </Text>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF', lineHeight: 14 }}>
-            {style.label}
-          </Text>
-        </View>
       </LinearGradient>
     </View>
   );
@@ -208,6 +193,30 @@ function BadgePill({ label, icon }: { label: string; icon?: string }) {
     }}>
       {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
       <Text style={{ fontSize: 12, color: C.muted, fontWeight: '500' }}>{label}</Text>
+    </View>
+  );
+}
+
+// 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
+// gorgeous, premium look. Same size as LevelBadge.
+function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
+  return (
+    <View style={{ marginRight: 6, marginBottom: 6 }}>
+      <LinearGradient
+        colors={colors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          borderRadius: 12,
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
+      >
+        {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{label}</Text>
+      </LinearGradient>
     </View>
   );
 }
@@ -274,7 +283,7 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
           backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
           padding: 4,
         }}>
-          {item.isPrivate ? (
+          {item.isPublic === false ? (
             <Feather name="lock" size={12} color="#F59E0B" />
           ) : (
             <Feather name="globe" size={12} color="#10B981" />
@@ -564,15 +573,15 @@ export default function ProfileScreen({
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
   // ─── Premium Level System (2026-10-12, Sumon concept) ───
-  // SLOW progression based on diamond sending + voice-room activity.
+  // VERY SLOW progression (Sumon 2026-10-12: "একদম স্লো").
   // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
   // Level curve (quadratic — each level needs progressively more):
-  //   cumulative XP for level N = 5 * (N-1)^2  (Lv.30 ≈ 4,205 XP, Lv.60 ≈ 17,405, Lv.100 = 49,005)
+  //   cumulative XP for level N = 50 * (N-1)^2  (Lv.30 ≈ 42,050 XP, Lv.60 ≈ 174,050, Lv.100 = 490,050)
   // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
   const calculateLevel = (): number => {
     const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);
-    // Invert: N = sqrt(xp / 5), floor, min 1, max 100.
-    const level = Math.floor(Math.sqrt(xp / 5)) + 1;
+    // Invert: N = sqrt(xp / 50), floor, min 1, max 100. 10x slower than before.
+    const level = Math.floor(Math.sqrt(xp / 50)) + 1;
     return Math.min(100, Math.max(1, level));
   };
   const userLevel = calculateLevel();
@@ -673,10 +682,19 @@ export default function ProfileScreen({
 
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
-          <BadgePill label={nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.name ?? 'Non-Noble' : 'Non-Noble'} />
+          {/* Nobel: royal purple gradient (premium) */}
+          <PremiumPill
+            label={nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.name ?? 'Non-Noble' : 'Non-Noble'}
+            colors={['#7C3AED', '#A855F7']}
+          />
           <LevelBadge level={userLevel} />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
-            <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
+            {/* Follower: ocean blue gradient (premium) */}
+            <PremiumPill
+              label={`${followCounts.followers} Follower`}
+              icon="⭐"
+              colors={['#0EA5E9', '#38BDF8']}
+            />
           </Pressable>
         </View>
 
