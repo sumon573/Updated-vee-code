@@ -1,11 +1,11 @@
 /**
- * Forgot Password Screen
+ * Forgot Password Screen — white/light design matching login + email-login.
  * Sends a password reset email via Firebase Auth.
  */
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import {
-  View, Text, TextInput, Animated,
+  View, Text, TextInput, Pressable,
   ActivityIndicator, Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -14,20 +14,19 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
-import WaveTopHeader from '@/components/WaveTopHeader';
 import { resetPassword, getAuthErrorMessage } from '@/src/services/authService';
 
 const C = {
   bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  border: '#2A2542',
-  borderFocus: '#8B5CF6',
-  inputBg: 'rgba(139,92,246,0.07)',
+  text: '#0A1A33',
+  muted: '#6B7280',
+  blue: '#1E9BF0',
   error: '#FF4B4B',
+  errorBg: 'rgba(255,75,75,0.10)',
   success: '#22C55E',
+  successBg: 'rgba(34,197,94,0.10)',
+  inputBg: '#F7F7FA',
+  inputBorder: '#E8E8EC',
 } as const;
 
 export default function ForgotPasswordScreen() {
@@ -38,12 +37,6 @@ export default function ForgotPasswordScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [focused, setFocused] = useState(false);
-
-  const anim = useRef(new Animated.Value(0)).current;
-  const fade = (v: number) =>
-    Animated.timing(anim, { toValue: v, duration: 200, useNativeDriver: false }).start();
-  const borderColor = anim.interpolate({ inputRange: [0, 1], outputRange: [C.border, C.borderFocus] });
-  const shadowOpacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.28] });
 
   async function handleReset() {
     setErrorMsg('');
@@ -76,24 +69,35 @@ export default function ForgotPasswordScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <WaveTopHeader
-        title={t('auth.forgotPassword.headerTitle')}
-        subtitle={t('auth.forgotPassword.headerSubtitle')}
-      />
-      <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-        <View style={{ flex: 1, paddingHorizontal: 26, paddingTop: 32 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 }}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={{ padding: 6 }}>
+            <Feather name="arrow-left" size={24} color={C.text} />
+          </Pressable>
+          <View style={{ marginLeft: 8 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: C.text }}>
+              {t('auth.forgotPassword.headerTitle')}
+            </Text>
+            <Text style={{ fontSize: 14, color: C.muted, marginTop: 2 }}>
+              {t('auth.forgotPassword.headerSubtitle')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 32 }}>
 
           {/* Icon */}
           <View style={{ alignItems: 'center', marginBottom: 32 }}>
             <View style={{
               width: 80, height: 80, borderRadius: 40,
-              backgroundColor: 'rgba(139,92,246,0.14)',
-              borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
+              backgroundColor: 'rgba(30,155,240,0.10)',
+              borderWidth: 1.5, borderColor: 'rgba(30,155,240,0.30)',
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Feather name="mail" size={34} color={C.glow} />
+              <Feather name="mail" size={34} color={C.blue} />
             </View>
-            <Text style={{ color: C.text, fontSize: 22, fontWeight: '900', marginTop: 18, textAlign: 'center' }}>
+            <Text style={{ color: C.text, fontSize: 20, fontWeight: '800', marginTop: 18, textAlign: 'center' }}>
               {t('auth.forgotPassword.heading')}
             </Text>
             <Text style={{ color: C.muted, fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 22 }}>
@@ -104,7 +108,7 @@ export default function ForgotPasswordScreen() {
           {/* Error */}
           {!!errorMsg && (
             <View style={{
-              backgroundColor: 'rgba(255,75,75,0.12)', borderRadius: 14,
+              backgroundColor: C.errorBg, borderRadius: 14,
               borderWidth: 1, borderColor: 'rgba(255,75,75,0.3)',
               paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16,
               flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -117,7 +121,7 @@ export default function ForgotPasswordScreen() {
           {/* Success */}
           {!!successMsg && (
             <View style={{
-              backgroundColor: 'rgba(34,197,94,0.12)', borderRadius: 14,
+              backgroundColor: C.successBg, borderRadius: 14,
               borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
               paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20,
               flexDirection: 'row', alignItems: 'flex-start', gap: 10,
@@ -128,15 +132,15 @@ export default function ForgotPasswordScreen() {
           )}
 
           {/* Email field */}
-          <Animated.View style={{
+          <View style={{
             flexDirection: 'row', alignItems: 'center',
-            borderRadius: 32, borderWidth: 1.5, borderColor,
-            backgroundColor: C.inputBg, paddingHorizontal: 18, height: 60, marginBottom: 24,
-            shadowColor: C.glow, shadowOpacity, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+            borderRadius: 16, borderWidth: 1,
+            borderColor: focused ? C.blue : C.inputBorder,
+            backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56, marginBottom: 24,
           }}>
-            <Feather name="mail" size={18} color={focused ? C.glow : C.muted} style={{ marginRight: 12 }} />
+            <Feather name="mail" size={18} color={focused ? C.blue : C.muted} style={{ marginRight: 12 }} />
             <TextInput
-              style={{ flex: 1, color: C.text, fontSize: 16, fontWeight: '500', height: '100%' }}
+              style={{ flex: 1, color: C.text, fontSize: 16, height: '100%' }}
               placeholder={t('auth.forgotPassword.emailPlaceholder')}
               placeholderTextColor={C.muted}
               value={email}
@@ -144,26 +148,24 @@ export default function ForgotPasswordScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              onFocus={() => { setFocused(true); fade(1); }}
-              onBlur={() => { setFocused(false); fade(0); }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
             />
-          </Animated.View>
+          </View>
 
           {/* Send button */}
           <ScalePress onPress={handleReset} disabled={loading || !!successMsg}>
             <View style={{
-              height: 60, borderRadius: 32,
-              backgroundColor: successMsg ? 'rgba(34,197,94,0.6)' : C.primary,
+              height: 56, borderRadius: 28,
+              backgroundColor: successMsg ? C.success : C.blue,
               alignItems: 'center', justifyContent: 'center',
-              shadowColor: C.glow, shadowOpacity: successMsg ? 0 : 0.55, shadowRadius: 24,
-              shadowOffset: { width: 0, height: 10 }, elevation: 14,
             }}>
               {loading
                 ? <ActivityIndicator color="#fff" />
                 : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Feather name={successMsg ? 'check' : 'send'} size={18} color="#fff" />
-                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 2 }}>
+                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 1.5 }}>
                       {successMsg
                         ? t('auth.forgotPassword.sentButton')
                         : t('auth.forgotPassword.sendButton')}
@@ -173,17 +175,17 @@ export default function ForgotPasswordScreen() {
             </View>
           </ScalePress>
 
-          <View style={{ height: 20 }} />
+          <View style={{ height: 14 }} />
 
           {/* Back to login */}
           <ScalePress onPress={() => router.back()}>
             <View style={{
-              height: 54, borderRadius: 32, borderWidth: 1.4, borderColor: C.border,
+              height: 56, borderRadius: 28, borderWidth: 1.6, borderColor: C.blue,
               alignItems: 'center', justifyContent: 'center',
-              flexDirection: 'row', gap: 8,
+              flexDirection: 'row', gap: 8, backgroundColor: '#FFFFFF',
             }}>
-              <Feather name="arrow-left" size={16} color={C.muted} />
-              <Text style={{ color: C.muted, fontSize: 14, fontWeight: '700' }}>
+              <Feather name="arrow-left" size={16} color={C.blue} />
+              <Text style={{ color: C.blue, fontSize: 14, fontWeight: '800' }}>
                 {t('auth.forgotPassword.backToLogin')}
               </Text>
             </View>

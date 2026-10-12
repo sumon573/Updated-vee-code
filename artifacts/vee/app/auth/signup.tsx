@@ -1,7 +1,11 @@
-import { useState, useRef } from 'react';
+/**
+ * Vee Signup — white/light design matching login + email-login.
+ * Name / email / password / confirm / avatar / terms. All logic unchanged.
+ */
+import { useState } from 'react';
 import {
-  View, Text, TextInput, Pressable,
-  Animated, Alert, ScrollView, ActivityIndicator, Platform, Image,
+  View, Text, TextInput, Pressable, Modal,
+  Alert, ScrollView, ActivityIndicator, Platform, Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +13,6 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
-import WaveTopHeader from '@/components/WaveTopHeader';
 import ScalePress from '@/components/ScalePress';
 import { signUp, getAuthErrorMessage } from '@/src/services/authService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
@@ -22,21 +25,20 @@ import generateVId from '@/src/utils/generateVId';
 
 const C = {
   bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  border: '#2A2542',
-  borderFocus: '#8B5CF6',
-  inputBg: 'rgba(139,92,246,0.07)',
+  text: '#0A1A33',
+  muted: '#6B7280',
+  blue: '#1E9BF0',
+  blueDark: '#1879C4',
   error: '#FF4B4B',
-  avatarBg: 'rgba(139,92,246,0.14)',
+  errorBg: 'rgba(255,75,75,0.10)',
+  inputBg: '#F7F7FA',
+  inputBorder: '#E8E8EC',
 } as const;
 
 // ─── Field Component ──────────────────────────────────────────────────────────
 
 function Field({
-  icon, placeholder, value, onChange, secure, keyboard,
+  icon, placeholder, value, onChange, secure, keyboard, hint,
 }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   placeholder: string;
@@ -44,40 +46,43 @@ function Field({
   onChange: (t: string) => void;
   secure?: boolean;
   keyboard?: 'email-address' | 'default';
+  hint?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const [visible, setVisible] = useState(false);
-  const anim = useRef(new Animated.Value(0)).current;
-  const fade = (v: number) =>
-    Animated.timing(anim, { toValue: v, duration: 200, useNativeDriver: false }).start();
-  const borderColor = anim.interpolate({ inputRange: [0, 1], outputRange: [C.border, C.borderFocus] });
-  const shadowOpacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.28] });
 
   return (
-    <Animated.View style={{
-      flexDirection: 'row', alignItems: 'center',
-      borderRadius: 32, borderWidth: 1.5, borderColor,
-      backgroundColor: C.inputBg, paddingHorizontal: 18, height: 60, marginBottom: 16,
-      shadowColor: C.glow, shadowOpacity, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
-    }}>
-      <Feather name={icon} size={18} color={focused ? C.glow : C.muted} style={{ marginRight: 12 }} />
-      <TextInput
-        style={{ flex: 1, color: C.text, fontSize: 16, fontWeight: '500', height: '100%' }}
-        placeholder={placeholder} placeholderTextColor={C.muted}
-        value={value} onChangeText={onChange}
-        secureTextEntry={secure && !visible}
-        keyboardType={keyboard ?? 'default'}
-        autoCapitalize={keyboard === 'email-address' ? 'none' : 'words'}
-        autoCorrect={false}
-        onFocus={() => { setFocused(true); fade(1); }}
-        onBlur={() => { setFocused(false); fade(0); }}
-      />
-      {secure && (
-        <Pressable onPress={() => setVisible(!visible)} hitSlop={12}>
-          <Feather name={visible ? 'eye' : 'eye-off'} size={18} color={C.muted} />
-        </Pressable>
+    <View style={{ marginBottom: hint ? 6 : 16 }}>
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        borderRadius: 16, borderWidth: 1,
+        borderColor: focused ? C.blue : C.inputBorder,
+        backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56,
+      }}>
+        <Feather name={icon} size={18} color={focused ? C.blue : C.muted} style={{ marginRight: 12 }} />
+        <TextInput
+          style={{ flex: 1, color: C.text, fontSize: 16, height: '100%' }}
+          placeholder={placeholder} placeholderTextColor={C.muted}
+          value={value} onChangeText={onChange}
+          secureTextEntry={secure && !visible}
+          keyboardType={keyboard ?? 'default'}
+          autoCapitalize={keyboard === 'email-address' ? 'none' : 'words'}
+          autoCorrect={false}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {secure && (
+          <Pressable onPress={() => setVisible(!visible)} hitSlop={12}>
+            <Feather name={visible ? 'eye' : 'eye-off'} size={18} color={C.muted} />
+          </Pressable>
+        )}
+      </View>
+      {!!hint && (
+        <Text style={{ color: C.muted, fontSize: 12, marginTop: 6, marginLeft: 16 }}>
+          {hint}
+        </Text>
       )}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -95,6 +100,7 @@ export default function SignupScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [photoLocalUri, setPhotoLocalUri] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [docOpen, setDocOpen] = useState<'terms' | 'privacy' | null>(null);
 
   // ─── Avatar picker ────────────────────────────────────────────────────────
 
@@ -220,13 +226,24 @@ export default function SignupScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <WaveTopHeader
-        title={t('auth.signup.headerTitle')}
-        subtitle={t('auth.signup.headerSubtitle')}
-      />
-      <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 }}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={{ padding: 6 }}>
+            <Feather name="arrow-left" size={24} color={C.text} />
+          </Pressable>
+          <View style={{ marginLeft: 8 }}>
+            <Text style={{ fontSize: 22, fontWeight: '800', color: C.text }}>
+              {t('auth.signup.headerTitle')}
+            </Text>
+            <Text style={{ fontSize: 14, color: C.muted, marginTop: 2 }}>
+              {t('auth.signup.headerSubtitle')}
+            </Text>
+          </View>
+        </View>
+
         <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 26, paddingTop: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 24 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -234,29 +251,27 @@ export default function SignupScreen() {
           <View style={{ alignItems: 'center', marginBottom: 24 }}>
             <Pressable onPress={handlePickAvatar} disabled={photoUploading}>
               <View style={{
-                width: 90, height: 90, borderRadius: 45,
-                backgroundColor: C.avatarBg,
-                borderWidth: 2, borderColor: C.primary,
+                width: 96, height: 96, borderRadius: 48,
+                backgroundColor: C.inputBg,
+                borderWidth: 2, borderColor: C.inputBorder,
                 borderStyle: photoLocalUri ? 'solid' : 'dashed',
                 alignItems: 'center', justifyContent: 'center',
                 overflow: 'hidden',
-                shadowColor: C.glow, shadowOpacity: 0.3, shadowRadius: 18,
-                shadowOffset: { width: 0, height: 6 }, elevation: 8,
               }}>
                 {photoLocalUri
-                  ? <Image source={{ uri: photoLocalUri }} style={{ width: 90, height: 90, borderRadius: 45 }} />
+                  ? <Image source={{ uri: photoLocalUri }} style={{ width: 96, height: 96, borderRadius: 48 }} />
                   : photoUploading
-                    ? <ActivityIndicator color={C.glow} />
-                    : <Feather name="user" size={28} color={C.glow} />
+                    ? <ActivityIndicator color={C.blue} />
+                    : <Feather name="user" size={32} color={C.muted} />
                 }
               </View>
               <View style={{
-                position: 'absolute', bottom: 0, right: 0,
-                width: 28, height: 28, borderRadius: 14,
-                backgroundColor: C.primary, borderWidth: 2, borderColor: C.bg,
+                position: 'absolute', bottom: 2, right: 2,
+                width: 30, height: 30, borderRadius: 15,
+                backgroundColor: C.blue, borderWidth: 2, borderColor: C.bg,
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                <Feather name="camera" size={12} color="#fff" />
+                <Feather name="camera" size={13} color="#fff" />
               </View>
             </Pressable>
           </View>
@@ -264,7 +279,7 @@ export default function SignupScreen() {
           {/* Error message */}
           {!!errorMsg && (
             <View style={{
-              backgroundColor: 'rgba(255,75,75,0.12)', borderRadius: 14,
+              backgroundColor: C.errorBg, borderRadius: 14,
               borderWidth: 1, borderColor: 'rgba(255,75,75,0.3)',
               paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16,
               flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -276,44 +291,49 @@ export default function SignupScreen() {
 
           <Field icon="user" placeholder={t('auth.signup.namePlaceholder')} value={name} onChange={setName} />
           <Field icon="mail" placeholder={t('auth.signup.emailPlaceholder')} value={email} onChange={setEmail} keyboard="email-address" />
-          <Field icon="lock" placeholder={t('auth.signup.passwordPlaceholder')} value={password} onChange={setPassword} secure />
+          <Field
+            icon="lock"
+            placeholder={t('auth.signup.passwordPlaceholder')}
+            value={password} onChange={setPassword} secure
+            hint={t('auth.signup.passwordHint')}
+          />
+          <View style={{ height: 10 }} />
           <Field icon="lock" placeholder={t('auth.signup.confirmPasswordPlaceholder')} value={confirmPass} onChange={setConfirmPass} secure />
 
           {/* Terms checkbox */}
-          <Pressable
-            onPress={() => setAgreed(!agreed)}
-            style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 28, gap: 10 }}
-          >
-            <View style={{
-              width: 22, height: 22, borderRadius: 6,
-              borderWidth: 1.8, borderColor: C.primary,
-              backgroundColor: agreed ? C.primary : 'transparent',
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              {agreed && <Feather name="check" size={13} color="#fff" />}
-            </View>
-            <Text style={{ color: C.muted, fontSize: 13, flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24, gap: 10 }}>
+            <Pressable onPress={() => setAgreed(!agreed)} hitSlop={8}>
+              <View style={{
+                width: 22, height: 22, borderRadius: 6, marginTop: 1,
+                borderWidth: 1.8, borderColor: C.blue,
+                backgroundColor: agreed ? C.blue : 'transparent',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {agreed && <Feather name="check" size={13} color="#fff" />}
+              </View>
+            </Pressable>
+            <Text style={{ color: C.muted, fontSize: 13, flex: 1, lineHeight: 19 }}>
               {t('auth.signup.termsPrefix')}
-              {/* #3 fix: terms/privacy links were dead (no onPress). Render as
-                  plain text instead of fake links. */}
-              <Text style={{ color: C.muted }}>{t('auth.signup.termsLink')}</Text>
+              <Text style={{ color: C.blue, fontWeight: '700' }} onPress={() => setDocOpen('terms')}>
+                {t('auth.signup.termsLink')}
+              </Text>
               {t('auth.signup.termsAnd')}
-              <Text style={{ color: C.muted }}>{t('auth.signup.privacyLink')}</Text>
+              <Text style={{ color: C.blue, fontWeight: '700' }} onPress={() => setDocOpen('privacy')}>
+                {t('auth.signup.privacyLink')}
+              </Text>
               {t('auth.signup.termsSuffix')}
             </Text>
-          </Pressable>
+          </View>
 
           {/* Signup button */}
           <ScalePress onPress={handleSignUp} disabled={loading}>
             <View style={{
-              height: 60, borderRadius: 32, backgroundColor: C.primary,
+              height: 56, borderRadius: 28, backgroundColor: loading ? C.blueDark : C.blue,
               alignItems: 'center', justifyContent: 'center',
-              shadowColor: C.glow, shadowOpacity: 0.55, shadowRadius: 24,
-              shadowOffset: { width: 0, height: 10 }, elevation: 14,
             }}>
               {loading
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 2.5 }}>
+                : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 1.5 }}>
                     {t('auth.signup.createButton')}
                   </Text>}
             </View>
@@ -323,11 +343,11 @@ export default function SignupScreen() {
 
           <ScalePress onPress={() => router.replace('/auth/email-login')}>
             <View style={{
-              height: 58, borderRadius: 32, borderWidth: 1.6, borderColor: C.primary,
+              height: 56, borderRadius: 28, borderWidth: 1.6, borderColor: C.blue,
               alignItems: 'center', justifyContent: 'center',
-              backgroundColor: 'rgba(124,58,237,0.05)',
+              backgroundColor: '#FFFFFF',
             }}>
-              <Text style={{ color: C.primary, fontSize: 13, fontWeight: '900', letterSpacing: 1.2 }}>
+              <Text style={{ color: C.blue, fontSize: 13, fontWeight: '800', letterSpacing: 1.2 }}>
                 {t('auth.signup.alreadyHaveAccount')}
               </Text>
             </View>
@@ -335,6 +355,52 @@ export default function SignupScreen() {
 
           <View style={{ height: Platform.OS === 'web' ? 34 : 48 }} />
         </ScrollView>
+
+        {/* Terms / Privacy modal */}
+        <Modal
+          visible={docOpen !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDocOpen(null)}
+        >
+          <Pressable
+            style={{
+              flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+              alignItems: 'center', justifyContent: 'center', padding: 30,
+            }}
+            onPress={() => setDocOpen(null)}
+          >
+            <Pressable
+              style={{
+                backgroundColor: '#FFFFFF', borderRadius: 18,
+                padding: 22, maxHeight: '70%', width: '100%',
+              }}
+              onPress={() => {}}
+            >
+              <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 12 }}>
+                {docOpen === 'terms'
+                  ? t('auth.phoneLogin.termsTitle')
+                  : t('auth.phoneLogin.privacyTitle')}
+              </Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={{ fontSize: 15, lineHeight: 23, color: '#3C4043' }}>
+                  {docOpen === 'terms'
+                    ? t('auth.phoneLogin.termsMessage')
+                    : t('auth.phoneLogin.privacyMessage')}
+                </Text>
+              </ScrollView>
+              <Pressable
+                onPress={() => setDocOpen(null)}
+                style={{
+                  marginTop: 18, backgroundColor: C.blue,
+                  borderRadius: 24, paddingVertical: 12, alignItems: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>OK</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </View>
   );
