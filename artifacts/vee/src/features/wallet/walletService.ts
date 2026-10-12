@@ -357,8 +357,18 @@ async function sendGiftViaFirebase(
       if (bal < price) return; // Abort — insufficient funds
       return bal - price;
     });
-  } catch {
-    // Permission denied (no wallet node) or other failure → cannot debit.
+  } catch (e) {
+    // 2026-10-12 audit fix (M3): distinguish transport/permission failures
+    // from true insufficient funds. If the debit may have committed
+    // server-side but the client saw a network error, a blind retry could
+    // double-charge (C1 is fixed, but the UX must not lie).
+    const msg = e instanceof Error ? e.message : '';
+    if (/permission|denied/i.test(msg)) {
+      throw new GiftError('Wallet access denied — please re-login');
+    }
+    if (/network|timeout|unavailable|offline/i.test(msg)) {
+      throw new GiftError('Network error — check your balance before retrying');
+    }
     throw new InsufficientFundsError('Not enough diamonds');
   }
   if (!senderResult.committed) {
