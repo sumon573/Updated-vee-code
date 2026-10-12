@@ -500,9 +500,15 @@ export async function sendGift({
         receipt: data.receipt,
       };
     }
-    // 200-but-not-ok: fall through to Firebase fallback below.
+    // 200-but-not-ok: the server PROCESSED the request (charged or rejected).
+    // 2026-10-12 audit fix (HIGH): do NOT fall through to Firebase fallback —
+    // the server may have charged already; fallback would double-charge.
+    // Surface the server's failure instead.
+    throw new GiftError('Gift failed on server, please retry');
   }
-  // Server failed (4xx/5xx/unexpected body) or network failed → fallback.
+  // Server failed (4xx/5xx) or network failed → Firebase fallback is safe
+  // (server did not process a 4xx/5xx charge; network failure means unknown,
+  // but the idempotency key protects the retry).
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {

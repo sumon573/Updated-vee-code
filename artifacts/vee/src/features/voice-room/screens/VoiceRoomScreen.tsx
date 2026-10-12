@@ -241,6 +241,9 @@ export default function VoiceRoomScreen() {
       // otherwise the admins-node entry goes stale with live powers.
       const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
       removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
+      // 2026-10-12 audit fix (HIGH): clean audience record on room switch —
+      // seated users keep it, leaving a ghost in the old room.
+      leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
     } else {
       leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
       if (prev.role === 'admin') {
@@ -1250,6 +1253,10 @@ export default function VoiceRoomScreen() {
       hasLeftRef.current = true;
       if (mySeatIdxRef.current >= 0) {
         removeSeat(roomId, mySeatIdxRef.current).catch(() => {/* background: safe to swallow — unmount cleanup */});
+        // 2026-10-12 audit fix (HIGH): clean the audience record too —
+        // seated users keep it, and this path (system back/kill) bypasses
+        // handleLeave. (Minimize sets hasLeftRef first, so it's excluded.)
+        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
       } else {
         leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — unmount cleanup */});
       }
@@ -1785,6 +1792,10 @@ export default function VoiceRoomScreen() {
       // with the seat removal (removeSeat handles both in one update).
       const demoteUid = myRole === 'admin' ? myUid : undefined;
       removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
+      // 2026-10-12 audit fix (HIGH): seated users KEEP their audience record
+      // — clean it here or ghost audience records accumulate forever
+      // (onDisconnect only fires if the connection drops, not on clean exit).
+      leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
     } else if (hasJoined) {
       leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
       // Audience admin leaving: drop powers too (best-effort; owner self-heal

@@ -153,6 +153,9 @@ export default function MinimizedRoomBar() {
     // background: safe to swallow — teardown after navigation; server-side presence expires via onDisconnect
     if (room.mySeatIdx >= 0) {
       removeSeat(room.id, room.mySeatIdx).catch(() => {});
+      // 2026-10-12 audit fix (HIGH): seated users keep audience record —
+      // clean it on discard or it ghosts forever.
+      leaveAudience(room.id, room.myUid).catch(() => {});
     } else {
       leaveAudience(room.id, room.myUid).catch(() => {});
     }
