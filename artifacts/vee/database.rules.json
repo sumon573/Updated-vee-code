@@ -38,6 +38,9 @@
         "bio": {
           ".validate": "newData.isString()"
         },
+        "hasActiveStory": {
+          ".validate": "newData.isBoolean()"
+        },
         "banned": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
           ".validate": "newData.isBoolean()"
