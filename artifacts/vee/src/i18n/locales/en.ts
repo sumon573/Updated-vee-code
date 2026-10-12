@@ -103,6 +103,12 @@ const en = {
       errorWrongCode: 'Incorrect code. Please try again.',
       errorNoCode: 'Please enter the 4-digit code.',
       codeResent: 'A new code was sent.',
+      phoneError: 'Could not send the verification code. Please check your number and try again.',
+      googleError: 'Google sign-in failed. Please try again.',
+      invalidPhone: 'Please enter a valid phone number.',
+      wrongCode: 'Incorrect code. Please try again.',
+      codeExpired: 'The code has expired. Please request a new one.',
+      tooManyRequests: 'Too many attempts. Please try again later.',
     },
   },
   voiceRoom: {
