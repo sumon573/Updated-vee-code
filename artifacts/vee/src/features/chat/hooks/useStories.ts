@@ -161,5 +161,5 @@ export function useStories(): UseStoriesResult {
     markStorySeen(user.uid, userId).catch(() => {/* background: safe to swallow — seen markers are best-effort */});
   }, [user?.uid]);
 
-  return { stories, myStories, loading, publish, recordView, react, comment, remove, markGroupSeen };
+  return { stories, myStories, loading, publish, recordView, react, comment, remove, markGroupSeen, getContactUids: () => contactUidsRef.current };
 }

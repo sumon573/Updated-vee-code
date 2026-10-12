@@ -50,7 +50,7 @@ export default function IMOHomeScreen() {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
-  const { stories, publish, react, comment } = useStories();
+  const { stories, publish, react, comment, getContactUids } = useStories();
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
@@ -148,13 +148,22 @@ export default function IMOHomeScreen() {
     }
   }, [user?.uid, menuChat]);
 
-  const imoStories: IMOStory[] = (stories || []).map((s: any) => ({
-    id: s.userId,
-    // Show "You" for the user's own story (like IMO)
-    name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
-    photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
-    unreadCount: s.unreadCount || 0,
-  }));
+  // Per Sumon 2026-10-12: story row shows ONLY contacts' stories (not public from non-contacts).
+  // Public stories go to Planet only.
+  const imoStories: IMOStory[] = (stories || [])
+    .filter((s: any) => {
+      const uid = s.userId;
+      if (uid === user?.uid) return true; // own story
+      const contacts = getContactUids?.() ?? new Set();
+      return contacts.has(uid);
+    })
+    .map((s: any) => ({
+      id: s.userId,
+      // Show "You" for the user's own story (like IMO)
+      name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
+      photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
+      unreadCount: s.unreadCount || 0,
+    }));
 
   useEffect(() => {
     const missingUids = new Set<string>();
