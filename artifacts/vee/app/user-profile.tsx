@@ -21,7 +21,9 @@ export default function UserProfileRoute() {
   useEffect(() => {
     if (!uid) {
       Alert.alert(t('userProfile.error'), t('userProfile.userNotFound'), [
-        { text: 'OK', onPress: () => router.back() },
+        // 2026-10-12 audit fix: on a cold deep link there's no history —
+        // router.back() is a no-op leaving a blank screen. Fall back to /home.
+        { text: 'OK', onPress: () => { if (router.canGoBack()) router.back(); else router.replace('/home'); } },
       ]);
     }
   }, [uid, t]);

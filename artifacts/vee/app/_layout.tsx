@@ -170,6 +170,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         // New user — complete profile first.
         destination = '/auth/complete-profile';
       }
+    } else if (user && profileChecked && !hasProfile && !onCompleteProfile) {
+      // 2026-10-12 audit fix: enforce profile completion on EVERY
+      // authenticated route (e.g., deep link to /inbox or /voice-room
+      // before completing profile). Previously only auth-group/root
+      // were guarded, letting new users roam with no profile.
+      destination = '/auth/complete-profile';
     }
 
     if (destination && redirectInFlightRef.current !== destination) {

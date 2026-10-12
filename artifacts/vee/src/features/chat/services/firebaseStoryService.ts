@@ -821,6 +821,17 @@ export async function cleanExpiredStories(uid: string): Promise<void> {
   if (!remaining.exists()) {
     await remove(ref(database, `publicStoryIndex/${uid}`));
   }
+
+  // 2026-10-12 audit fix: clear hasActiveStory when no stories remain
+  // (deleteStory does this, but cleanExpiredStories didn't — data time bomb).
+  const [pubCheck, conCheck] = await Promise.all([
+    get(ref(database, `stories/${uid}`)),
+    get(ref(database, `contactStories/${uid}`)),
+  ]);
+  if (!pubCheck.exists() && !conCheck.exists()) {
+    const { update } = await import('firebase/database');
+    await update(ref(database, `users/${uid}`), { hasActiveStory: false }).catch(() => {});
+  }
 }
 
 /**
