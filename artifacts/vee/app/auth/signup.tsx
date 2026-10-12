@@ -15,6 +15,7 @@ import { signUp, getAuthErrorMessage } from '@/src/services/authService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { deleteUser } from 'firebase/auth';
 import { createUser, setupPresence, generateAndReserveVId } from '@/src/services/userService';
+import { validateRegistrationEmail } from '@/src/data/disposableEmails';
 import { initializeWallet } from '@/src/features/wallet/walletService';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import generateVId from '@/src/utils/generateVId';
@@ -128,8 +129,8 @@ export default function SignupScreen() {
 
   function validate(): string | null {
     if (!name.trim())                         return t('auth.signup.errorNoName');
-    if (!email.trim())                        return t('auth.signup.errorNoEmail');
-    if (!/\S+@\S+\.\S+/.test(email))         return t('auth.signup.errorInvalidEmail');
+    const emailErr = validateRegistrationEmail(email);
+    if (emailErr)                             return t(emailErr as any);
     if (password.length < 6)                  return t('auth.signup.errorShortPassword');
     if (password !== confirmPass)             return t('auth.signup.errorPasswordMismatch');
     if (!agreed)                              return t('auth.signup.errorNoTerms');

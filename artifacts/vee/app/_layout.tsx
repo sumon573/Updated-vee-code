@@ -41,6 +41,7 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
+import { getUser } from '@/src/services/userService';
 import { ThemeProvider } from '@/src/context/ThemeContext';
 import { LanguageProvider, useLanguage } from '@/src/context/LanguageContext';
 // Side-effect import: initialises i18next with all four language resources.
@@ -103,6 +104,36 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const redirectInFlightRef = useRef<string | null>(null);
+  const [profileChecked, setProfileChecked] = useState(false);
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+
+  // Check if the authenticated user has a Firestore profile.
+  // New users (Google/email) land on complete-profile; existing users go home.
+  useEffect(() => {
+    if (!user || authLoading) {
+      setProfileChecked(false);
+      setHasProfile(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await getUser(user.uid);
+        if (!cancelled) {
+          setHasProfile(!!profile);
+          setProfileChecked(true);
+        }
+      } catch {
+        // On error, assume profile exists to avoid blocking existing users.
+        // New users will be caught on next app start if profile creation failed.
+        if (!cancelled) {
+          setHasProfile(true);
+          setProfileChecked(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, authLoading]);
 
   useEffect(() => {
     // Never dispatch a redirect before Expo Router has mounted its navigator.
@@ -113,16 +144,24 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const segs             = segments as string[];
     const inAuthGroup      = segs[0] === 'auth';
     const onRoot           = segs.length === 0 || segs[0] === 'index';
+    const onCompleteProfile = segs[1] === 'complete-profile';
 
     let destination: string | null = null;
     // Language is selected from the login header (IMO-style) — no separate page.
     if (!user && (!inAuthGroup || onRoot)) {
       // Not yet logged in.
       destination = '/auth/login';
-    } else if (user && (inAuthGroup || onRoot)) {
-      // Already authenticated — leave auth screens and the root index spinner.
-      // The latter is the important cold-relaunch case.
-      destination = '/home';
+    } else if (user && (inAuthGroup || onRoot) && !onCompleteProfile) {
+      // Authenticated — check profile status before routing.
+      // Wait for the profile check to complete.
+      if (!profileChecked) return;
+      if (hasProfile) {
+        // Existing user — go home.
+        destination = '/home';
+      } else {
+        // New user — complete profile first.
+        destination = '/auth/complete-profile';
+      }
     }
 
     if (destination && redirectInFlightRef.current !== destination) {
@@ -139,6 +178,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     langLoading,
     router,
     rootNavigationState?.key,
+    profileChecked,
+    hasProfile,
   ]);
 
   // RC8-B2: Clean expired stories for the current user only (fire-and-forget).
@@ -476,7 +517,7 @@ function RootLayoutNav() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="auth/login" />
-        <Stack.Screen name="auth/verify-otp" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="auth/complete-profile" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="auth/signup" />
         <Stack.Screen name="auth/forgot-password" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="home/index" />

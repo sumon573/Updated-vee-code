@@ -29,6 +29,9 @@ const hi = {
       logInWith: 'से लॉगिन करें',
       newUser: 'नए उपयोगकर्ता? अकाउंट बनाएं',
       errorEmptyFields: 'कृपया ईमेल और पासवर्ड दर्ज करें।',
+      title: 'Vee में आपका स्वागत है',
+      subtitle: 'वॉइस रूम और चैट के माध्यम से दोस्तों से जुड़ें।',
+      continueWithEmail: 'ईमेल से जारी रखें',
     },
     signup: {
       headerTitle: 'अकाउंट बनाएं',
@@ -48,6 +51,7 @@ const hi = {
       errorNoName: 'कृपया अपना नाम दर्ज करें।',
       errorNoEmail: 'कृपया ईमेल दर्ज करें।',
       errorInvalidEmail: 'कृपया वैध ईमेल दर्ज करें।',
+      errorDisposableEmail: 'अस्थायी ईमेल पते की अनुमति नहीं है। कृपया असली ईमेल दें।',
       errorShortPassword: 'पासवर्ड कम से कम 6 अक्षर का होना चाहिए।',
       errorPasswordMismatch: 'पासवर्ड मेल नहीं खाते।',
       errorNoTerms: 'कृपया नियम और शर्तों से सहमत हों।',
@@ -68,6 +72,14 @@ const hi = {
       errorInvalidEmail: 'कृपया वैध ईमेल पता दर्ज करें।',
       successMessage:
         'पासवर्ड रीसेट लिंक भेज दिया गया!\n{{email}} — अपना इनबॉक्स और स्पैम फ़ोल्डर जांचें।',
+    },
+    completeProfile: {
+      title: 'अपनी प्रोफ़ाइल पूरी करें',
+      subtitle: 'अपना नाम और फ़ोटो डालें ताकि दोस्त आपको ढूंढ सकें।',
+      namePlaceholder: 'आपका नाम',
+      pickPhoto: 'प्रोफ़ाइल फ़ोटो चुनें',
+      doneButton: 'पूर्ण',
+      errorNoName: 'कृपया अपना नाम दर्ज करें।',
     },
     phoneLogin: {
       countryPickerTitle: 'कोई देश/क्षेत्र चुनें',

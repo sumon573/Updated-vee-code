@@ -29,6 +29,9 @@ const en = {
       logInWith: 'Log in with',
       newUser: 'NEW USER? CREATE ACCOUNT',
       errorEmptyFields: 'Please enter Email and Password.',
+      title: 'Welcome to Vee',
+      subtitle: 'Connect with friends through voice rooms and chat.',
+      continueWithEmail: 'Continue with Email',
     },
     signup: {
       headerTitle: 'Create Account',
@@ -48,6 +51,7 @@ const en = {
       errorNoName: 'Please enter your name.',
       errorNoEmail: 'Please enter your email.',
       errorInvalidEmail: 'Please enter a valid email.',
+      errorDisposableEmail: 'Temporary email addresses are not allowed. Please use a real email.',
       errorShortPassword: 'Password must be at least 6 characters.',
       errorPasswordMismatch: 'Passwords do not match.',
       errorNoTerms: 'Please agree to the Terms & Conditions.',
@@ -68,6 +72,14 @@ const en = {
       errorInvalidEmail: 'Please enter a valid email address.',
       successMessage:
         'Password reset link sent!\n{{email}} — Check your inbox and spam folder.',
+    },
+    completeProfile: {
+      title: 'Complete Your Profile',
+      subtitle: 'Add your name and photo so friends can find you.',
+      namePlaceholder: 'Your name',
+      pickPhoto: 'Choose profile photo',
+      doneButton: 'DONE',
+      errorNoName: 'Please enter your name.',
     },
     phoneLogin: {
       countryPickerTitle: 'Choose a Country/Region',

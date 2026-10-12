@@ -1,17 +1,13 @@
 /**
- * IMO-style login — "Enter Your Phone" (2026-10-11).
+ * Vee login — Google + Email (2026-10-12).
  *
- * Matches the imo reference screenshot exactly:
+ * Google (primary) + Email/Password (secondary). Phone system removed.
  * back arrow | globe + change-language | "?" help, title, subtitle,
- * terms links, Sync Contacts checkbox, country selector, +dial code,
- * phone input, blue round verify button. Phone | Google tabs.
- *
- * Auth services are placeholders (wired in the next step) — every tap
- * responds with a real message, never silently dead (Sumon's rule).
+ * terms links, Google button, Email button.
  */
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, Modal, ScrollView,
+  View, Text, Pressable, Modal, ScrollView,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -20,17 +16,14 @@ import { Feather } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import CountryPicker from './components/CountryPicker';
-import { DEFAULT_COUNTRY, type Country } from '@/src/data/countries';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n';
-import {
-  sendPhoneOtp, getPhoneAuthErrorKey, PHONE_AUTH_NOT_WIRED,
-} from '@/src/services/phoneAuthService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   signInWithGoogle, getGoogleAuthErrorKey,
 } from '@/src/services/googleAuthService';
+
+const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
 
 const C = {
   bg: '#FFFFFF',
@@ -44,42 +37,9 @@ const C = {
   errorBg: 'rgba(255,75,75,0.10)',
   infoBg: 'rgba(30,155,240,0.10)',
   infoBorder: 'rgba(30,155,240,0.35)',
-  tabBg: '#F1F2F6',
 } as const;
 
-const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
-
 type NoticeKind = 'error' | 'info';
-
-/** Keep only digits. */
-function digitsOnly(s: string): string {
-  return s.replace(/\D/g, '');
-}
-
-/** Format BD national number as 01771-680805 while typing. */
-function formatNational(digits: string, iso: string): string {
-  if (iso === 'BD' && digits.length > 5) {
-    return `${digits.slice(0, 5)}-${digits.slice(5, 11)}`;
-  }
-  return digits;
-}
-
-/** Validate the national number for the selected country. */
-function isValidNational(digits: string, iso: string): boolean {
-  if (iso === 'BD') {
-    // Bangladesh mobile: 01[3-9] + 8 digits = 11 digits
-    return /^01[3-9]\d{8}$/.test(digits);
-  }
-  return digits.length >= 7 && digits.length <= 15;
-}
-
-/** Build E.164 (drops the BD trunk zero). */
-function toE164(digits: string, country: Country): string {
-  const national = country.iso === 'BD' && digits.startsWith('0')
-    ? digits.slice(1)
-    : digits;
-  return `+${country.dialCode}${national}`;
-}
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
@@ -111,19 +71,12 @@ export default function ImoLoginScreen() {
   const { t } = useTranslation();
   const { language, changeLanguage } = useLanguage();
 
-  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
-  const [national, setNational] = useState('');
   const [syncContacts, setSyncContacts] = useState(false);
-  const [countryOpen, setCountryOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [docOpen, setDocOpen] = useState<'terms' | 'privacy' | null>(null);
   const [notice, setNotice] = useState<{ kind: NoticeKind; text: string } | null>(null);
-  const [sending, setSending] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
-
-  const digits = useMemo(() => digitsOnly(national), [national]);
-  const valid = useMemo(() => isValidNational(digits, country.iso), [digits, country.iso]);
 
   function showNotice(kind: NoticeKind, text: string) {
     setNotice({ kind, text });
@@ -131,21 +84,6 @@ export default function ImoLoginScreen() {
 
   function clearNotice() {
     setNotice(null);
-  }
-
-  // ─── Phone input ────────────────────────────────────────────────────────────
-
-  function handlePhoneChange(text: string) {
-    clearNotice();
-    const d = digitsOnly(text).slice(0, country.iso === 'BD' ? 11 : 15);
-    setNational(formatNational(d, country.iso));
-  }
-
-  function handleCountrySelect(c: Country) {
-    setCountry(c);
-    setNational('');
-    clearNotice();
-    Haptics.selectionAsync();
   }
 
   // ─── Sync Contacts checkbox ─────────────────────────────────────────────────
@@ -175,35 +113,6 @@ export default function ImoLoginScreen() {
     }
   }
 
-  // ─── Verify (phone) ─────────────────────────────────────────────────────────
-
-  async function handleVerify() {
-    clearNotice();
-    if (!valid || sending) return;
-    try {
-      setSending(true);
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const e164 = toE164(digits, country);
-      const { verificationId } = await sendPhoneOtp(e164);
-      // Real wiring navigates to the OTP screen with the verificationId.
-      router.push({
-        pathname: '/auth/verify-otp',
-        params: {
-          phone: e164,
-          verificationId,
-          syncContacts: syncContacts ? '1' : '0',
-        },
-      });
-    } catch (err) {
-      const code = (err as { code?: string })?.code;
-      const key = getPhoneAuthErrorKey(err);
-      showNotice(code === PHONE_AUTH_NOT_WIRED ? 'info' : 'error', t(key as any));
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setSending(false);
-    }
-  }
-
   // ─── Google ─────────────────────────────────────────────────────────────────
 
   async function handleGoogle() {
@@ -220,6 +129,14 @@ export default function ImoLoginScreen() {
     } finally {
       setGoogleLoading(false);
     }
+  }
+
+  // ─── Email ──────────────────────────────────────────────────────────────────
+
+  function handleEmail() {
+    clearNotice();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/auth/signup');
   }
 
   // ─── Header actions ─────────────────────────────────────────────────────────
@@ -302,7 +219,7 @@ export default function ImoLoginScreen() {
                     marginTop: 18,
                   }}
                 >
-                  {t('auth.phoneLogin.title')}
+                  {t('auth.login.title')}
                 </Text>
                 <Text
                   style={{
@@ -314,7 +231,7 @@ export default function ImoLoginScreen() {
                     paddingHorizontal: 8,
                   }}
                 >
-                  {t('auth.phoneLogin.subtitle')}
+                  {t('auth.login.subtitle')}
                 </Text>
 
                 {/* ── Terms ─────────────────────────────────────────── */}
@@ -449,123 +366,34 @@ export default function ImoLoginScreen() {
                   )}
                 </Pressable>
 
-                {/* ── Or divider ────────────────────────────────────── */}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 24,
-                    marginBottom: 8,
-                    gap: 12,
-                  }}
-                >
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#E8E8EC' }} />
-                  <Text style={{ fontSize: 14, color: C.muted, fontWeight: '600' }}>
-                    Or
-                  </Text>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#E8E8EC' }} />
-                </View>
-
-                {/* Spacer pushes country/phone to the bottom like IMO */}
-                <View style={{ height: 40 }} />
-
-                {/* ── Country selector ──────────────────────────────── */}
+                {/* ── Email sign-in ───────────────────────────────────── */}
                 <Pressable
-                  onPress={() => setCountryOpen(true)}
-                  style={{ alignItems: 'center', paddingVertical: 10 }}
-                  hitSlop={10}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 26, color: C.text, fontWeight: '400' }}>
-                      {country.name}
-                    </Text>
-                    <Text style={{ fontSize: 16, color: C.text, marginLeft: 4 }}>▼</Text>
-                  </View>
-                </Pressable>
-                <View
-                  style={{
-                    height: 1,
-                    backgroundColor: '#E8E8EC',
-                    marginHorizontal: 4,
-                    marginBottom: 6,
-                  }}
-                />
-
-                {/* ── Phone row ─────────────────────────────────────── */}
-                <View
-                  style={{
+                  onPress={handleEmail}
+                  style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
-                    paddingBottom: 10,
-                  }}
+                    justifyContent: 'center',
+                    height: 56,
+                    borderRadius: 28,
+                    backgroundColor: pressed ? '#F5F5F7' : '#FFFFFF',
+                    borderWidth: 1,
+                    borderColor: '#E0E0E0',
+                    gap: 12,
+                    marginTop: 16,
+                    shadowColor: '#000',
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 3 },
+                    elevation: 3,
+                  })}
                 >
-                  <Text style={{ fontSize: 24, color: C.text, fontWeight: '400' }}>
-                    +{country.dialCode}
+                  <Feather name="mail" size={22} color={C.blue} />
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
+                    {t('auth.login.continueWithEmail')}
                   </Text>
-                  <View
-                    style={{
-                      height: 34,
-                      width: 1,
-                      backgroundColor: '#E8E8EC',
-                      marginHorizontal: 14,
-                    }}
-                  />
-                  <TextInput
-                    style={{
-                      flex: 1,
-                      fontSize: 24,
-                      color: C.text,
-                      paddingVertical: 8,
-                      borderBottomWidth: 2,
-                      borderBottomColor: valid ? C.blue : '#D8D8DE',
-                    }}
-                    placeholder={country.placeholder}
-                    placeholderTextColor="#A9A9B3"
-                    keyboardType="phone-pad"
-                    value={national}
-                    onChangeText={handlePhoneChange}
-                    maxLength={country.iso === 'BD' ? 12 : 15}
-                    autoCorrect={false}
-                    returnKeyType="done"
-                    onSubmitEditing={handleVerify}
-                  />
-                  <Pressable
-                    onPress={handleVerify}
-                    disabled={!valid || sending}
-                    style={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 32,
-                      backgroundColor: valid && !sending ? C.blue : C.disabled,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginLeft: 14,
-                      shadowColor: C.blue,
-                      shadowOpacity: valid ? 0.35 : 0,
-                      shadowRadius: 10,
-                      shadowOffset: { width: 0, height: 4 },
-                      elevation: valid ? 5 : 0,
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('auth.phoneLogin.title')}
-                  >
-                    {sending ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Feather name="check" size={30} color="#FFFFFF" />
-                    )}
-                  </Pressable>
-                </View>
+                </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
-
-        {/* ── Country picker ─────────────────────────────────────────── */}
-        <CountryPicker
-          visible={countryOpen}
-          selected={country}
-          onSelect={handleCountrySelect}
-          onClose={() => setCountryOpen(false)}
-        />
 
         {/* ── Language sheet ─────────────────────────────────────────── */}
         <Modal

@@ -29,6 +29,9 @@ const bn = {
       logInWith: 'এর মাধ্যমে লগইন করুন',
       newUser: 'নতুন ব্যবহারকারী? অ্যাকাউন্ট তৈরি করুন',
       errorEmptyFields: 'ইমেইল এবং পাসওয়ার্ড দিন।',
+      title: 'Vee-তে স্বাগতম',
+      subtitle: 'ভয়েস রুম এবং চ্যাটের মাধ্যমে বন্ধুদের সাথে যুক্ত হোন।',
+      continueWithEmail: 'ইমেইল দিয়ে চালিয়ে যান',
     },
     signup: {
       headerTitle: 'অ্যাকাউন্ট তৈরি করুন',
@@ -48,6 +51,7 @@ const bn = {
       errorNoName: 'আপনার নাম দিন।',
       errorNoEmail: 'ইমেইল দিন।',
       errorInvalidEmail: 'সঠিক ইমেইল দিন।',
+      errorDisposableEmail: 'অস্থায়ী ইমেইল ঠিকানা ব্যবহার করা যাবে না। আসল ইমেইল দিন।',
       errorShortPassword: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।',
       errorPasswordMismatch: 'পাসওয়ার্ড দুটো মিলছে না।',
       errorNoTerms: 'শর্তাবলীতে সম্মত হন।',
@@ -68,6 +72,14 @@ const bn = {
       errorInvalidEmail: 'সঠিক ইমেইল ঠিকানা দিন।',
       successMessage:
         'পাসওয়ার্ড রিসেট লিংক পাঠানো হয়েছে!\n{{email}} — ইনবক্স এবং স্প্যাম ফোল্ডার চেক করুন।',
+    },
+    completeProfile: {
+      title: 'প্রোফাইল সম্পূর্ণ করুন',
+      subtitle: 'আপনার নাম ও ছবি দিন যাতে বন্ধুরা খুঁজে পায়।',
+      namePlaceholder: 'আপনার নাম',
+      pickPhoto: 'প্রোফাইল ছবি বেছে নিন',
+      doneButton: 'সম্পন্ন',
+      errorNoName: 'আপনার নাম দিন।',
     },
     phoneLogin: {
       countryPickerTitle: 'একটি দেশ/অঞ্চল বেছে নিন',
