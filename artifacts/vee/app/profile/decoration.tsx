@@ -119,6 +119,17 @@ export default function DecorationScreen() {
     }
   };
 
+  // 2026-10-13 (Sumon): Remove frame — DP shows without frame.
+  const handleRemove = async () => {
+    if (!isMe || !user?.uid) return;
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await updateUser(user.uid, { activeFrame: null as unknown as undefined });
+    } catch (e) {
+      setError(`Could not remove frame: ${getErrorCause(e)}`);
+    }
+  };
+
   const activeFrame = profile?.activeFrame;
 
   // P1-2 (2026-10-12): if the equipped frame expired (or was removed), clear
@@ -186,9 +197,8 @@ export default function DecorationScreen() {
           {frames.map((frame) => {
             const isActive = activeFrame === frame.id;
             return (
-              <Pressable
+              <View
                 key={frame.id}
-                onPress={() => handleEquip(frame.id)}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
@@ -212,14 +222,28 @@ export default function DecorationScreen() {
                     </Text>
                   )}
                 </View>
-                {isActive ? (
+                {isMe ? (
+                  isActive ? (
+                    <Pressable
+                      style={{ backgroundColor: '#FDECEA', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
+                      onPress={handleRemove}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#B3261E' }}>Remove</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
+                      onPress={() => handleEquip(frame.id)}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Use</Text>
+                    </Pressable>
+                  )
+                ) : isActive ? (
                   <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
                   </View>
-                ) : isMe ? (
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.blue }}>Tap to equip</Text>
                 ) : null}
-              </Pressable>
+              </View>
             );
           })}
         </ScrollView>
