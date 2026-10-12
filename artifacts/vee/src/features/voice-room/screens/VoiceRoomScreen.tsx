@@ -475,6 +475,7 @@ export default function VoiceRoomScreen() {
   // joins too, so they see the effect working (not just when others join).
   // ALSO broadcast the entry so ALL room participants see it.
   const hasShownSelfEntryRef = useRef(false);
+  const hasSentEntryChatMsgRef = useRef(false);
   useEffect(() => {
     // Wait for myProfile to load (has real name + photoURL from RTDB)
     // before broadcasting — otherwise DP/name may be empty.
@@ -823,6 +824,26 @@ export default function VoiceRoomScreen() {
     };
   }, [hasJoined]);
 
+  /* ── Entry message on room ENTER (mount) ──
+   * Per Sumon 2026-10-12: everyone's entry visible, even pure audience
+   * who never taps Join. The hasJoined effect above handles the join case;
+   * this handles the view-only entry case. Ref prevents duplicates. */
+  useEffect(() => {
+    if (hasSentEntryChatMsgRef.current) return;
+    if (!roomId || !myUid || !myName) return;
+    hasSentEntryChatMsgRef.current = true;
+    // Per Sumon 2026-10-12: owner entry shows gold 👑 badge
+    const isOwner = ownerId && ownerId === myUid;
+    const displayName = isOwner ? `${myName} 👑` : myName;
+    sendRoomChatMsg(roomId, {
+      senderId: 'system',
+      senderName: 'System',
+      senderColor: C.gold,
+      text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
+      ts: Date.now(),
+    }).catch(() => {/* non-critical */});
+  }, [roomId, myUid, myName, ownerId, t]);
+
   /* ── mySeatIdx: declared early so all effects below can reference it safely ── */
   const mySeatIdx = useMemo(
     () => seats.findIndex((s: Participant | null) => s?.id === myUid),
@@ -972,14 +993,18 @@ export default function VoiceRoomScreen() {
       ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
     }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
 
-    // Send join message to room chat
-    sendRoomChatMsg(roomId, {
-      senderId: 'system',
-      senderName: 'System',
-      senderColor: C.gold,
-      text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-      ts: Date.now(),
-    }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
+    // Send join message to room chat (only if not already sent on entry)
+    // Per Sumon 2026-10-12: everyone's entry visible, even audience
+    if (!hasSentEntryChatMsgRef.current) {
+      hasSentEntryChatMsgRef.current = true;
+      sendRoomChatMsg(roomId, {
+        senderId: 'system',
+        senderName: 'System',
+        senderColor: C.gold,
+        text: t('voiceRoom.screen.joinedRoom', { name: myName }),
+        ts: Date.now(),
+      }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
+    }
 
     return () => {
       // BUG 11 fix: only run cleanup once — handleLeave marks hasLeftRef first
