@@ -125,13 +125,13 @@ export default function VIDSearchScreen() {
                 }}
               >
                 <Text style={{ fontSize: 22, fontWeight: '700', color: '#757575' }}>
-                  {(result.name || '?').charAt(0).toUpperCase()}
+                  {((result.name || (result.email ? result.email.split('@')[0] : null) || '?')).charAt(0).toUpperCase()}
                 </Text>
               </View>
             )}
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={{ fontSize: 17, fontWeight: '700', color: '#212121' }}>
-                {result.name || 'User'}
+                {result.name || (result.email ? result.email.split('@')[0] : null) || 'User'}
               </Text>
               <Text style={{ fontSize: 14, color: '#757575', marginTop: 2 }}>
                 V-ID: {result.shortId}

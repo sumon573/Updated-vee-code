@@ -67,8 +67,9 @@ type UserActionState = {
 };
 
 function UserAvatar({ user }: { user: VeeUser }) {
-  const initials = user.name
-    ? user.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+  const displayName = user.name || (user.email ? user.email.split('@')[0] : null) || '?';
+  const initials = displayName !== '?'
+    ? displayName.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
   if (user.photoURL) {
     return (
@@ -430,7 +431,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
                     <UserAvatar user={item} />
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                        {item.name}
+                        {item.name || (item.email ? item.email.split('@')[0] : null) || 'User'}
                       </Text>
                       <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
                         #{item.vId}

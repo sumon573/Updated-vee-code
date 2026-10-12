@@ -91,6 +91,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Presence is optional during startup; auth/navigation must continue.
           }
           backfillVIdIfMissing(firebaseUser.uid).catch(() => {/* background: safe to swallow — Vee ID backfill retries on next login */});
+          // FIX (2026-10-12): Backfill Google Auth profile data to DB if empty.
+          // Google users may have empty DB name/photoURL (only visible to themselves
+          // via Auth fallback). Others see empty. Copy from Auth if DB is empty.
+          (async () => {
+            try {
+              const { getUser, updateUser } = await import('@/src/services/userService');
+              const profile = await getUser(firebaseUser.uid);
+              if (profile) {
+                const updates: Record<string, string> = {};
+                if (!profile.name && firebaseUser.displayName) {
+                  updates.name = firebaseUser.displayName;
+                }
+                if (!profile.photoURL && firebaseUser.photoURL) {
+                  updates.photoURL = firebaseUser.photoURL;
+                }
+                if (Object.keys(updates).length > 0) {
+                  await updateUser(firebaseUser.uid, updates);
+                }
+              }
+            } catch {/* background: safe — retries on next login */}
+          })();
           // FIX (2026-10-10): Initialize wallet on login so gift send works.
           // Previously wallets were only created in GiftsModal (errors swallowed),
           // leaving most users without wallets → "Insufficient balance" on gift send.
