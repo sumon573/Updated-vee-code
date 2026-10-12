@@ -139,6 +139,7 @@ const ar = {
       invite: 'دعوة',
       listeners: '{{count}} مستمع',
       messagePlaceholder: 'رسالة...',
+      commentBlockedPlaceholder: 'تم حظر تعليقك',
       accessDenied: 'تم رفض الوصول',
       accessDeniedMsg: 'لقد تم حظرك من هذه الغرفة.',
       lockedSeat: 'مقعد مقفل',

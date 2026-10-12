@@ -192,6 +192,7 @@ const hi = {
       listeners: '{{count}} श्रोता',
       members: '{{count}} सदस्य',
       messagePlaceholder: 'संदेश...',
+      commentBlockedPlaceholder: 'आपका कमेंट ब्लॉक किया गया',
       accessDenied: 'एक्सेस अस्वीकृत',
       accessDeniedMsg: 'आपको इस रूम से ब्लॉक किया गया है।',
       lockedSeat: 'सीट लॉक है',

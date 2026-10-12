@@ -192,6 +192,7 @@ const bn = {
       listeners: '{{count}} শ্রোতা',
       members: '{{count}} Audience',
       messagePlaceholder: 'বার্তা...',
+      commentBlockedPlaceholder: 'আপনার কমেন্ট ব্লক করা হয়েছে',
       accessDenied: 'প্রবেশাধিকার নেই',
       accessDeniedMsg: 'আপনাকে এই রুম থেকে ব্লক করা হয়েছে।',
       lockedSeat: 'সিট লক',

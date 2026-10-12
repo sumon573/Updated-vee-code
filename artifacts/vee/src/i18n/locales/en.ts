@@ -192,6 +192,7 @@ const en = {
       listeners: '{{count}} listeners',
       members: '{{count}} Audience',
       messagePlaceholder: 'Message...',
+      commentBlockedPlaceholder: 'Your Comment blocked',
       accessDenied: 'Access Denied',
       accessDeniedMsg: 'You have been blocked from this room.',
       lockedSeat: 'Locked Seat',

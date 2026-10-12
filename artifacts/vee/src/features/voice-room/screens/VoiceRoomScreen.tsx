@@ -260,6 +260,20 @@ export default function VoiceRoomScreen() {
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
+  /**
+   * Instant comment-block state for the current user (2026-10-12).
+   * Derived from the live roomBlocks subscription — the moment an admin/owner
+   * comment-blocks (or room-blocks) me, the chat input shows
+   * "Your Comment blocked" and disables sending; unblocking restores it
+   * instantly. No polling, no waiting for a failed send.
+   */
+  const amChatBlocked = useMemo(
+    () => blockedRecs.some(
+      (r) => r.id === myUid && r.isActive &&
+        (r.action === 'comment-block' || r.action === 'room-block'),
+    ),
+    [blockedRecs, myUid],
+  );
   // Entry effect: "X is Coming" banner (2026-10-10)
   const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; fancy?: boolean } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
@@ -1470,6 +1484,15 @@ export default function VoiceRoomScreen() {
   const sendMessage = useCallback(async () => {
     const text = chatInput.trim();
     if (!text || sendingMsgRef.current) return;
+    // Instant client-side guard (the input is already disabled, but the
+    // service also enforces this server-side as the source of truth).
+    if (amChatBlocked) {
+      Alert.alert(
+        t('voiceRoom.screen.blockedTitle'),
+        t('voiceRoom.screen.commentBlockedMsg'),
+      );
+      return;
+    }
     sendingMsgRef.current = true;
     setSendingMsg(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1503,7 +1526,7 @@ export default function VoiceRoomScreen() {
       sendingMsgRef.current = false;
       setSendingMsg(false);
     }
-  }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t]);
+  }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t, amChatBlocked]);
 
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
 
@@ -2044,32 +2067,35 @@ export default function VoiceRoomScreen() {
           <TextInput
             style={{
               flex: 1, color: C.text, fontSize: 14,
-              backgroundColor: C.card, borderRadius: 22,
+              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.08)' : C.card, borderRadius: 22,
               paddingHorizontal: 16, paddingVertical: 10,
-              borderWidth: 1, borderColor: C.borderFaint,
+              borderWidth: 1, borderColor: amChatBlocked ? 'rgba(239,68,68,0.45)' : C.borderFaint,
               minHeight: 42,
             }}
             value={chatInput}
             onChangeText={handleChatInput}
-            placeholder={t('voiceRoom.screen.messagePlaceholder')}
-            placeholderTextColor={C.muted}
+            placeholder={amChatBlocked
+              ? t('voiceRoom.screen.commentBlockedPlaceholder')
+              : t('voiceRoom.screen.messagePlaceholder')}
+            placeholderTextColor={amChatBlocked ? '#EF4444' : C.muted}
             onSubmitEditing={sendMessage}
             blurOnSubmit={false}
             returnKeyType="send"
+            editable={!amChatBlocked}
           />
 
           <Pressable
             onPress={sendMessage}
-            disabled={sendingMsg}
+            disabled={sendingMsg || amChatBlocked}
             hitSlop={8}
             style={{
               width: 42, height: 42, borderRadius: 21,
-              backgroundColor: chatInput.trim() ? accentColor : C.muted,
+              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? accentColor : C.muted),
               alignItems: 'center', justifyContent: 'center',
-              opacity: sendingMsg ? 0.5 : 1,
+              opacity: (sendingMsg || amChatBlocked) ? 0.5 : 1,
             }}
           >
-            <Feather name="send" size={16} color="#fff" />
+            <Feather name={amChatBlocked ? 'slash' : 'send'} size={16} color="#fff" />
           </Pressable>
         </View>
       </View>
