@@ -34,8 +34,9 @@ export function HonorCelebration() {
         .map(([id, n]) => ({ id, ...n }))
         .filter((n: any) => n.type === 'honor_granted' && !n.read)
         .sort((a, b) => b.timestamp - a.timestamp);
-      if (entries.length > 0 && !pending) {
-        setPending(entries[0] as HonorNotification);
+      if (entries.length > 0) {
+        // Use functional update to avoid stale closure on `pending`
+        setPending((prev) => prev ?? (entries[0] as HonorNotification));
       }
     });
     return unsub;
