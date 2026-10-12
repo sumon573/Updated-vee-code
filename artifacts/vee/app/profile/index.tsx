@@ -434,7 +434,7 @@ export default function ProfileScreen({
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
           <BadgePill label="Non-Noble" />
           <BadgePill label={`Lv.${userLevel}`} icon="🏅" />
-          <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: user?.uid } } as never)}>
+          <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
             <BadgePill label={`${followCounts.followers} Follower`} icon="⭐" />
           </Pressable>
         </View>
