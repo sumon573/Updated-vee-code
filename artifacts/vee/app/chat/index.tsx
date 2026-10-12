@@ -229,8 +229,15 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
       )
     : chats;
 
-  const pinnedChats  = filteredChats.filter(c => c.isPinned);
-  const regularChats = filteredChats.filter(c => !c.isPinned);
+  // Per Sumon 2026-10-12: pinned chats MUST appear at top.
+  // Sort as safety net in case section rendering has issues.
+  const sortedByPin = [...filteredChats].sort((a, b) => {
+    const aPinned = a.isPinned === true ? 1 : 0;
+    const bPinned = b.isPinned === true ? 1 : 0;
+    return bPinned - aPinned;
+  });
+  const pinnedChats  = sortedByPin.filter(c => c.isPinned);
+  const regularChats = sortedByPin.filter(c => !c.isPinned);
 
   // H4: refs so stable id-based handlers can find the chat object.
   const pinnedChatsRef = useRef(pinnedChats);
