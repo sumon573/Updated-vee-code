@@ -195,6 +195,27 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(myProfile as any)?.activeFrame]);
 
+  // 2026-10-14 (Sumon): Periodic seat frame sync — frame grant হলে seat update
+  // না হলে অন্যরা frame দেখতে পায় না। প্রতি 30s-এ sync করো।
+  useEffect(() => {
+    if (!roomId || !myUid || myUid === 'anonymous') return;
+    const syncFrame = () => {
+      const frame = (myProfile as any)?.activeFrame;
+      const seatIdx = mySeatIdxRef.current;
+      if (!frame || seatIdx < 0) return;
+      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame }).catch(() => {});
+    };
+    // Initial sync after 5s (profile loaded by then)
+    const initial = setTimeout(syncFrame, 5000);
+    // Periodic sync every 30s
+    const interval = setInterval(syncFrame, 30000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, myUid]);
+
   const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
   const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
   const myColor = getUserColor(myUid);

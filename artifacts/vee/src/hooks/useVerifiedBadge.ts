@@ -33,7 +33,11 @@ export function useVerifiedBadge(uid: string | undefined | null): boolean {
     }
 
     promise.then((result) => {
-      cache.set(uid, result);
+      // 2026-10-14 (Sumon): Only cache POSITIVE results — negative cache
+      // caused badge to not show for others after grant.
+      if (result) {
+        cache.set(uid, result);
+      }
       pending.delete(uid);
       setVerified(result);
     }).catch(() => {
