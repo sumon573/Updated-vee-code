@@ -145,6 +145,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [user, authLoading]);
 
   useEffect(() => {
+    // 2026-10-13 (Sumon): banned user-কে login-এ redirect কোরো না — ban screen
+    // দেখাতে হবে। Ban-এর পর firebaseLogout()+setUser(null) হলে এই effect
+    // '/auth/login'-এ পাঠিয়ে দিত, ban screen আর দেখা যেত না।
+    if (isBanned) return;
+
     // Never dispatch a redirect before Expo Router has mounted its navigator.
     // A redirect issued during cold-start can be lost, leaving index.tsx's
     // loading indicator mounted forever.
@@ -200,6 +205,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     authLoading,
     segments,
     isLanguageSelected,
+    isBanned,
     langLoading,
     router,
     rootNavigationState?.key,

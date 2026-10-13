@@ -93,9 +93,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // kick them out immediately with a banned screen.
         // 2026-10-13: banned session-এ listener alive রাখি — unban detect করতে।
         // ভিন্ন UID login করলে পুরনো ban state clear করি।
-        if (firebaseUser && bannedUidRef.current && firebaseUser.uid !== bannedUidRef.current) {
-          bannedSessionRef.current = false;
-          bannedUidRef.current = null;
+        // 2026-10-13 (Sumon): unban-এর পর re-login fix — login-এ fresh ban status
+        // check করি। Logout-এর পর listener auth ছাড়া read করতে পারে না, তাই
+        // unban detect হয় না। Login-এ Firebase থেকে current banned flag পড়ে
+        // সিদ্ধান্ত নিই — unbanned হলে ban state clear করে login allow করি।
+        if (firebaseUser) {
+          import('../config/firebase').then(({ database }) => {
+            import('firebase/database').then(({ ref, get }) => {
+              get(ref(database, `users/${firebaseUser.uid}/banned`)).then((snap) => {
+                const currentlyBanned = snap.val() === true;
+                if (!currentlyBanned && bannedUidRef.current === firebaseUser.uid) {
+                  // Was banned, now unbanned — clear stale ban state, allow login
+                  bannedSessionRef.current = false;
+                  bannedUidRef.current = null;
+                  setIsBanned(false);
+                  setBanReason(null);
+                } else if (currentlyBanned) {
+                  // Still banned — enforce ban screen
+                  bannedSessionRef.current = true;
+                  bannedUidRef.current = firebaseUser.uid;
+                  setIsBanned(true);
+                  firebaseLogout().catch(() => {});
+                  setUser(null);
+                  return;
+                }
+                // Different UID — clear old ban state
+                if (bannedUidRef.current && firebaseUser.uid !== bannedUidRef.current) {
+                  bannedSessionRef.current = false;
+                  bannedUidRef.current = null;
+                }
+              }).catch(() => {});
+            }).catch(() => {});
+          }).catch(() => {});
         }
         if (!bannedSessionRef.current && banUnsubscribeRef.current) {
           banUnsubscribeRef.current();
