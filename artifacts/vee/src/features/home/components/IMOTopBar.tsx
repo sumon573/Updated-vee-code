@@ -118,10 +118,15 @@ export default function IMOTopBar({
           hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
           style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
         >
-          <Ionicons
-            name="megaphone"
-            size={28}
-            color={activeTab === 'voice' ? '#2196F3' : '#9E9E9E'}
+          {/* 2026-10-13 (Sumon): custom voice icon — তাঁর দেওয়া design হুবহু */}
+          <Image
+            source={require('@/assets/images/voice-tab-icon.png')}
+            style={{
+              width: 30,
+              height: 30,
+              tintColor: activeTab === 'voice' ? '#2196F3' : '#9E9E9E',
+            }}
+            resizeMode="contain"
           />
           {activeTab === 'voice' && (
             <View
