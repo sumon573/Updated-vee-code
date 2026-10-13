@@ -665,7 +665,7 @@ export default function ContactsScreen() {
                         {item.name}
                       </Text>
                       <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-                        #{item.vId}
+                        {item.vId}
                       </Text>
                       <Text style={{ color: 'rgba(124,58,237,0.7)', fontSize: 11, marginTop: 3, fontWeight: '600' }}>
                         {t('contacts.pendingLabel')}
