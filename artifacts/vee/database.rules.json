@@ -199,10 +199,12 @@
     // ─────────────────────────────────────────────────────────────────────
     "chats": {
       "$chatId": {
-        ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
+        ".read": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))",
         "messages": {
           "$msgId": {
-            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
+            // 2026-10-13 (Sumon): Allow if userChats entry exists OR user is participant (chatId contains UID).
+            // Fixes PERMISSION_DENIED for Google-login users and any user where userChats wasn't initialized.
+            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))",
             ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
@@ -213,7 +215,7 @@
         },
         "typing": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid && root.child('userChats').child(auth.uid).child($chatId).exists()"
+            ".write": "auth != null && auth.uid === $uid && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))"
           }
         }
       }
