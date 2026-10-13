@@ -372,7 +372,11 @@ export default function HonorScreen() {
                 shadowColor: '#007AFF', shadowOpacity: 0.4, shadowRadius: 20,
                 shadowOffset: { width: 0, height: 0 }, elevation: 10,
               }}>
-                <Text style={{ fontSize: 72 }}>{selected?.icon}</Text>
+                {/^https?:\/\//i.test(selected?.icon || '') ? (
+                  <Image source={{ uri: selected!.icon }} style={{ width: 100, height: 100 }} resizeMode="contain" />
+                ) : (
+                  <Text style={{ fontSize: 72 }}>{selected?.icon}</Text>
+                )}
               </View>
             </Animated.View>
             <Text style={{ fontSize: 26, fontWeight: '800', fontStyle: 'italic', color: '#FFFFFF', marginTop: 24, textAlign: 'center' }}>
@@ -438,7 +442,11 @@ function BadgeSection({
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Text style={{ fontSize: 34 }}>{b.icon}</Text>
+              {/^https?:\/\//i.test(b.icon || '') ? (
+                <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
+              ) : (
+                <Text style={{ fontSize: 34 }}>{b.icon}</Text>
+              )}
             </View>
             <Text style={{
               fontSize: 11, fontWeight: '700', color: C.text,
