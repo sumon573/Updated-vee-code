@@ -57,7 +57,8 @@ function FrameIcon({ icon, frameId, frameName }: { icon: string; frameId?: strin
       <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD' }} />
         <View style={{ position: 'absolute' }}>
-          <AnimatedFrame size={36} />
+          {/* 2026-10-14 (Sumon): frameId pass — server APNG preview */}
+          <AnimatedFrame size={36} frameId={frameId} />
         </View>
       </View>
     );

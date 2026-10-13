@@ -788,7 +788,8 @@ export default function ProfileScreen({
                   if (activeFrameId === 'official' || (typeof activeFrameId === 'string' && activeFrameId.toLowerCase().includes('official'))) {
                     return (
                       <View style={{ position: 'absolute', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' }}>
-                        <AnimatedFrame size={80} />
+                        {/* 2026-10-14 (Sumon): frameId pass করতে হবে — না হলে server APNG load হয় না */}
+                        <AnimatedFrame size={80} frameId={activeFrameId} />
                       </View>
                     );
                   }
