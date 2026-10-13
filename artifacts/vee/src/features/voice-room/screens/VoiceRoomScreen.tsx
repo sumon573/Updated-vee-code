@@ -4,7 +4,7 @@ import {
   Animated, Platform, TextInput, ActivityIndicator, Image,
   BackHandler, Modal,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -235,6 +235,18 @@ export default function VoiceRoomScreen() {
      ── FIX (2026-10-11): If the user opens the SAME room that was minimized
      (e.g. via room list instead of Return button), clear the minimized state
      so the Return bar disappears — they're back in the room now. ── */
+  // 2026-10-14 (Sumon): Voice room-এ ফিরলেই minimize bar গায়েব।
+  // useEffect শুধু roomId change-এ চলে — profile দেখে back করলে roomId same থাকে,
+  // তাই bar থেকে যেত। useFocusEffect দিয়ে প্রতিবার focus-এ clear করি।
+  useFocusEffect(
+    useCallback(() => {
+      const prev = getMinimizedRoom();
+      if (prev && prev.id === roomId) {
+        setMinimizedRoom(null);
+      }
+    }, [roomId])
+  );
+
   useEffect(() => {
     if (!roomId || !myUid || myUid === 'anonymous') return;
     const prev = getMinimizedRoom();
