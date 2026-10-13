@@ -43,6 +43,8 @@ export type Participant = {
   speaking: boolean; // true ONLY when the voice engine signals real audio — no fake pulse
   muted: boolean;
   role: Role;
+  /** 2026-10-13 (Sumon): active frame id for frame display */
+  activeFrame?: string;
 };
 
 /**

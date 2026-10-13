@@ -11,6 +11,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getUserByShortId } from '@/src/services/userService';
 import { showErrorWithCause } from '@/src/utils/errorDisplay';
 import { VerifiedName } from '@/src/components/VerifiedName';
+import AnimatedFrame from '@/src/components/AnimatedFrame';
 
 export default function VIDSearchScreen() {
   const router = useRouter();
@@ -111,10 +112,18 @@ export default function VIDSearchScreen() {
             }}
           >
             {result.photoURL ? (
-              <Image
-                source={{ uri: result.photoURL }}
-                style={{ width: 56, height: 56, borderRadius: 28 }}
-              />
+              <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+                <Image
+                  source={{ uri: result.photoURL }}
+                  style={{ width: 56, height: 56, borderRadius: 28 }}
+                />
+                {/* 2026-10-13 (Sumon): Server-hosted animated frame in v-id search */}
+                {!!result.activeFrame && result.activeFrame !== 'none' && (
+                  <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                    <AnimatedFrame size={56} frameId={result.activeFrame} />
+                  </View>
+                )}
+              </View>
             ) : (
               <View
                 style={{
@@ -129,6 +138,12 @@ export default function VIDSearchScreen() {
                 <Text style={{ fontSize: 22, fontWeight: '700', color: '#757575' }}>
                   {((result.name || (result.email ? result.email.split('@')[0] : null) || '?')).charAt(0).toUpperCase()}
                 </Text>
+                {/* 2026-10-13 (Sumon): Server-hosted animated frame in v-id search */}
+                {!!result.activeFrame && result.activeFrame !== 'none' && (
+                  <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                    <AnimatedFrame size={56} frameId={result.activeFrame} />
+                  </View>
+                )}
               </View>
             )}
             <View style={{ flex: 1, marginLeft: 12 }}>

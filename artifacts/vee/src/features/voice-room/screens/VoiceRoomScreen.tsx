@@ -138,6 +138,8 @@ function fbAudToParticipant(m: RoomAudienceMember): Participant {
     muted: true,
     // Preserve Firebase-synced role (admin / member); default to 'member'
     role: (m.role as Role | undefined) ?? 'member',
+    // 2026-10-13 (Sumon): active frame for audience list display
+    activeFrame: (m as any).activeFrame || undefined,
   };
 }
 

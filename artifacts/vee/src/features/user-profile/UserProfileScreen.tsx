@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AnimatedFrame from '../../components/AnimatedFrame';
 import { ref, update } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
@@ -318,13 +319,21 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
           {/* Avatar (overlapping, imo style) */}
           <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-              {photoURL ? (
-                <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#FFFFFF' }} />
-              ) : (
-                <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F4FD', borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 32, fontWeight: '800', color: '#0A7CC2' }}>{initials}</Text>
-                </View>
-              )}
+              <View style={{ width: 80, height: 80, alignItems: 'center', justifyContent: 'center' }}>
+                {photoURL ? (
+                  <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#FFFFFF' }} />
+                ) : (
+                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F4FD', borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 32, fontWeight: '800', color: '#0A7CC2' }}>{initials}</Text>
+                  </View>
+                )}
+                {/* 2026-10-13 (Sumon): Server-hosted animated frame on profile DP */}
+                {!!(profile as any)?.activeFrame && (profile as any).activeFrame !== 'none' && (
+                  <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                    <AnimatedFrame size={80} frameId={(profile as any).activeFrame} />
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 

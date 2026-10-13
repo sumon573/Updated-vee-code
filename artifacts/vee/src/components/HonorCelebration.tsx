@@ -72,7 +72,8 @@ export function HonorCelebration() {
                 <Text style={{ fontSize: 32 }}>👤</Text>
               </View>
               <View style={{ position: 'absolute' }}>
-                <AnimatedFrame size={80} />
+                {/* 2026-10-13 (Sumon): server-hosted APNG for the granted frame */}
+                <AnimatedFrame size={80} frameId={pending.honorId} />
               </View>
             </View>
           ) : pending.honorIcon && /^https?:\/\//i.test(pending.honorIcon) ? (

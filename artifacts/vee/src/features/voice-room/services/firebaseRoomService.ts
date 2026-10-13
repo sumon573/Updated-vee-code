@@ -60,6 +60,8 @@ export type RoomAudienceMember = {
   color: string;
   photoURL?: string;
   role?: 'member' | 'admin';
+  /** 2026-10-13 (Sumon): active frame id for audience list display */
+  activeFrame?: string;
 };
 
 export type RoomInfo = {

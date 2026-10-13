@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
 import { VerifiedName } from '@/src/components/VerifiedName';
+import AnimatedFrame from '@/src/components/AnimatedFrame';
 
 /* ─────────────────────────── Audience Modal ─────────────────────────── */
 export function AudienceModal({ visible, onClose, audience, myRole, onManageMember }: {
@@ -49,18 +50,28 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
                 style={{ flexDirection: 'row', alignItems: 'center',
                   paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
                 {/* Issue 5: Show profile photo; fallback to initials avatar */}
-                <View style={{ width: 44, height: 44, borderRadius: 22,
-                  overflow: 'hidden',
-                  backgroundColor: m.color + '33',
+                <View style={{ width: 44, height: 44,
                   alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 2, borderColor: m.color + '55', marginRight: 12 }}>
-                  {m.photoURL ? (
-                    <Image
-                      source={{ uri: m.photoURL }}
-                      style={{ width: 44, height: 44, borderRadius: 22 }}
-                    />
-                  ) : (
-                    <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
+                  marginRight: 12 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22,
+                    overflow: 'hidden',
+                    backgroundColor: m.color + '33',
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 2, borderColor: m.color + '55' }}>
+                    {m.photoURL ? (
+                      <Image
+                        source={{ uri: m.photoURL }}
+                        style={{ width: 44, height: 44, borderRadius: 22 }}
+                      />
+                    ) : (
+                      <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
+                    )}
+                  </View>
+                  {/* 2026-10-13 (Sumon): Server-hosted animated frame */}
+                  {!!(m as any).activeFrame && (m as any).activeFrame !== 'none' && (
+                    <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                      <AnimatedFrame size={44} frameId={(m as any).activeFrame} />
+                    </View>
                   )}
                 </View>
                 <View style={{ flex: 1 }}>

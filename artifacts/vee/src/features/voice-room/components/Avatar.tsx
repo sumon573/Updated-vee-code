@@ -60,7 +60,8 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
       {/* 2026-10-13 (Sumon): Animated frame overlay — pure RN, no native modules */}
       {frameType && frameType !== 'none' && (
         <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-          <AnimatedFrame size={size} />
+          {/* 2026-10-13 (Sumon): server-hosted APNG; frameId resolves the admin-controlled URL */}
+          <AnimatedFrame size={size} frameId={frameType} />
         </View>
       )}
     </View>
