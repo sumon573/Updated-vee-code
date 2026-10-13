@@ -376,6 +376,12 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
       // TODO i18n: English fallback — needs proper Bengali translation
       copyFailed: 'Could not copy the invite link. Try again.',
     },
+    invitePopup: {
+      title: '{{name}} আপনাকে আমন্ত্রণ জানিয়েছে',
+      message: '"{{room}}" ভয়েস রুমে যোগ দেবেন?',
+      accept: 'গ্রহণ করুন',
+      reject: 'প্রত্যাখ্যান',
+    },
     inviteToSeat: {
       title: 'সিট {{number}}-এ আমন্ত্রণ',
       noAudience: 'কোনো শ্রোতা উপলব্ধ নেই',

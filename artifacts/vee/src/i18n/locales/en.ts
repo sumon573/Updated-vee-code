@@ -371,6 +371,12 @@ removedMsg: 'You have been removed from this room by the host.',
       shareLinkMsg: 'Join me in "{{roomName}}" on Vee! 🎙️\n{{link}}',
       copyFailed: 'Could not copy the invite link. Try again.',
     },
+    invitePopup: {
+      title: '{{name}} invited you',
+      message: 'Join "{{room}}" voice room?',
+      accept: 'Accept',
+      reject: 'Reject',
+    },
     inviteToSeat: {
       title: 'Invite to Seat {{number}}',
       noAudience: 'No audience members available',

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Alert, Pressable, Modal, Share, ActivityIndicator,
+  View, Text, ScrollView, Alert, Pressable, Modal, Share, ActivityIndicator, Image,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ type Contact = {
   initials: string;
   color: string;
   online: boolean;
+  photoURL?: string;
 };
 
 const USER_COLORS = [
@@ -68,13 +69,14 @@ export function InviteModal({
           try {
             const userSnap = await get(ref(database, `users/${uid}`));
             if (userSnap.exists()) {
-              const v = userSnap.val() as { name?: string; online?: boolean };
+              const v = userSnap.val() as { name?: string; online?: boolean; photoURL?: string };
               loaded.push({
                 uid,
                 name: v.name || t('voiceRoom.screen.defaultUserName'),
                 initials: getInitials(v.name || 'V'),
                 color: getColor(uid),
                 online: v.online === true,
+                photoURL: v.photoURL || undefined,
               });
             }
           } catch { /* skip */ }
@@ -193,12 +195,17 @@ export function InviteModal({
               flexDirection: 'row', alignItems: 'center',
               paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.borderFaint,
             }}>
+              {/* 2026-10-14 (Sumon): Real DP — photoURL থাকলে Image, না থাকলে initials */}
               <View style={{
                 width: 42, height: 42, borderRadius: 21, backgroundColor: c.color + '33',
                 alignItems: 'center', justifyContent: 'center', borderWidth: 2,
-                borderColor: c.color + '55', marginRight: 12,
+                borderColor: c.color + '55', marginRight: 12, overflow: 'hidden',
               }}>
-                <Text style={{ color: c.color, fontSize: 14, fontWeight: '800' }}>{c.initials}</Text>
+                {c.photoURL ? (
+                  <Image source={{ uri: c.photoURL }} style={{ width: 42, height: 42 }} />
+                ) : (
+                  <Text style={{ color: c.color, fontSize: 14, fontWeight: '800' }}>{c.initials}</Text>
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{c.name}</Text>

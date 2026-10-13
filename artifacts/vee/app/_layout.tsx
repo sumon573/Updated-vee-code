@@ -72,6 +72,7 @@ import { isInteractionBlocked } from '@/src/services/blockService';
 import { tryGetApiBase } from '@/src/utils/platform';
 // NOTE 1 (2026-10-11): Global return-to-room bar for minimized voice rooms.
 import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
+import RoomInvitePopup from '@/src/features/voice-room/components/RoomInvitePopup';
 import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBar';
 import {
   isCallMinimizing,
@@ -339,6 +340,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           minimized (component returns null otherwise). Mounted globally so the
           Return button is reachable from any screen. */}
       {user && <MinimizedRoomBar />}
+      {/* 2026-10-14 (Sumon): Room invite popup — Accept/Reject */}
+      {user && <RoomInvitePopup />}
       {/* 2026-10-11 Issue #8: Minimized call badge — renders only when a call
           is minimized. Mounted globally so it's reachable from any screen. */}
       {user && <CallMinimizeBar />}
