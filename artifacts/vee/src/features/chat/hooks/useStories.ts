@@ -138,12 +138,23 @@ export function useStories(): UseStoriesResult {
 
   const comment = useCallback(async (authorUid: string, storyId: string, text: string) => {
     if (!user?.uid) throw new Error('Not authenticated');
+    // 2026-10-13: Fetch DB profile name (Auth displayName may be empty for Google users)
+    let dbName = '';
+    let dbAvatar: string | undefined;
+    try {
+      const snap = await get(ref(database, `users/${user.uid}`));
+      if (snap.exists()) {
+        const p = snap.val() as any;
+        dbName = p.name || p.displayName || '';
+        dbAvatar = p.photoURL || p.avatar || p.dp || undefined;
+      }
+    } catch { /* fallback to Auth */ }
     await addStoryComment(authorUid, storyId, {
       userId: user.uid,
       // P1 fix (2026-10-12): || not ?? — empty-string displayName must fall back.
-      userName: user.displayName || 'You',
+      userName: dbName || user.displayName || 'You',
       text,
-      userAvatar: user.photoURL || undefined,
+      userAvatar: dbAvatar || user.photoURL || undefined,
     });
   }, [user]);
 

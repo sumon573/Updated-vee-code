@@ -254,15 +254,16 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
   }
 
   // P1 fix (2026-10-12): || not ?? — Firebase can hold an empty-string name.
-  const displayName = profile?.name || fallbackName || 'Unknown';
-  const photoURL    = profile?.photoURL;
+  // 2026-10-13: also check displayName/avatar/dp (Google users may have data in alternate fields)
+  const displayName = profile?.name || (profile as any)?.displayName || fallbackName || 'Unknown';
+  const photoURL    = profile?.photoURL || (profile as any)?.avatar || (profile as any)?.dp;
   const bio         = profile?.bio ?? '';
   const vId         = profile?.vId ?? '';
   // Respect the target user's showOnlineStatus privacy toggle.
   const isOnline    = (profile?.privacy?.showOnlineStatus !== false) && (profile?.online ?? false);
   const isMe        = myUid === uid;
 
-  const initials = displayName.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
+  const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>

@@ -353,8 +353,8 @@ export default function StoryShareScreen() {
           if (u) {
             list.push({
               uid,
-              name: u.displayName || u.name || 'Vee User',
-              photoURL: u.photoURL,
+              name: u.name || u.displayName || 'Vee User',
+              photoURL: u.photoURL || (u as any).avatar || (u as any).dp,
             });
           }
         } catch { /* skip unreadable profiles */ }

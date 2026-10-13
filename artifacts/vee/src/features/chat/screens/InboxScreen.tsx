@@ -597,7 +597,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               try {
                 await submitReport({
                   reporterUid: myUid,
-                  reporterName: user?.displayName ?? 'Vee User',
+                  reporterName: user?.displayName || 'Vee User',
                   reportedUid: effectiveParticipantId,
                   reportedName: participantName,
                   reason,

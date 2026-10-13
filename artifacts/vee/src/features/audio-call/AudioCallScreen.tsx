@@ -774,7 +774,7 @@ export default function AudioCallScreen({
               color: C.text, fontSize: 28, fontWeight: '900',
               letterSpacing: 0.2,
             }}>
-              {displayName}
+              {displayName || 'Vee User'}
             </Text>
             {remoteMuted && (
               <View style={{

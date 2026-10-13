@@ -213,7 +213,19 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         category,
         themeColor: profileColor,
         hostId: user.uid,
-        hostName: user.displayName || t('voiceRoom.screen.defaultUserName'),
+        // 2026-10-13: Fetch DB profile for name (Auth displayName may be empty for Google users)
+        hostName: await (async () => {
+          try {
+            const { get: dbGet, ref: dbRef } = await import('firebase/database');
+            const { database: db } = await import('@/src/config/firebase');
+            const snap = await dbGet(dbRef(db, `users/${user.uid}`));
+            if (snap.exists()) {
+              const p = snap.val() as any;
+              return p.name || p.displayName || user.displayName || t('voiceRoom.screen.defaultUserName');
+            }
+          } catch { /* fallback */ }
+          return user.displayName || t('voiceRoom.screen.defaultUserName');
+        })(),
         // RC6 fix Issue 5: pass host's photoURL so seat 0 shows the avatar
         // immediately after room creation without a separate fetch.
         // P1 fix (2026-10-12): || not ?? — an empty-string photoURL is useless.
