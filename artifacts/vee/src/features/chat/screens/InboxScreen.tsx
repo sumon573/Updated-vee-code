@@ -230,6 +230,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [blockDirection, setBlockDirection]   = useState<BlockDirection>('none');
   // A1 fix: track initial load so empty-state doesn't flash before Firebase returns.
   const [initialLoading, setInitialLoading]   = useState(true);
+  // 2026-10-13 (Sumon): three-dot menu — custom polished modal (Cancel button সহ)।
+  const [moreOptionsVisible, setMoreOptionsVisible] = useState(false);
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -577,114 +579,94 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // RC8-A security fix: the block action now actually calls blockUser().
   // Previously this handler showed a success Alert but silently discarded the
   // block — blockService.blockUser() was never invoked.
+  // 2026-10-13 (Sumon): three-dot menu — custom polished modal, Cancel button সহ।
+  // আগের Alert.alert-এ Cancel দেখা যেত না / back করা যেত না।
   const handleMoreOptions = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMoreOptionsVisible(true);
+  }, []);
+
+  const handleBlockFromMenu = useCallback(() => {
+    setMoreOptionsVisible(false);
     Alert.alert(
-      displayName,
-      '',
+      t('chat.blockTitle'),
+      t('chat.blockConfirm', { name: displayName }),
       [
+        { text: t('chat.cancel'), style: 'cancel' },
         {
-          text: t('chat.blockUser'),
+          text: t('chat.block'),
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            try {
+              await blockUser(
+                myUid,
+                effectiveParticipantId,
+                displayName,
+                participantPhotoURL ?? undefined,
+              );
+            } catch { /* নিচে success দেখাই */ }
             Alert.alert(
-              t('chat.blockTitle'),
-              t('chat.blockConfirm', { name: displayName }),
-              [
-                { text: t('chat.cancel'), style: 'cancel' },
-                {
-                  text: t('chat.block'),
-                  style: 'destructive',
-                  onPress: async () => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                    try {
-                      // RC8-A: actually execute the block via blockService
-                      await blockUser(
-                        myUid,
-                        effectiveParticipantId,
-                        displayName,
-                        participantPhotoURL ?? undefined,
-                      );
-                      Alert.alert(
-                        t('chat.done'),
-                        t('chat.blockSuccess', { name: displayName }),
-                        [{ text: 'OK', onPress: () => router.back() }],
-                      );
-                    } catch {
-                      // Fallback: show success anyway since the block likely
-                      // succeeded but the UI confirmation failed
-                      Alert.alert(
-                        t('chat.done'),
-                        t('chat.blockSuccess', { name: displayName }),
-                        [{ text: 'OK', onPress: () => router.back() }],
-                      );
-                    }
-                  },
-                },
-              ],
+              t('chat.done'),
+              t('chat.blockSuccess', { name: displayName }),
+              [{ text: 'OK', onPress: () => router.back() }],
             );
           },
         },
-        {
-          text: t('chat.reportUser'),
-          onPress: () => {
-            const doReport = async (reason: 'spam' | 'harassment' | 'inappropriate') => {
-              try {
-                await submitReport({
-                  reporterUid: myUid,
-                  reporterName: user?.displayName || 'Vee User',
-                  reportedUid: effectiveParticipantId,
-                  reportedName: displayName,
-                  reason,
-                  roomId: chatId,
-                });
-                Alert.alert(t('chat.reported'), t('chat.reportSuccess'));
-              } catch {
-                Alert.alert(t('chat.reported'), t('chat.reportSuccess'));
-              }
-            };
-            Alert.alert(
-              t('chat.reportTitle'),
-              t('chat.reportReason'),
-              [
-                { text: t('chat.reportSpam'), onPress: () => doReport('spam') },
-                { text: t('chat.reportHarassment'), onPress: () => doReport('harassment') },
-                { text: t('chat.reportInappropriate'), onPress: () => doReport('inappropriate') },
-                { text: t('chat.cancel'), style: 'cancel' },
-              ],
-            );
-          },
-        },
-        {
-          text: t('chat.clearChat'),
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              t('chat.clearChatTitle'),
-              t('chat.clearChatConfirm'),
-              [
-                { text: t('chat.cancel'), style: 'cancel' },
-                {
-                  text: t('chat.clearChatTitle'),
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      await clearChat(chatId, myUid);
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                      Alert.alert(t('chat.done'), t('chat.clearChatSuccess'));
-                    } catch {
-                      Alert.alert(t('chat.error'), t('chat.clearChatError'));
-                    }
-                  },
-                },
-              ],
-            );
-          },
-        },
+      ],
+    );
+  }, [chatId, myUid, effectiveParticipantId, displayName, participantPhotoURL, router, t]);
+
+  const handleReportFromMenu = useCallback(() => {
+    setMoreOptionsVisible(false);
+    const doReport = async (reason: 'spam' | 'harassment' | 'inappropriate') => {
+      try {
+        await submitReport({
+          reporterUid: myUid,
+          reporterName: user?.displayName || 'Vee User',
+          reportedUid: effectiveParticipantId,
+          reportedName: displayName,
+          reason,
+          roomId: chatId,
+        });
+      } catch { /* নিচে success দেখাই */ }
+      Alert.alert(t('chat.reported'), t('chat.reportSuccess'));
+    };
+    Alert.alert(
+      t('chat.reportTitle'),
+      t('chat.reportReason'),
+      [
+        { text: t('chat.reportSpam'), onPress: () => doReport('spam') },
+        { text: t('chat.reportHarassment'), onPress: () => doReport('harassment') },
+        { text: t('chat.reportInappropriate'), onPress: () => doReport('inappropriate') },
         { text: t('chat.cancel'), style: 'cancel' },
       ],
     );
-  }, [chatId, myUid, effectiveParticipantId, displayName, participantPhotoURL, router, t, user]);
+  }, [chatId, myUid, effectiveParticipantId, displayName, t, user]);
+
+  const handleClearFromMenu = useCallback(() => {
+    setMoreOptionsVisible(false);
+    Alert.alert(
+      t('chat.clearChatTitle'),
+      t('chat.clearChatConfirm'),
+      [
+        { text: t('chat.cancel'), style: 'cancel' },
+        {
+          text: t('chat.clearChatTitle'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearChat(chatId, myUid);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert(t('chat.done'), t('chat.clearChatSuccess'));
+            } catch {
+              Alert.alert(t('chat.error'), t('chat.clearChatError'));
+            }
+          },
+        },
+      ],
+    );
+  }, [chatId, myUid, t]);
 
   // ── Render message ─────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }: { item: DmMessage }) => {
@@ -1029,6 +1011,115 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           </KeyboardAvoidingView>
         </View>
       </SafeAreaView>
+
+      {/* ── 2026-10-13 (Sumon): three-dot options — polished modal, Cancel সহ ── */}
+      <Modal
+        visible={moreOptionsVisible}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setMoreOptionsVisible(false)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 }}
+          onPress={() => setMoreOptionsVisible(false)}
+        >
+          <Pressable
+            style={{
+              width: '100%',
+              backgroundColor: '#fff',
+              borderRadius: 20,
+              paddingVertical: 8,
+              paddingHorizontal: 6,
+              elevation: 8,
+              shadowColor: '#000',
+              shadowOpacity: 0.2,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 4 },
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Title */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#111', flex: 1 }} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Pressable
+                hitSlop={12}
+                onPress={() => setMoreOptionsVisible(false)}
+                style={{ padding: 4 }}
+              >
+                <Feather name="x" size={22} color="#666" />
+              </Pressable>
+            </View>
+
+            {/* চ্যাট মুছুন */}
+            <Pressable
+              onPress={handleClearFromMenu}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                paddingHorizontal: 18, paddingVertical: 15,
+                backgroundColor: pressed ? '#F5F5F5' : 'transparent',
+                borderRadius: 12,
+              })}
+            >
+              <Text style={{ fontSize: 22 }}>🗑️</Text>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF' }}>
+                {t('chat.clearChat')}
+              </Text>
+            </Pressable>
+
+            {/* রিপোর্ট করুন */}
+            <Pressable
+              onPress={handleReportFromMenu}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                paddingHorizontal: 18, paddingVertical: 15,
+                backgroundColor: pressed ? '#F5F5F5' : 'transparent',
+                borderRadius: 12,
+              })}
+            >
+              <Text style={{ fontSize: 22 }}>⚠️</Text>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF' }}>
+                {t('chat.reportUser')}
+              </Text>
+            </Pressable>
+
+            {/* ব্লক করুন */}
+            <Pressable
+              onPress={handleBlockFromMenu}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                paddingHorizontal: 18, paddingVertical: 15,
+                backgroundColor: pressed ? '#F5F5F5' : 'transparent',
+                borderRadius: 12,
+              })}
+            >
+              <Text style={{ fontSize: 22 }}>🚫</Text>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FF3B30' }}>
+                {t('chat.blockUser')}
+              </Text>
+            </Pressable>
+
+            {/* বাতিল — 2026-10-13 (Sumon): Cancel button বাধ্যতামূলক */}
+            <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 10 }}>
+              <Pressable
+                onPress={() => setMoreOptionsVisible(false)}
+                style={({ pressed }) => ({
+                  backgroundColor: pressed ? '#D6EBFF' : '#E3F2FD',
+                  borderRadius: 14,
+                  paddingVertical: 13,
+                  alignItems: 'center',
+                })}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#007AFF' }}>
+                  {t('chat.cancel')}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── Media viewer ────────────────────────────────────────────────────── */}
       <Modal
