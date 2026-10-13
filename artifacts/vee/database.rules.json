@@ -803,6 +803,22 @@
       ".read": "auth != null",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
     },
+    // ─────────────────────────────────────────────────────────────────────
+    // notifications — user inboxes for grant alerts etc.
+    // ─────────────────────────────────────────────────────────────────────
+    "notifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
+      }
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    // admin_audit — append-only admin action log
+    // ─────────────────────────────────────────────────────────────────────
+    "admin_audit": {
+      ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())",
+      ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
+    },
     "moderationLog": {
       ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
