@@ -46,8 +46,23 @@ const C = {
 // (2026-10-11 Issue #7: Nobel ranks now render inline via NobelScreen;
 // the static NOBEL_RANKS list was removed.)
 
-function FrameIcon({ icon }: { icon: string }) {
-  if (/^https?:\/\//i.test(icon)) {
+import AnimatedFrame from '@/src/components/AnimatedFrame';
+
+function FrameIcon({ icon, frameId, frameName }: { icon: string; frameId?: string; frameName?: string }) {
+  // 2026-10-13 (Sumon): Official frames show the live AnimatedFrame preview
+  const isOfficial = (frameId || '').toLowerCase().includes('official') ||
+    (frameName || '').toLowerCase().includes('official');
+  if (isOfficial) {
+    return (
+      <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD' }} />
+        <View style={{ position: 'absolute' }}>
+          <AnimatedFrame size={36} />
+        </View>
+      </View>
+    );
+  }
+  if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
     return (
       <Image
         source={{ uri: icon }}
@@ -205,7 +220,7 @@ export default function DecorationScreen() {
                   borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
                 }}
               >
-                <FrameIcon icon={frame.icon} />
+                <FrameIcon icon={frame.icon} frameId={frame.id} frameName={frame.name} />
                 <View style={{ flex: 1, marginLeft: 14 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>
                     {frame.name}
