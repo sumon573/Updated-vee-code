@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import LottieView from 'lottie-react-native';
+import { AnimatedFrame } from '../../components/AnimatedFrame';
 import * as Haptics from 'expo-haptics';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
@@ -87,17 +87,14 @@ function UserAvatar({ user }: { user: VeeUser }) {
       <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>{initials}</Text>
     </View>
   );
-  // 2026-10-13 (Sumon): Show equipped frame on search avatars too.
+  // 2026-10-13 (Sumon): Show equipped frame on search avatars too (pure RN, no native module).
   if (frameType && frameType !== 'none') {
     return (
       <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
         {avatar}
-        <LottieView
-          source={require('@/assets/animations/vee-official-frame.json')}
-          autoPlay
-          loop
-          style={{ position: 'absolute', width: 65, height: 65 }}
-        />
+        <View style={{ position: 'absolute', width: 65, height: 65 }} pointerEvents="none">
+          <AnimatedFrame size={65} />
+        </View>
       </View>
     );
   }

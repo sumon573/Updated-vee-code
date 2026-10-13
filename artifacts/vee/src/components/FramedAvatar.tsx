@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Image, StyleSheet } from 'react-native';
-import LottieView from 'lottie-react-native';
+import { AnimatedFrame } from './AnimatedFrame';
 
 interface FramedAvatarProps {
   photoUrl?: string | null;
@@ -29,14 +29,11 @@ export function FramedAvatar({ photoUrl, frameType = 'none', size = 80 }: Framed
         <View style={[styles.placeholder, { width: size, height: size, borderRadius: size / 2 }]} />
       )}
 
-      {/* Animated frame overlay */}
+      {/* Animated frame overlay (pure RN, no native module) */}
       {hasFrame && frameType === 'official' && (
-        <LottieView
-          source={require('../../assets/animations/vee-official-frame.json')}
-          autoPlay
-          loop
-          style={[styles.frame, { width: size * 1.3, height: size * 1.3 }]}
-        />
+        <View style={[styles.frame, { width: size * 1.3, height: size * 1.3 }]} pointerEvents="none">
+          <AnimatedFrame size={size * 1.3} />
+        </View>
       )}
     </View>
   );

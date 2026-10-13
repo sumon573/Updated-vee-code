@@ -16,7 +16,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import LottieView from 'lottie-react-native';
+import { AnimatedFrame } from '@/src/components/AnimatedFrame';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/userService';
@@ -650,15 +650,12 @@ export default function ProfileScreen({
                     ? grantedFrames.find((f) => f.id === profile.activeFrame)
                     : undefined;
                   if (!activeFrameObj) return null;
-                  // 2026-10-13 (Sumon): Official animated frame uses Lottie.
+                  // 2026-10-13 (Sumon): Official animated frame (pure RN, no native module).
                   if (profile?.activeFrame === 'official' || (activeFrameObj.name || '').toLowerCase().includes('official')) {
                     return (
-                      <LottieView
-                        source={require('@/assets/animations/vee-official-frame.json')}
-                        autoPlay
-                        loop
-                        style={{ position: 'absolute', width: 110, height: 110 }}
-                      />
+                      <View style={{ position: 'absolute', width: 110, height: 110 }} pointerEvents="none">
+                        <AnimatedFrame size={110} />
+                      </View>
                     );
                   }
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {

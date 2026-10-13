@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Text, Animated, Image, View } from 'react-native';
-import LottieView from 'lottie-react-native';
+import { AnimatedFrame } from '../../../components/AnimatedFrame';
 import { C } from '../constants/theme';
 
 /* ─────────────────────────── MsgText ─────────────────────────── */
@@ -57,18 +57,20 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
           <Text style={{ color, fontSize: size * 0.34, fontWeight: '800' }}>{initials}</Text>
         )}
       </Animated.View>
-      {/* 2026-10-13 (Sumon): Animated frame overlay — auto-fits to avatar size */}
+      {/* 2026-10-13 (Sumon): Animated frame overlay — auto-fits to avatar size (pure RN, no native module) */}
       {frameType && frameType !== 'none' && (
-        <LottieView
-          source={require('../../../../assets/animations/vee-official-frame.json')}
-          autoPlay
-          loop
+        <View
           style={{
             position: 'absolute',
             width: size * 1.35,
             height: size * 1.35,
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
-        />
+          pointerEvents="none"
+        >
+          <AnimatedFrame size={size * 1.35} />
+        </View>
       )}
     </View>
   );
