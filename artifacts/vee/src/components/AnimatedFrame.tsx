@@ -62,9 +62,10 @@ export default function AnimatedFrame({ size, frameId, compact }: Props) {
     return () => breathLoop.stop();
   }, [frameBreath, serverUri, serverFailed]);
 
-  // 2026-10-13 (Sumon): frame DP-র সাথে snug fit — 1.45x বেশি বড় দেখাতো
+  // 2026-10-14 (Sumon): frame DP-র সাথে snug fit — 1.28x-এ ভিতরে সাদা gap দেখাতো,
+  // 1.15x-এ tight fit, DP ঢাকে না
   // compact (voice room): 1.15x — নাম ঢেকে না যায়
-  const frameSize = size * (compact ? 1.15 : 1.28);
+  const frameSize = size * 1.15;
 
   const frameScale = frameBreath.interpolate({
     inputRange: [0, 1],
