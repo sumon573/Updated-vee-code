@@ -32,6 +32,7 @@ import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
+import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
 import { useTranslation } from 'react-i18next';
@@ -645,9 +646,17 @@ export default function ProfileScreen({
                   </View>
                 )}
                 {(() => {
-                  const activeFrameObj = profile?.activeFrame
-                    ? grantedFrames.find((f) => f.id === profile.activeFrame)
-                    : undefined;
+                  const activeFrameId = profile?.activeFrame;
+                  if (!activeFrameId) return null;
+                  // Official animated frame — pure RN AnimatedFrame (no native modules)
+                  if (activeFrameId === 'official' || (typeof activeFrameId === 'string' && activeFrameId.toLowerCase().includes('official'))) {
+                    return (
+                      <View style={{ position: 'absolute', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' }}>
+                        <AnimatedFrame size={80} />
+                      </View>
+                    );
+                  }
+                  const activeFrameObj = grantedFrames.find((f) => f.id === activeFrameId);
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
                     return (
