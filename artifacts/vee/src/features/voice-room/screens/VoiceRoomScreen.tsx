@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, FlatList, Alert, Pressable,
   Animated, Platform, TextInput, ActivityIndicator, Image,
-  BackHandler, Modal,
+  BackHandler, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -2172,6 +2172,11 @@ export default function VoiceRoomScreen() {
 
   /* ═══ RENDER ═══ */
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
       {/* Animated theme background — breathing glow + floating particles.
           Theme is Firebase-synced so every user sees the same animation. */}
@@ -2600,14 +2605,14 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Chat input (2026-10-11 polish): full-width, properly aligned — no indent */}
+        {/* ── Chat input (2026-10-14 polish): সুন্দর spacing, keyboard-এর উপরে থাকে */}
         <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: 8,
-          marginTop: 8, marginBottom: 6,
-          paddingHorizontal: 2,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          marginTop: 10, marginBottom: 8,
+          paddingHorizontal: 4, paddingVertical: 4,
         }}>
-          <ScalePress onPress={() => setEmojiPanelOpen(true)} style={{ padding: 6 }}>
-            <Feather name="smile" size={24} color={C.sub} />
+          <ScalePress onPress={() => setEmojiPanelOpen(true)} style={{ padding: 8 }}>
+            <Feather name="smile" size={26} color={C.sub} />
           </ScalePress>
 
           {/* @ Mention shortcut — opens picker for all live members */}
@@ -2619,22 +2624,22 @@ export default function VoiceRoomScreen() {
             }}
             hitSlop={8}
             style={{
-              width: 34, height: 34, borderRadius: 17,
+              width: 38, height: 38, borderRadius: 19,
               backgroundColor: accentColor + '22',
               borderWidth: 1, borderColor: accentColor + '44',
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Text style={{ color: accentColor, fontSize: 15, fontWeight: '900' }}>@</Text>
+            <Text style={{ color: accentColor, fontSize: 16, fontWeight: '900' }}>@</Text>
           </Pressable>
 
           <TextInput
             style={{
-              flex: 1, color: C.text, fontSize: 14,
-              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.08)' : C.card, borderRadius: 22,
-              paddingHorizontal: 16, paddingVertical: 10,
+              flex: 1, color: C.text, fontSize: 15,
+              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.08)' : C.card, borderRadius: 24,
+              paddingHorizontal: 18, paddingVertical: 12,
               borderWidth: 1, borderColor: amChatBlocked ? 'rgba(239,68,68,0.45)' : C.borderFaint,
-              minHeight: 42,
+              minHeight: 46,
             }}
             value={chatInput}
             onChangeText={handleChatInput}
@@ -2654,13 +2659,13 @@ export default function VoiceRoomScreen() {
             disabled={sendingMsg || amChatBlocked}
             hitSlop={8}
             style={{
-              width: 42, height: 42, borderRadius: 21,
+              width: 46, height: 46, borderRadius: 23,
               backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? accentColor : C.muted),
               alignItems: 'center', justifyContent: 'center',
               opacity: (sendingMsg || amChatBlocked) ? 0.5 : 1,
             }}
           >
-            <Feather name={amChatBlocked ? 'slash' : 'send'} size={16} color="#fff" />
+            <Feather name={amChatBlocked ? 'slash' : 'send'} size={18} color="#fff" />
           </Pressable>
         </View>
       </View>
@@ -3044,5 +3049,6 @@ export default function VoiceRoomScreen() {
         </SafeAreaView>
       </Modal>
     </View>
+    </KeyboardAvoidingView>
   );
 }
