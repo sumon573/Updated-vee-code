@@ -67,6 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
   const banUnsubscribeRef = useRef<(() => void) | null>(null);
+  // 2026-10-13 (Sumon): ban race fix — setUser(null) triggers onUserStateChanged(null)
+  // which would reset isBanned. This ref preserves the banned state.
+  const bannedSessionRef = useRef(false);
 
   useEffect(() => {
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
@@ -92,8 +95,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (firebaseUser) {
           // Reset ban state on new login, then subscribe
-          setIsBanned(false);
-          setBanReason(null);
+          // 2026-10-13: banned session থেকে logout হলে reset করি না
+          if (!bannedSessionRef.current) {
+            setIsBanned(false);
+            setBanReason(null);
+          }
           import('../config/firebase').then(({ database }) => {
             import('firebase/database').then(({ ref, onValue }) => {
               const banRef = ref(database, `users/${firebaseUser.uid}/banned`);
@@ -101,6 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const unsubBan = onValue(banRef, (snap) => {
                 const banned = snap.val() === true;
                 if (banned) {
+                  // 2026-10-13 (Sumon): ban race fix — banned session mark করি
+                  // যাতে setUser(null) → onUserStateChanged(null) isBanned reset না করে।
+                  bannedSessionRef.current = true;
                   // Fetch reason, then force logout and show banned screen
                   import('firebase/database').then(({ get }) => {
                     get(reasonRef).then((rSnap) => {
@@ -111,14 +120,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   // Sign out silently — banned screen takes over
                   firebaseLogout().catch(() => {});
                   setUser(null);
+                } else if (bannedSessionRef.current) {
+                  // Unbanned while banned screen showing — clear and allow re-login
+                  bannedSessionRef.current = false;
+                  setIsBanned(false);
+                  setBanReason(null);
                 }
               });
               banUnsubscribeRef.current = unsubBan;
             }).catch(() => {});
           }).catch(() => {});
         } else {
-          setIsBanned(false);
-          setBanReason(null);
+          // 2026-10-13: banned session-এ logout হলে ban screen ধরে রাখি
+          if (!bannedSessionRef.current) {
+            setIsBanned(false);
+            setBanReason(null);
+          }
         }
 
         // Clear loading on the first callback (and any subsequent ones)
