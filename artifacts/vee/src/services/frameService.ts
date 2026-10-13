@@ -30,7 +30,9 @@ export async function unequipFrame(uid: string): Promise<void> {
  * ───────────────────────────────────────────────────────────── */
 
 /** Base URL for frame APNGs on Sumon's VPS (zero recurring cost). */
-export const FRAME_SERVER_BASE = 'https://vee-club.duckdns.org/static/frames';
+// 2026-10-13 (Sumon): Frames hosted on GitHub + jsDelivr CDN (same as badges).
+// No VPS/RDP needed — Muse uploads directly via git push.
+export const FRAME_SERVER_BASE = 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/frames';
 
 const FRAMES_CACHE_DIR = `${FileSystem.cacheDirectory}frames/`;
 
