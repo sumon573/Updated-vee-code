@@ -404,7 +404,6 @@ export default function EditProfileScreen() {
                   borderWidth: 1, borderColor: C.border,
                   flexDirection: 'row', alignItems: 'center', gap: 8,
                 }}>
-                  <Feather name="hash" size={15} color={C.mutedDim} />
                   <Text style={{ color: C.mutedDim, fontSize: 15 }}>
                     {profile?.vId ?? '...'}
                   </Text>

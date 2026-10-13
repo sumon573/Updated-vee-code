@@ -525,7 +525,6 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
               padding: 16, marginTop: 12, gap: 12,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Feather name="hash" size={16} color={C.mutedDim} />
                 <Text style={{ color: C.muted, fontSize: 14 }}>Vee ID: {vId || 'N/A'}</Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
