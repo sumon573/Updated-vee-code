@@ -70,6 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 2026-10-13 (Sumon): ban race fix — setUser(null) triggers onUserStateChanged(null)
   // which would reset isBanned. This ref preserves the banned state.
   const bannedSessionRef = useRef(false);
+  // 2026-10-13: কোন UID ban হয়েছে track করি — ভিন্ন user login করলে reset।
+  const bannedUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
@@ -89,7 +91,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // BAN ENFORCEMENT: subscribe to banned flag. If admin bans this user,
         // kick them out immediately with a banned screen.
-        if (banUnsubscribeRef.current) {
+        // 2026-10-13: banned session-এ listener alive রাখি — unban detect করতে।
+        // ভিন্ন UID login করলে পুরনো ban state clear করি।
+        if (firebaseUser && bannedUidRef.current && firebaseUser.uid !== bannedUidRef.current) {
+          bannedSessionRef.current = false;
+          bannedUidRef.current = null;
+        }
+        if (!bannedSessionRef.current && banUnsubscribeRef.current) {
           banUnsubscribeRef.current();
           banUnsubscribeRef.current = null;
         }
@@ -110,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   // 2026-10-13 (Sumon): ban race fix — banned session mark করি
                   // যাতে setUser(null) → onUserStateChanged(null) isBanned reset না করে।
                   bannedSessionRef.current = true;
+                  bannedUidRef.current = firebaseUser.uid;
                   // Fetch reason, then force logout and show banned screen
                   import('firebase/database').then(({ get }) => {
                     get(reasonRef).then((rSnap) => {
@@ -123,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } else if (bannedSessionRef.current) {
                   // Unbanned while banned screen showing — clear and allow re-login
                   bannedSessionRef.current = false;
+                  bannedUidRef.current = null;
                   setIsBanned(false);
                   setBanReason(null);
                 }
