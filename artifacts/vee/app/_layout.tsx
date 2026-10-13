@@ -101,7 +101,7 @@ const queryClient = new QueryClient({
 //   4. Language selected, user present, in auth group → go to home.
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isBanned, banReason } = useAuth();
   const { isLanguageSelected, isLoading: langLoading } = useLanguage();
   const segments = useSegments();
   const router = useRouter();
@@ -297,6 +297,22 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       // P1 fix (2026-10-12): white loading screen per the light-mode-everywhere rule.
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#007AFF" size="large" />
+      </View>
+    );
+  }
+
+  // BAN ENFORCEMENT (2026-10-13): if admin banned this user, show a
+  // full-screen banned message instead of the app. No navigation possible.
+  if (isBanned) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+        <Text style={{ fontSize: 64, marginBottom: 16 }}>🚫</Text>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: '#111', marginBottom: 8, textAlign: 'center' }}>
+          Account Banned
+        </Text>
+        <Text style={{ fontSize: 15, color: '#666', textAlign: 'center', lineHeight: 22 }}>
+          {banReason || 'Your account has been banned by the administrator. Please contact support if you believe this is a mistake.'}
+        </Text>
       </View>
     );
   }

@@ -46,18 +46,27 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   logout: () => Promise<void>;
+  isBanned: boolean;
+  banReason: string | null;
 };
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
   logout: async () => {},
+  isBanned: false,
+  banReason: null,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const loadingDoneRef = useRef(false);
+  // BAN ENFORCEMENT (2026-10-13): real-time ban check. When admin bans a user
+  // via the admin panel, the app blocks them immediately with a banned screen.
+  const [isBanned, setIsBanned] = useState(false);
+  const [banReason, setBanReason] = useState<string | null>(null);
+  const banUnsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
@@ -74,6 +83,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       unsubscribe = onUserStateChanged((firebaseUser) => {
         setUser(firebaseUser);
+
+        // BAN ENFORCEMENT: subscribe to banned flag. If admin bans this user,
+        // kick them out immediately with a banned screen.
+        if (banUnsubscribeRef.current) {
+          banUnsubscribeRef.current();
+          banUnsubscribeRef.current = null;
+        }
+        if (firebaseUser) {
+          // Reset ban state on new login, then subscribe
+          setIsBanned(false);
+          setBanReason(null);
+          import('../config/firebase').then(({ database }) => {
+            import('firebase/database').then(({ ref, onValue }) => {
+              const banRef = ref(database, `users/${firebaseUser.uid}/banned`);
+              const reasonRef = ref(database, `users/${firebaseUser.uid}/banReason`);
+              const unsubBan = onValue(banRef, (snap) => {
+                const banned = snap.val() === true;
+                if (banned) {
+                  // Fetch reason, then force logout and show banned screen
+                  import('firebase/database').then(({ get }) => {
+                    get(reasonRef).then((rSnap) => {
+                      setBanReason(typeof rSnap.val() === 'string' ? rSnap.val() : null);
+                    }).catch(() => {});
+                  }).catch(() => {});
+                  setIsBanned(true);
+                  // Sign out silently — banned screen takes over
+                  firebaseLogout().catch(() => {});
+                  setUser(null);
+                }
+              });
+              banUnsubscribeRef.current = unsubBan;
+            }).catch(() => {});
+          }).catch(() => {});
+        } else {
+          setIsBanned(false);
+          setBanReason(null);
+        }
 
         // Clear loading on the first callback (and any subsequent ones)
         if (!loadingDoneRef.current) {
@@ -132,6 +178,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       clearTimeout(timeoutId);
       unsubscribe?.();
+      if (banUnsubscribeRef.current) {
+        banUnsubscribeRef.current();
+        banUnsubscribeRef.current = null;
+      }
     };
   }, []);
 
@@ -162,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, isBanned, banReason }}>
       {children}
     </AuthContext.Provider>
   );
