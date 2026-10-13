@@ -22,8 +22,9 @@ export async function getOfficialBadgeIconUrl(): Promise<string | null> {
       if (!snap.exists()) return null;
       const catalog = snap.val() as Record<string, any>;
       for (const item of Object.values(catalog)) {
-        const name = (item.name || '').toLowerCase();
-        const isOfficial = name.includes('vee official') && item.type === 'badge';
+        const name = (item.name || '').toLowerCase().trim();
+        // 2026-10-13: Match EXACT "vee official" (not "grant to vee official team" etc.)
+        const isOfficial = name === 'vee official' && item.type === 'badge';
         if (isOfficial && item.icon && typeof item.icon === 'string' && item.icon.startsWith('http')) {
           badgeIconCache = item.icon;
           return item.icon;
@@ -64,7 +65,8 @@ export async function hasOfficialBadge(uid: string): Promise<boolean> {
     const badges = badgesSnap.val() as Record<string, any>;
     const now = Date.now();
     return Object.values(badges).some((b: any) => {
-      const isOfficial = (b.name || '').toLowerCase().includes('vee official');
+      // 2026-10-13: Match EXACT "vee official" (not partial matches)
+      const isOfficial = (b.name || '').toLowerCase().trim() === 'vee official';
       if (!isOfficial) return false;
       // Check validity: permanent = always valid; timestamp = valid if in future
       if (b.validity === 'permanent' || !b.validity) return true;

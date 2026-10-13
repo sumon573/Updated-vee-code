@@ -29,7 +29,11 @@ export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize 
   // 2026-10-13 (Sumon): SERVER-DRIVEN — fetch badge icon from catalog.
   // Admin panel-এ badge change করলে সব app-এ instantly update, no app update needed.
   useEffect(() => {
-    getOfficialBadgeIconUrl().then(setServerIcon).catch(() => {});
+    let mounted = true;
+    getOfficialBadgeIconUrl().then((url) => {
+      if (mounted) setServerIcon(url);
+    }).catch(() => {});
+    return () => { mounted = false; };
   }, []);
 
   // Use explicit boolean if provided, otherwise use hook result (if uid provided)
