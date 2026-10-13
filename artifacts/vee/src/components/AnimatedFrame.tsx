@@ -1,12 +1,11 @@
 /**
  * AnimatedFrame — Vee Official DP frame, video-exact.
- * Uses the exact frame design from the reference video (blue ring +
- * "official" ribbon + Vee logo + vines) with twinkling sparkles
- * like the video. NO rotation.
- * NO native modules — 100% safe, zero crash risk, no lag.
+ * - Exact frame design from reference video (blue ring + "official" ribbon + vines)
+ * - Vee logo PULSES separately (bottom-right)
+ * - Sparkles twinkle ONLY on the ring (not outside)
+ * - NO rotation. NO native modules — 100% safe, zero lag.
  *
- * 2026-10-13 (Sumon): Video-exact — sparkles twinkle on the ring
- * in waves, like the reference video. Static ring, no rotation.
+ * 2026-10-13 (Sumon): Vee logo pulses; sparkles confined to frame ring.
  */
 import React, { useEffect, useRef } from 'react';
 import { Animated, View, StyleSheet, Image, Text } from 'react-native';
@@ -16,22 +15,25 @@ type Props = {
   size: number;
 };
 
-// Sparkle positions (relative to frame, 0-1) — on/around the ring like video
-const SPARKLES = [
-  { x: 0.22, y: 0.18, delay: 0, size: 16 },
-  { x: 0.72, y: 0.12, delay: 400, size: 20 },
-  { x: 0.85, y: 0.32, delay: 800, size: 14 },
-  { x: 0.12, y: 0.45, delay: 1200, size: 18 },
-  { x: 0.88, y: 0.55, delay: 1600, size: 16 },
-  { x: 0.18, y: 0.72, delay: 600, size: 14 },
-  { x: 0.82, y: 0.78, delay: 1000, size: 20 },
-  { x: 0.42, y: 0.88, delay: 1400, size: 16 },
-];
+// Sparkle positions ON THE RING (angle in degrees, 0 = right, going clockwise)
+// Ring is at ~0.32 of frame size from center
+const SPARKLE_ANGLES = [15, 60, 105, 150, 195, 240, 285, 330];
+const RING_RADIUS = 0.32; // relative to frame size
 
-function Sparkle({ x, y, delay, size: sparkleSize, frameSize }: {
-  x: number; y: number; delay: number; size: number; frameSize: number;
+function angleToPos(angleDeg: number): { x: number; y: number } {
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: 0.5 + RING_RADIUS * Math.cos(rad),
+    y: 0.5 + RING_RADIUS * Math.sin(rad),
+  };
+}
+
+function Sparkle({ angle, delay, frameSize }: {
+  angle: number; delay: number; frameSize: number;
 }) {
   const anim = useRef(new Animated.Value(0)).current;
+  const pos = angleToPos(angle);
+  const sparkleSize = 14;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -39,15 +41,15 @@ function Sparkle({ x, y, delay, size: sparkleSize, frameSize }: {
         Animated.delay(delay),
         Animated.timing(anim, {
           toValue: 1,
-          duration: 400,
+          duration: 350,
           useNativeDriver: true,
         }),
         Animated.timing(anim, {
           toValue: 0,
-          duration: 600,
+          duration: 550,
           useNativeDriver: true,
         }),
-        Animated.delay(1800 - delay),
+        Animated.delay(2000 - delay),
       ])
     );
     loop.start();
@@ -61,20 +63,25 @@ function Sparkle({ x, y, delay, size: sparkleSize, frameSize }: {
 
   const scale = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.3, 1.4],
+    outputRange: [0.4, 1.3],
   });
 
   return (
     <Animated.View
       style={{
         position: 'absolute',
-        left: x * frameSize - sparkleSize / 2,
-        top: y * frameSize - sparkleSize / 2,
+        left: pos.x * frameSize - sparkleSize / 2,
+        top: pos.y * frameSize - sparkleSize / 2,
         opacity,
         transform: [{ scale }],
       }}
     >
-      <Text style={{ fontSize: sparkleSize, color: '#fff', textShadowColor: '#B3E5FC', textShadowRadius: 8 }}>
+      <Text style={{
+        fontSize: sparkleSize,
+        color: '#fff',
+        textShadowColor: '#B3E5FC',
+        textShadowRadius: 6,
+      }}>
         ✦
       </Text>
     </Animated.View>
@@ -82,20 +89,20 @@ function Sparkle({ x, y, delay, size: sparkleSize, frameSize }: {
 }
 
 export default function AnimatedFrame({ size }: Props) {
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const logoPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Subtle glow pulse — 3s cycle, NO rotation
+    // Vee logo pulse — 2s cycle
     const pulseLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
+        Animated.timing(logoPulse, {
           toValue: 1,
-          duration: 1500,
+          duration: 1000,
           useNativeDriver: true,
         }),
-        Animated.timing(pulseAnim, {
+        Animated.timing(logoPulse, {
           toValue: 0,
-          duration: 1500,
+          duration: 1000,
           useNativeDriver: true,
         }),
       ])
@@ -104,34 +111,57 @@ export default function AnimatedFrame({ size }: Props) {
     return () => {
       pulseLoop.stop();
     };
-  }, [pulseAnim]);
+  }, [logoPulse]);
 
   // Frame is larger than the DP to surround it
   const frameSize = size * 1.45;
+  // Vee logo size and position (bottom-right, like video)
+  const logoSize = frameSize * 0.28;
 
-  const pulseOpacity = pulseAnim.interpolate({
+  const logoScale = logoPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.92, 1],
+    outputRange: [1, 1.12],
+  });
+
+  const logoOpacity = logoPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.95, 1],
   });
 
   return (
     <View style={[styles.container, { width: frameSize, height: frameSize }]}>
+      {/* Base frame (ring + ribbon + vines, no logo) */}
+      <Image
+        source={require('@/assets/images/vee-official-frame.png')}
+        style={{ width: frameSize, height: frameSize }}
+        resizeMode="contain"
+      />
+      {/* Pulsing Vee logo (bottom-right) */}
       <Animated.View
         style={{
-          width: frameSize,
-          height: frameSize,
-          opacity: pulseOpacity,
+          position: 'absolute',
+          right: frameSize * 0.08,
+          bottom: frameSize * 0.1,
+          width: logoSize,
+          height: logoSize,
+          transform: [{ scale: logoScale }],
+          opacity: logoOpacity,
         }}
       >
         <Image
-          source={require('@/assets/images/vee-official-frame.png')}
-          style={{ width: frameSize, height: frameSize }}
+          source={require('@/assets/images/vee-logo.png')}
+          style={{ width: logoSize, height: logoSize }}
           resizeMode="contain"
         />
       </Animated.View>
-      {/* Twinkling sparkles like the video */}
-      {SPARKLES.map((s, i) => (
-        <Sparkle key={i} {...s} frameSize={frameSize} />
+      {/* Sparkles ONLY on the ring */}
+      {SPARKLE_ANGLES.map((angle, i) => (
+        <Sparkle
+          key={i}
+          angle={angle}
+          delay={i * 250}
+          frameSize={frameSize}
+        />
       ))}
     </View>
   );
