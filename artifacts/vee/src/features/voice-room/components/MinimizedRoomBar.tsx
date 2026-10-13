@@ -127,6 +127,36 @@ export default function MinimizedRoomBar() {
     return () => clearInterval(timer);
   }, [room?.id, room?.myUid, room?.mySeatIdx]);
 
+  // 2026-10-14 (Sumon): Ghost mic fix — seat Firebase থেকে মুছে গেলে
+  // (sweep/kick/disconnect) engine destroy করো। না হলে mic background-এ চলতে থাকে।
+  useEffect(() => {
+    if (!room?.id || !room?.myUid || room.mySeatIdx < 0) return;
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        if (cancelled) return;
+        unsub = onValue(
+          ref(database, `rooms/${room.id}/seats/${room.mySeatIdx}`),
+          (snap) => {
+            const seat = snap.val();
+            // Seat gone or taken by someone else → destroy engine
+            if (!seat || (seat.id && seat.id !== room.myUid && seat.uid !== room.myUid)) {
+              try { destroyPersistedVoiceRoomEngine(); } catch { /* non-critical */ }
+              setMinimizedRoom(null);
+            }
+          },
+        );
+      } catch { /* non-critical */ }
+    })();
+    return () => {
+      cancelled = true;
+      try { unsub?.(); } catch { /* non-critical */ }
+    };
+  }, [room?.id, room?.myUid, room?.mySeatIdx]);
+
   // Mic toggle for minimized room (2026-10-10): talk/mute while minimized.
   // NOTE: Hooks MUST stay before the `if (!room) return null` below (React Rules).
   const [micMuted, setMicMuted] = useState<boolean>(() => getMinimizedRoom()?.muted ?? true);

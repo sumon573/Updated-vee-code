@@ -114,6 +114,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const [profileChecked, setProfileChecked] = useState(false);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
+  // 2026-10-14 (Sumon): Ghost mic fix — app start-এ stale audio engine destroy.
+  // App close/reopen-এর পর mic on থাকতো যদিও user room-এ ছিল না।
+  useEffect(() => {
+    try {
+      const { destroyPersistedVoiceRoomEngine } = require('@/src/features/voice-room/useLivekitVoiceRoom');
+      destroyPersistedVoiceRoomEngine();
+    } catch { /* non-critical */ }
+    // Minimized state clear — fresh start-এ কোনো room active থাকা উচিত না
+    try {
+      const { setMinimizedRoom } = require('@/src/store/minimizedRoom');
+      setMinimizedRoom(null);
+    } catch { /* non-critical */ }
+  }, []);
+
   // Check if the authenticated user has a Firestore profile.
   // New users (Google/email) land on complete-profile; existing users go home.
   useEffect(() => {
