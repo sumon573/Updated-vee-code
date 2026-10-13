@@ -43,13 +43,18 @@ export async function initializeOneSignal(appId: string): Promise<void> {
   if (isExpoGo()) return;
 
   const os = await getOneSignal();
-  if (!os) return;
+  if (!os) {
+    console.log('[OneSignal] Native module not available — skipping init');
+    return;
+  }
   try {
     os.initialize(appId);
+    console.log('[OneSignal] initialize() done with appId:', appId);
     // Permission request (Android 13+)
-    os.Notifications.requestPermission(true);
-  } catch {
-    // silently ignore — Expo Go-তে কাজ করবে না, EAS Build-এ করবে
+    const granted = await os.Notifications.requestPermission(true);
+    console.log('[OneSignal] Notification permission granted:', granted);
+  } catch (e) {
+    console.log('[OneSignal] initializeOneSignal error:', e);
   }
 }
 
@@ -59,17 +64,56 @@ export async function loginOneSignal(uid: string): Promise<void> {
   if (isExpoGo()) return;
 
   const os = await getOneSignal();
-  if (!os) return;
+  if (!os) {
+    console.log('[OneSignal] Native module not available');
+    return;
+  }
   try {
     // External ID set করলে Cloud Function থেকে এই user-কে target করা যাবে
     await os.login(uid);
-    // Subscription ID Firebase-এ save করি
-    const subId: string | undefined = os.User?.pushSubscription?.id ?? undefined;
-    if (subId) {
-      await saveOneSignalIdToFirebase(uid, subId);
+    console.log('[OneSignal] login() done for uid:', uid);
+
+    // FIX 2026-10-13: Push subscription ID immediately after login() প্রায়ই
+    // null থাকে — OneSignal server থেকে async-এ generate হয়। Retry loop দিয়ে
+    // wait করি, তারপর Firebase-এ save করি।
+    let subId: string | undefined;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        subId = os.User?.pushSubscription?.id ?? undefined;
+      } catch {
+        subId = undefined;
+      }
+      if (subId) break;
+      console.log(`[OneSignal] waiting for pushSubscription.id (attempt ${attempt + 1}/10)`);
+      await new Promise((r) => setTimeout(r, 1000));
     }
-  } catch {
-    // silently ignore
+
+    if (subId) {
+      console.log('[OneSignal] Got pushSubscription.id, saving to Firebase');
+      await saveOneSignalIdToFirebase(uid, subId);
+    } else {
+      console.log('[OneSignal] WARNING: pushSubscription.id still null after 10s — push will not work until app restart');
+    }
+
+    // Subscription change listener — ID পরে generate হলে auto-save
+    try {
+      os.User?.pushSubscription?.addEventListener?.('change', async (event: unknown) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const newId = (event as any)?.current?.id as string | undefined;
+          if (newId) {
+            console.log('[OneSignal] pushSubscription changed, new id — saving');
+            await saveOneSignalIdToFirebase(uid, newId);
+          }
+        } catch {
+          // non-critical
+        }
+      });
+    } catch {
+      // non-critical — older SDK may not support addEventListener
+    }
+  } catch (e) {
+    console.log('[OneSignal] loginOneSignal error:', e);
   }
 }
 
