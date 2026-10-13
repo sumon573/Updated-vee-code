@@ -179,10 +179,20 @@ export default function WalletScreen() {
               <ActivityIndicator color={C.glow} size="large" style={{ marginTop: 12 }} />
             ) : (
               <Text style={{
-                color: C.text, fontSize: 56, fontWeight: '900',
+                color: C.text,
+                // 2026-10-14 (Sumon): Professional number display — thousand separators
+                // + dynamic font size so large balances never wrap unprofessionally.
+                fontSize: (() => {
+                  const len = String(balance ?? 0).length;
+                  if (len <= 6) return 56;
+                  if (len <= 8) return 44;
+                  if (len <= 10) return 36;
+                  return 30;
+                })(),
+                fontWeight: '900',
                 marginTop: 6, letterSpacing: -1,
               }}>
-                {balance ?? 0}
+                {(balance ?? 0).toLocaleString('en-US')}
               </Text>
             )}
             <Text style={{ color: C.glow, fontSize: 18, fontWeight: '800', marginTop: 2 }}>
