@@ -1,30 +1,38 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Modal, Image, StyleSheet } from 'react-native';
+import { useVerifiedBadge } from '../hooks/useVerifiedBadge';
 
 interface VerifiedNameProps {
   name: string;
-  hasOfficialBadge: boolean;
+  hasOfficialBadge?: boolean;
+  uid?: string;
   nameStyle?: any;
   logoSize?: number;
 }
 
 /**
- * 2026-10-13 (Sumon): Name with Vee Official logo.
- * - Shows Vee logo next to name if user has official badge
- * - Click logo → polished "Vee Official" badge popup
- * - Use EVERYWHERE names are displayed
+ * 2026-10-13 (Sumon): Name with Vee Official badge.
+ * - Shows small badge next to name if user has official badge
+ * - Click badge → polished "Vee Official" badge popup
+ * - Use EVERYWHERE names are displayed (voice room, search, contacts, chat, members)
+ * - Pass either hasOfficialBadge (boolean) or uid (will check via hook)
  */
-export function VerifiedName({ name, hasOfficialBadge, nameStyle, logoSize = 16 }: VerifiedNameProps) {
+export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize = 16 }: VerifiedNameProps) {
   const [showBadge, setShowBadge] = useState(false);
+  const hookVerified = useVerifiedBadge(uid);
+  
+  // Use explicit boolean if provided, otherwise use hook result (if uid provided)
+  const verified = hasOfficialBadge !== undefined ? hasOfficialBadge : (uid ? hookVerified : false);
 
   return (
     <View style={styles.container}>
       <Text style={nameStyle} numberOfLines={1}>{name}</Text>
-      {hasOfficialBadge && (
+      {verified && (
         <Pressable onPress={() => setShowBadge(true)} hitSlop={8}>
           <Image
-            source={require('@/assets/images/icon.png')}
-            style={{ width: logoSize, height: logoSize, marginLeft: 4, borderRadius: logoSize / 2 }}
+            source={require('@/assets/images/vee-badge.png')}
+            style={{ width: logoSize, height: logoSize, marginLeft: 4 }}
+            resizeMode="contain"
           />
         </Pressable>
       )}
@@ -34,11 +42,12 @@ export function VerifiedName({ name, hasOfficialBadge, nameStyle, logoSize = 16 
         <Pressable style={styles.overlay} onPress={() => setShowBadge(false)}>
           <View style={styles.card}>
             <Image
-              source={require('@/assets/images/icon.png')}
-              style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 12 }}
+              source={require('@/assets/images/vee-badge.png')}
+              style={{ width: 120, height: 120, marginBottom: 12 }}
+              resizeMode="contain"
             />
             <Text style={styles.title}>Vee Official</Text>
-            <Text style={styles.subtitle}>Grant to Vee Official Team</Text>
+            <Text style={styles.subtitle}>Official verified badge by Vee</Text>
             <Pressable style={styles.button} onPress={() => setShowBadge(false)}>
               <Text style={styles.buttonText}>Close</Text>
             </Pressable>

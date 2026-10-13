@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { View, Text, Pressable, Animated } from 'react-native';
+import { View, Text, Pressable, Animated, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
@@ -107,14 +107,18 @@ export const SeatCard = memo(function SeatCard({
             </View>
           </View>
 
-          {/* Name — 2026-10-13 (Sumon): verified tick next to name */}
+          {/* Name — 2026-10-13 (Sumon): verified badge next to name */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
             <Text style={{
               color: C.text, fontSize: 10, fontWeight: '700',
               textAlign: 'center',
             }} numberOfLines={1}>{member.name}</Text>
             {(member as any).verified && (
-              <Feather name="check-circle" size={10} color="#1E9BF0" style={{ marginLeft: 2 }} />
+              <Image
+                source={require('@/assets/images/vee-badge.png')}
+                style={{ width: 12, height: 12, marginLeft: 2 }}
+                resizeMode="contain"
+              />
             )}
           </View>
 

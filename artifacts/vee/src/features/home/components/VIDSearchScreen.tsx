@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUserByShortId } from '@/src/services/userService';
 import { showErrorWithCause } from '@/src/utils/errorDisplay';
+import { VerifiedName } from '@/src/components/VerifiedName';
 
 export default function VIDSearchScreen() {
   const router = useRouter();
@@ -131,9 +132,12 @@ export default function VIDSearchScreen() {
               </View>
             )}
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={{ fontSize: 17, fontWeight: '700', color: '#212121' }}>
-                {result.name || (result.email ? result.email.split('@')[0] : null) || 'User'}
-              </Text>
+              <VerifiedName
+                name={result.name || (result.email ? result.email.split('@')[0] : null) || 'User'}
+                uid={result.uid || result.id}
+                nameStyle={{ fontSize: 17, fontWeight: '700', color: '#212121' }}
+                logoSize={18}
+              />
               <Text style={{ fontSize: 14, color: '#757575', marginTop: 2 }}>
                 V-ID: {result.shortId}
               </Text>

@@ -18,6 +18,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { VeeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
+import { VerifiedName } from '@/src/components/VerifiedName';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
 import { getBlockDirection, BlockDirection, blockUser, unblockUser } from '@/src/services/blockService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
@@ -755,9 +756,12 @@ export default function ContactsScreen() {
                   </View>
                   {/* Info */}
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                      {item.name}
-                    </Text>
+                    <VerifiedName
+                      name={item.name}
+                      uid={item.uid}
+                      nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
+                      logoSize={16}
+                    />
                     <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
                       #{item.vId}
                     </Text>
