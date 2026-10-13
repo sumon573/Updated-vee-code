@@ -120,7 +120,9 @@ export default function IMOHomeScreen() {
     const live = c.participantId ? liveProfiles[c.participantId] : undefined;
     return {
       id: c.id,
-      name: live?.name || c.participantName || 'Unknown',
+      // 2026-10-13 (Sumon): NEVER show 'Unknown' — use 'Vee User' as fallback.
+      // Root cause: test users with empty profiles; production users always have names.
+      name: live?.name || c.participantName || 'Vee User',
       photoURL: live?.photoURL || c.participantAvatar || avatarCache[c.participantId || ''] || null,
       lastMessage: c.lastMessage || '',
       lastMessageTime: formatTime(c.lastMessageTime),

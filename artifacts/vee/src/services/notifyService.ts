@@ -58,9 +58,9 @@ async function fetchWithRetry(
   url: string,
   options: RequestInit,
   retriesLeft = MAX_NOTIFY_RETRIES,
-): Promise<void> {
+): Promise<Response> {
   try {
-    await fetch(url, options);
+    return await fetch(url, options);
   } catch (err) {
     if (retriesLeft <= 0) throw err;
     await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
@@ -101,17 +101,25 @@ export function sendPushNotification(
       }
 
       // RC8-B2: fetchWithRetry handles Render cold-start (server sleeping on free tier)
-      await fetchWithRetry(`${getApiBase()}/api/notifications/send`, {
+      // 2026-10-13 (Sumon): Log server response for notification debugging — never silent fail
+      const resp = await fetchWithRetry(`${getApiBase()}/api/notifications/send`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ externalUserId: targetUid, title, message, data, category }),
       });
+      try {
+        const body = await resp.json();
+        console.log(`[notifyService] send -> ${targetUid.slice(0,8)}: HTTP ${resp.status}`, JSON.stringify(body).slice(0, 200));
+        if (!body.ok) {
+          console.log(`[notifyService] SERVER ERROR: ${body.error || 'unknown'}`);
+        }
+      } catch {
+        console.log(`[notifyService] send -> HTTP ${resp.status} (no JSON body)`);
+      }
     } catch (err) {
       // Non-critical: a failed push must never surface to the user or crash the app.
-      // Log in development so developers can diagnose delivery issues.
-      if (__DEV__) {
-        console.warn('[notifyService] sendPushNotification failed:', err);
-      }
+      // 2026-10-13 (Sumon): ALWAYS log — silent failures hid the notification bug for days
+      console.log('[notifyService] sendPushNotification FAILED:', err);
     }
   })();
 }
