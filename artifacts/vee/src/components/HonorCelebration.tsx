@@ -3,10 +3,12 @@ import { Modal, View, Text, Pressable, StyleSheet, Image } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
 import { database } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import AnimatedFrame from './AnimatedFrame';
 
 interface HonorNotification {
   id: string;
   honorType: 'honor' | 'frame';
+  honorId?: string;
   honorName: string;
   honorIcon?: string;
   title: string;
@@ -52,12 +54,28 @@ export function HonorCelebration() {
 
   if (!pending) return null;
 
+  // 2026-10-13 (Sumon): Show the ACTUAL frame with animation, not generic emoji.
+  // Official frames render the live AnimatedFrame; others show their icon image.
+  const isOfficialFrame = pending.honorType === 'frame' && (
+    (pending.honorId || '').toLowerCase().includes('official') ||
+    (pending.honorName || '').toLowerCase().includes('official')
+  );
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={dismiss}>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          {/* 2026-10-13 (Sumon): Show the ACTUAL badge/frame image, not generic emoji */}
-          {pending.honorIcon && /^https?:\/\//i.test(pending.honorIcon) ? (
+          {isOfficialFrame ? (
+            <View style={{ width: 120, height: 120, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              {/* Avatar placeholder with live animated frame */}
+              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 32 }}>👤</Text>
+              </View>
+              <View style={{ position: 'absolute' }}>
+                <AnimatedFrame size={80} />
+              </View>
+            </View>
+          ) : pending.honorIcon && /^https?:\/\//i.test(pending.honorIcon) ? (
             <Image
               source={{ uri: pending.honorIcon }}
               style={{ width: 100, height: 100, marginBottom: 16 }}
