@@ -547,17 +547,57 @@ export function subscribeUserChats(
   callback: (chats: Chat[]) => void,
 ): () => void {
   const chatsRef = ref(database, `userChats/${myUid}`);
-  return onValue(chatsRef, (snap) => {
+  return onValue(chatsRef, async (snap) => {
     if (!snap.exists()) { callback([]); return; }
     const chats: Chat[] = [];
+    const refreshPromises: Promise<void>[] = [];
     snap.forEach((child) => {
       const sanitized = sanitizeChat(child.key!, child.val());
       // Filter out hidden chats (they reappear on new message via isHidden:false)
-      if (sanitized && !sanitized.isHidden) chats.push(sanitized);
+      if (sanitized && !sanitized.isHidden) {
+        chats.push(sanitized);
+        // 2026-10-13 (Sumon): Fix "Unknown" name + missing DP for Google users.
+        // If participantName is Unknown/empty or avatar missing, fetch live user data.
+        if ((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar) {
+          if (sanitized.participantId) {
+            refreshPromises.push((async () => {
+              try {
+                const userSnap = await get(ref(database, `users/${sanitized.participantId}`));
+                if (userSnap.exists()) {
+                  const u = userSnap.val();
+                  // Use || (not ??) — Google users can have empty-string names
+                  const liveName = (u.name || u.displayName || '').trim();
+                  const liveAvatar = u.photoURL || u.avatar || u.dp || '';
+                  const updates: Record<string, any> = {};
+                  if (liveName && (!sanitized.participantName || sanitized.participantName === 'Unknown')) {
+                    updates.participantName = liveName;
+                    sanitized.participantName = liveName;
+                  }
+                  if (liveAvatar && !sanitized.participantAvatar) {
+                    updates.participantAvatar = liveAvatar;
+                    sanitized.participantAvatar = liveAvatar;
+                  }
+                  if (Object.keys(updates).length > 0) {
+                    await update(ref(database, `userChats/${myUid}/${child.key}`), updates);
+                  }
+                }
+              } catch { /* non-critical */ }
+            })());
+          }
+        }
+      }
     });
     // Sort by lastMessageTime descending
     chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
     callback(chats);
+    // Refresh stale names/avatars in background
+    if (refreshPromises.length > 0) {
+      Promise.all(refreshPromises).then(() => {
+        // Re-sort and re-callback with refreshed data
+        chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
+        callback([...chats]);
+      }).catch(() => {});
+    }
   });
 }
 
