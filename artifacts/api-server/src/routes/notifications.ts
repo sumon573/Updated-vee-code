@@ -186,6 +186,34 @@ router.post("/send", async (req: Request, res: Response) => {
       return res.status(200).json({ ok: true, skipped: true });
     }
 
+    // 2026-10-13 (Sumon): muted chat-এ push যাবে না। chatId data payload-এ থাকে।
+    if (categoryKey === "messages") {
+      const chatId =
+        typeof dataPayload === "object" &&
+        dataPayload !== null &&
+        typeof (dataPayload as Record<string, unknown>)["chatId"] === "string"
+          ? ((dataPayload as Record<string, unknown>)["chatId"] as string)
+          : null;
+      if (chatId && chatId.length > 0 && !INVALID_EXTERNAL_USER_ID_CHARS.test(chatId)) {
+        try {
+          const muteSnap = await adminDatabase()
+            .ref(`userChats/${externalUserId}/${chatId}/isMuted`)
+            .get();
+          if (muteSnap.val() === true) {
+            logger.info(
+              { externalUserId, chatId },
+              "Push skipped: recipient muted this chat",
+            );
+            return res.status(200).json({ ok: true, skipped: true, muted: true });
+          }
+        } catch (err) {
+          // Mute check ব্যর্থ হলে push পাঠিয়ে দিই (fail-open) — notification
+          // miss হওয়ার চেয়ে extra notification ভালো।
+          logger.warn({ err, externalUserId, chatId }, "Mute check failed, sending push anyway");
+        }
+      }
+    }
+
     const oneSignalAppId = process.env["ONESIGNAL_APP_ID"];
     const oneSignalRestApiKey = process.env["ONESIGNAL_REST_API_KEY"];
     if (!oneSignalAppId || !oneSignalRestApiKey) {

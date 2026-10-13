@@ -138,7 +138,7 @@ export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPres
           {chat.isMuted && (
             <Ionicons name="notifications-off" size={16} color="#9E9E9E" style={{ marginRight: 6 }} />
           )}
-          {(chat.unreadCount ?? 0) > 0 && (
+          {(chat.unreadCount ?? 0) > 0 && !chat.isMuted && (
             <View
               style={{
                 backgroundColor: '#4CAF50',
@@ -153,6 +153,24 @@ export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPres
             >
               <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
                 {chat.unreadCount! > 99 ? '99+' : chat.unreadCount}
+              </Text>
+            </View>
+          )}
+          {/* 2026-10-13 (Sumon): muted chat-এ count নয়, শুধু "new" লেখা */}
+          {(chat.unreadCount ?? 0) > 0 && chat.isMuted && (
+            <View
+              style={{
+                backgroundColor: '#E8F5E9',
+                borderRadius: 10,
+                height: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 10,
+                marginRight: 6,
+              }}
+            >
+              <Text style={{ color: '#4CAF50', fontSize: 11, fontWeight: '700' }}>
+                new
               </Text>
             </View>
           )}

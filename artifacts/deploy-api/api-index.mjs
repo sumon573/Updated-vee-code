@@ -20823,27 +20823,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router6;
+    module.exports = Router7;
     module.exports.Route = Route;
-    function Router6(options) {
-      if (!(this instanceof Router6)) {
-        return new Router6(options);
+    function Router7(options) {
+      if (!(this instanceof Router7)) {
+        return new Router7(options);
       }
       const opts = options || {};
-      function router6(req, res, next) {
-        router6.handle(req, res, next);
+      function router7(req, res, next) {
+        router7.handle(req, res, next);
       }
-      Object.setPrototypeOf(router6, this);
-      router6.caseSensitive = opts.caseSensitive;
-      router6.mergeParams = opts.mergeParams;
-      router6.params = {};
-      router6.strict = opts.strict;
-      router6.stack = [];
-      return router6;
+      Object.setPrototypeOf(router7, this);
+      router7.caseSensitive = opts.caseSensitive;
+      router7.mergeParams = opts.mergeParams;
+      router7.params = {};
+      router7.strict = opts.strict;
+      router7.stack = [];
+      return router7;
     }
-    Router6.prototype = function() {
+    Router7.prototype = function() {
     };
-    Router6.prototype.param = function param(name, fn) {
+    Router7.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20863,7 +20863,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router6.prototype.handle = function handle(req, res, callback) {
+    Router7.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20990,7 +20990,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router6.prototype.use = function use(handler) {
+    Router7.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -21023,7 +21023,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router6.prototype.route = function route(path) {
+    Router7.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -21038,7 +21038,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router6.prototype[method] = function(path) {
+      Router7.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21221,13 +21221,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app3 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app3.init = function init() {
-      var router6 = null;
+      var router7 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21236,13 +21236,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router6 === null) {
-            router6 = new Router6({
+          if (router7 === null) {
+            router7 = new Router7({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router6;
+          return router7;
         }
       });
     };
@@ -21313,15 +21313,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router6 = this.router;
+      var router7 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router6.use(path, fn2);
+          return router7.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router6.use(path, function mounted_app(req, res, next) {
+        router7.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23906,7 +23906,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23928,8 +23928,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router6.Route;
-    exports.Router = Router6;
+    exports.Route = Router7.Route;
+    exports.Router = Router7;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -28788,12 +28788,12 @@ var require_logger = __commonJS({
 });
 
 // src/app.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -32854,6 +32854,23 @@ router2.post("/send", async (req, res) => {
       );
       return res.status(200).json({ ok: true, skipped: true });
     }
+    if (categoryKey === "messages") {
+      const chatId = typeof dataPayload === "object" && dataPayload !== null && typeof dataPayload["chatId"] === "string" ? dataPayload["chatId"] : null;
+      if (chatId && chatId.length > 0 && !INVALID_EXTERNAL_USER_ID_CHARS.test(chatId)) {
+        try {
+          const muteSnap = await adminDatabase().ref(`userChats/${externalUserId}/${chatId}/isMuted`).get();
+          if (muteSnap.val() === true) {
+            logger.info(
+              { externalUserId, chatId },
+              "Push skipped: recipient muted this chat"
+            );
+            return res.status(200).json({ ok: true, skipped: true, muted: true });
+          }
+        } catch (err) {
+          logger.warn({ err, externalUserId, chatId }, "Mute check failed, sending push anyway");
+        }
+      }
+    }
     const oneSignalAppId = process.env["ONESIGNAL_APP_ID"];
     const oneSignalRestApiKey = process.env["ONESIGNAL_REST_API_KEY"];
     if (!oneSignalAppId || !oneSignalRestApiKey) {
@@ -36560,6 +36577,45 @@ router3.post("/token", async (req, res) => {
     if (roomName.length > MAX_ROOM_NAME_LENGTH) {
       return res.status(400).json({ ok: false, error: "roomName is too long" });
     }
+    const roomId = roomName.trim();
+    if (/[/\\.#$[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomName" });
+    }
+    try {
+      const db = adminDatabase();
+      const [infoSnap, pinSnap, blockSnap, bannedSnap, grantSnap] = await Promise.all([
+        db.ref(`rooms/${roomId}/info`).get(),
+        db.ref(`roomPins/${roomId}`).get(),
+        db.ref(`roomBlocks/${roomId}/${uid}`).get(),
+        db.ref(`users/${uid}/banned`).get(),
+        db.ref(`roomPinGrants/${roomId}/${uid}`).get()
+      ]);
+      if (!infoSnap.exists()) {
+        return res.status(404).json({ ok: false, error: "Room not found" });
+      }
+      if (bannedSnap.val() === true) {
+        logger.warn({ uid, roomId }, "LiveKit token denied: user banned");
+        return res.status(403).json({ ok: false, error: "Account restricted" });
+      }
+      if (blockSnap.exists()) {
+        logger.warn({ uid, roomId }, "LiveKit token denied: room-blocked");
+        return res.status(403).json({ ok: false, error: "You are blocked from this room" });
+      }
+      const info = infoSnap.val();
+      const isOwner = info?.ownerId === uid;
+      if (pinSnap.exists() && !isOwner) {
+        const grant = grantSnap.val();
+        const grantAt = typeof grant?.at === "number" ? grant.at : 0;
+        const grantAge = Date.now() - grantAt;
+        if (grantAt <= 0 || grantAge < 0 || grantAge > 10 * 60 * 1e3) {
+          logger.warn({ uid, roomId }, "LiveKit token denied: PIN required");
+          return res.status(403).json({ ok: false, error: "PIN verification required" });
+        }
+      }
+    } catch (gateErr) {
+      logger.error({ gateErr, uid, roomId }, "LiveKit token gate failed");
+      return res.status(500).json({ ok: false, error: "Authorization check failed" });
+    }
     const participantNameStr = typeof participantName === "string" ? participantName : uid;
     if (participantNameStr.length > MAX_PARTICIPANT_NAME_LENGTH) {
       return res.status(400).json({ ok: false, error: "participantName is too long" });
@@ -36662,7 +36718,8 @@ router4.post("/init", async (req, res) => {
     const snap = await walletRef.get();
     if (snap.exists()) {
       const stored = snap.val() ?? {};
-      const balance = typeof stored.balance === "number" ? stored.balance : 0;
+      const raw = stored.balance;
+      const balance = typeof raw === "number" ? raw : typeof raw === "string" ? parseFloat(raw) || 0 : 0;
       return res.status(200).json({ ok: true, balance, created: false });
     }
     await walletRef.set({
@@ -36691,15 +36748,46 @@ router4.post("/send-gift", async (req, res) => {
     if (typeof toUid !== "string" || toUid.length === 0 || toUid.length > MAX_UID_LENGTH || INVALID_PATH_CHARS.test(toUid)) {
       return res.status(400).json({ ok: false, error: "Invalid request" });
     }
+    const isSelfGift = toUid === fromUid;
     if (typeof idempotencyKey !== "string" || idempotencyKey.length < MIN_IDEMPOTENCY_KEY_LENGTH || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH || INVALID_PATH_CHARS.test(idempotencyKey)) {
       return res.status(400).json({ ok: false, error: "Invalid request" });
     }
     const coins = gift.coins;
     const db = adminDatabase();
     const receiptRef = db.ref(`walletTransactions/${idempotencyKey}`);
-    const priorSnap = await receiptRef.get();
-    if (priorSnap.exists()) {
-      const stored = priorSnap.val() ?? {};
+    const claimResult = await receiptRef.transaction((current) => {
+      if (current !== null) return void 0;
+      return {
+        fromUid,
+        toUid,
+        giftId,
+        coins,
+        ts: ServerValue.TIMESTAMP,
+        status: "processing"
+      };
+    });
+    if (!claimResult.committed) {
+      let stored = claimResult.snapshot.val() ?? {};
+      if (stored["fromUid"] && stored["fromUid"] !== fromUid) {
+        logger.warn({ fromUid, idempotencyKey }, "Idempotency key belongs to different user");
+        return res.status(403).json({ ok: false, error: "Invalid idempotency key" });
+      }
+      if (stored["status"] === "processing") {
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          const recheck = await receiptRef.get();
+          stored = recheck.val() ?? {};
+          if (stored["status"] !== "processing") break;
+        }
+      }
+      if (stored["status"] === "processing") {
+        logger.warn({ fromUid, idempotencyKey }, "Gift still processing after wait");
+        return res.status(202).json({
+          ok: false,
+          error: "Gift still processing, please retry",
+          retryable: true
+        });
+      }
       const balanceSnap = await db.ref(`wallets/${fromUid}/balance`).get();
       const newBalance2 = typeof balanceSnap.val() === "number" ? balanceSnap.val() : null;
       logger.info(
@@ -36714,26 +36802,54 @@ router4.post("/send-gift", async (req, res) => {
       });
     }
     const txResult = await db.ref(`wallets/${fromUid}/balance`).transaction((current) => {
-      const balance = typeof current === "number" ? current : 0;
+      const balance = typeof current === "number" ? current : typeof current === "string" ? parseFloat(current) || 0 : 0;
       if (balance < coins) return void 0;
       return balance - coins;
     });
     if (!txResult.committed) {
+      await receiptRef.remove();
       return res.status(400).json({ ok: false, error: "Insufficient balance" });
     }
     const newBalance = txResult.snapshot.val();
-    await creditWalletDiamonds(db, toUid, coins);
+    if (!isSelfGift) {
+      await creditWalletDiamonds(db, toUid, coins);
+    }
     const receipt = {
       fromUid,
       toUid,
       giftId,
       coins,
-      ts: ServerValue.TIMESTAMP
+      ts: ServerValue.TIMESTAMP,
+      status: "completed",
+      newBalance
     };
     await receiptRef.set(receipt);
+    const ts = Date.now();
+    const senderTx = {
+      type: "gift_sent",
+      giftId,
+      coins: -coins,
+      // negative for debit
+      toUid,
+      ts,
+      idempotencyKey
+    };
+    const recipientTx = {
+      type: "gift_received",
+      giftId,
+      coins,
+      // positive for credit
+      fromUid,
+      ts,
+      idempotencyKey
+    };
+    await db.ref(`wallets/${fromUid}/transactions`).push(senderTx);
+    if (!isSelfGift) {
+      await db.ref(`wallets/${toUid}/transactions`).push(recipientTx);
+    }
     logger.info(
       { fromUid, toUid, giftId, coins },
-      "Gift sent and receipt stored"
+      "Gift sent, receipt stored, history written"
     );
     return res.status(200).json({
       ok: true,
@@ -36750,7 +36866,8 @@ router4.get("/balance", async (req, res) => {
     const uid = await verifyCaller(req, res);
     if (!uid) return;
     const snap = await adminDatabase().ref(`wallets/${uid}/balance`).get();
-    const balance = typeof snap.val() === "number" ? snap.val() : 0;
+    const raw = snap.val();
+    const balance = typeof raw === "number" ? raw : typeof raw === "string" ? parseFloat(raw) || 0 : 0;
     return res.status(200).json({ balance });
   } catch (err) {
     logger.error({ err }, "Unhandled error in GET /api/wallet/balance");
@@ -37177,18 +37294,300 @@ router4.get("/topup-bkash/pending", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
+var SHORT_ID_PRICES = {
+  "8888": 5e4,
+  "6666": 25e3,
+  "7777": 25e3,
+  "9999": 25e3,
+  "1234": 1e4,
+  "4321": 1e4,
+  "1314": 1e4,
+  "5200": 1e4,
+  "1000": 5e3,
+  "2000": 5e3,
+  "3000": 5e3,
+  "5000": 5e3,
+  "8000": 5e3
+};
+var RANDOM_SHORT_ID_PRICE = 1e3;
+function getShortIdPrice(shortId) {
+  return SHORT_ID_PRICES[shortId] ?? RANDOM_SHORT_ID_PRICE;
+}
+router4.post("/purchase-short-id", async (req, res) => {
+  try {
+    const fromUid = req.uid;
+    if (!fromUid) {
+      return res.status(401).json({ ok: false, error: "Missing Authorization Bearer <redacted>" });
+    }
+    const { shortId, kind, roomId, idempotencyKey } = req.body;
+    if (typeof shortId !== "string" || !/^[0-9]{4}$/.test(shortId)) {
+      return res.status(400).json({ ok: false, error: "Invalid short ID (must be 4 digits)" });
+    }
+    if (kind !== "users" && kind !== "rooms") {
+      return res.status(400).json({ ok: false, error: "Invalid kind" });
+    }
+    if (kind === "rooms" && (typeof roomId !== "string" || roomId.length === 0)) {
+      return res.status(400).json({ ok: false, error: "roomId required for room purchase" });
+    }
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length < 10) {
+      return res.status(400).json({ ok: false, error: "Invalid idempotency key" });
+    }
+    const price = getShortIdPrice(shortId);
+    const db = adminDatabase();
+    const receiptRef = db.ref(`shortIdPurchases/${idempotencyKey}`);
+    const receiptSnap = await receiptRef.get();
+    if (receiptSnap.exists()) {
+      const receipt = receiptSnap.val();
+      return res.status(200).json({ ok: true, shortId, price, cached: true, receipt });
+    }
+    const ownerId = kind === "users" ? fromUid : roomId;
+    const ts = Date.now();
+    if (kind === "rooms") {
+      const roomSnap = await db.ref(`rooms/${roomId}/info/ownerId`).get();
+      const ownerUid = roomSnap.val();
+      if (ownerUid !== fromUid) {
+        const altSnap = await db.ref(`rooms/${roomId}/ownerId`).get();
+        if (altSnap.val() !== fromUid) {
+          return res.status(403).json({ ok: false, error: "Not room owner" });
+        }
+      }
+    }
+    const walletRef = db.ref(`wallets/${fromUid}/balance`);
+    const registryRef = db.ref(`shortIds/${kind}/${shortId}`);
+    const debitResult = await walletRef.transaction((current) => {
+      const bal = typeof current === "number" ? current : 0;
+      if (bal < price) return;
+      return bal - price;
+    });
+    if (!debitResult.committed) {
+      return res.status(400).json({ ok: false, error: "Insufficient diamonds" });
+    }
+    const newBalance = debitResult.snapshot.val();
+    const claimResult = await registryRef.transaction((current) => {
+      if (current !== null && current !== void 0) return;
+      return { ownerUid: fromUid, ownerId, ts, price };
+    });
+    if (!claimResult.committed) {
+      await walletRef.transaction((current) => {
+        const bal = typeof current === "number" ? current : 0;
+        return bal + price;
+      });
+      return res.status(409).json({ ok: false, error: "ID already taken (refunded)" });
+    }
+    try {
+      const updates = {};
+      if (kind === "users") {
+        updates[`users/${fromUid}/shortId`] = shortId;
+      } else {
+        updates[`rooms/${roomId}/info/shortId`] = shortId;
+      }
+      updates[`shortIdPurchases/${idempotencyKey}`] = {
+        uid: fromUid,
+        shortId,
+        kind,
+        ownerId,
+        price,
+        ts,
+        newBalance
+      };
+      updates[`wallets/${fromUid}/transactions`] = void 0;
+      await db.ref().update(updates);
+      await db.ref(`wallets/${fromUid}/transactions`).push({
+        type: "short_id_purchase",
+        shortId,
+        kind,
+        price: -price,
+        ts,
+        idempotencyKey
+      });
+    } catch (err) {
+      logger.error({ err }, "Short-ID mapping failed, rolling back");
+      await walletRef.transaction((c) => (typeof c === "number" ? c : 0) + price);
+      await registryRef.set(null);
+      return res.status(500).json({ ok: false, error: "Failed to complete purchase (refunded)" });
+    }
+    return res.status(200).json({ ok: true, shortId, kind, price, newBalance });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/wallet/purchase-short-id");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
 var wallet_default = router4;
 
-// src/routes/index.ts
+// src/routes/rooms.ts
+var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
-router5.use(health_default);
-router5.use("/notifications", notifications_default);
-router5.use("/livekit", livekit_default);
-router5.use("/wallet", wallet_default);
-var routes_default = router5;
+var attemptLog = /* @__PURE__ */ new Map();
+function isRateLimited(userId, roomId) {
+  const key = `${userId}:${roomId}`;
+  const now = Date.now();
+  const entry = attemptLog.get(key);
+  if (!entry || now > entry.resetAt) {
+    attemptLog.set(key, { count: 1, resetAt: now + 6e4 });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > 10) {
+    return true;
+  }
+  return false;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of attemptLog.entries()) {
+    if (now > entry.resetAt) {
+      attemptLog.delete(key);
+    }
+  }
+}, 5 * 60 * 1e3);
+router5.post("/verify-pin", async (req, res) => {
+  try {
+    if (!isAdminReady()) {
+      logger.error(
+        { err: getAdminInitError() },
+        "POST /api/rooms/verify-pin: Firebase Admin SDK not initialized"
+      );
+      return res.status(500).json({ ok: false, error: "Server not configured" });
+    }
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "Missing auth token" });
+    }
+    const idToken = authHeader.slice(7);
+    let decoded;
+    try {
+      decoded = await verifyIdToken(idToken);
+    } catch {
+      return res.status(401).json({ ok: false, error: "Invalid auth token" });
+    }
+    const userId = decoded.uid;
+    const { roomId, hashedPin } = req.body ?? {};
+    if (typeof roomId !== "string" || roomId.length === 0 || roomId.length > 128) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+    if (/[\/\\.\#\$\[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+    if (typeof hashedPin !== "string" || hashedPin.length !== 64) {
+      return res.status(400).json({ ok: false, error: "Invalid hashedPin" });
+    }
+    if (isRateLimited(userId, roomId)) {
+      logger.warn({ userId, roomId }, "PIN verification rate limited");
+      return res.status(429).json({ ok: false, error: "Too many attempts, try again later" });
+    }
+    const db = adminDatabase();
+    const snap = await db.ref(`roomPins/${roomId}`).get();
+    if (!snap.exists()) {
+      return res.json({ ok: true, valid: false });
+    }
+    const stored = snap.val();
+    const valid = stored.hashedPin === hashedPin;
+    if (!valid) {
+      logger.info({ userId, roomId }, "PIN verification failed");
+    } else {
+      try {
+        await db.ref(`roomPinGrants/${roomId}/${userId}`).set({ at: Date.now() });
+      } catch (grantErr) {
+        logger.warn(
+          { grantErr, userId, roomId },
+          "verify-pin: failed to write PIN grant (non-fatal)"
+        );
+      }
+    }
+    return res.json({ ok: true, valid });
+  } catch (err) {
+    logger.error({ err }, "POST /api/rooms/verify-pin: unhandled error");
+    return res.status(500).json({ ok: false, error: "Internal error" });
+  }
+});
+router5.post("/sync-counts", async (req, res) => {
+  try {
+    if (!isAdminReady()) {
+      const err = getAdminInitError();
+      logger.error({ err }, "POST /api/rooms/sync-counts: Admin SDK not ready");
+      return res.status(500).json({ ok: false, error: "Server misconfigured" });
+    }
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "Missing auth token" });
+    }
+    const idToken = authHeader.slice(7);
+    let userId;
+    try {
+      const decoded = await verifyIdToken(idToken);
+      userId = decoded.uid;
+    } catch {
+      return res.status(401).json({ ok: false, error: "Invalid auth token" });
+    }
+    const { roomId } = req.body;
+    if (!roomId || typeof roomId !== "string" || roomId.length === 0 || roomId.length > 128) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+    if (/[\/\\.\#\$\[\]]/.test(roomId)) {
+      return res.status(400).json({ ok: false, error: "Invalid roomId" });
+    }
+    const db = adminDatabase();
+    const roomRef = db.ref(`rooms/${roomId}`);
+    const [seatsSnap, audienceSnap, infoSnap] = await Promise.all([
+      roomRef.child("seats").get(),
+      roomRef.child("audience").get(),
+      roomRef.child("info").get()
+    ]);
+    if (!infoSnap.exists()) {
+      return res.status(404).json({ ok: false, error: "Room not found" });
+    }
+    let memberCount = 0;
+    const memberPreviews = [];
+    if (seatsSnap.exists()) {
+      seatsSnap.forEach((child) => {
+        const seat = child.val();
+        if (seat?.userId) {
+          memberCount++;
+          if (memberPreviews.length < 5) {
+            memberPreviews.push({
+              userId: seat.userId,
+              userName: seat.userName || "User",
+              ...seat.photoURL ? { photoURL: seat.photoURL } : {}
+            });
+          }
+        }
+        return false;
+      });
+    }
+    memberCount = Math.min(memberCount, 20);
+    let listenerCount = 0;
+    if (audienceSnap.exists()) {
+      audienceSnap.forEach(() => {
+        listenerCount++;
+        return false;
+      });
+    }
+    await roomRef.child("info").update({
+      memberCount,
+      listenerCount,
+      memberPreviews,
+      isTrending: memberCount >= 10
+    });
+    logger.info({ userId, roomId, memberCount, listenerCount }, "Room counts synced");
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "POST /api/rooms/sync-counts: unhandled error");
+    return res.status(500).json({ ok: false, error: "Internal error" });
+  }
+});
+var rooms_default = router5;
+
+// src/routes/index.ts
+var router6 = (0, import_express6.Router)();
+router6.use(health_default);
+router6.use("/notifications", notifications_default);
+router6.use("/livekit", livekit_default);
+router6.use("/wallet", wallet_default);
+router6.use("/rooms", rooms_default);
+var routes_default = router6;
 
 // src/app.ts
-var app2 = (0, import_express6.default)();
+var app2 = (0, import_express7.default)();
 app2.use(
   (0, import_pino_http.default)({
     logger,
@@ -37210,8 +37609,8 @@ app2.use(
 );
 var allowedOrigins = (process.env["ALLOWED_ORIGINS"] ?? "").split(",").map((origin) => origin.trim()).filter((origin) => origin.length > 0);
 app2.use((0, import_cors.default)(allowedOrigins.length > 0 ? { origin: allowedOrigins } : void 0));
-app2.use(import_express6.default.json({ limit: "100kb" }));
-app2.use(import_express6.default.urlencoded({ extended: true, limit: "100kb" }));
+app2.use(import_express7.default.json({ limit: "100kb" }));
+app2.use(import_express7.default.urlencoded({ extended: true, limit: "100kb" }));
 app2.use("/api", routes_default);
 app2.use((_req, res) => {
   res.status(404).json({ ok: false, error: "Not found" });
