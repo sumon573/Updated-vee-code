@@ -15,9 +15,11 @@ type Props = {
   size: number;
   /** Catalog frame id (users/{uid}/activeFrame). Omit for bundled fallback only. */
   frameId?: string;
+  /** 2026-10-13 (Sumon): Voice room seats are compact — smaller frame so it never covers the name below */
+  compact?: boolean;
 };
 
-export default function AnimatedFrame({ size, frameId }: Props) {
+export default function AnimatedFrame({ size, frameId, compact }: Props) {
   const frameBreath = useRef(new Animated.Value(0)).current;
   const [serverUri, setServerUri] = useState<string | null>(null);
   const [serverFailed, setServerFailed] = useState(false);
@@ -61,7 +63,8 @@ export default function AnimatedFrame({ size, frameId }: Props) {
   }, [frameBreath, serverUri, serverFailed]);
 
   // 2026-10-13 (Sumon): frame DP-র সাথে snug fit — 1.45x বেশি বড় দেখাতো
-  const frameSize = size * 1.28;
+  // compact (voice room): 1.15x — নাম ঢেকে না যায়
+  const frameSize = size * (compact ? 1.15 : 1.28);
 
   const frameScale = frameBreath.interpolate({
     inputRange: [0, 1],
