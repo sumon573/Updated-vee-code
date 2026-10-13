@@ -107,11 +107,16 @@ export const SeatCard = memo(function SeatCard({
             </View>
           </View>
 
-          {/* Name */}
-          <Text style={{
-            color: C.text, fontSize: 10, fontWeight: '700', marginTop: 5,
-            textAlign: 'center',
-          }} numberOfLines={1}>{member.name}</Text>
+          {/* Name — 2026-10-13 (Sumon): verified tick next to name */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
+            <Text style={{
+              color: C.text, fontSize: 10, fontWeight: '700',
+              textAlign: 'center',
+            }} numberOfLines={1}>{member.name}</Text>
+            {(member as any).verified && (
+              <Feather name="check-circle" size={10} color="#1E9BF0" style={{ marginLeft: 2 }} />
+            )}
+          </View>
 
           {/* Role badge */}
           {isOwner && (

@@ -17,7 +17,7 @@ import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom } from '@/src/store/minimizedRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
 import { useAuth } from '@/src/context/AuthContext';
-import { getUser } from '@/src/services/userService';
+import { getUser, subscribeUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { submitReport } from '@/src/services/reportService';
 
@@ -173,12 +173,21 @@ export default function VoiceRoomScreen() {
   // Fetch the canonical profile from RTDB once at mount so seat cards show the
   // real name and photo.  The one-time fetch avoids triggering a voice engine
   // re-init (which would happen if we subscribed and the value changed).
-  const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string; activeFrame?: string } | null>(null);
+  // 2026-10-13 (Sumon): Verified badge status for voice room seats
+  const [myVerified, setMyVerified] = useState(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
-    getUser(myUid).then((p) => {
-      if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined });
-    }).catch(() => {/* background: safe to swallow — profile prefetch, fallbacks exist */});
+    // 2026-10-13 (Sumon): Real-time subscription so DP/frame changes reflect immediately.
+    // Fixes Google-login DP sync issue (profile vs voice room showing different pictures).
+    const unsub = subscribeUser(myUid, (p) => {
+      if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: (p as any).activeFrame || undefined });
+    });
+    // Check verified badge
+    import('@/src/services/verifiedService').then(({ hasOfficialBadge }) => {
+      hasOfficialBadge(myUid).then(setMyVerified).catch(() => {});
+    }).catch(() => {});
+    return unsub;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -452,12 +461,19 @@ export default function VoiceRoomScreen() {
               }
               let result: { success: boolean };
               try {
+                // 2026-10-13 (Sumon): Check verified badge for seat display
+                let isVerified = false;
+                try {
+                  const { hasOfficialBadge } = await import('@/src/services/verifiedService');
+                  isVerified = await hasOfficialBadge(myUid);
+                } catch { /* non-critical */ }
                 result = await takeSeat(roomId, invite.seatIdx, {
                   userId: myUid, userName: myName,
                   initials: myInitials, color: myColor,
                   muted: true, role: 'member',
                   ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
                   ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
+                  ...(isVerified ? { verified: true } : {}),
                 });
               } catch {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
@@ -1509,6 +1525,8 @@ export default function VoiceRoomScreen() {
       ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
       // 2026-10-13 (Sumon): Include active frame so seats show it.
       ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
+      // 2026-10-13 (Sumon): Verified badge next to name in seats.
+      ...(myVerified ? { verified: true } : {}),
       // CRITICAL-4 fix: preserve current mute state when moving between seats;
       // start muted only on first join from audience (mySeatIdx < 0).
       muted: mySeatIdx >= 0 ? muted : true,
