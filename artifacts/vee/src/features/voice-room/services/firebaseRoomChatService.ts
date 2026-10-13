@@ -57,7 +57,9 @@ export async function loadOlderMessages(
   return msgs;
 }
 
-/** Subscribe to room chat (last 50 messages). */
+/** Subscribe to room chat (last 50 messages).
+ *  2026-10-13: limitToLast(15) → 50 — pagination লজিক (`visible.length >= 50`
+ *  দিয়ে hasOlderMsgs) আর কমেন্ট 50 ধরে লেখা, 15-এ "Load earlier" ভুল হতো। */
 export function subscribeRoomChat(
   roomId: string,
   myUid: string,
@@ -65,7 +67,7 @@ export function subscribeRoomChat(
 ): () => void {
   const chatRef = query(
     ref(database, `rooms/${roomId}/chat`),
-    limitToLast(15),
+    limitToLast(50),
   );
   return onValue(chatRef, (snap) => {
     if (!snap.exists()) { callback([]); return; }

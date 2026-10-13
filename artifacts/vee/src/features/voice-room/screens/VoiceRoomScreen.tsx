@@ -70,6 +70,11 @@ import {
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
   // P1 ghost-seat fix (2026-10-12): heartbeat + stale sweep
   refreshSeatHeartbeat, sweepStaleSeats,
+  // P0 security (2026-10-12): shared PIN session cache (2026-10-13: moved to
+  // the service so VoiceRoomHome's PIN dialog and this screen share it —
+  // previously a verified PIN at the list level was re-prompted in-screen).
+  isPinVerifiedForSession as isPinVerified,
+  setPinVerifiedForSession as setPinVerified,
   // Entry broadcast (2026-10-10): all users see everyone's entry
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   // Gift animation broadcast (2026-10-10): all users see gift fly animations
@@ -84,28 +89,12 @@ import {
    HELPERS
 ═══════════════════════════════════════════ */
 
-// P0 security (2026-10-12): session-scoped cache of private rooms whose PIN
-// Session PIN cache — remembers which private rooms this device already
-// unlocked, so minimize → return doesn't re-prompt. Prevents re-prompting
-// on minimize → return while keeping the gate effective for fresh deep-links.
-// 2026-10-12 (Sumon): versioned — Map<roomId, pinVersion>. If the owner
-// changes the PIN (info/pinVersion bumps), the cached version mismatches and
-// the user must enter the NEW pin. Old PIN stops working everywhere.
-const pinVerifiedRooms = new Map<string, number>();
-
-/** 2026-10-12 (Sumon): version-aware check — a PIN change (pinVersion bump)
- *  invalidates previously-verified sessions on ALL devices.
- *  2026-10-12 review fix: keyed by uid — a logout/login on the same device
- *  must NOT inherit the previous user's PIN verifications. */
-function pinCacheKey(uid: string, roomId: string): string {
-  return `${uid}:${roomId}`;
-}
-function isPinVerified(uid: string, roomId: string, pinVersion: number): boolean {
-  return pinVerifiedRooms.get(pinCacheKey(uid, roomId)) === pinVersion;
-}
-function setPinVerified(uid: string, roomId: string, pinVersion: number): void {
-  pinVerifiedRooms.set(pinCacheKey(uid, roomId), pinVersion);
-}
+// P0 security (2026-10-12): PIN session cache এখন firebaseRoomService-এ
+// শেয়ার্ড (isPinVerifiedForSession / setPinVerifiedForSession) — VoiceRoomHome-এর
+// PIN dialog আর এই স্ক্রিন একই ক্যাশ দেখে, double PIN prompt হয় না।
+// 2026-10-12 (Sumon): versioned — PIN বদলালে (pinVersion bump) পুরনো সেশন
+// অকার্যকর; 2026-10-12 review fix: uid দিয়ে key — logout/login-এ আগের
+// ইউজারের verification inherit হয় না।
 
 // P1 anti-spam (2026-10-12): per-room last-send timestamps for the 1.5s
 // chat throttle. Module-level so rapid re-renders can't reset it.
@@ -438,9 +427,27 @@ export default function VoiceRoomScreen() {
   }, [myUid]);
 
   /* ── Fix 1: Subscribe to incoming seat invites for this room ── */
+  // 2026-10-13: ১০ মিনিটের পুরনো invite প্রথম snapshot-এ প্রুন করো — পুরনো
+  // invite রুমে ঢুকলেই বারবার Alert দেখাত (Android-এ back দিয়ে dismiss
+  // করলে invite থেকে যেত)।
+  const invitesPrunedRef = useRef(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous' || !roomId) return;
-    return subscribeSeatInvites(myUid, roomId, setPendingSeatInvites);
+    return subscribeSeatInvites(myUid, roomId, (invites) => {
+      if (!invitesPrunedRef.current) {
+        invitesPrunedRef.current = true;
+        const now = Date.now();
+        const fresh = invites.filter((inv) => now - (inv.ts || 0) <= 10 * 60 * 1000);
+        for (const inv of invites) {
+          if (!fresh.includes(inv)) {
+            removeSeatInvite(myUid, inv.id).catch(() => {});
+          }
+        }
+        setPendingSeatInvites(fresh);
+      } else {
+        setPendingSeatInvites(invites);
+      }
+    });
   }, [myUid, roomId]);
 
   /* ── Fix 1: Show Alert when a seat invite arrives ── */
@@ -580,6 +587,39 @@ export default function VoiceRoomScreen() {
 
   /* ── Join state ── */
   const [hasJoined, setHasJoined] = useState(false);
+
+  // 2026-10-13: প্রোফাইল লোড/বদলালে নিজের সিট/অডিয়েন্স রেকর্ডে নাম+ছবি সিঙ্ক
+  // করো। আগে প্রোফাইল লোডের আগেই audience join হয়ে গেলে খালি/পুরনো নাম
+  // আটকে থাকত (Google user-দের ক্ষেত্রে সবচেয়ে বেশি)। শুধু নিজের রেকর্ড
+  // লিখি, আর node না থাকলে তৈরি করি না (get-then-update)।
+  useEffect(() => {
+    if (!myProfile?.name || !roomId || !myUid || myUid === 'anonymous') return;
+    let cancelled = false;
+    (async () => {
+      const patch: Record<string, unknown> = {
+        userName: myProfile.name,
+        initials: getInitials(myProfile.name),
+        ...(myProfile.photoURL ? { photoURL: myProfile.photoURL } : {}),
+      };
+      try {
+        const idx = mySeatIdxRef.current;
+        if (idx >= 0) {
+          const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${idx}`));
+          const seatUser = (seatSnap.val() as { userId?: string } | null)?.userId;
+          if (!cancelled && seatSnap.exists() && seatUser === myUid) {
+            await update(ref(database, `rooms/${roomId}/seats/${idx}`), patch);
+          }
+        } else if (hasJoined) {
+          const audSnap = await get(ref(database, `rooms/${roomId}/audience/${myUid}`));
+          if (!cancelled && audSnap.exists()) {
+            await update(ref(database, `rooms/${roomId}/audience/${myUid}`), patch);
+          }
+        }
+      } catch { /* background: safe to swallow — profile sync */ }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myProfile, roomId, hasJoined]);
 
   // ── P0 security (2026-10-12): in-screen private-room PIN gate ──
   // Direct deep-links (invite links, push-notification taps, profile room
@@ -1119,17 +1159,19 @@ export default function VoiceRoomScreen() {
   // P1 ghost-seat fix (2026-10-12): heartbeat while seated. Refreshes the
   // seat's server timestamp every 60s so crashed/killed clients' seats can
   // be swept. Also sweeps stale seats once on room enter.
+  // 2026-10-13: heartbeat-এ userId পাঠাও — transaction abort করে যদি সিটটা
+  // আর নিজের না হয় (phantom seat তৈরি বন্ধ)।
   useEffect(() => {
     sweepStaleSeats(roomId).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
-    const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx).catch(() => {});
+    const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx, myUid).catch(() => {});
     beat(); // immediate first beat on seating
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
-  }, [roomId, mySeatIdx]);
+  }, [roomId, mySeatIdx, myUid]);
 
   /**
    * Auto-publish guard: fires at most once per room session.
@@ -1257,29 +1299,77 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if (!hasJoined) return;
     hasLeftRef.current = false;
+    let cancelled = false;
 
-    joinRoomAsAudience(roomId, {
-      userId: myUid,
-      userName: myName,
-      initials: myInitials,
-      color: myColor,
-      ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-    }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+    (async () => {
+      // ROOM LOCK (2026-10-13, Sumon): "Lock Room" এখন সত্যিকারের গেট —
+      // লক থাকলে নতুন দর্শক ঢুকতে পারবে না। শুধু owner/admin আর আগের
+      // মেম্বাররা (userRooms/audience/seat রেকর্ড আছে) ফিরতে পারবে।
+      try {
+        // ব্লকড ইউজারের ক্ষেত্রে আলাদা blocked-check effect Alert দেখায় —
+        // এখানে early return, নইলে double alert হতো।
+        const blockSnap = await get(
+          ref(database, `roomBlocks/${roomId}/${myUid}`),
+        ).catch(() => null);
+        if (blockSnap?.exists()) return;
+        const infoSnap = await get(ref(database, `rooms/${roomId}/info`));
+        const info = infoSnap.val() as { isLocked?: boolean; ownerId?: string } | null;
+        if (info && info.isLocked === true && info.ownerId !== myUid) {
+          const adminSnap = await get(
+            ref(database, `rooms/${roomId}/admins/${myUid}`),
+          ).catch(() => null);
+          if (!adminSnap?.exists() && !cancelled) {
+            const [memberSnap, audSnap, seatsSnap] = await Promise.all([
+              get(ref(database, `userRooms/${myUid}/${roomId}`)).catch(() => null),
+              get(ref(database, `rooms/${roomId}/audience/${myUid}`)).catch(() => null),
+              get(ref(database, `rooms/${roomId}/seats`)).catch(() => null),
+            ]);
+            let returning = !!(memberSnap?.exists() || audSnap?.exists());
+            if (!returning && seatsSnap?.exists()) {
+              seatsSnap.forEach((child) => {
+                const s = child.val() as { userId?: string } | null;
+                if (s?.userId === myUid) returning = true;
+              });
+            }
+            if (!returning) {
+              Alert.alert(
+                t('voiceRoom.screen.roomLockedTitle', { defaultValue: 'Room Locked' }),
+                t('voiceRoom.screen.roomLockedMsg', { defaultValue: 'This room is locked. The host is not accepting new members right now.' }),
+              );
+              router.back();
+              return;
+            }
+          }
+        }
+      } catch {
+        // লক চেক fail হলে fail-open — নেটওয়ার্ক সমস্যায় কাউকে আটকাবো না
+      }
+      if (cancelled) return;
 
-    // Send join message to room chat (only if not already sent on entry)
-    // Per Sumon 2026-10-12: everyone's entry visible, even audience
-    if (!hasSentEntryChatMsgRef.current) {
-      hasSentEntryChatMsgRef.current = true;
-      sendRoomChatMsg(roomId, {
-        senderId: 'system',
-        senderName: 'System',
-        senderColor: C.gold,
-        text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-        ts: Date.now(),
-      }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
-    }
+      joinRoomAsAudience(roomId, {
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+      }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+
+      // Send join message to room chat (only if not already sent on entry)
+      // Per Sumon 2026-10-12: everyone's entry visible, even audience
+      if (!hasSentEntryChatMsgRef.current) {
+        hasSentEntryChatMsgRef.current = true;
+        sendRoomChatMsg(roomId, {
+          senderId: 'system',
+          senderName: 'System',
+          senderColor: C.gold,
+          text: t('voiceRoom.screen.joinedRoom', { name: myName }),
+          ts: Date.now(),
+        }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
+      }
+    })();
 
     return () => {
+      cancelled = true;
       // BUG 11 fix: only run cleanup once — handleLeave marks hasLeftRef first
       if (hasLeftRef.current) return;
       hasLeftRef.current = true;
@@ -2763,7 +2853,9 @@ export default function VoiceRoomScreen() {
         visible={giftsOpen}
         onClose={() => { setGiftsOpen(false); setGiftsRecipient(null); }}
         onGiftSent={handleGiftSent}
-        members={seatMembers}
+        // 2026-10-13 (Sumon-এর নিয়ম): gift সবাইকে পাঠানো যাবে — seated +
+        // audience সবাই (self সহ)। আগে শুধু seated members ছিল।
+        members={allMembers}
         initialRecipient={giftsRecipient}
         walletBalance={walletBalance}
         myUid={myUid}

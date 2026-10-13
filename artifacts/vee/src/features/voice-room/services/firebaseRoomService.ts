@@ -780,13 +780,29 @@ async function takeSeatInner(
 
 /**
  * P1 ghost-seat fix (2026-10-12): refresh the seat heartbeat.
- * Called every ~60s by the seat holder while seated. Pure JS, no new modules.
+ * Called every ~60s by the seat holder while seated (and by MinimizedRoomBar
+ * while minimized). Pure JS, no new modules.
+ *
+ * 2026-10-13 (HIGH fix): আগের blind update() সিট মুছে যাওয়ার পরেও ফায়ার
+ * হলে `{seatTs}`-শুধু phantom সিট তৈরি করত (userId ছাড়া) — ভাঙা সিট কার্ড
+ * আর _updateCounts ক্র্যাশ (undefined মানে Firebase set() ব্যর্থ)। এখন
+ * transaction — সিটে holder-এর নিজের userId না মিললে write abort হয়।
  */
-export async function refreshSeatHeartbeat(roomId: string, seatIndex: number): Promise<void> {
+export async function refreshSeatHeartbeat(
+  roomId: string,
+  seatIndex: number,
+  userId: string,
+): Promise<void> {
   try {
-    await update(ref(database, `rooms/${roomId}/seats/${seatIndex}`), {
-      seatTs: serverTimestamp(),
-    });
+    await runTransaction(
+      ref(database, `rooms/${roomId}/seats/${seatIndex}`),
+      (current) => {
+        const s = current as { userId?: string } | null | undefined;
+        // নিজের সিট না হলে (মুছে গেছে / অন্যের) heartbeat লিখবে না
+        if (!s || s.userId !== userId) return undefined;
+        return { ...s, seatTs: serverTimestamp() };
+      },
+    );
   } catch {
     // background: safe to swallow — a missed beat just ages the seat
   }
@@ -910,12 +926,21 @@ export async function removeSeat(
     // 2026-10-12 review fix #2: also sync roomMembers/{roomId}/{uid}/role —
     // Room Info reads roles from there; a kicked admin would otherwise still
     // appear under "Admin" until rejoin. Note roomMembers lives at DB root.
-    await update(ref(database), {
+    // 2026-10-13 (HIGH fix): audience role-path শুধু তখনই লিখো যখন audience
+    // রেকর্ড আসলেই আছে — নইলে `{role:'member'}`-শুধু phantom audience node
+    // তৈরি হয়, যা Live Audience-তে ভূতের row দেখাত।
+    const audSnap = await get(
+      ref(database, `rooms/${roomId}/audience/${demoteUid}`),
+    ).catch(() => null);
+    const paths: Record<string, unknown> = {
       [`rooms/${roomId}/seats/${seatIndex}`]: null,
       [`rooms/${roomId}/admins/${demoteUid}`]: null,
-      [`rooms/${roomId}/audience/${demoteUid}/role`]: 'member',
       [`roomMembers/${roomId}/${demoteUid}/role`]: 'member',
-    });
+    };
+    if (audSnap && audSnap.exists()) {
+      paths[`rooms/${roomId}/audience/${demoteUid}/role`] = 'member';
+    }
+    await update(ref(database), paths);
   } else {
     await remove(seatRef);
   }
@@ -1647,6 +1672,36 @@ export type JoinedMember = {
   role: 'owner' | 'admin' | 'member';
   joinedAt: number;
 };
+
+// ─── PIN Session Cache (2026-10-13) ──────────────────────────────────────────
+// আগে এই ক্যাশ VoiceRoomScreen-এর ভেতরে ছিল — VoiceRoomHome-এর PIN dialog
+// সফল হলেও in-screen gate আবার PIN চাইত (double PIN prompt)। এখন শেয়ার্ড
+// মডিউলে রাখা, যাতে দুই স্ক্রিন একই সেশন-ক্যাশ দেখে।
+// কী = `${uid}:${roomId}` → যাচাইকৃত pinVersion। PIN বদলালে (pinVersion bump)
+// পুরনো সেশন অকার্যকর হয়ে যায়।
+const pinVerifiedSessions = new Map<string, number>();
+
+function pinSessionKey(uid: string, roomId: string): string {
+  return `${uid}:${roomId}`;
+}
+
+/** এই সেশনে এই pinVersion-এর জন্য PIN যাচাই হয়েছে কি? */
+export function isPinVerifiedForSession(
+  uid: string,
+  roomId: string,
+  pinVersion: number,
+): boolean {
+  return pinVerifiedSessions.get(pinSessionKey(uid, roomId)) === pinVersion;
+}
+
+/** এই সেশনে PIN যাচাই সম্পন্ন হিসেবে চিহ্নিত করো। */
+export function setPinVerifiedForSession(
+  uid: string,
+  roomId: string,
+  pinVersion: number,
+): void {
+  pinVerifiedSessions.set(pinSessionKey(uid, roomId), pinVersion);
+}
 
 /**
  * Subscribe to ALL joined members of a room (2026-10-11 Issue #5).

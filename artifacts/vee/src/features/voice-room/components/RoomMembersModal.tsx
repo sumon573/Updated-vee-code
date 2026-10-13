@@ -1,8 +1,9 @@
 /**
- * RoomMembersModal — imo-style room member list.
+ * RoomMembersModal — imo-style room member list ("Live Audience").
  *
  * Groups (in order): Owner (1) → Admins (all) → Members (everyone else).
- * Header shows the TOTAL member count. Search filters by name.
+ * Header shows the TOTAL member count. Per Sumon 2026-10-12: NO search bar,
+ * live members ONLY (owner appears only if actually live in the room).
  * Tapping a member opens member management (host/admin) or profile view.
  *
  * All data is real (Firebase seats + audience). No demo entries.
@@ -11,7 +12,7 @@
 
 import { useMemo } from 'react';
 import {
-  View, Text, Modal, Pressable, FlatList, TextInput, Image,
+  View, Text, Modal, Pressable, FlatList, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';

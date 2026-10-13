@@ -17,6 +17,9 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import * as Location from 'expo-location';
+import { get, ref } from 'firebase/database';
+import { database } from '@/src/config/firebase';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 import ScalePress from '@/components/ScalePress';
 import RoomCard from '../components/RoomCard';
 import RoomListItem from '../components/RoomListItem';
@@ -26,6 +29,7 @@ import {
   subscribeActiveRooms,
   subscribeMyRoomsCombined,
   verifyRoomPin,
+  setPinVerifiedForSession,
   type RoomInfo,
 } from '../services/firebaseRoomService';
 import {
@@ -294,6 +298,13 @@ export default function VoiceRoomHome({
       const ok = await verifyRoomPin(pinDialogRoom.id, hashed);
       if (ok) {
         const roomId = pinDialogRoom.id;
+        // 2026-10-13: সেশন PIN ক্যাশে মার্ক করো — VoiceRoomScreen-এর in-screen
+        // gate যেন আবার PIN না চায় (আগে double prompt হতো)।
+        try {
+          const verSnap = await get(ref(database, `rooms/${roomId}/info/pinVersion`));
+          const ver = typeof verSnap.val() === 'number' ? (verSnap.val() as number) : 0;
+          if (user?.uid) setPinVerifiedForSession(user.uid, roomId, ver);
+        } catch { /* non-critical — worst case the in-screen gate re-prompts */ }
         setPinDialogRoom(null);
         setPinInput('');
         setPinError('');
@@ -301,8 +312,9 @@ export default function VoiceRoomHome({
       } else {
         setPinError('Incorrect PIN. Please try again.');
       }
-    } catch {
-      setPinError('Verification failed. Please try again.');
+    } catch (e) {
+      // 2026-10-13 (Sumon-এর নিয়ম): আসল কারণ দেখাও, generic message নয়
+      setPinError(`Verification failed: ${getErrorCause(e)}`);
     } finally {
       setPinVerifying(false);
     }

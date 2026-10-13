@@ -12,7 +12,7 @@ import {
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
 import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
-import { removeSeat, leaveAudience } from '@/src/features/voice-room/services/firebaseRoomService';
+import { removeSeat, leaveAudience, refreshSeatHeartbeat } from '@/src/features/voice-room/services/firebaseRoomService';
 
 const C = {
   bg: '#0F0A1E',
@@ -111,6 +111,21 @@ export default function MinimizedRoomBar() {
       try { unsub?.(); } catch { /* non-critical */ }
     };
   }, [room?.id]);
+
+  // 2026-10-13 (HIGH fix): মিনিমাইজ অবস্থায়ও সিট heartbeat চালু রাখো।
+  // VoiceRoomScreen unmount হলে heartbeat বন্ধ হয়ে যেত — ৫ মিনিট পর অন্যের
+  // sweepStaleSeats সিট মুছে দিত, অথচ LiveKit অডিও চালু থাকত (ghost mic +
+  // হারানো সিট)। এখন mini-player নিজেই প্রতি ৬০ সেকেন্ডে beat পাঠায়।
+  useEffect(() => {
+    if (!room?.id || !room?.myUid || room.mySeatIdx < 0) return;
+    const rid = room.id;
+    const uid = room.myUid;
+    const idx = room.mySeatIdx;
+    const beat = () => refreshSeatHeartbeat(rid, idx, uid).catch(() => {});
+    beat();
+    const timer = setInterval(beat, 60_000);
+    return () => clearInterval(timer);
+  }, [room?.id, room?.myUid, room?.mySeatIdx]);
 
   // Mic toggle for minimized room (2026-10-10): talk/mute while minimized.
   // NOTE: Hooks MUST stay before the `if (!room) return null` below (React Rules).

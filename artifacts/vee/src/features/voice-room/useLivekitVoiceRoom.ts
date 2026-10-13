@@ -469,21 +469,37 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       markVoiceStage('sdk_loaded', roomId);
 
       // 1. Token from the LiveKit token endpoint (Bearer Firebase ID token).
+      // 2026-10-13: 20s timeout — API hang করলে "connecting" অবস্থায় চিরকাল
+      // আটকে থাকত, কোনো error-ও দেখাত না।
       const fbUser = auth.currentUser;
       if (!fbUser) throw new Error('Not signed in');
       const idToken = await fbUser.getIdToken();
-      const res = await fetch(`${getApiBase()}/api/livekit/token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          roomName: roomId,
-          participantName: identity.userName,
-          canPublish: true,
-        }),
-      });
+      const tokenCtrl = new AbortController();
+      const tokenTimeout = setTimeout(() => tokenCtrl.abort(), 20000);
+      let res: Response;
+      try {
+        res = await fetch(`${getApiBase()}/api/livekit/token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            roomName: roomId,
+            participantName: identity.userName,
+            canPublish: true,
+          }),
+          signal: tokenCtrl.signal,
+        });
+      } catch (e) {
+        throw new Error(
+          e instanceof Error && e.name === 'AbortError'
+            ? 'Voice server request timed out (20s)'
+            : 'Voice server request failed (network)',
+        );
+      } finally {
+        clearTimeout(tokenTimeout);
+      }
       if (!res.ok) throw new Error(`Voice server request failed (${res.status})`);
       const data = (await res.json()) as { token?: string; url?: string };
       if (!data.token || !data.url) {

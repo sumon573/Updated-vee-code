@@ -346,7 +346,9 @@ export function GiftsModal({
               {t('voiceRoom.gifts.selectUp', { selected: selected.length })}
             </Text>
             <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
-              {members.filter(m => m.id !== myUid).map(m => {
+              {/* 2026-10-13 (Sumon-এর নিয়ম): gift anyone — seated + audience,
+                  self সহ। আগে self ফিল্টার করা ছিল। */}
+              {members.map(m => {
                 const isSel = selected.includes(m.id);
                 return (
                   <Pressable key={m.id} onPress={() => toggleSelect(m.id)}

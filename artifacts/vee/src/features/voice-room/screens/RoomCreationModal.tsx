@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/src/context/AuthContext';
-import { createRoom, getUserColor, getInitials, getUserRoomCounts } from '../services/firebaseRoomService';
+import { createRoom, getUserColor, getInitials } from '../services/firebaseRoomService';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 
 const C = {
@@ -177,18 +177,11 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         }
       } catch { /* non-critical — room is created without location */ }
 
-      // Room creation limit check
-      const { publicCount, privateCount } = await getUserRoomCounts(user.uid);
-      if (isPublic && publicCount >= 1) {
-        Alert.alert('Limit Reached', 'You already have a Public Room. Close your existing room before creating a new one.');
-        setCreating(false);
-        return;
-      }
-      if (!isPublic && privateCount >= 1) {
-        Alert.alert('Limit Reached', 'You already have a Private Room. Close your existing room before creating a new one.');
-        setCreating(false);
-        return;
-      }
+      // Room creation limit — 2026-10-13: মোডালের নিজস্ব pre-check সরানো হলো।
+      // আগে এখানে "max 1 public" বলত, অথচ createRoom() সার্ভিসে Sumon-এর নিয়ম
+      // "max 2 public + 1 private" enforce হয় (ROOM_LIMIT_PUBLIC/PRIVATE) —
+      // দুই জায়গার অমিলে ২য় public room বানাতে গেলে ভুল বার্তা আসত।
+      // এখন একমাত্র সার্ভিসই limit দেখে; নিচের catch-এ সেটার বার্তাই দেখায়।
 
       // Validate PIN for private room
       if (!isPublic) {
@@ -213,23 +206,29 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         category,
         themeColor: profileColor,
         hostId: user.uid,
-        // 2026-10-13: Fetch DB profile for name (Auth displayName may be empty for Google users)
-        hostName: await (async () => {
+        // 2026-10-13: DB profile থেকে নাম (Auth displayName Google user-দের
+        // ক্ষেত্রে খালি থাকতে পারে) —
+        // 2026-10-13 fix: photoURL-ও DB থেকে নাও; আগে শুধু auth photoURL
+        // ব্যবহার হতো বলে Google user-দের seat 0-তে DP আসত না।
+        ...await (async () => {
           try {
             const { get: dbGet, ref: dbRef } = await import('firebase/database');
             const { database: db } = await import('@/src/config/firebase');
             const snap = await dbGet(dbRef(db, `users/${user.uid}`));
             if (snap.exists()) {
               const p = snap.val() as any;
-              return p.name || p.displayName || user.displayName || t('voiceRoom.screen.defaultUserName');
+              return {
+                hostName: p.name || p.displayName || user.displayName || t('voiceRoom.screen.defaultUserName'),
+                // P1 fix (2026-10-12): || not ?? — খালি-string photoURL অকেজো
+                hostPhotoURL: p.photoURL || user.photoURL || undefined,
+              };
             }
           } catch { /* fallback */ }
-          return user.displayName || t('voiceRoom.screen.defaultUserName');
+          return {
+            hostName: user.displayName || t('voiceRoom.screen.defaultUserName'),
+            hostPhotoURL: user.photoURL || undefined,
+          };
         })(),
-        // RC6 fix Issue 5: pass host's photoURL so seat 0 shows the avatar
-        // immediately after room creation without a separate fetch.
-        // P1 fix (2026-10-12): || not ?? — an empty-string photoURL is useless.
-        hostPhotoURL: user.photoURL || undefined,
         coverImageUrl,
         location,
         hashedPin,
