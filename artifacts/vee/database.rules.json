@@ -99,16 +99,6 @@
           // possible client-side; full server-authority is the complete fix.
           ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
           ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
-        },
-        // PRIVACY FIX (2026-10-13, Sumon): frames collection locked down.
-        // A user cannot invent a fake frame entry with a custom animationUrl.
-        // Non-admin writes are only allowed if the frameId exists in the
-        // honors_catalog (a real frame). Admins bypass for grants.
-        "frames": {
-          "$frameId": {
-            ".write": "auth != null && (auth.uid === $uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())",
-            ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || root.child('honors_catalog').child($frameId).exists()"
-          }
         }
       }
     },
