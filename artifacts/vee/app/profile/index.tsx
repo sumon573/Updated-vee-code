@@ -22,7 +22,7 @@ import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/user
 import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
-import { hasOfficialBadge } from '@/src/services/verifiedService';
+import { hasOfficialBadge, getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
 import {
@@ -347,6 +347,8 @@ export default function ProfileScreen({
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
   // 2026-10-13 (Sumon): official badge check for verified logo next to name
   const [isOfficial, setIsOfficial] = useState(false);
+  // 2026-10-13 (Sumon): server-driven badge icon (his design) next to name
+  const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
   // P1-4/P1-5 (2026-10-12): frames for the DP overlay + real owned counts
   const [grantedFrames, setGrantedFrames] = useState<GrantedFrame[]>([]);
   const [grantedNameplates, setGrantedNameplates] = useState<GrantedNameplate[]>([]);
@@ -414,6 +416,8 @@ export default function ProfileScreen({
     if (!displayUid) { setIsOfficial(false); return; }
     let cancelled = false;
     hasOfficialBadge(displayUid).then((v) => { if (!cancelled) setIsOfficial(v); });
+    // Fetch server-driven badge icon (Sumon's design from catalog)
+    getOfficialBadgeIconUrl().then((url) => { if (!cancelled) setBadgeIconUrl(url); }).catch(() => {});
     return () => { cancelled = true; };
   }, [displayUid, grantedBadges]);
 
@@ -817,7 +821,12 @@ export default function ProfileScreen({
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
             {(profile?.officialBadge || isOfficial) ? (
-              <Feather name="check-circle" size={20} color="#1E9BF0" style={{ marginLeft: 6 }} />
+              // 2026-10-13 (Sumon): his badge design from server (not Feather icon)
+              <Image
+                source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
+                style={{ width: 22, height: 22, marginLeft: 6 }}
+                resizeMode="contain"
+              />
             ) : null}
           </View>
           {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
