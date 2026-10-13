@@ -122,8 +122,8 @@ export default function IMOTopBar({
           <Image
             source={require('@/assets/images/voice-tab-icon.png')}
             style={{
-              width: 30,
-              height: 30,
+              width: 28,
+              height: 28,
               tintColor: activeTab === 'voice' ? '#2196F3' : '#9E9E9E',
             }}
             resizeMode="contain"
