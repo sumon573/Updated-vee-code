@@ -104,23 +104,45 @@ export async function loginOneSignal(uid: string): Promise<void> {
     // FIX 2026-10-13: Push subscription ID immediately after login() প্রায়ই
     // null থাকে — OneSignal server থেকে async-এ generate হয়। Retry loop দিয়ে
     // wait করি, তারপর Firebase-এ save করি।
+    // 2026-10-13 (Sumon): Extended to 30s + permission check — root cause of
+    // "no notifications" was pushSubscription.id never obtained.
     let subId: string | undefined;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    let permissionGranted = true;
+    try {
+      // Check notification permission status
+      const permStatus = await os.Notifications?.permissionNative?.();
+      console.log('[OneSignal] Permission status:', permStatus);
+      if (permStatus === false || permStatus === 0) {
+        permissionGranted = false;
+        console.log('[OneSignal] ❌ NOTIFICATION PERMISSION DENIED — user must enable in Settings');
+      }
+    } catch {
+      // Permission check not available on this SDK version — continue
+    }
+    
+    for (let attempt = 0; attempt < 30; attempt++) {
       try {
         subId = os.User?.pushSubscription?.id ?? undefined;
       } catch {
         subId = undefined;
       }
       if (subId) break;
-      console.log(`[OneSignal] waiting for pushSubscription.id (attempt ${attempt + 1}/10)`);
+      if (attempt % 5 === 0) {
+        console.log(`[OneSignal] waiting for pushSubscription.id (attempt ${attempt + 1}/30)`);
+      }
       await new Promise((r) => setTimeout(r, 1000));
     }
 
     if (subId) {
-      console.log('[OneSignal] Got pushSubscription.id, saving to Firebase');
+      console.log('[OneSignal] ✅ Got pushSubscription.id, saving to Firebase');
       await saveOneSignalIdToFirebase(uid, subId);
     } else {
-      console.log('[OneSignal] WARNING: pushSubscription.id still null after 10s — push will not work until app restart');
+      console.log('[OneSignal] ❌ FAILED: pushSubscription.id null after 30s');
+      if (!permissionGranted) {
+        console.log('[OneSignal] CAUSE: Notification permission denied. Enable in Settings > Apps > Vee > Notifications');
+      } else {
+        console.log('[OneSignal] CAUSE UNKNOWN: Permission granted but no subscription ID. Possible OneSignal SDK/config issue.');
+      }
     }
 
     // Subscription change listener — ID পরে generate হলে auto-save
