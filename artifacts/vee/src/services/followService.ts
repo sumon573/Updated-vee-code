@@ -30,9 +30,15 @@ import {
   ref, set, remove, get, onValue, runTransaction,
 } from 'firebase/database';
 import { database } from '../config/firebase';
+import { getBlockDirection, BlockedInteractionError } from './blockService';
 
 /** Follow a user. Idempotent — repeated calls while already following are no-ops. */
 export async function followUser(myUid: string, targetUid: string): Promise<void> {
+  // ব্লক চেক (Sumon 2026-10-13): ব্লকড ইউজারকে ফলো করা যাবে না —
+  // যে দিক থেকেই ব্লক থাকুক।
+  const blockDir = await getBlockDirection(myUid, targetUid);
+  if (blockDir !== 'none') throw new BlockedInteractionError(blockDir);
+
   const followingRef = ref(database, `following/${myUid}/${targetUid}`);
 
   // runTransaction is atomic: if the edge already exists the transaction aborts

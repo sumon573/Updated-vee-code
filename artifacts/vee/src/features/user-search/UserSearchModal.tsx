@@ -25,6 +25,7 @@ import {
   FriendStatus,
 } from '@/src/services/friendRequestService';
 import { isFollowing as checkIsFollowing } from '@/src/services/followService';
+import { subscribeBlockedUsers } from '@/src/services/blockService';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import * as Alerts from 'react-native';
@@ -108,6 +109,16 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
   // My full VeeUser profile (needed for sendFriendRequest)
   const [myProfile, setMyProfile] = useState<VeeUser | null>(null);
 
+  // 2026-10-13 (Sumon): আমার ব্লক-লিস্ট — ব্লকড ইউজার সার্চ রেজাল্টে
+  // দেখা যাবে না।
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!me?.uid || !visible) return;
+    return subscribeBlockedUsers(me.uid, (blocks) =>
+      setBlockedUids(new Set(blocks.map((b) => b.targetUid))),
+    );
+  }, [me?.uid, visible]);
+
   // Per-user action states (optimistic UI + status cache)
   const [userActions, setUserActions] = useState<Record<string, UserActionState>>({});
 
@@ -156,6 +167,9 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
       for (const u of allUsers) {
         // FIX: always use child.key as uid — guarantees uid is never undefined
         if (u.uid === me?.uid) continue;
+        // 2026-10-13 (Sumon): আমি ব্লক করেছি এমন ইউজার সার্চে দেখা যাবে না
+        // (byThem সার্ভিস-লেভেল গার্ডে পরিষ্কার এরর দিয়ে ব্লক হয়)।
+        if (blockedUids.has(u.uid)) continue;
         const nameMatch        = u.name?.toLowerCase().includes(q);
         const displayNameMatch = (u as any).displayName?.toLowerCase().includes(q);
         const vidMatch         = u.vId?.toLowerCase().includes(q);
@@ -185,7 +199,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
     } finally {
       if (searchId === searchIdRef.current) setLoading(false);
     }
-  }, [me?.uid, updateAction]);
+  }, [me?.uid, updateAction, blockedUids]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

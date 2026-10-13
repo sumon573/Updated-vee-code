@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUserByShortId } from '@/src/services/userService';
+import { getBlockDirection, BlockDirection } from '@/src/services/blockService';
 import { showErrorWithCause } from '@/src/utils/errorDisplay';
 import { VerifiedName } from '@/src/components/VerifiedName';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
@@ -20,17 +21,31 @@ export default function VIDSearchScreen() {
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [searched, setSearched] = useState(false);
+  // 2026-10-13 (Sumon): রেজাল্ট ব্লকড হলে — byThem হলে লুকানো হয়,
+  // byMe হলে "Unblock" অ্যাকশন দেখায়।
+  const [resultBlockedByMe, setResultBlockedByMe] = useState(false);
 
   const handleSearch = async () => {
     const q = query.trim();
     if (!q) return;
     setSearching(true);
     setSearched(true);
+    setResultBlockedByMe(false);
     try {
       const found = await getUserByShortId(q);
       // Don't show self
       if (found && found.uid === user?.uid) {
         setResult(null);
+      } else if (found && user?.uid) {
+        // ব্লক চেক (Sumon 2026-10-13): ও আমাকে ব্লক করলে সার্চে
+        // দেখানো যাবে না; আমি ব্লক করলে Unblock অপশন থাকবে।
+        const dir = await getBlockDirection(user.uid, found.uid).catch(() => 'none' as BlockDirection);
+        if (dir === 'byThem' || dir === 'mutual') {
+          setResult(null);
+        } else {
+          setResult(found);
+          setResultBlockedByMe(dir === 'byMe');
+        }
       } else {
         setResult(found);
       }
@@ -159,13 +174,16 @@ export default function VIDSearchScreen() {
             </View>
             <View
               style={{
-                backgroundColor: '#2196F3',
+                // 2026-10-13 (Sumon): বাটন স্ট্যান্ডার্ড #E3F2FD bg + #007AFF text
+                backgroundColor: '#E3F2FD',
                 borderRadius: 20,
                 paddingHorizontal: 16,
                 paddingVertical: 8,
               }}
             >
-              <Text style={{ color: '#fff', fontWeight: '600' }}>Add</Text>
+              <Text style={{ color: '#007AFF', fontWeight: '600' }}>
+                {resultBlockedByMe ? 'Unblock' : 'Add'}
+              </Text>
             </View>
           </TouchableOpacity>
         ) : (

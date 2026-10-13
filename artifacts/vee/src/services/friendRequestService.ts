@@ -17,6 +17,7 @@ import {
 import { database } from '../config/firebase';
 import { VeeUser } from './userService';
 import { sendPushNotification } from './notifyService';
+import { getBlockDirection, BlockedInteractionError } from './blockService';
 
 export type FriendRequest = {
   fromUid: string;
@@ -45,6 +46,11 @@ export async function sendFriendRequest(me: VeeUser, targetUid: string): Promise
   if (friendSnap.exists()) throw new Error('You are already friends.');
   if (alreadySentSnap.exists()) throw new Error('Friend request already sent.');
   if (incomingSnap.exists()) throw new Error('This user has already sent you a friend request.');
+
+  // ব্লক চেক (Sumon 2026-10-13): ব্লকড ইউজারের সাথে ফ্রেন্ড রিকোয়েস্ট
+  // পাঠানো যাবে না — যে দিক থেকেই ব্লক থাকুক।
+  const blockDir = await getBlockDirection(me.uid, targetUid);
+  if (blockDir !== 'none') throw new BlockedInteractionError(blockDir);
 
   const request: FriendRequest = {
     fromUid: me.uid,
@@ -78,6 +84,9 @@ export async function cancelFriendRequest(myUid: string, targetUid: string): Pro
 
 /** Accept an incoming request from `fromUid`. Adds both users to each other's friends list. */
 export async function acceptFriendRequest(myUid: string, fromUid: string): Promise<void> {
+  // ব্লক চেক (Sumon 2026-10-13): ব্লকড ইউজারের সাথে ফ্রেন্ডশিপ তৈরি করা যাবে না।
+  const blockDir = await getBlockDirection(myUid, fromUid);
+  if (blockDir !== 'none') throw new BlockedInteractionError(blockDir);
   await Promise.all([
     set(ref(database, `friends/${myUid}/${fromUid}`), true),
     set(ref(database, `friends/${fromUid}/${myUid}`), true),

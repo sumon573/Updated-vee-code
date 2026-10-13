@@ -20,8 +20,11 @@ import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
 import { VerifiedName } from '@/src/components/VerifiedName';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
-import { getBlockDirection, BlockDirection, blockUser, unblockUser } from '@/src/services/blockService';
+import { getBlockDirection, BlockDirection, blockUser, unblockUser, subscribeBlockedUsers } from '@/src/services/blockService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
+// 2026-10-13: call room ID always via buildCallRoomId (ac_ prefix) —
+// every other entry point uses it; a hand-rolled join here would diverge.
+import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import {
   FriendRequest, subscribeIncomingRequests, subscribeFriendUids,
   acceptFriendRequest, rejectFriendRequest, removeFriend,
@@ -98,6 +101,16 @@ export default function ContactsScreen() {
   // LONG-PRESS MENU (2026-10-11 fix): imo-style context menu for contacts.
   const [menuContact, setMenuContact] = useState<VeeUser | null>(null);
   const [menuBlocked, setMenuBlocked] = useState(false);
+
+  // 2026-10-13 (Sumon): আমার ব্লক-লিস্ট — ব্লকড ইউজার ফ্রেন্ড/রিকোয়েস্ট
+  // লিস্টে দেখা যাবে না (Privacy → Blocked Users থেকে আনব্লক করা যায়)।
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!me?.uid) return;
+    return subscribeBlockedUsers(me.uid, (blocks) =>
+      setBlockedUids(new Set(blocks.map((b) => b.targetUid))),
+    );
+  }, [me?.uid]);
 
   const handleContactLongPress = useCallback(async (targetUser: VeeUser) => {
     if (!me?.uid) return;
@@ -289,6 +302,18 @@ export default function ContactsScreen() {
 
   const handleMessage = useCallback(async (targetUser: VeeUser) => {
     if (!me?.uid) return;
+    // 2026-10-13 (Sumon): handleCall-এর মতো এখানেও ব্লক চেক — আগে চেক
+    // ছিল না, ব্লকড কন্টাক্টের চ্যাট-আইকনে ট্যাপ করলে চ্যাট খুলে যেত।
+    const direction = await getBlockDirection(me.uid, targetUser.uid).catch(() => 'none' as BlockDirection);
+    if (direction !== 'none') {
+      Alert.alert(
+        'Blocked',
+        direction === 'byMe' || direction === 'mutual'
+          ? `You blocked ${targetUser.name}. Unblock them to chat.`
+          : `${targetUser.name} has blocked you.`,
+      );
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const chatId = buildChatId(me.uid, targetUser.uid);
 
@@ -354,8 +379,8 @@ export default function ContactsScreen() {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const callRoomId = [me.uid, targetUser.uid].sort().join('_');
-    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(targetUser.uid)}&remoteName=${encodeURIComponent(targetUser.name)}&calleeUid=${encodeURIComponent(targetUser.uid)}&myUid=${encodeURIComponent(me.uid)}&myName=${encodeURIComponent(me.displayName ?? 'Vee User')}`;
+    const callRoomId = buildCallRoomId(me.uid, targetUser.uid);
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(targetUser.uid)}&remoteName=${encodeURIComponent(targetUser.name)}&calleeUid=${encodeURIComponent(targetUser.uid)}&myUid=${encodeURIComponent(me.uid)}&myName=${encodeURIComponent(me.displayName || 'Vee User')}`;
     if (targetUser.photoURL) url += `&remotePhotoURL=${encodeURIComponent(targetUser.photoURL)}`;
     if (me.photoURL) url += `&myPhotoURL=${encodeURIComponent(me.photoURL)}`;
     router.push(url as never);
@@ -377,14 +402,20 @@ export default function ContactsScreen() {
 
   // ─── Derived data ────────────────────────────────────────────────────────────
 
+  // 2026-10-13 (Sumon): ব্লকড ইউজার কোনো লিস্টে দেখা যাবে না
+  // (আনব্লক: Privacy → Blocked Users)।
+  const visibleContacts = contacts.filter((u) => !blockedUids.has(u.uid));
   const filtered = search.trim()
-    ? contacts.filter((u) =>
+    ? visibleContacts.filter((u) =>
         u.name?.toLowerCase().includes(search.toLowerCase()) ||
         u.vId?.toLowerCase().includes(search.toLowerCase()),
       )
-    : contacts;
+    : visibleContacts;
 
-  const totalRequestsBadge = incomingRequests.length;
+  const visibleIncoming = incomingRequests.filter((r) => !blockedUids.has(r.fromUid));
+  const visibleSent = sentRequestUsers.filter((u) => !blockedUids.has(u.uid));
+
+  const totalRequestsBadge = visibleIncoming.length;
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -481,14 +512,14 @@ export default function ContactsScreen() {
                 }}>
                   {t('contacts.requestsReceived')}
                 </Text>
-                {incomingRequests.length > 0 && (
+                {visibleIncoming.length > 0 && (
                   <View style={{
                     minWidth: 14, height: 14, borderRadius: 7,
                     backgroundColor: C.red, alignItems: 'center', justifyContent: 'center',
                     paddingHorizontal: 2,
                   }}>
                     <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>
-                      {incomingRequests.length}
+                      {visibleIncoming.length}
                     </Text>
                   </View>
                 )}
@@ -513,7 +544,7 @@ export default function ContactsScreen() {
 
           {/* Received requests list */}
           {requestSubTab === 'received' ? (
-            incomingRequests.length === 0 ? (
+            visibleIncoming.length === 0 ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
                 <View style={{
                   width: 72, height: 72, borderRadius: 36,
@@ -529,7 +560,7 @@ export default function ContactsScreen() {
               </View>
             ) : (
               <FlatList
-                data={incomingRequests}
+                data={visibleIncoming}
                 keyExtractor={(item) => item.fromUid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
@@ -599,7 +630,7 @@ export default function ContactsScreen() {
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                 <ActivityIndicator color={C.glow} size="large" />
               </View>
-            ) : sentRequestUsers.length === 0 ? (
+            ) : visibleSent.length === 0 ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
                 <View style={{
                   width: 72, height: 72, borderRadius: 36,
@@ -615,7 +646,7 @@ export default function ContactsScreen() {
               </View>
             ) : (
               <FlatList
-                data={sentRequestUsers}
+                data={visibleSent}
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
@@ -715,11 +746,12 @@ export default function ContactsScreen() {
                 <Pressable
                   onPress={() => setSearchModalOpen(true)}
                   style={{
-                    marginTop: 20, backgroundColor: C.primary,
+                    // 2026-10-13 (Sumon): বাটন স্ট্যান্ডার্ড #E3F2FD bg + #007AFF text
+                    marginTop: 20, backgroundColor: '#E3F2FD',
                     borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12,
                   }}
                 >
-                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>
+                  <Text style={{ color: '#007AFF', fontWeight: '800', fontSize: 14 }}>
                     {t('contacts.findPeopleBtn')}
                   </Text>
                 </Pressable>

@@ -26,11 +26,14 @@ import { hasOfficialBadge } from '@/src/services/verifiedService';
 import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
 import {
-  sendFriendRequest, cancelFriendRequest, acceptFriendRequest,
+  sendFriendRequest, cancelFriendRequest, acceptFriendRequest, rejectFriendRequest,
   subscribeFriendStatus, FriendStatus,
 } from '@/src/services/friendRequestService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
-import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
+import {
+  unblockUser, getBlockDirection,
+  subscribeBlockedUsers, BlockDirection,
+} from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
@@ -350,8 +353,13 @@ export default function ProfileScreen({
   // ── Other-user action buttons state (only used when !isMe) ──
   const [isFollowingTarget, setIsFollowingTarget] = useState(false);
   const [friendStatus, setFriendStatus] = useState<FriendStatus>('none');
-  const [isBlockedTarget, setIsBlockedTarget] = useState(false);
+  // দুই দিকের ব্লক স্টেট: 'none' | 'byMe' | 'byThem' | 'mutual'
+  const [blockDirection, setBlockDirection] = useState<BlockDirection>('none');
   const [actionLoading, setActionLoading] = useState(false);
+  // আমি ব্লক করেছি (byMe/mutual) — তখন বাম বাটনে Unblock দেখায়
+  const isBlockedTarget = blockDirection === 'byMe' || blockDirection === 'mutual';
+  // ও আমাকে ব্লক করেছে — প্রোফাইল ডেটা + অ্যাকশন সব বন্ধ
+  const blockedByThem = blockDirection === 'byThem' || blockDirection === 'mutual';
 
   useEffect(() => {
     if (!displayUid) { setLoading(false); return; }
@@ -454,29 +462,94 @@ export default function ProfileScreen({
   }, []);
 
   // ── Other-user: subscribe to follow/friend/block status ──
+  // 2026-10-13 (Sumon): ব্লক দুই দিকেই চেক — ও আমাকে ব্লক করলে প্রোফাইল
+  // দেখা যাবে না, কোনো অ্যাকশনও হবে না। byMe সাইড লাইভ সাবস্ক্রিপশনে
+  // আপডেট হয় (অন্য স্ক্রিন থেকে ব্লক/আনব্লক করলেও stale থাকে না)।
   useEffect(() => {
     if (isMe || !user?.uid || !displayUid) return;
     const unsub1 = subscribeIsFollowing(user.uid, displayUid, setIsFollowingTarget);
     const unsub2 = subscribeFriendStatus(user.uid, displayUid, setFriendStatus);
-    isBlockedByMe(user.uid, displayUid).then(setIsBlockedTarget).catch(() => {});
-    return () => { unsub1(); unsub2(); };
+    let cancelled = false;
+    getBlockDirection(user.uid, displayUid)
+      .then((d) => { if (!cancelled) setBlockDirection(d); })
+      .catch(() => {});
+    const unsub3 = subscribeBlockedUsers(user.uid, (blocks) => {
+      if (cancelled) return;
+      const byMeNow = blocks.some((b) => b.targetUid === displayUid);
+      setBlockDirection((prev) => {
+        const themSide = prev === 'byThem' || prev === 'mutual';
+        if (byMeNow && themSide) return 'mutual';
+        if (byMeNow) return 'byMe';
+        if (themSide) return 'byThem';
+        return 'none';
+      });
+    });
+    return () => { cancelled = true; unsub1(); unsub2(); unsub3(); };
   }, [isMe, user?.uid, displayUid]);
 
   // ── Other-user: action handlers ──
   const handleLeftAction = useCallback(async () => {
     if (!user?.uid || !displayUid || actionLoading) return;
+    // 2026-10-13 (Sumon): request-received হলে Accept/Decline দুটো অপশন —
+    // আগে প্রোফাইল থেকে ডিক্লাইন করার কোনো পথ ছিল না (UX dead-end)।
+    if (friendStatus === 'request-received' && !isBlockedTarget) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // NOTE: displayName const নিচে ডিক্লেয়ার হয় — deps array-এ রাখলে
+      // TDZ crash হবে, তাই এখানে profile?.name সরাসরি ব্যবহার।
+      Alert.alert(profile?.name || t('userProfile.defaultName', 'User'), '', [
+        {
+          text: t('userProfile.accept', 'Accept'),
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              // P1 fix (2026-10-12): signature is (myUid, fromUid) — accepter first.
+              await acceptFriendRequest(user.uid, displayUid);
+            } catch (e) {
+              Alert.alert(t('userProfile.error', 'Error'), String(e));
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+        {
+          text: t('userProfile.decline', 'Decline'),
+          style: 'destructive',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              await rejectFriendRequest(user.uid, displayUid);
+            } catch (e) {
+              Alert.alert(t('userProfile.error', 'Error'), String(e));
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+        { text: t('common.cancel', 'Cancel'), style: 'cancel' },
+      ]);
+      return;
+    }
     setActionLoading(true);
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       if (isBlockedTarget) {
         await unblockUser(user.uid, displayUid);
-        setIsBlockedTarget(false);
+        // আনব্লকের পর ওর দিকের ব্লক থাকলে 'byThem' থাকে
+        setBlockDirection((prev) => (prev === 'mutual' ? 'byThem' : 'none'));
       } else if (friendStatus === 'friends') {
+        // Chat-এ যাওয়ার আগে ব্লক আবার চেক — stale স্টেটে বাইপাস হবে না
+        const dir = await getBlockDirection(user.uid, displayUid).catch(() => 'none' as BlockDirection);
+        setBlockDirection(dir);
+        if (dir !== 'none') {
+          Alert.alert(
+            t('userProfile.error', 'Error'),
+            dir === 'byMe' || dir === 'mutual'
+              ? t('userProfile.blockedByMeChat', 'You blocked this user. Unblock to chat.')
+              : t('userProfile.blockedByThemChat', 'This user has blocked you.'),
+          );
+          return;
+        }
         router.push(`/inbox/${buildChatId(user.uid, displayUid)}`);
-      } else if (friendStatus === 'request-received') {
-        // P1 fix (2026-10-12): signature is (myUid, fromUid) — accepter first.
-        // Previously swapped: the acceptance push went to the accepter.
-        await acceptFriendRequest(user.uid, displayUid);
       } else if (friendStatus === 'request-sent') {
         await cancelFriendRequest(user.uid, displayUid);
       } else {
@@ -492,7 +565,7 @@ export default function ProfileScreen({
     } finally {
       setActionLoading(false);
     }
-  }, [user?.uid, displayUid, friendStatus, isBlockedTarget, actionLoading, t]);
+  }, [user?.uid, displayUid, friendStatus, isBlockedTarget, actionLoading, t, profile?.name]);
 
   const handleRightAction = useCallback(async () => {
     if (!user?.uid || !displayUid || actionLoading) return;
@@ -573,6 +646,43 @@ export default function ProfileScreen({
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={C.blue} />
+      </SafeAreaView>
+    );
+  }
+
+  // 2026-10-13 (Sumon): ও আমাকে ব্লক করলে প্রোফাইল দেখা যাবে না —
+  // নাম/DP/বায়ো/রুম/গিফট/ব্যাজ কিছুই রেন্ডার হবে না, অ্যাকশন বাটনও না।
+  // (byMe হলে পুরো প্রোফাইলই দেখায় — বাম বাটনে Unblock থাকে, আগের মতো।)
+  if (!isMe && blockedByThem) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
+          <Pressable
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/home' as never);
+            }}
+            style={{ padding: 8 }}
+            hitSlop={12}
+          >
+            <Feather name="arrow-left" size={24} color={C.text} />
+          </Pressable>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+          <View style={{
+            width: 84, height: 84, borderRadius: 42,
+            backgroundColor: '#FEE2E2',
+            alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+          }}>
+            <Feather name="slash" size={36} color="#DC2626" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, textAlign: 'center' }}>
+            {t('userProfile.blockedByThemTitle', 'This profile is unavailable')}
+          </Text>
+          <Text style={{ fontSize: 14, color: C.muted, textAlign: 'center', marginTop: 10 }}>
+            {t('userProfile.blockedByThemMsg', "This user has blocked you, so you can't view their profile.")}
+          </Text>
+        </View>
       </SafeAreaView>
     );
   }
