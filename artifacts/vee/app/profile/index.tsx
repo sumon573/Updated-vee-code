@@ -338,7 +338,7 @@ export default function ProfileScreen({
   const [showVidMenu, setShowVidMenu] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // NOTE 11 (2026-10-11): full-screen DP viewer + Change flow
-  const [showDpViewer, setShowDpViewer] = useState(false);
+  const [showDpViewer, setShowDpViewer] = useState(false); // DEPRECATED 2026-10-13: DP viewer is now /profile/dp-viewer route
   const [uploadingDp, setUploadingDp] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
@@ -647,7 +647,18 @@ export default function ProfileScreen({
             frames never reach here (expiry-filtered in subscribeFrames). */}
         <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <Pressable onPress={() => setShowDpViewer(true)} hitSlop={6}>
+            <Pressable
+              onPress={() => {
+                // 2026-10-13 (Sumon): DP viewer is now a dedicated route —
+                // the Modal was showing 404 on other users' profiles.
+                if (isMe) {
+                  router.push('/profile/dp-viewer');
+                } else {
+                  router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
+                }
+              }}
+              hitSlop={6}
+            >
               <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
                 {photoURL ? (
                   <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
@@ -941,56 +952,6 @@ export default function ProfileScreen({
           </Pressable>
         </Pressable>
       )}
-      {/* ─── NOTE 11 (2026-10-11): Full-screen DP viewer + Change flow ─── */}
-      <Modal
-        visible={showDpViewer}
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setShowDpViewer(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
-          <Pressable
-            onPress={() => setShowDpViewer(false)}
-            style={{ position: 'absolute', top: 55, right: 20, zIndex: 10, padding: 8 }}
-            hitSlop={12}
-          >
-            <Feather name="x" size={28} color="#fff" />
-          </Pressable>
-          {photoURL ? (
-            <Image
-              source={{ uri: photoURL }}
-              style={{ width: '100%', aspectRatio: 1, maxHeight: '70%' }}
-              resizeMode="contain"
-            />
-          ) : (
-            <View style={{ width: 160, height: 160, borderRadius: 80, backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 64, fontWeight: '800', color: '#fff' }}>{displayName[0]?.toUpperCase()}</Text>
-            </View>
-          )}
-          {/* Change button below the DP (own profile only) */}
-          {isMe && (
-          <Pressable
-            onPress={handleChangeDp}
-            disabled={uploadingDp}
-            style={{
-              marginTop: 32, flexDirection: 'row', alignItems: 'center',
-              backgroundColor: '#1C1C1E', borderRadius: 24,
-              paddingHorizontal: 28, paddingVertical: 12,
-              opacity: uploadingDp ? 0.6 : 1,
-            }}
-          >
-            {uploadingDp ? (
-              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-            ) : (
-              <Feather name="edit-2" size={16} color="#fff" style={{ marginRight: 8 }} />
-            )}
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
-              {uploadingDp ? 'Uploading…' : 'Change'}
-            </Text>
-          </Pressable>
-          )}
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
