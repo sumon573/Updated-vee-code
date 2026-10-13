@@ -232,6 +232,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [initialLoading, setInitialLoading]   = useState(true);
   // 2026-10-13 (Sumon): three-dot menu — custom polished modal (Cancel button সহ)।
   const [moreOptionsVisible, setMoreOptionsVisible] = useState(false);
+  // 2026-10-14 (Sumon): scroll-to-bottom floating button — উপরে scroll করলে দেখাবে।
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -404,6 +406,19 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   const handleScrollBeginDrag = useCallback(() => {
     userScrolledRef.current = true;
+  }, []);
+
+  // 2026-10-14 (Sumon): scroll position track — নিচে না থাকলে floating button দেখাও।
+  const handleScroll = useCallback((e: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
+    setShowScrollBtn(!isAtBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    flatRef.current?.scrollToEnd({ animated: true });
+    setShowScrollBtn(false);
+    userScrolledRef.current = false;
   }, []);
 
   // ── Load older messages (pagination) ─────────────────────────────────────
@@ -893,6 +908,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               // image load-এ height বদলালেও নিচেই থাকবে।
               onContentSizeChange={handleContentSizeChange}
               onScrollBeginDrag={handleScrollBeginDrag}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
               // RC8-A: header shows "Load earlier messages" when older pages exist
               ListHeaderComponent={ListHeaderComponent}
               ListEmptyComponent={
@@ -950,6 +967,28 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                     : t('chat.blockedBannerByThem', { name: displayName })}
                 </Text>
               </View>
+            )}
+
+            {/* 2026-10-14 (Sumon): Scroll-to-bottom floating button —
+                উপরে scroll করলে দেখাবে, tap করলে latest message-এ যাবে। */}
+            {showScrollBtn && (
+              <Pressable
+                onPress={scrollToBottom}
+                style={{
+                  position: 'absolute',
+                  right: 16,
+                  bottom: 90,
+                  width: 44, height: 44, borderRadius: 22,
+                  backgroundColor: C.glow,
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: '#000', shadowOpacity: 0.3,
+                  shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+                  elevation: 6,
+                  zIndex: 100,
+                }}
+              >
+                <Feather name="chevron-down" size={22} color="#fff" />
+              </Pressable>
             )}
 
             {/* ── Input bar ──────────────────────────────────────────────── */}

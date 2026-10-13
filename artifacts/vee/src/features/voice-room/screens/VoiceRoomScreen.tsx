@@ -372,6 +372,8 @@ export default function VoiceRoomScreen() {
   const [chatOldestKey,    setChatOldestKey]    = useState<string | null>(null);
   const [loadingOlderMsgs, setLoadingOlderMsgs] = useState(false);
   const [hasOlderMsgs,     setHasOlderMsgs]     = useState(true);
+  // 2026-10-14 (Sumon): scroll-to-bottom floating button — উপরে গেলে দেখাবে।
+  const [showChatScrollBtn, setShowChatScrollBtn] = useState(false);
 
   // Ref to keep speakingUsers accessible in callbacks without re-creating them
   const speakingRef = useRef<Record<string, boolean>>({});
@@ -2486,6 +2488,12 @@ export default function VoiceRoomScreen() {
             renderItem={renderChatMessage}
             contentContainerStyle={{ padding: 8 }}
             showsVerticalScrollIndicator={false}
+            onScroll={(e: any) => {
+              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+              const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
+              setShowChatScrollBtn(!isAtBottom);
+            }}
+            scrollEventThrottle={16}
             ListHeaderComponent={hasOlderMsgs ? (
               <Pressable
                 onPress={handleLoadOlderMessages}
@@ -2504,6 +2512,29 @@ export default function VoiceRoomScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={10}
           />
+          {/* 2026-10-14 (Sumon): Scroll-to-bottom floating button */}
+          {showChatScrollBtn && (
+            <Pressable
+              onPress={() => {
+                chatRef.current?.scrollToEnd({ animated: true });
+                setShowChatScrollBtn(false);
+              }}
+              style={{
+                position: 'absolute',
+                right: 16,
+                bottom: 70,
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: accentColor,
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: '#000', shadowOpacity: 0.3,
+                shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+                elevation: 6,
+                zIndex: 100,
+              }}
+            >
+              <Feather name="chevron-down" size={20} color="#fff" />
+            </Pressable>
+          )}
         </View>
 
         {/* ── @ Mention picker ── */}
