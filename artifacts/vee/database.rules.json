@@ -22,7 +22,11 @@
         // NOTE: badges/frames/nameplates stay client-writable (noble rank
         // rewards + future event claims are granted client-side); the
         // high-impact fields below are what this locks down.
-        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val())",
+        // PRIVACY FIX (2026-10-13, Sumon): activeFrame locked down — a user
+        // can only equip a frame they OWN (exists in their frames collection)
+        // or unequip (null). Setting an arbitrary frameId is rejected.
+        // Admins bypass via the role check at the start.
+        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val() && (newData.child('activeFrame').val() === data.child('activeFrame').val() || newData.child('activeFrame').val() === null || root.child('users').child($uid).child('frames').child(newData.child('activeFrame').val()).exists()))",
         // PERMANENT FIX (2026-10-08): Validate data types to prevent corrupted
         // records that crash the app. These rules reject malformed writes at
         // the database level, so bad data can never be stored.
@@ -95,6 +99,16 @@
           // possible client-side; full server-authority is the complete fix.
           ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
           ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
+        },
+        // PRIVACY FIX (2026-10-13, Sumon): frames collection locked down.
+        // A user cannot invent a fake frame entry with a custom animationUrl.
+        // Non-admin writes are only allowed if the frameId exists in the
+        // honors_catalog (a real frame). Admins bypass for grants.
+        "frames": {
+          "$frameId": {
+            ".write": "auth != null && (auth.uid === $uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())",
+            ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || root.child('honors_catalog').child($frameId).exists()"
+          }
         }
       }
     },
