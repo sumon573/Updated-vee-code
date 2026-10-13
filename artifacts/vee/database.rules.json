@@ -783,11 +783,17 @@
         ".validate": "!newData.exists() || (newData.child('reporterUid').val() === auth.uid && newData.child('reportedUid').isString() && newData.child('reason').isString() && newData.child('ts').isNumber())"
       }
     },
+    // ─────────────────────────────────────────────────────────────────────
+    // honors_catalog — badge/frame/nameplate definitions (admin-managed)
+    // ─────────────────────────────────────────────────────────────────────
+    "honors_catalog": {
+      ".read": "auth != null",
+      ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
+    },
     "moderationLog": {
       ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
-      "$logId": {
-        ".validate": "newData.hasChildren(['moderatorUid','moderatorName','action','targetUid','targetName','timestamp'])"
+      "$logId": {        ".validate": "newData.hasChildren(['moderatorUid','moderatorName','action','targetUid','targetName','timestamp'])"
       }
     },
 
