@@ -191,6 +191,19 @@ export default function VoiceRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 2026-10-13 (Sumon): When activeFrame loads/changes and user is seated,
+  // update the seat data so the frame shows in voice room.
+  // Fixes race condition where seat was taken before profile loaded.
+  useEffect(() => {
+    const frame = (myProfile as any)?.activeFrame;
+    const seatIdx = mySeatIdxRef.current;
+    if (!roomId || seatIdx < 0 || !myUid) return;
+    if (frame) {
+      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame }).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(myProfile as any)?.activeFrame]);
+
   const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
   const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
   const myColor = getUserColor(myUid);
