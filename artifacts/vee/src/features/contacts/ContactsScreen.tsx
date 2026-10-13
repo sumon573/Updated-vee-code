@@ -797,7 +797,7 @@ export default function ContactsScreen() {
                       logoSize={16}
                     />
                     <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-                      #{item.vId}
+                      {item.vId}
                     </Text>
                   </View>
                 </Pressable>
