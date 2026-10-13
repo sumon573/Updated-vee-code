@@ -21,6 +21,11 @@ import { isExpoGo } from '../utils/platform';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let OneSignal: any = null;
 
+// 2026-10-13: Init-ready flag — loginOneSignal() waits for initializeOneSignal()
+// to complete first (fixes race where login ran before initialize).
+let initPromise: Promise<void> | null = null;
+let initDone = false;
+
 async function getOneSignal() {
   // BUG 13: Never attempt to load the native module in Expo Go
   if (isExpoGo()) return null;
@@ -42,26 +47,49 @@ export async function initializeOneSignal(appId: string): Promise<void> {
   // BUG 13: Skip entirely in Expo Go
   if (isExpoGo()) return;
 
-  const os = await getOneSignal();
-  if (!os) {
-    console.log('[OneSignal] Native module not available — skipping init');
+  // 2026-10-13: Dedupe + ready flag for login ordering
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    const os = await getOneSignal();
+    if (!os) {
+      console.log('[OneSignal] Native module not available — skipping init');
+      return;
+    }
+    try {
+      os.initialize(appId);
+      console.log('[OneSignal] initialize() done with appId:', appId);
+      // Permission request (Android 13+)
+      const granted = await os.Notifications.requestPermission(true);
+      console.log('[OneSignal] Notification permission granted:', granted);
+      if (!granted) {
+        console.log('[OneSignal] WARNING: permission denied — pushes will NOT arrive until user enables in Settings');
+      }
+      initDone = true;
+    } catch (e) {
+      console.log('[OneSignal] initializeOneSignal error:', e);
+    }
+  })();
+  return initPromise;
+}
+
+/** Initialize শেষ হওয়া পর্যন্ত wait করে (login-এর আগে call করুন) */
+async function waitForInit(): Promise<void> {
+  if (initDone) return;
+  if (initPromise) {
+    try { await initPromise; } catch { /* non-critical */ }
     return;
   }
-  try {
-    os.initialize(appId);
-    console.log('[OneSignal] initialize() done with appId:', appId);
-    // Permission request (Android 13+)
-    const granted = await os.Notifications.requestPermission(true);
-    console.log('[OneSignal] Notification permission granted:', granted);
-  } catch (e) {
-    console.log('[OneSignal] initializeOneSignal error:', e);
-  }
+  // initialize() কখনো call হয়নি — 2s wait করে এগিয়ে যাই
+  await new Promise((r) => setTimeout(r, 2000));
 }
 
 /** User login/signup-এর পর call করুন — Firebase UID দিয়ে OneSignal-কে link করে */
 export async function loginOneSignal(uid: string): Promise<void> {
   // BUG 13: Skip entirely in Expo Go
   if (isExpoGo()) return;
+
+  // 2026-10-13: initialize() শেষ হওয়া পর্যন্ত wait (race condition fix)
+  await waitForInit();
 
   const os = await getOneSignal();
   if (!os) {
