@@ -73,8 +73,11 @@ export type VeeUser = {
 
 /** Save a new user to the database. Called once on signup. */
 export async function createUser(user: VeeUser): Promise<void> {
+  // 2026-10-13 (Sumon): NEVER create a user with empty name — fallback chain
+  const safeName = (user.name || '').trim() || (user as any).displayName || (user.email ? user.email.split('@')[0] : '') || 'User';
   await set(ref(database, `users/${user.uid}`), {
     ...user,
+    name: safeName,
     createdAt: user.createdAt ?? Date.now(),
     lastSeen: serverTimestamp(),
     online: true,
@@ -113,10 +116,17 @@ export async function getUserByShortId(shortId: string): Promise<VeeUser | null>
  */
 export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
   if (!raw || typeof raw !== 'object') return null;
+  // 2026-10-13 (Sumon): UNIVERSAL FIX — name NEVER empty, regardless of login method.
+  // Fallback chain: name || displayName || email prefix || "User"
+  const rawName = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const rawDisplayName = typeof raw.displayName === 'string' ? raw.displayName.trim() : '';
+  const rawEmail = typeof raw.email === 'string' ? raw.email : '';
+  const emailPrefix = rawEmail.includes('@') ? rawEmail.split('@')[0] : '';
+  const safeName = rawName || rawDisplayName || emailPrefix || 'User';
   return {
     uid,
     vId: typeof raw.vId === 'string' ? raw.vId : '',
-    name: typeof raw.name === 'string' ? raw.name : '',
+    name: safeName,
     email: typeof raw.email === 'string' ? raw.email : '',
     photoURL: typeof raw.photoURL === 'string' ? raw.photoURL : '',
     bio: typeof raw.bio === 'string' ? raw.bio : '',
