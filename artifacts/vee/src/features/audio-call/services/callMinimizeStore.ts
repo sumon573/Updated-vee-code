@@ -17,6 +17,9 @@ export interface MinimizedCall {
     calleeUid?: string;
     remoteUid?: string;
     remoteName?: string;
+    // 2026-10-13: DP survives the minimize → return cycle so the returned
+    // screen shows it instantly instead of refetching from Firebase.
+    remotePhotoURL?: string;
     // 2026-10-11 fix: myUid/myName must survive the minimize → return cycle,
     // otherwise the returned screen can't do mute-sync, call history, etc.
     myUid?: string;

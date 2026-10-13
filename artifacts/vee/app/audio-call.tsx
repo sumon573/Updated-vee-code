@@ -71,11 +71,11 @@ export default function AudioCallPage() {
       roomId={roomId ?? ''}
       role={role === 'callee' ? 'callee' : 'caller'}
       remoteUid={remoteUid ?? ''}
-      remoteName={remoteName ?? 'Unknown'}
+      remoteName={remoteName || 'Unknown'}
       remotePhotoURL={remotePhotoURL}
       calleeUid={calleeUid ?? ''}
       myUid={myUid ?? ''}
-      myName={myName ?? 'Vee User'}
+      myName={myName || 'Vee User'}
       myPhotoURL={myPhotoURL}
       isReturning={isReturning}
     />

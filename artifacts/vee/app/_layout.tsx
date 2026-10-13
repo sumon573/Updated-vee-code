@@ -384,6 +384,28 @@ function IncomingCallListener({
     return () => { cancelled = true; };
   }, [incoming?.callerId, incoming?.callerPhotoURL]);
 
+  // 2026-10-13: ref mirrors for the signal watcher — the subscribe callback
+  // is registered once with [uid], so it can't see fresh React state.
+  const incomingRef = useRef<IncomingCall | null>(null);
+  // True when the modal was dismissed by the user's own tap (accept/decline).
+  // Distinguishes user action from the caller cancelling remotely.
+  const userDismissedRef = useRef(false);
+  const setIncomingState = useCallback((call: IncomingCall | null) => {
+    incomingRef.current = call;
+    setIncoming(call);
+  }, []);
+
+  // Shared missed-call logger — decline path and caller-cancel path both
+  // record an 'incoming / missed' entry in the chat inbox, like IMO.
+  const logMissedCall = useCallback((callerId: string) => {
+    import('@/src/features/chat/services/firebaseDmService').then(async ({ buildChatId, logCallToChat }) => {
+      try {
+        const chatId = buildChatId(uid, callerId);
+        await logCallToChat(chatId, uid, callerId, 'incoming', 'missed', 0);
+      } catch { /* non-critical */ }
+    });
+  }, [uid]);
+
   useEffect(() => {
     return subscribeIncomingCall(uid, async (call) => {
       // Ignore incoming calls while already on the audio-call screen (avoids
@@ -426,21 +448,53 @@ function IncomingCallListener({
           return;
         }
       }
-      setIncoming(call);
+      if (!call) {
+        // 2026-10-13: signal vanished while the modal was ringing — the
+        // caller cancelled, timed out, or their app died. If the modal was
+        // showing and the user didn't dismiss it themselves, this is a
+        // MISSED call — log it like a decline, IMO-style. (Known open item.)
+        const wasRinging = incomingRef.current;
+        if (wasRinging && !userDismissedRef.current) {
+          logMissedCall(wasRinging.callerId);
+        }
+        userDismissedRef.current = false;
+        setIncomingState(null);
+        return;
+      }
+      userDismissedRef.current = false;
+      setIncomingState(call);
     });
-  }, [uid]);
+  }, [uid, logMissedCall, setIncomingState]);
 
-  const handleAccept = useCallback(() => {
-    if (!incoming) return;
+  const handleAccept = useCallback(async () => {
+    const call = incomingRef.current;
+    if (!call) return;
     // P1 fix (2026-10-12): last-moment busy guard — never accept over a
     // minimized call (race: modal popped just before minimize completed).
     if (getMinimizedCall()) {
-      setIncoming(null);
+      userDismissedRef.current = true;
+      setIncomingState(null);
       removeCallSignal(uid).catch(() => {});
       return;
     }
-    const call = incoming;
-    setIncoming(null);
+    // 2026-10-13: accept race — the caller may have cancelled in the ms
+    // between the modal rendering and the tap. Accepting a dead signal
+    // would CREATE a phantom 'accepted' node and strand this side on
+    // "Connecting..." for 45s.
+    let signalAlive = true;
+    try {
+      const { get, ref } = await import('firebase/database');
+      const { database } = await import('@/src/config/firebase');
+      signalAlive = (await get(ref(database, `calls/${uid}`))).exists();
+    } catch { /* best-effort — proceed with accept */ }
+    userDismissedRef.current = true;
+    setIncomingState(null);
+    if (!signalAlive) {
+      // Caller is gone — log the missed call now (the signal watcher was
+      // told this was user-dismissed, so it won't double-log).
+      logMissedCall(call.callerId);
+      return;
+    }
     // FIX (2026-10-10): Mark as accepted instead of deleting.
     // Deleting triggered the caller's decline timer, auto-cutting the call
     // after 1.5s even though the callee answered. The caller cleans up
@@ -450,30 +504,19 @@ function IncomingCallListener({
     router.push(
       `/audio-call?roomId=${encodeURIComponent(call.roomId)}&role=callee&remoteUid=${encodeURIComponent(call.callerId)}&remoteName=${encodeURIComponent(call.callerName)}&calleeUid=${encodeURIComponent(uid)}&myUid=${encodeURIComponent(uid)}&myName=${encodeURIComponent(myName)}${call.callerPhotoURL ? `&remotePhotoURL=${encodeURIComponent(call.callerPhotoURL)}` : ''}` as never,
     );
-  }, [incoming, uid, myName, router]);
+  }, [uid, myName, router, logMissedCall, setIncomingState]);
 
   const handleDecline = useCallback(() => {
-    if (!incoming) return;
-    const call = incoming;
-    setIncoming(null);
+    const call = incomingRef.current;
+    if (!call) return;
+    userDismissedRef.current = true;
+    setIncomingState(null);
     // background: safe to swallow — signaling cleanup
     removeCallSignal(uid).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // MISSED CALL LOG (2026-10-09): record in chat inbox like IMO.
-    import('@/src/features/chat/services/firebaseDmService').then(async ({ buildChatId, logCallToChat }) => {
-      try {
-        const chatId = buildChatId(uid, call.callerId);
-        await logCallToChat(
-          chatId,
-          uid,
-          call.callerId,
-          'incoming',
-          'missed',
-          0,
-        );
-      } catch { /* non-critical */ }
-    });
-  }, [incoming, uid]);
+    logMissedCall(call.callerId);
+  }, [uid, logMissedCall, setIncomingState]);
 
   if (!incoming) return null;
 

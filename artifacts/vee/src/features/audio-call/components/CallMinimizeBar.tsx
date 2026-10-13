@@ -58,6 +58,8 @@ export default function CallMinimizeBar() {
             // stays fully functional (mute-sync, call history, cleanup).
             ...(params.myUid ? { myUid: params.myUid } : {}),
             ...(params.myName ? { myName: params.myName } : {}),
+            // 2026-10-13: DP carries back too — no Firebase refetch flash.
+            ...(params.remotePhotoURL ? { remotePhotoURL: params.remotePhotoURL } : {}),
             returning: 'true', // flag: rejoining minimized call, don't re-init
           },
         });

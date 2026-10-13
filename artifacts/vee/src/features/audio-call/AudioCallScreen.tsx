@@ -157,6 +157,10 @@ export default function AudioCallScreen({
   const onlineUnsubRef = useRef<(() => void) | null>(null);
   /** Timer for delayed decline detection (cancelled on connect). */
   const declineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 2026-10-13: generation counter — detects endCall racing initiateCall.
+   *  If the user hangs up while the signal write is in flight, endCall's
+   *  cleanup runs BEFORE the set() lands, leaving a stale ringing signal. */
+  const callGenRef = useRef(0);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callState, setCallState] = useState<CallState>(callStateRef.current);
@@ -223,6 +227,9 @@ export default function AudioCallScreen({
   const endCall = useCallback((goBack = true) => {
     if (cleaningUpRef.current) return;
     cleaningUpRef.current = true;
+    // 2026-10-13: bump the generation — an in-flight initiateCall checks
+    // this afterwards and cleans up its stale signal write.
+    callGenRef.current += 1;
     // 2026-10-11 FIX: a real hangup is never a minimize — reset the flag.
     setCallMinimizing(false);
 
@@ -233,6 +240,12 @@ export default function AudioCallScreen({
     // Stop timers
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    // 2026-10-13: endCall can run while the screen stays mounted (e.g. the
+    // remote-ended delayed end), so unsubscribe here too — don't rely on
+    // the unmount cleanup alone.
+    if (signalUnsubRef.current) { try { signalUnsubRef.current(); } catch { /* non-critical */ } signalUnsubRef.current = null; }
+    if (onlineUnsubRef.current) { try { onlineUnsubRef.current(); } catch { /* non-critical */ } onlineUnsubRef.current = null; }
+    if (declineTimerRef.current) { clearTimeout(declineTimerRef.current); declineTimerRef.current = null; }
 
     // CALL HISTORY (2026-10-09): log to chat inbox like IMO/WhatsApp.
     // Fire-and-forget — never blocks the hangup flow.
@@ -262,9 +275,26 @@ export default function AudioCallScreen({
       }
     } catch { /* non-critical */ }
 
-    // Remove Firebase signaling (caller removes it; callee already removed on accept)
-    if (role === 'caller') {
+    // Remove Firebase signaling.
+    // — কলার সবসময় সিগন্যাল মুছে দেয়;
+    // — ক্যালি মুছে দেয় শুধু যখন কল কখনোই কানেক্ট হয়নি — নইলে মরা
+    //   'accepted' সিগন্যাল চিরকাল calls/{uid}-তে থেকে যায়, আর প্রতিবার
+    //   অ্যাপ চালু হলেই ভুয়া Incoming Call মোডাল পপ হয়;
+    // — কানেক্ট হওয়া কলের ক্ষেত্রে কলারই সিগন্যালের মালিক (connect/end-এ মুছে)।
+    if (role === 'caller' || callStateRef.current !== 'connected') {
       removeCallSignal(calleeUid).catch(() => {/* background: safe to swallow — signaling cleanup */});
+    }
+    // CRITICAL (2026-10-13): initiateCall-এ calls/{calleeUid}-তে যে
+    // onDisconnect arm করা হয়েছিল সেটা cancel করো — নইলে পরে এই ডিভাইসের
+    // কানেকশন ড্রপ হলে ফায়ারবেস ওই নোডের তখনকার (সম্পূর্ণ নতুন) কল
+    // সিগন্যাল মুছে দেবে, অর্থাৎ অন্য কারো নতুন incoming call নীরবে মরে যাবে।
+    if (role === 'caller') {
+      import('firebase/database').then(async ({ ref, onDisconnect }) => {
+        try {
+          const { database } = await import('@/src/config/firebase');
+          await onDisconnect(ref(database, `calls/${calleeUid}`)).cancel();
+        } catch { /* non-critical */ }
+      });
     }
 
     // C10 FIX: Clean up callMute state on call end. Stale mute nodes leak
@@ -343,6 +373,9 @@ export default function AudioCallScreen({
         // cycle so the returned screen stays fully functional.
         ...(myUid ? { myUid } : {}),
         ...(myName ? { myName } : {}),
+        // 2026-10-13: DP ও minimize → return সাইকেলে টিকে থাকে, ফলে ফেরত
+        // আসা স্ক্রিন Firebase থেকে আবার না এনে সাথে সাথে DP দেখায়।
+        ...((remotePhoto || remotePhotoURL) ? { remotePhotoURL: (remotePhoto || remotePhotoURL) as string } : {}),
       },
     });
     router.back();
@@ -500,6 +533,15 @@ export default function AudioCallScreen({
               clearTimeout(timeoutRef.current);
               timeoutRef.current = null;
             }
+            // 2026-10-13: মিনিমাইজড কলে রিমোট কেটে দিলে সাথে সাথে শেষ করো —
+            // স্ক্রিন তো দেখা যাচ্ছে না, "Call Ended" দেখানোর কিছু নেই।
+            // দেরি করা টাইমার রাখলে পুরনো closure থেকে ১.৫ সেকেন্ড পরে endCall
+            // চলতো; ব্যবহারকারী ওই ফাঁকে কলে ফিরলে টাইমারটি লাইভ সেশন মেরে
+            // নতুন স্ক্রিন pop করে দিতো।
+            if (getPersistedCallSession(roomId)) {
+              endCall(false);
+              return;
+            }
             // Short delay so user can read "Call Ended" before dismissal
             timeoutRef.current = setTimeout(() => {
               if (mountedRef.current) endCall(true);
@@ -536,6 +578,8 @@ export default function AudioCallScreen({
 
       // Caller: write Firebase signal so callee receives IncomingCallModal
       if (role === 'caller') {
+        // 2026-10-13: capture the generation — see the guard after initiateCall.
+        const genAtDial = callGenRef.current;
         // ONLINE CHECK (2026-10-09): show "Calling..." if callee is offline,
         // "Ringing" only when they're online. Professional like IMO.
         // FIX (2026-10-10): Use real-time listener so "Calling" upgrades to
@@ -623,6 +667,19 @@ export default function AudioCallScreen({
             ...(myPhotoURL ? { callerPhotoURL: myPhotoURL } : {}),
             roomId,
           });
+          // 2026-10-13: generation guard — the user may have hung up while
+          // initiateCall was in flight. endCall's cleanup then ran BEFORE
+          // the set() above landed, leaving a stale ringing signal (the
+          // callee's phone would ring for a dead call). Clean it now.
+          if (callGenRef.current !== genAtDial) {
+            removeCallSignal(calleeUid).catch(() => {/* background: safe to swallow */});
+            import('firebase/database').then(async ({ ref, onDisconnect }) => {
+              try {
+                const { database } = await import('@/src/config/firebase');
+                await onDisconnect(ref(database, `calls/${calleeUid}`)).cancel();
+              } catch { /* non-critical */ }
+            });
+          }
         } catch { /* non-critical — WebRTC signaling is already live */ }
       }
 
