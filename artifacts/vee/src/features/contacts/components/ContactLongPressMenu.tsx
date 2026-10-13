@@ -50,7 +50,7 @@ export default function ContactLongPressMenu({
     },
     {
       icon: 'person-remove-outline',
-      label: 'Unfriend',
+      label: 'Delete Contact',
       danger: true,
       action: onUnfriend,
     },

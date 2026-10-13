@@ -761,8 +761,11 @@ export default function ContactsScreen() {
             <FlatList
               data={filtered}
               keyExtractor={(item) => item.uid}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+              contentContainerStyle={{ paddingBottom: 120 }}
               showsVerticalScrollIndicator={false}
+              ItemSeparatorComponent={() => (
+                <View style={{ height: 1, backgroundColor: C.border, marginLeft: 76 }} />
+              )}
               renderItem={({ item }) => (
                 <Pressable
                   onPress={() => handleViewProfile(item)}
@@ -770,9 +773,8 @@ export default function ContactsScreen() {
                   delayLongPress={350}
                   style={{
                     flexDirection: 'row', alignItems: 'center',
-                    backgroundColor: C.surface,
-                    borderRadius: 16, padding: 12, marginBottom: 10,
-                    borderWidth: 1, borderColor: C.border,
+                    backgroundColor: C.bg,
+                    paddingVertical: 12, paddingHorizontal: 16,
                   }}
                 >
                   {/* Avatar */}
@@ -786,7 +788,7 @@ export default function ContactsScreen() {
                       }} />
                     )}
                   </View>
-                  {/* Info */}
+                  {/* Info — 2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
                   <View style={{ flex: 1 }}>
                     <VerifiedName
                       name={item.name}
@@ -797,44 +799,6 @@ export default function ContactsScreen() {
                     <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
                       #{item.vId}
                     </Text>
-                  </View>
-                  {/* Actions */}
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable
-                      onPress={() => handleCall(item)}
-                      style={{
-                        width: 36, height: 36, borderRadius: 18,
-                        backgroundColor: 'rgba(34,197,94,0.15)',
-                        borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="phone" size={16} color={C.online} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleMessage(item)}
-                      style={{
-                        width: 36, height: 36, borderRadius: 18,
-                        backgroundColor: 'rgba(139,92,246,0.18)',
-                        borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="message-circle" size={16} color={C.glow} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleRemoveFriend(item)}
-                      style={{
-                        paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-                        backgroundColor: 'rgba(239,68,68,0.1)',
-                        borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{ color: C.red, fontSize: 11, fontWeight: '700' }}>
-                        {t('contacts.remove')}
-                      </Text>
-                    </Pressable>
                   </View>
                 </Pressable>
               )}
