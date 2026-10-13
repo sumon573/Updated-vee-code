@@ -362,22 +362,13 @@ export default function HonorScreen() {
             <Feather name="x" size={28} color="#FFFFFF" />
           </Pressable>
           <Pressable onPress={(e) => e.stopPropagation()} style={{ alignItems: 'center' }}>
-            {/* Badge with spring "moves a bit" animation */}
+            {/* Badge with spring "moves a bit" animation — imo-style: large, no box */}
             <Animated.View style={{ transform: [{ scale: badgeScale }] }}>
-              <View style={{
-                width: 140, height: 140, borderRadius: 28,
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
-                alignItems: 'center', justifyContent: 'center',
-                shadowColor: '#007AFF', shadowOpacity: 0.4, shadowRadius: 20,
-                shadowOffset: { width: 0, height: 0 }, elevation: 10,
-              }}>
-                {/^https?:\/\//i.test(selected?.icon || '') ? (
-                  <Image source={{ uri: selected!.icon }} style={{ width: 100, height: 100 }} resizeMode="contain" />
-                ) : (
-                  <Text style={{ fontSize: 72 }}>{selected?.icon}</Text>
-                )}
-              </View>
+              {/^https?:\/\//i.test(selected?.icon || '') ? (
+                <Image source={{ uri: selected!.icon }} style={{ width: 220, height: 220 }} resizeMode="contain" />
+              ) : (
+                <Text style={{ fontSize: 160 }}>{selected?.icon}</Text>
+              )}
             </Animated.View>
             <Text style={{ fontSize: 26, fontWeight: '800', fontStyle: 'italic', color: '#FFFFFF', marginTop: 24, textAlign: 'center' }}>
               {selected?.name}
