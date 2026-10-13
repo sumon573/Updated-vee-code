@@ -22,6 +22,7 @@ import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/user
 import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
+import { hasOfficialBadge } from '@/src/services/verifiedService';
 import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
 import {
@@ -341,6 +342,8 @@ export default function ProfileScreen({
   const [uploadingDp, setUploadingDp] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
+  // 2026-10-13 (Sumon): official badge check for verified logo next to name
+  const [isOfficial, setIsOfficial] = useState(false);
   // P1-4/P1-5 (2026-10-12): frames for the DP overlay + real owned counts
   const [grantedFrames, setGrantedFrames] = useState<GrantedFrame[]>([]);
   const [grantedNameplates, setGrantedNameplates] = useState<GrantedNameplate[]>([]);
@@ -397,6 +400,14 @@ export default function ProfileScreen({
     if (!displayUid) { setGrantedBadges([]); return; }
     return subscribeBadges(displayUid, setGrantedBadges);
   }, [displayUid]);
+
+  // 2026-10-13 (Sumon): Check for valid Vee Official badge → verified logo next to name
+  useEffect(() => {
+    if (!displayUid) { setIsOfficial(false); return; }
+    let cancelled = false;
+    hasOfficialBadge(displayUid).then((v) => { if (!cancelled) setIsOfficial(v); });
+    return () => { cancelled = true; };
+  }, [displayUid, grantedBadges]);
 
   // P1-4/P1-5 (2026-10-12): subscribe to frames + nameplates (expiry-filtered
   // inside the service — expired items are visible nowhere).
@@ -678,11 +689,13 @@ export default function ProfileScreen({
 
         {/* ─── Name ─── */}
         {/* P1-6 (2026-10-12): official verified blue tick — shown only when
-            Sumon granted officialBadge. Other badges live in the Badge section. */}
+            Sumon granted officialBadge. Other badges live in the Badge section.
+            2026-10-13 (Sumon): Vee Official badge from badges node also shows
+            verified logo next to name for the badge's validity duration. */}
         <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
-            {profile?.officialBadge ? (
+            {(profile?.officialBadge || isOfficial) ? (
               <Feather name="check-circle" size={20} color="#1E9BF0" style={{ marginLeft: 6 }} />
             ) : null}
           </View>
@@ -775,7 +788,11 @@ export default function ProfileScreen({
               {grantedBadges.map((h) => (
                 <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
                   <View style={{ width: 72, aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+                    {/^https?:\/\//i.test(h.icon || '') ? (
+                      <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
+                    ) : (
+                      <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+                    )}
                   </View>
                   <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
                 </View>
