@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, Pressable, StyleSheet } from 'react-native';
+import { Modal, View, Text, Pressable, StyleSheet, Image } from 'react-native';
 import { ref, onValue, update } from 'firebase/database';
 import { database } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,7 @@ interface HonorNotification {
   id: string;
   honorType: 'honor' | 'frame';
   honorName: string;
+  honorIcon?: string;
   title: string;
   body: string;
   timestamp: number;
@@ -55,7 +56,16 @@ export function HonorCelebration() {
     <Modal visible transparent animationType="fade" onRequestClose={dismiss}>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <Text style={styles.emoji}>{pending.honorType === 'frame' ? '🖼️' : '🏅'}</Text>
+          {/* 2026-10-13 (Sumon): Show the ACTUAL badge/frame image, not generic emoji */}
+          {pending.honorIcon && /^https?:\/\//i.test(pending.honorIcon) ? (
+            <Image
+              source={{ uri: pending.honorIcon }}
+              style={{ width: 100, height: 100, marginBottom: 16 }}
+              resizeMode="contain"
+            />
+          ) : (
+            <Text style={styles.emoji}>{pending.honorType === 'frame' ? '🖼️' : '🏅'}</Text>
+          )}
           <Text style={styles.title}>{pending.title}</Text>
           <Text style={styles.body}>{pending.body}</Text>
           <Text style={styles.honorName}>{pending.honorName}</Text>
