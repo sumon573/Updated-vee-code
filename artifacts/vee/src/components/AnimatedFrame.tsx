@@ -1,12 +1,15 @@
 /**
- * AnimatedFrame — pure React Native animated DP frame.
+ * AnimatedFrame — Vee Official DP frame with live animation.
+ * Uses the approved final frame design (blue ring + official banner +
+ * Vee logo + vines) with subtle rotation + pulse animations.
  * NO native modules, NO lottie — 100% safe, zero crash risk.
  *
- * Design: rotating dashed blue ring + pulsing dot (bottom-right),
- * approximating the approved Vee Official frame animation.
+ * 2026-10-13 (Sumon): Upgraded from placeholder dashed ring to the
+ * actual finalized frame design, animated like the approved video
+ * (vines coiling rotation, Vee logo pulsing glow).
  */
 import React, { useEffect, useRef } from 'react';
-import { Animated, View, StyleSheet } from 'react-native';
+import { Animated, View, StyleSheet, Image } from 'react-native';
 
 type Props = {
   /** Diameter of the avatar being framed (frame scales around it) */
@@ -14,79 +17,75 @@ type Props = {
 };
 
 export default function AnimatedFrame({ size }: Props) {
-  const ringAnim = useRef(new Animated.Value(0)).current;
-  const dotAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Rotating ring: 0 -> 360deg over 2s, linear, infinite loop
-    const ringLoop = Animated.loop(
-      Animated.timing(ringAnim, {
+    // Slow rotation like vines coiling — 12s per full rotation
+    const rotateLoop = Animated.loop(
+      Animated.timing(rotateAnim, {
         toValue: 1,
-        duration: 2000,
+        duration: 12000,
         useNativeDriver: true,
       })
     );
-    // Pulsing dot: scale 1 -> 1.3 -> 1, 500ms each way, infinite
-    const dotLoop = Animated.loop(
+    // Gentle pulse like the Vee logo glow — 2s cycle
+    const pulseLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(dotAnim, {
+        Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 500,
+          duration: 1000,
           useNativeDriver: true,
         }),
-        Animated.timing(dotAnim, {
+        Animated.timing(pulseAnim, {
           toValue: 0,
-          duration: 500,
+          duration: 1000,
           useNativeDriver: true,
         }),
       ])
     );
-    ringLoop.start();
-    dotLoop.start();
+    rotateLoop.start();
+    pulseLoop.start();
     return () => {
-      ringLoop.stop();
-      dotLoop.stop();
+      rotateLoop.stop();
+      pulseLoop.stop();
     };
-  }, [ringAnim, dotAnim]);
+  }, [rotateAnim, pulseAnim]);
 
-  const ringSize = size * 1.35;
-  const ringRotate = ringAnim.interpolate({
+  // Frame is larger than the DP to surround it
+  const frameSize = size * 1.45;
+
+  const rotate = rotateAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
-  const dotScale = dotAnim.interpolate({
+
+  const pulseScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.3],
+    outputRange: [1, 1.04],
   });
-  const dotSize = Math.max(8, size * 0.12);
+
+  const pulseOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.85, 1],
+  });
 
   return (
-    <View style={[styles.container, { width: ringSize, height: ringSize }]}>
-      {/* Rotating dashed ring */}
+    <View style={[styles.container, { width: frameSize, height: frameSize }]}>
       <Animated.View
-        style={[
-          styles.ring,
-          {
-            width: ringSize,
-            height: ringSize,
-            borderRadius: ringSize / 2,
-            borderWidth: Math.max(3, size * 0.04),
-            transform: [{ rotate: ringRotate }],
-          },
-        ]}
-      />
-      {/* Pulsing dot (bottom-right) */}
-      <Animated.View
-        style={[
-          styles.dot,
-          {
-            width: dotSize,
-            height: dotSize,
-            borderRadius: dotSize / 2,
-            transform: [{ scale: dotScale }],
-          },
-        ]}
-      />
+        style={{
+          width: frameSize,
+          height: frameSize,
+          transform: [{ rotate }, { scale: pulseScale }],
+          opacity: pulseOpacity,
+        }}
+      >
+        <Image
+          source={require('@/assets/images/vee-official-frame.png')}
+          style={{ width: frameSize, height: frameSize }}
+          resizeMode="contain"
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -95,16 +94,5 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  ring: {
-    borderColor: '#3399FF',
-    borderStyle: 'dashed',
-    position: 'absolute',
-  },
-  dot: {
-    backgroundColor: '#3399FF',
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
   },
 });
