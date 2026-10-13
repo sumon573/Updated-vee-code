@@ -265,8 +265,13 @@ export async function registerNotificationOpenedHandler(
 /** OneSignal subscription ID Firebase users/{uid}/oneSignalId-এ save করে */
 async function saveOneSignalIdToFirebase(uid: string, oneSignalId: string): Promise<void> {
   try {
-    await update(ref(database, `users/${uid}`), { oneSignalId });
-  } catch {
-    // non-critical
+    // 2026-10-14 (Sumon): Direct path-এ set করি — users/{uid} parent-এ update
+    // করলে parent-এর .validate rule (activeFrame check) trigger হয়ে block করতে পারে।
+    // Direct child path-এ write করলে parent validate bypass হয়।
+    const { set } = await import('firebase/database');
+    await set(ref(database, `users/${uid}/oneSignalId`), oneSignalId);
+    console.log('[OneSignal] ✅ oneSignalId saved to Firebase');
+  } catch (e) {
+    console.log('[OneSignal] ❌ Failed to save oneSignalId:', e);
   }
 }
