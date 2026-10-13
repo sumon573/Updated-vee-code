@@ -897,7 +897,7 @@ export default function ProfileScreen({
                     }
                     size={18} color={C.blue}
                   />
-                  <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
                     {isBlockedTarget ? t('userProfile.unblock', 'Unblock')
                       : friendStatus === 'friends' ? t('userProfile.chat', 'Chat')
                       : friendStatus === 'request-received' ? t('userProfile.accept', 'Accept')
@@ -917,8 +917,8 @@ export default function ProfileScreen({
                 opacity: actionLoading ? 0.6 : 1,
               }}
             >
-              <Feather name={isFollowingTarget ? 'check' : 'plus'} size={18} color={C.blue} />
-              <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>
+              <Feather name={isFollowingTarget ? 'check' : 'plus'} size={16} color={C.blue} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
                 {isFollowingTarget ? t('userProfile.following', 'Following') : t('userProfile.follow', 'Follow')}
               </Text>
             </Pressable>

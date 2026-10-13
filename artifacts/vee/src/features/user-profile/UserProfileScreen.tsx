@@ -455,7 +455,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                       size={18}
                       color="#0A7CC2"
                     />
-                    <Text style={{ color: '#0A7CC2', fontSize: 16, fontWeight: '700' }}>
+                    <Text style={{ color: '#0A7CC2', fontSize: 14, fontWeight: '700' }} numberOfLines={1} adjustsFontSizeToFit>
                       {isBlocked
                         ? t('userProfile.unblock', 'Unblock')
                         : friendStatus === 'friends'
@@ -490,7 +490,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                       size={18}
                       color="#0A7CC2"
                     />
-                    <Text style={{ color: '#0A7CC2', fontSize: 16, fontWeight: '700' }}>
+                    <Text style={{ color: '#0A7CC2', fontSize: 14, fontWeight: '700' }} numberOfLines={1} adjustsFontSizeToFit>
                       {isFollowing ? t('userProfile.following', 'Following') : t('userProfile.follow', 'Follow')}
                     </Text>
                   </>
