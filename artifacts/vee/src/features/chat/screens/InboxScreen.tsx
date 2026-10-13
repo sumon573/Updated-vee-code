@@ -237,6 +237,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const shouldScrollRef = useRef(true);
   const typingDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ থাকতে হবে। image/media
+  // async load হয়ে content height বদলালে scroll position নষ্ট হয় — তাই
+  // initial load phase-এ onContentSizeChange-এও scroll to end করি।
+  const initialScrollAtRef = useRef<number>(0);
+  const userScrolledRef    = useRef(false);
 
   // ── Status text helper ────────────────────────────────────────────────────
   const getStatusText = useCallback((
@@ -378,9 +383,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       scrollTimerRef.current = setTimeout(() => {
         scrollTimerRef.current = null;
         flatRef.current?.scrollToEnd({ animated: true });
+        // 2026-10-13: initial scroll-এর timestamp — পরের 3s content height
+        // বদলালেও (image load) onContentSizeChange scroll to end করবে।
+        initialScrollAtRef.current = Date.now();
+        userScrolledRef.current = false;
       }, 80);
     }
   }, [messages.length]);
+
+  // ── 2026-10-13 (Sumon): content height বদলালে (image/media async load)
+  // initial 3s-এ scroll to end — user manually scroll করলে বন্ধ।
+  const handleContentSizeChange = useCallback(() => {
+    if (userScrolledRef.current) return;
+    if (Date.now() - initialScrollAtRef.current > 3000) return;
+    if (initialScrollAtRef.current === 0) return;
+    flatRef.current?.scrollToEnd({ animated: false });
+  }, []);
+
+  const handleScrollBeginDrag = useCallback(() => {
+    userScrolledRef.current = true;
+  }, []);
 
   // ── Load older messages (pagination) ─────────────────────────────────────
   // RC8-A: cursor-based "load more" using the oldest key in the current window.
@@ -885,6 +907,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               maxToRenderPerBatch={15}
               windowSize={10}
               showsVerticalScrollIndicator={false}
+              // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ scroll —
+              // image load-এ height বদলালেও নিচেই থাকবে।
+              onContentSizeChange={handleContentSizeChange}
+              onScrollBeginDrag={handleScrollBeginDrag}
               // RC8-A: header shows "Load earlier messages" when older pages exist
               ListHeaderComponent={ListHeaderComponent}
               ListEmptyComponent={
