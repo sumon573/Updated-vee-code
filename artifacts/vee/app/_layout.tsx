@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager } from 'react-native';
+import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager, AppState } from 'react-native';
 
 /**
  * CRASH CAUSE DISPLAY (2026-10-11, Sumon's rule): every JS error must show
@@ -302,6 +302,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   // OneSignal: link to authenticated user
+  // 2026-10-14 (Sumon): Retry on app foreground — login-এ fail হলে আর try হতো না
   useEffect(() => {
     if (user?.uid) {
       loginOneSignal(user.uid).catch(() => {/* non-critical */});
@@ -309,6 +310,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       logoutOneSignal().catch(() => {/* non-critical */});
     }
   }, [user?.uid, authLoading]);
+
+  // 2026-10-14 (Sumon): Foreground-এ OneSignal re-register — push ID missing থাকলে retry
+  useEffect(() => {
+    if (!user?.uid) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        // Check if we have a OneSignal ID, if not, retry registration
+        import('@/src/services/pushNotificationService').then(({ loginOneSignal }) => {
+          loginOneSignal(user.uid).catch(() => {});
+        }).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [user?.uid]);
 
   // BUG 17 fix: Never show an infinite spinner — the loading states already
   // have internal timeouts (AuthContext: 10s, LanguageContext: 6s) so this
