@@ -21,7 +21,7 @@ interface VerifiedNameProps {
  * - Use EVERYWHERE names are displayed (voice room, search, contacts, chat, members)
  * - Pass either hasOfficialBadge (boolean) or uid (will check via hook)
  */
-export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize = 16 }: VerifiedNameProps) {
+export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize = 19 }: VerifiedNameProps) {
   const [showBadge, setShowBadge] = useState(false);
   const [serverIcon, setServerIcon] = useState<string | null>(null);
   const hookVerified = useVerifiedBadge(uid);
