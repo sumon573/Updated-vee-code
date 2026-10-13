@@ -6,6 +6,7 @@
 import { useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { VerifiedName } from '@/src/components/VerifiedName';
 
 export interface IMOChat {
   id: string;
@@ -113,9 +114,12 @@ export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPres
 
       {/* Name + Preview */}
       <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#212121' }} numberOfLines={1}>
-          {chat.name}
-        </Text>
+        <VerifiedName
+          name={chat.name}
+          uid={chat.participantId}
+          nameStyle={{ fontSize: 16, fontWeight: '700', color: '#212121' }}
+          logoSize={16}
+        />
         <Text style={{ fontSize: 14, color: '#757575', marginTop: 2 }} numberOfLines={1}>
           {chat.isNew && <Text style={{ color: '#4CAF50', fontWeight: '600' }}>[New] </Text>}
           {chat.lastMessage}

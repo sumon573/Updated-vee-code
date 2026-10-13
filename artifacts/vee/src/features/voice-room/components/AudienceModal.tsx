@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
+import { VerifiedName } from '@/src/components/VerifiedName';
 
 /* ─────────────────────────── Audience Modal ─────────────────────────── */
 export function AudienceModal({ visible, onClose, audience, myRole, onManageMember }: {
@@ -63,7 +64,12 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
+                  <VerifiedName
+                    name={m.name}
+                    uid={(m as any).uid || (m as any).id}
+                    nameStyle={{ color: C.text, fontSize: 14, fontWeight: '700' }}
+                    logoSize={14}
+                  />
                   <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }}>
                     {t('voiceRoom.audience.audienceLabel')}
                   </Text>

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import type { Participant } from '@/src/features/voice-room/types/room';
+import { VerifiedName } from '@/src/components/VerifiedName';
 
 const C = {
   bg: '#14101F',
@@ -135,9 +136,12 @@ export default function RoomMembersModal({
       <MemberAvatar p={item} />
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-            {item.name}
-          </Text>
+          <VerifiedName
+            name={item.name}
+            uid={(item as any).uid || (item as any).id}
+            nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
+            logoSize={15}
+          />
           <RoleBadge role={item.role} />
         </View>
         <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
