@@ -76,7 +76,9 @@ export const SeatCard = memo(function SeatCard({
       )}
 
       {/* ── Lock badge ── */}
-      {locked && (
+      {/* 2026-10-14 (Sumon): সিটে কেউ বসা থাকলে lock icon দেখাবে না —
+          শুধু খালি locked সিটে দেখাবে। */}
+      {locked && !member && (
         <View style={{
           position: 'absolute', top: 8, right: '12%', zIndex: 10,
           width: 17, height: 17, borderRadius: 8.5,
