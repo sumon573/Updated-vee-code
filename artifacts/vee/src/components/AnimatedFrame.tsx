@@ -60,7 +60,8 @@ export default function AnimatedFrame({ size, frameId }: Props) {
     return () => breathLoop.stop();
   }, [frameBreath, serverUri, serverFailed]);
 
-  const frameSize = size * 1.45;
+  // 2026-10-13 (Sumon): frame DP-র সাথে snug fit — 1.45x বেশি বড় দেখাতো
+  const frameSize = size * 1.28;
 
   const frameScale = frameBreath.interpolate({
     inputRange: [0, 1],
