@@ -40,7 +40,9 @@ import {
   addReaction, deleteMessage, clearChat,
   loadOlderMessages, DM_PAGE_SIZE,
 } from '../services/firebaseDmService';
-import { showNotification } from '../services/notificationService';
+// 2026-10-13 (Sumon): showNotification সরানো হলো — InAppNotification কোথাও
+// mount করা নেই (dead code), আর খোলা chat-এ banner+haptic শুধু বিরক্তি; নতুন
+// message এমনিতেই list-এ scroll হয়ে দেখা যায়।
 // NOTE 5 (2026-10-11): offline-first message history cache.
 import { loadChatMessages, saveChatMessages } from '../services/chatCacheService';
 import { DmMessage, DmReplyPreview } from '../types/dm';
@@ -286,8 +288,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       const latest = msgs[msgs.length - 1];
       if (latest && latest.senderId !== myUid && latest.id !== lastNotifId.current) {
         lastNotifId.current = latest.id;
-        showNotification(chatId, participantName, latest.content);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // 2026-10-13 (Sumon): খোলা chat-এ নতুন message এলে শুধু scroll — কোনো
+        // banner বা haptic নয় (message এমনিতেই চোখের সামনে, buzz বিরক্তিকর)।
         shouldScrollRef.current = true;
       }
     });
@@ -296,7 +298,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       cancelled = true;
       unsubMsgs();
     };
-  }, [chatId, myUid, participantName]);
+  }, [chatId, myUid]);
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
   useEffect(() => {
@@ -331,12 +333,19 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, [effectiveParticipantId]);
 
   // RC6 fix Issue 5: subscribe to participant's RTDB profile for live photoURL.
+  // 2026-10-13 (Sumon): live নামও নিই — header/push/alert-এ stale নাম দেখাতো।
+  const [participantLiveName, setParticipantLiveName] = useState<string>('');
   useEffect(() => {
     if (!effectiveParticipantId) return;
     return subscribeUser(effectiveParticipantId, (profile) => {
       if (profile?.photoURL) setParticipantPhotoURL(profile.photoURL);
+      // || ব্যবহার (?? নয়) — Google user-এর নাম empty string হতে পারে
+      if (profile?.name) setParticipantLiveName(profile.name);
     });
   }, [effectiveParticipantId]);
+
+  // Live profile নাম থাকলে সেটাই, নইলে prop থেকে আসা নাম
+  const displayName = participantLiveName || participantName;
 
   // ── Mark seen on open ──────────────────────────────────────────────────
   useEffect(() => {
@@ -415,6 +424,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const lastSendRef = useRef<{ text: string; at: number } | null>(null);
 
   const handleSend = useCallback(async () => {
+    // 2026-10-13 (Sumon): auth ছাড়া পাঠানো যাবে না — myUid 'unknown' হলে
+    // Firebase rules reject করতো (senderId অবশ্যই auth.uid হতে হবে)।
+    if (!user?.uid) return;
     const text = inputText.trim();
     if (!text) return;
     const now = Date.now();
@@ -426,7 +438,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     const replyPreview: DmReplyPreview | undefined = replyTarget
       ? {
           messageId: replyTarget.id,
-          senderName: replyTarget.senderId === myUid ? t('chat.replyingToYou') : participantName,
+          senderName: replyTarget.senderId === myUid ? t('chat.replyingToYou') : displayName,
           preview: replyTarget.content.slice(0, 60),
           type: replyTarget.type,
         }
@@ -453,15 +465,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         Alert.alert(
           t('chat.blockedTitle') ?? 'Blocked',
           d === 'byMe'
-            ? (t('chat.blockedByMeMsg', { name: participantName }) ?? `You blocked ${participantName}. Unblock to send messages.`)
-            : (t('chat.blockedByThemMsg', { name: participantName }) ?? `${participantName} has blocked you.`),
+            ? (t('chat.blockedByMeMsg', { name: displayName }) ?? `You blocked ${displayName}. Unblock to send messages.`)
+            : (t('chat.blockedByThemMsg', { name: displayName }) ?? `${displayName} has blocked you.`),
         );
       } else {
         // NOTE 5 (2026-10-11): show the ACTUAL cause, not a generic message.
         Alert.alert(t('chat.error'), `${t('chat.sendError')}\n\nReason: ${getErrorCause(e)}`);
       }
     }
-  }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, participantName, t, user]);
+  }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, displayName, t, user]);
 
   // ── Typing detection ──────────────────────────────────────────────────────
   const handleInputChange = useCallback((text: string) => {
@@ -486,6 +498,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   const handleMedia = useCallback(async () => {
     if (uploadingMediaRef.current) return;
+    if (!user?.uid) return; // 2026-10-13 (Sumon): auth ছাড়া media পাঠানো যাবে না
     const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       const title = t('chat.permissionRequired');
@@ -545,7 +558,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const handleMoreOptions = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
-      participantName,
+      displayName,
       '',
       [
         {
@@ -554,7 +567,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           onPress: () => {
             Alert.alert(
               t('chat.blockTitle'),
-              t('chat.blockConfirm', { name: participantName }),
+              t('chat.blockConfirm', { name: displayName }),
               [
                 { text: t('chat.cancel'), style: 'cancel' },
                 {
@@ -567,12 +580,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                       await blockUser(
                         myUid,
                         effectiveParticipantId,
-                        participantName,
+                        displayName,
                         participantPhotoURL ?? undefined,
                       );
                       Alert.alert(
                         t('chat.done'),
-                        t('chat.blockSuccess', { name: participantName }),
+                        t('chat.blockSuccess', { name: displayName }),
                         [{ text: 'OK', onPress: () => router.back() }],
                       );
                     } catch {
@@ -580,7 +593,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                       // succeeded but the UI confirmation failed
                       Alert.alert(
                         t('chat.done'),
-                        t('chat.blockSuccess', { name: participantName }),
+                        t('chat.blockSuccess', { name: displayName }),
                         [{ text: 'OK', onPress: () => router.back() }],
                       );
                     }
@@ -599,7 +612,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   reporterUid: myUid,
                   reporterName: user?.displayName || 'Vee User',
                   reportedUid: effectiveParticipantId,
-                  reportedName: participantName,
+                  reportedName: displayName,
                   reason,
                   roomId: chatId,
                 });
@@ -649,7 +662,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         { text: t('chat.cancel'), style: 'cancel' },
       ],
     );
-  }, [chatId, myUid, effectiveParticipantId, participantName, participantPhotoURL, router, t, user]);
+  }, [chatId, myUid, effectiveParticipantId, displayName, participantPhotoURL, router, t, user]);
 
   // ── Render message ─────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }: { item: DmMessage }) => {
@@ -686,18 +699,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       Alert.alert(
         t('chat.blockedTitle'),
         direction === 'byMe' || direction === 'mutual'
-          ? t('chat.blockedByMeMsg', { name: participantName })
-          : t('chat.blockedByThemMsg', { name: participantName }),
+          ? t('chat.blockedByMeMsg', { name: displayName })
+          : t('chat.blockedByThemMsg', { name: displayName }),
       );
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const callRoomId = buildCallRoomId(myUid, effectiveParticipantId);
-    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(participantName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(myRealName || user.displayName || 'Vee User')}`;
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(displayName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(myRealName || user.displayName || 'Vee User')}`;
     if (participantPhotoURL) url += `&remotePhotoURL=${encodeURIComponent(participantPhotoURL)}`;
     if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
     router.push(url as never);
-  }, [user, myUid, effectiveParticipantId, participantName, participantPhotoURL, router]);
+  }, [user, myUid, effectiveParticipantId, displayName, participantPhotoURL, router]);
 
   const statusColor = isTypingRemote ? C.glow : isOnline ? C.onlineGreen : C.offlineGray;
   const topPad = Platform.OS === 'web' ? 67 : 0;
@@ -773,7 +786,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push(
-                  `/user-profile?uid=${encodeURIComponent(effectiveParticipantId)}&name=${encodeURIComponent(participantName)}` as never,
+                  `/user-profile?uid=${encodeURIComponent(effectiveParticipantId)}&name=${encodeURIComponent(displayName)}` as never,
                 );
               }}
               style={{ position: 'relative', marginRight: 10 }}
@@ -792,7 +805,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   />
                 ) : (
                   <Text style={{ color: '#7C3AED', fontWeight: '900', fontSize: 16 }}>
-                    {participantName[0]?.toUpperCase()}
+                    {displayName[0]?.toUpperCase()}
                   </Text>
                 )}
               </View>
@@ -807,7 +820,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             {/* Name + status */}
             <View style={{ flex: 1 }}>
               <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
-                {participantName}
+                {displayName}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor }} />
@@ -903,7 +916,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   <Text style={{ color: C.glow, fontWeight: '700', fontSize: 12, marginBottom: 2 }}>
                     {replyTarget.senderId === myUid
                       ? t('chat.replyingToYou')
-                      : t('chat.replyingTo', { name: participantName })}
+                      : t('chat.replyingTo', { name: displayName })}
                   </Text>
                   <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
                     {replyTarget.type !== 'text' ? '📷 Media' : replyTarget.content}
@@ -925,8 +938,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               }}>
                 <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
                   {blockDirection === 'byMe' || blockDirection === 'mutual'
-                    ? t('chat.blockedBannerByMe', { name: participantName })
-                    : t('chat.blockedBannerByThem', { name: participantName })}
+                    ? t('chat.blockedBannerByMe', { name: displayName })
+                    : t('chat.blockedBannerByThem', { name: displayName })}
                 </Text>
               </View>
             )}
@@ -973,7 +986,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               />
 
               {/* Send */}
-              <Pressable onPress={handleSend} disabled={!inputText.trim() || blockDirection !== 'none'}>
+              <Pressable onPress={handleSend} disabled={!inputText.trim() || blockDirection !== 'none' || !user?.uid}>
                 <View style={{
                   width: 42, height: 42, borderRadius: 21,
                   backgroundColor: inputText.trim() ? C.primary : 'rgba(124,58,237,0.2)',

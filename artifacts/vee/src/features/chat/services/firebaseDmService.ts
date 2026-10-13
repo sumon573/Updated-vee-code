@@ -380,6 +380,9 @@ export async function markAllSeen(chatId: string, myUid: string): Promise<void> 
 // ─── Typing indicator ────────────────────────────────────────────────────────
 
 const typingTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
+// 2026-10-13 (Sumon): onDisconnect একবারই register হবে প্রতি chat+uid-এ — প্রতিটি
+// keystroke-এ নতুন onDisconnect write schedule করা হতো, যা অপ্রয়োজনীয় write জমাতো।
+const typingDisconnectRegistered = new Set<string>();
 
 /** Set typing state — auto-clears after 4s of no activity */
 export function setTyping(chatId: string, myUid: string, isTyping: boolean): void {
@@ -397,9 +400,16 @@ export function setTyping(chatId: string, myUid: string, isTyping: boolean): voi
     set(typingRef, { isTyping: false, lastTypedAt: Date.now() }).catch(() => {/* fire-and-forget */});
   }
 
-  // Clear on disconnect — suppressed so a non-critical failure doesn't surface
-  // as an unhandled rejection in production logs.
-  fbOnDisconnect(typingRef).set({ isTyping: false, lastTypedAt: Date.now() }).catch(() => {});
+  // Clear on disconnect — একবারই register; fail হলে set থেকে মুছে ফেলি যাতে
+  // পরের বার আবার চেষ্টা হয়। Suppressed so a non-critical failure doesn't
+  // surface as an unhandled rejection in production logs.
+  const disconnectKey = `${chatId}_${myUid}`;
+  if (!typingDisconnectRegistered.has(disconnectKey)) {
+    typingDisconnectRegistered.add(disconnectKey);
+    fbOnDisconnect(typingRef).set({ isTyping: false, lastTypedAt: Date.now() }).catch(() => {
+      typingDisconnectRegistered.delete(disconnectKey);
+    });
+  }
 }
 
 /** Subscribe to the other participant's typing status */
@@ -538,6 +548,11 @@ export function sanitizeChat(chatId: string, raw: any): Chat | null {
   } as Chat;
 }
 
+// 2026-10-13 (Sumon): কোন uid-এর profile fetch একবার চেষ্টা করা হয়েছে সেটা মনে
+// রাখি — প্রতিটি userChats snapshot-এ (প্রতিটি নতুন message-এ) অস্তিত্বহীন/
+// খালি profile-এর জন্য বারবার get() করে read amplification হতো।
+const profileRefreshAttempted = new Set<string>();
+
 /**
  * Subscribe to the logged-in user's chat list.
  * Each entry in userChats/{uid} is a Chat object.
@@ -558,9 +573,12 @@ export function subscribeUserChats(
         chats.push(sanitized);
         // 2026-10-13 (Sumon): Fix "Unknown" name + missing DP for Google users.
         // If participantName is Unknown/empty or avatar missing, fetch live user data.
-        if ((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar) {
-          if (sanitized.participantId) {
-            refreshPromises.push((async () => {
+        // Session-এ একবারই চেষ্টা — resolve না হলে পরের snapshot-এ আবার get() নয়।
+        if (((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar)
+          && sanitized.participantId
+          && !profileRefreshAttempted.has(sanitized.participantId)) {
+          profileRefreshAttempted.add(sanitized.participantId);
+          refreshPromises.push((async () => {
               try {
                 const userSnap = await get(ref(database, `users/${sanitized.participantId}`));
                 if (userSnap.exists()) {
@@ -583,7 +601,6 @@ export function subscribeUserChats(
                 }
               } catch { /* non-critical */ }
             })());
-          }
         }
       }
     });
@@ -633,6 +650,19 @@ export async function createOrGetChat(
       storySeen: false,
       isPinned: false,
     });
+  } else {
+    // 2026-10-13 (Sumon): আগে hide করা chat-এ নতুন করে chat শুরু করলে unhide
+    // করতে হবে — নইলে chat list-এ আর ফিরে আসে না। ভালো নাম পেলে update করি
+    // ('Unknown' দিয়ে ভালো নাম overwrite করব না)।
+    const mine = mySnap.val() as { isHidden?: boolean; participantName?: string };
+    const myUpdates: Record<string, unknown> = {};
+    if (mine.isHidden === true) myUpdates.isHidden = false;
+    if (participantName && participantName !== 'Unknown' && mine.participantName !== participantName) {
+      myUpdates.participantName = participantName;
+    }
+    if (Object.keys(myUpdates).length > 0) {
+      await update(myEntry, myUpdates);
+    }
   }
 
   if (!theirSnap.exists()) {
@@ -649,6 +679,17 @@ export async function createOrGetChat(
       storySeen: false,
       isPinned: false,
     });
+  } else {
+    // 2026-10-13 (Sumon): ওপাশের entry-ও unhide + নাম refresh (same rule)।
+    const theirs = theirSnap.val() as { isHidden?: boolean; participantName?: string };
+    const theirUpdates: Record<string, unknown> = {};
+    if (theirs.isHidden === true) theirUpdates.isHidden = false;
+    if (myName && myName !== 'Unknown' && theirs.participantName !== myName) {
+      theirUpdates.participantName = myName;
+    }
+    if (Object.keys(theirUpdates).length > 0) {
+      await update(theirEntry, theirUpdates);
+    }
   }
 
   return chatId;
@@ -711,6 +752,14 @@ export async function clearChat(chatId: string, myUid: string): Promise<void> {
     if (count < 200 || oldestKey === lastKey) break;
     lastKey = oldestKey;
   }
+
+  // 2026-10-13 (Sumon): clear-এর পর chat list-এ পুরনো lastMessage preview দেখাতো —
+  // নিজের entry-র preview + unread reset করি, নইলে "Delete Chat History" মিথ্যা মনে হয়।
+  await update(ref(database, `userChats/${myUid}/${chatId}`), {
+    lastMessage: '',
+    lastMessageType: 'text',
+    unreadCount: 0,
+  }).catch(() => {/* non-critical — messages ইতিমধ্যে clear হয়েছে */});
 }
 
 /** Update participant's online status in all shared chats */
