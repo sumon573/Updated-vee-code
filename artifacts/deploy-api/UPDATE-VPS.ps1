@@ -8,8 +8,11 @@ Write-Host "Backing up current API..."
 Copy-Item $dest $backup -Force
 Write-Host "Downloading updated API bundle..."
 Invoke-WebRequest -Uri $repo -OutFile $dest -UseBasicParsing
-Write-Host "Restarting VeeApi service..."
-Restart-ScheduledTask -TaskName "VeeApi"
+Write-Host "Restarting VeeApi..."
+# 2026-10-13: Restart-ScheduledTask doesn't exist on this PS version — use Stop/Start
+Stop-ScheduledTask -TaskName "VeeApi" -ErrorAction SilentlyContinue
+Start-Sleep 3
+Start-ScheduledTask -TaskName "VeeApi"
 Start-Sleep 5
 $proc = Get-Process node -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($proc) { Write-Host "OK: API running (PID $($proc.Id))" } else { Write-Host "WARNING: node not running!" }
