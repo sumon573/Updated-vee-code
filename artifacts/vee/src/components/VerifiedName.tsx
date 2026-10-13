@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, Modal, Image, StyleSheet } from 'react-native';
 import { useVerifiedBadge } from '../hooks/useVerifiedBadge';
+import { getOfficialBadgeIconUrl } from '../services/verifiedService';
+
+// Bundled fallback (used if server icon fails to load)
+const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
 
 interface VerifiedNameProps {
   name: string;
@@ -19,10 +23,19 @@ interface VerifiedNameProps {
  */
 export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize = 16 }: VerifiedNameProps) {
   const [showBadge, setShowBadge] = useState(false);
+  const [serverIcon, setServerIcon] = useState<string | null>(null);
   const hookVerified = useVerifiedBadge(uid);
-  
+
+  // 2026-10-13 (Sumon): SERVER-DRIVEN — fetch badge icon from catalog.
+  // Admin panel-এ badge change করলে সব app-এ instantly update, no app update needed.
+  useEffect(() => {
+    getOfficialBadgeIconUrl().then(setServerIcon).catch(() => {});
+  }, []);
+
   // Use explicit boolean if provided, otherwise use hook result (if uid provided)
   const verified = hasOfficialBadge !== undefined ? hasOfficialBadge : (uid ? hookVerified : false);
+  // Server icon first, bundled fallback if server fails
+  const badgeSource = serverIcon ? { uri: serverIcon } : FALLBACK_BADGE;
 
   return (
     <View style={styles.container}>
@@ -30,7 +43,7 @@ export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize 
       {verified && (
         <Pressable onPress={() => setShowBadge(true)} hitSlop={8}>
           <Image
-            source={require('@/assets/images/vee-badge.png')}
+            source={badgeSource}
             style={{ width: logoSize, height: logoSize, marginLeft: 4 }}
             resizeMode="contain"
           />
@@ -42,7 +55,7 @@ export function VerifiedName({ name, hasOfficialBadge, uid, nameStyle, logoSize 
         <Pressable style={styles.overlay} onPress={() => setShowBadge(false)}>
           <View style={styles.card}>
             <Image
-              source={require('@/assets/images/vee-badge.png')}
+              source={badgeSource}
               style={{ width: 120, height: 120, marginBottom: 12 }}
               resizeMode="contain"
             />

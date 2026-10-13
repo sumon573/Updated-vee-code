@@ -1,10 +1,31 @@
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { View, Text, Pressable, Animated, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
 import { Avatar } from './Avatar';
+import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
+
+// 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
+const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
+let cachedBadgeIcon: string | null | undefined = undefined;
+function useServerBadgeIcon() {
+  const [icon, setIcon] = useState<string | null>(null);
+  useEffect(() => {
+    if (cachedBadgeIcon !== undefined) {
+      setIcon(cachedBadgeIcon);
+      return;
+    }
+    getOfficialBadgeIconUrl().then((url) => {
+      cachedBadgeIcon = url;
+      setIcon(url);
+    }).catch(() => {
+      cachedBadgeIcon = null;
+    });
+  }, []);
+  return icon;
+}
 
 /* ─────────────────────────── Seat Card ───────────────────────────
    Premium themed seat card.
@@ -28,6 +49,9 @@ export const SeatCard = memo(function SeatCard({
   const seatNum = seatIndex + 1;
   const locked  = isLocked;
   const accent  = accentColor;
+  // 2026-10-13 (Sumon): server-driven badge icon
+  const serverBadgeIcon = useServerBadgeIcon();
+  const badgeSource = serverBadgeIcon ? { uri: serverBadgeIcon } : FALLBACK_BADGE;
   const isOwner = member?.role === 'host';
   const isAdmin = member?.role === 'admin';
 
@@ -115,7 +139,7 @@ export const SeatCard = memo(function SeatCard({
             }} numberOfLines={1}>{member.name}</Text>
             {(member as any).verified && (
               <Image
-                source={require('@/assets/images/vee-badge.png')}
+                source={badgeSource}
                 style={{ width: 12, height: 12, marginLeft: 2 }}
                 resizeMode="contain"
               />
