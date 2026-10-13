@@ -42,27 +42,6 @@ const C = {
 type StoreTab = 'shortid' | 'frames';
 type IdKind = 'user' | 'room';
 
-async function deductDiamonds(amount: number): Promise<boolean> {
-  // Deduct via the server wallet API (server-side balance is authoritative).
-  try {
-    const fbUser = auth.currentUser;
-    if (!fbUser) return false;
-    const idToken = await fbUser.getIdToken();
-    const { getApiBase } = await import('@/src/utils/platform');
-    const res = await fetch(`${getApiBase()}/wallet/spend`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ amount, reason: 'store_purchase' }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 export function StoreScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -123,13 +102,8 @@ export function StoreScreen() {
           onPress: async () => {
             setBuying(item.id);
             try {
-              // 1. Deduct diamonds first
-              const deducted = await deductDiamonds(item.price);
-              if (!deducted) {
-                Alert.alert(t('store.error'), t('store.deductFailed'));
-                return;
-              }
-              // 2. Claim the ID (atomic transaction)
+              // 2026-10-14 (Sumon): Server-এর /purchase-short-id atomic-এ deduct+claim করে —
+              // আলাদা /wallet/spend endpoint নেই, two-step flow ভুল ছিল।
               const ownerId = myUid; // for rooms, we'd need room selection
               const result = await claimShortId(
                 idKind === 'user' ? 'users' : 'rooms',
@@ -137,8 +111,7 @@ export function StoreScreen() {
                 ownerId,
               );
               if (!result.success) {
-                Alert.alert(t('store.error'), t('store.claimFailed'));
-                // TODO: refund diamonds via server
+                Alert.alert(t('store.error'), result.error || t('store.claimFailed'));
                 return;
               }
               Alert.alert(t('store.success'), t('store.idClaimed', { id: item.id }));
@@ -160,11 +133,7 @@ export function StoreScreen() {
     }
     setBuying('random');
     try {
-      const deducted = await deductDiamonds(RANDOM_SHORT_ID_PRICE);
-      if (!deducted) {
-        Alert.alert(t('store.error'), t('store.deductFailed'));
-        return;
-      }
+      // 2026-10-14 (Sumon): Server atomic purchase — no separate deduct step.
       const result = await claimRandomShortId(
         idKind === 'user' ? 'users' : 'rooms',
         myUid,
