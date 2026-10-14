@@ -6,6 +6,7 @@ import { C } from '../constants/theme';
 import { ChatMsg } from '../types/room';
 import { fmt } from '../utils/format';
 import { MsgText } from './Avatar';
+import { truncateTo12 } from '@/src/utils/truncateName';
 
 type Props = {
   item: ChatMsg;
@@ -61,7 +62,7 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
           marginBottom: 3, marginLeft: 4,
           letterSpacing: 0.2,
         }}>
-          {item.sender}
+          {truncateTo12(item.sender)}
         </Text>
       )}
 
@@ -86,7 +87,7 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
               color: item.replyTo.color,
               fontSize: 10, fontWeight: '800', marginBottom: 2,
             }}>
-              ↩ {item.replyTo.sender}
+              ↩ {truncateTo12(item.replyTo.sender)}
             </Text>
             <Text style={{ color: C.sub, fontSize: 11 }} numberOfLines={2}>
               {item.replyTo.text}
