@@ -17,7 +17,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
-      }
+      },
+      "image": "ubuntu-24.04-jdk-17-ndk-r27b"
     },
     "preview": {
       "distribution": "internal",
@@ -30,7 +31,8 @@
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
       },
-      "node": "20.18.0"
+      "node": "20.18.0",
+      "image": "ubuntu-24.04-jdk-17-ndk-r27b"
     },
     "production": {
       "distribution": "store",
@@ -42,7 +44,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
-      }
+      },
+      "image": "ubuntu-24.04-jdk-17-ndk-r27b"
     }
   },
   "submit": {
