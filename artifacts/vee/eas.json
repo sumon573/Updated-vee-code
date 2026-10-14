@@ -8,9 +8,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "node": "20.18.0",
       "android": {
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
       },
@@ -23,25 +21,34 @@
     },
     "preview": {
       "distribution": "internal",
-      "node": "20.18.0",
       "android": {
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
         "buildType": "apk"
       },
       "ios": {
-        "simulator": true
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
+      },
+      "node": "20.18.0"
+    },
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
       }
-    },
+    }
+  },
+  "submit": {
     "production": {
-      "node": "20.18.0",
       "android": {
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
+        "track": "internal"
       }
     }
   }
