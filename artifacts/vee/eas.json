@@ -10,6 +10,7 @@
       "distribution": "internal",
       "node": "20.18.0",
       "android": {
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
       },
@@ -24,6 +25,7 @@
       "distribution": "internal",
       "node": "20.18.0",
       "android": {
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
         "buildType": "apk"
       },
       "ios": {
@@ -35,6 +37,9 @@
     },
     "production": {
       "node": "20.18.0",
+      "android": {
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+      },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
       }
