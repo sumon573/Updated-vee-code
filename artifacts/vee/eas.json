@@ -8,6 +8,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "node": "20.18.0",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
@@ -21,6 +22,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "node": "20.18.0",
       "android": {
         "buildType": "apk"
       },
@@ -32,6 +34,7 @@
       }
     },
     "production": {
+      "node": "20.18.0",
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vee-club.duckdns.org"
       }
