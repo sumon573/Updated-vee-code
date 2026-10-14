@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
-import { hasOfficialBadge } from '../services/verifiedService';
-
-// Cache to avoid repeated Firebase reads for the same user
-const cache = new Map<string, boolean>();
-const pending = new Map<string, Promise<boolean>>();
+import { ref, onValue } from 'firebase/database';
+import { database } from '../config/firebase';
 
 /**
- * 2026-10-13 (Sumon): Hook to check if a user has the Vee Official badge.
- * Uses in-memory cache to avoid repeated Firebase reads.
- * Returns true if user has a valid (non-expired) official badge.
+ * 2026-10-14 (Sumon): Hook to check if a user has the Vee Official badge.
+ * Uses REAL-TIME Firebase listeners — badge grant AND removal both reflect
+ * live immediately (no stale cache). Matches Sumon's requirement that the
+ * verified icon disappears the moment the badge is removed, everywhere
+ * (chat list, contacts, profile name).
  */
 export function useVerifiedBadge(uid: string | undefined | null): boolean {
   const [verified, setVerified] = useState(false);
@@ -19,43 +18,46 @@ export function useVerifiedBadge(uid: string | undefined | null): boolean {
       return;
     }
 
-    // Check cache first
-    if (cache.has(uid)) {
-      setVerified(cache.get(uid)!);
-      return;
-    }
+    const checkBadge = (officialBadgeExists: boolean, badgesVal: any): boolean => {
+      if (officialBadgeExists) return true;
+      if (!badgesVal) return false;
+      const now = Date.now();
+      return Object.values(badgesVal).some((b: any) => {
+        const isOfficial = (b?.name || '').toLowerCase().trim() === 'vee official';
+        if (!isOfficial) return false;
+        if (b.validity === 'permanent' || !b.validity) return true;
+        const expiry = typeof b.validity === 'number' ? b.validity : b.expiresAt;
+        return typeof expiry === 'number' ? expiry > now : true;
+      });
+    };
 
-    // Check if already pending
-    let promise = pending.get(uid);
-    if (!promise) {
-      promise = hasOfficialBadge(uid);
-      pending.set(uid, promise);
-    }
+    let officialExists = false;
+    let badgesVal: any = null;
 
-    promise.then((result) => {
-      // 2026-10-14 (Sumon): Only cache POSITIVE results — negative cache
-      // caused badge to not show for others after grant.
-      if (result) {
-        cache.set(uid, result);
-      }
-      pending.delete(uid);
-      setVerified(result);
-    }).catch(() => {
-      pending.delete(uid);
-      setVerified(false);
+    // Listen to both paths — either change updates the verified state live
+    const unsubOfficial = onValue(ref(database, `users/${uid}/officialBadge`), (snap) => {
+      officialExists = snap.exists();
+      setVerified(checkBadge(officialExists, badgesVal));
     });
+
+    const unsubBadges = onValue(ref(database, `users/${uid}/badges`), (snap) => {
+      badgesVal = snap.exists() ? snap.val() : null;
+      setVerified(checkBadge(officialExists, badgesVal));
+    });
+
+    return () => {
+      unsubOfficial();
+      unsubBadges();
+    };
   }, [uid]);
 
   return verified;
 }
 
 /**
- * Clear the cache (e.g., after badge granted/revoked)
+ * @deprecated No longer needed — useVerifiedBadge now uses real-time listeners.
+ * Kept for backwards compatibility with existing callers.
  */
-export function clearVerifiedCache(uid?: string) {
-  if (uid) {
-    cache.delete(uid);
-  } else {
-    cache.clear();
-  }
+export function clearVerifiedCache(_uid?: string) {
+  // No-op: real-time listeners make manual cache clearing unnecessary
 }
