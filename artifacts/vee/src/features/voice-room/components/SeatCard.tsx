@@ -8,6 +8,7 @@ import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
+import { seatName } from '@/src/utils/truncateName';
 
 // 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
 const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
@@ -148,7 +149,7 @@ export const SeatCard = memo(function SeatCard({
             <Text style={{
               color: C.text, fontSize: 10, fontWeight: '700',
               textAlign: 'center',
-            }} numberOfLines={1}>{member.name}</Text>
+            }} numberOfLines={1}>{seatName(member.name)}</Text>
             {hasVerifiedBadge && (
               <Image
                 source={badgeSource}
