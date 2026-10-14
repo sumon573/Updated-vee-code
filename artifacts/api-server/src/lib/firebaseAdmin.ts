@@ -23,6 +23,7 @@ import {
   ServerValue,
   type Database,
 } from "firebase-admin/database";
+import { getMessaging, type Messaging } from "firebase-admin/messaging";
 import { logger } from "./logger";
 
 const DATABASE_URL =
@@ -94,6 +95,11 @@ export function verifyIdToken(idToken: string) {
 /** RTDB Database instance. Throws when the SDK isn't ready. */
 export function adminDatabase(): Database {
   return getDatabase(requireApp());
+}
+
+/** FCM Messaging instance for direct push. Throws when the SDK isn't ready. */
+export function adminMessaging(): Messaging {
+  return getMessaging(requireApp());
 }
 
 /** Re-export of RTDB ServerValue (TIMESTAMP / increment). */

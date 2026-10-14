@@ -32702,6 +32702,7 @@ import {
   getDatabase,
   ServerValue
 } from "firebase-admin/database";
+import { getMessaging } from "firebase-admin/messaging";
 
 // src/lib/logger.ts
 var import_pino = __toESM(require_pino(), 1);
@@ -32776,6 +32777,9 @@ function verifyIdToken(idToken) {
 }
 function adminDatabase() {
   return getDatabase(requireApp());
+}
+function adminMessaging() {
+  return getMessaging(requireApp());
 }
 
 // src/routes/notifications.ts
@@ -32871,45 +32875,187 @@ router2.post("/send", async (req, res) => {
         }
       }
     }
-    const oneSignalAppId = process.env["ONESIGNAL_APP_ID"];
-    const oneSignalRestApiKey = process.env["ONESIGNAL_REST_API_KEY"];
-    if (!oneSignalAppId || !oneSignalRestApiKey) {
-      logger.error(
-        "POST /api/notifications/send: ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY not set"
-      );
-      return res.status(500).json({ ok: false, error: "Notification service not configured" });
+    let fcmToken = null;
+    try {
+      const tokenSnap = await adminDatabase().ref(`users/${externalUserId}/oneSignalId`).get();
+      const tokenVal = tokenSnap.val();
+      if (typeof tokenVal === "string" && tokenVal.trim().length > 0) {
+        fcmToken = tokenVal.trim();
+      }
+    } catch (err) {
+      logger.warn({ err, externalUserId }, "Failed to read FCM token, skipping push");
     }
-    const onesignalRes = await fetch("https://api.onesignal.com/notifications", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${oneSignalRestApiKey}`
-      },
-      body: JSON.stringify({
-        app_id: oneSignalAppId,
-        include_external_user_ids: [externalUserId],
-        headings: { en: title },
-        contents: { en: message2 },
-        data: dataPayload
-      }),
-      // Never let a hung OneSignal call tie up a server connection forever.
-      signal: AbortSignal.timeout(1e4)
-    });
-    if (!onesignalRes.ok) {
-      const responseBody = await onesignalRes.text().catch(() => "<unreadable>");
-      logger.error(
-        { status: onesignalRes.status, responseBody, externalUserId },
-        "OneSignal API returned non-2xx"
-      );
-    } else {
+    if (!fcmToken) {
       logger.info(
-        { externalUserId, category: categoryKey },
-        "Push notification handed to OneSignal"
+        { externalUserId },
+        "Push skipped: recipient has no FCM token (app never registered)"
       );
+      return res.status(200).json({ ok: true, skipped: true, noToken: true });
+    }
+    const fcmData = {};
+    if (typeof dataPayload === "object" && dataPayload !== null) {
+      for (const [k, v] of Object.entries(dataPayload)) {
+        try {
+          fcmData[k] = typeof v === "string" ? v : JSON.stringify(v);
+        } catch {
+        }
+      }
+    }
+    fcmData["category"] = categoryKey;
+    try {
+      const messageId = await adminMessaging().send({
+        token: fcmToken,
+        notification: {
+          title: title.trim(),
+          body: message2.trim()
+        },
+        data: fcmData,
+        android: {
+          priority: "high",
+          notification: {
+            sound: "default",
+            channelId: "vee_notifications"
+          }
+        }
+      });
+      logger.info(
+        { externalUserId, category: categoryKey, messageId },
+        "Push notification sent via FCM direct"
+      );
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errCode = err?.code ?? "unknown";
+      logger.error(
+        { err: errMsg, code: errCode, externalUserId },
+        "FCM send failed"
+      );
+      if (errCode === "messaging/invalid-registration-token" || errCode === "messaging/registration-token-not-registered") {
+        try {
+          await adminDatabase().ref(`users/${externalUserId}/oneSignalId`).remove();
+          logger.info({ externalUserId }, "Cleared invalid FCM token");
+        } catch {
+        }
+      }
     }
     return res.status(200).json({ ok: true });
   } catch (err) {
     logger.error({ err }, "Unhandled error in POST /api/notifications/send");
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+router2.post("/broadcast", async (req, res) => {
+  try {
+    if (!isAdminReady()) {
+      logger.error("POST /api/notifications/broadcast: Firebase Admin SDK not initialized");
+      return res.status(500).json({ ok: false, error: "Notification service not configured" });
+    }
+    const authHeader = req.headers.authorization;
+    const bearerMatch = /^Bearer (.+)$/.exec(authHeader ?? "");
+    if (!bearerMatch) {
+      return res.status(401).json({ ok: false, error: "Missing Authorization Bearer token" });
+    }
+    let decoded;
+    try {
+      decoded = await verifyIdToken(bearerMatch[1]);
+    } catch (err) {
+      logger.warn({ err }, "POST /api/notifications/broadcast: invalid Firebase ID token");
+      return res.status(401).json({ ok: false, error: "Invalid ID token" });
+    }
+    const role = decoded.role ?? "";
+    if (role !== "superAdmin" && role !== "admin") {
+      try {
+        const adminSnap = await adminDatabase().ref(`admins/${decoded.uid ?? ""}`).get();
+        if (!adminSnap.exists()) {
+          return res.status(403).json({ ok: false, error: "Admin only" });
+        }
+      } catch {
+        return res.status(403).json({ ok: false, error: "Admin only" });
+      }
+    }
+    const body = req.body ?? {};
+    const title = body["title"];
+    const message2 = body["message"];
+    const data = body["data"];
+    if (typeof title !== "string" || title.trim().length === 0 || typeof message2 !== "string" || message2.trim().length === 0) {
+      return res.status(400).json({ ok: false, error: "title and message are required" });
+    }
+    if (title.length > MAX_TITLE_LENGTH || message2.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ ok: false, error: "title or message is invalid" });
+    }
+    const fcmData = { category: "official" };
+    if (typeof data === "object" && data !== null) {
+      for (const [k, v] of Object.entries(data)) {
+        try {
+          fcmData[k] = typeof v === "string" ? v : JSON.stringify(v);
+        } catch {
+        }
+      }
+    }
+    const allTokens = [];
+    try {
+      const usersSnap = await adminDatabase().ref("users").get();
+      if (usersSnap.exists()) {
+        usersSnap.forEach((child) => {
+          const token = child.child("oneSignalId").val();
+          if (typeof token === "string" && token.trim().length > 0) {
+            allTokens.push(token.trim());
+          }
+          return false;
+        });
+      }
+    } catch (err) {
+      logger.error({ err }, "Broadcast: failed to collect FCM tokens");
+      return res.status(500).json({ ok: false, error: "Failed to collect tokens" });
+    }
+    if (allTokens.length === 0) {
+      return res.status(200).json({ ok: true, sent: 0, failed: 0, note: "no tokens" });
+    }
+    let totalSuccess = 0;
+    let totalFailure = 0;
+    const invalidTokens = [];
+    for (let i = 0; i < allTokens.length; i += 500) {
+      const batch = allTokens.slice(i, i + 500);
+      const batchResult = await adminMessaging().sendEachForMulticast({
+        tokens: batch,
+        notification: {
+          title: title.trim(),
+          body: message2.trim()
+        },
+        data: fcmData,
+        android: {
+          priority: "high",
+          notification: {
+            sound: "default",
+            channelId: "vee_notifications"
+          }
+        }
+      });
+      totalSuccess += batchResult.successCount;
+      totalFailure += batchResult.failureCount;
+      batchResult.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          const code = resp.error?.code ?? "";
+          if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
+            const badToken = batch[idx];
+            if (badToken) invalidTokens.push(badToken);
+          }
+        }
+      });
+    }
+    if (invalidTokens.length > 0) {
+      logger.info({ count: invalidTokens.length }, "Broadcast: invalid tokens detected");
+    }
+    logger.info(
+      { success: totalSuccess, failure: totalFailure, by: decoded.uid },
+      "Official broadcast sent via FCM multicast"
+    );
+    return res.status(200).json({
+      ok: true,
+      sent: totalSuccess,
+      failed: totalFailure
+    });
+  } catch (err) {
+    logger.error({ err }, "Unhandled error in POST /api/notifications/broadcast");
     return res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });

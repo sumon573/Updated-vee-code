@@ -1,12 +1,13 @@
 # Vee API update — run ONCE on the VPS via RDP (Administrator PowerShell)
-# Downloads the latest API bundle (with muted-chat push fix) and restarts.
+# 2026-10-14: FCM DIRECT — OneSignal dropped, Firebase Cloud Messaging direct.
+# Downloads the latest API bundle and restarts.
 $ErrorActionPreference = "Stop"
 $repo = "https://raw.githubusercontent.com/sumon573/Updated-vee-code/working-2026-10-13-clean/artifacts/deploy-api/api-index.mjs"
 $dest = "C:\vee-deploy\index.mjs"
-$backup = "C:\vee-deploy\index.mjs.backup-20261013-mute"
+$backup = "C:\vee-deploy\index.mjs.backup-20261014-fcm"
 Write-Host "Backing up current API..."
 Copy-Item $dest $backup -Force
-Write-Host "Downloading updated API bundle..."
+Write-Host "Downloading updated API bundle (FCM direct)..."
 Invoke-WebRequest -Uri $repo -OutFile $dest -UseBasicParsing
 Write-Host "Restarting VeeApi..."
 # 2026-10-13: Restart-ScheduledTask doesn't exist on this PS version — use Stop/Start
