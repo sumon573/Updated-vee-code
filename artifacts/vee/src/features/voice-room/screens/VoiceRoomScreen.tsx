@@ -190,7 +190,10 @@ export default function VoiceRoomScreen() {
     const seatIdx = mySeatIdxRef.current;
     if (!roomId || seatIdx < 0 || !myUid) return;
     if (frame) {
-      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame }).catch(() => {});
+      // 2026-10-14 (Sumon): Log failures — silent catch hid seat sync issues
+      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
+        .then(() => console.log(`[VoiceRoom] ✅ Seat ${seatIdx} frame synced: ${frame}`))
+        .catch((e) => console.log(`[VoiceRoom] ❌ Seat frame sync FAILED:`, e?.message || e));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(myProfile as any)?.activeFrame]);
@@ -203,7 +206,10 @@ export default function VoiceRoomScreen() {
       const frame = (myProfile as any)?.activeFrame;
       const seatIdx = mySeatIdxRef.current;
       if (!frame || seatIdx < 0) return;
-      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame }).catch(() => {});
+      // 2026-10-14 (Sumon): Log failures — silent catch hid seat sync issues
+      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
+        .then(() => console.log(`[VoiceRoom] ✅ Periodic seat ${seatIdx} frame sync: ${frame}`))
+        .catch((e) => console.log(`[VoiceRoom] ❌ Periodic seat frame sync FAILED:`, e?.message || e));
     };
     // Initial sync after 5s (profile loaded by then)
     const initial = setTimeout(syncFrame, 5000);

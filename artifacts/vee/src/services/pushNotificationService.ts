@@ -98,8 +98,29 @@ export async function loginOneSignal(uid: string): Promise<void> {
   }
   try {
     // External ID set করলে Cloud Function থেকে এই user-কে target করা যাবে
-    await os.login(uid);
-    console.log('[OneSignal] login() done for uid:', uid);
+    // 2026-10-14 (Sumon): Verify login actually took effect — dashboard showed
+    // 4/5 devices missing External User ID, causing silent notification failures.
+    // Retry up to 3 times with verification.
+    let loginVerified = false;
+    for (let loginAttempt = 0; loginAttempt < 3 && !loginVerified; loginAttempt++) {
+      try {
+        await os.login(uid);
+        // Verify: check if external ID was actually set
+        await new Promise((r) => setTimeout(r, 2000));
+        const externalId = (os as any)?.User?.externalId;
+        if (externalId === uid) {
+          loginVerified = true;
+          console.log('[OneSignal] ✅ login() verified for uid:', uid);
+        } else {
+          console.log(`[OneSignal] ⚠️ login() attempt ${loginAttempt + 1}: externalId=${externalId}, expected=${uid} — retrying`);
+        }
+      } catch (loginErr) {
+        console.log(`[OneSignal] ❌ login() attempt ${loginAttempt + 1} failed:`, loginErr);
+      }
+    }
+    if (!loginVerified) {
+      console.log('[OneSignal] ❌ CRITICAL: login() failed after 3 attempts — notifications will NOT work for this device');
+    }
 
     // FIX 2026-10-13: Push subscription ID immediately after login() প্রায়ই
     // null থাকে — OneSignal server থেকে async-এ generate হয়। Retry loop দিয়ে
