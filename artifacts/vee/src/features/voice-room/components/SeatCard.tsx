@@ -7,6 +7,7 @@ import { Participant, SeatReaction } from '../types/room';
 import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
+import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 
 // 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
 const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
@@ -57,6 +58,10 @@ export const SeatCard = memo(function SeatCard({
   // 2026-10-14 (Sumon): LIVE verified check — seat data's verified flag goes stale
   // on revocation (written once at takeSeat, never cleared). Use real-time hook.
   const hasVerifiedBadge = useVerifiedBadge(member?.id);
+  // 2026-10-14 (Sumon): BETTER ARCHITECTURE — listen DIRECTLY to users/{uid}/activeFrame
+  // in real-time. No stale seat copies, no mapping bugs. Admin changes reflect LIVE.
+  // Any future frame automatically works. This is the permanent fix.
+  const liveFrameId = useActiveFrame(member?.id);
   const isAdmin = member?.role === 'admin';
 
   return (
@@ -121,7 +126,7 @@ export const SeatCard = memo(function SeatCard({
               speaking={member.speaking}
               accent={accent}
               photoURL={member.photoURL}
-              frameType={(member as any).activeFrame}
+              frameType={liveFrameId || undefined}
             />
             {/* Mic status dot */}
             <View style={{

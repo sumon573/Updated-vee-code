@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
+import { useLiveUserProfile, displayName } from '@/src/hooks/useLiveUserProfile';
 import { Chat } from '../types';
 import { formatTime } from '../data/chatUtils';
 
@@ -57,26 +58,12 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
   const isPinned  = chat.isPinned === true;
 
-  // RC6 fix Issue 5: fetch the participant's live photoURL from RTDB so the
-  // avatar stays current even after the other user changes their profile photo.
-  // The stored chat.participantAvatar may be stale (it is only written once when
-  // the chat is first created). We do a one-time get() per chat item — cheap and
-  // doesn't leave a permanent listener for every chat in the list.
-  const [livePhotoURL, setLivePhotoURL] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (!chat.participantId) return;
-    get(ref(database, `users/${chat.participantId}/photoURL`))
-      .then(snap => {
-        if (!cancelled && snap.exists() && snap.val()) {
-          setLivePhotoURL(snap.val() as string);
-        }
-      })
-      .catch(() => {/* non-critical — fall back to stored avatar or initials */});
-    return () => { cancelled = true; };
-  }, [chat.participantId]);
-
-  const avatarUri = livePhotoURL ?? chat.participantAvatar ?? null;
+  // 2026-10-14 (Sumon): PERMANENT FIX — live name + avatar from users/{uid}.
+  // If ID has a name → shows THAT name (never "Unknown"). If ID has DP → shows it.
+  // Only "Vee User" fallback if genuinely no name. Real-time, no stale cache.
+  const liveProfile = useLiveUserProfile(chat.participantId);
+  const shownName = displayName(liveProfile.name, chat.participantName);
+  const avatarUri = liveProfile.avatar ?? chat.participantAvatar ?? null;
 
   /** Label for the last message type */
   function messagePreview(c: Chat): { icon: React.ComponentProps<typeof Feather>['name'] | null; text: string } {
@@ -136,7 +123,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               alignItems: 'center', justifyContent: 'center',
             }}>
               <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>
-                {initials((!chat.participantName || chat.participantName === 'Unknown') ? 'Vee User' : chat.participantName)}
+                {initials(shownName)}
               </Text>
             </View>
           )}
@@ -162,7 +149,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               flex: 1, color: C.text,
               fontSize: 16, fontWeight: hasUnread ? '700' : '600',
             }}>
-              {(!chat.participantName || chat.participantName === 'Unknown') ? 'Vee User' : chat.participantName}
+              {shownName}
             </Text>
 
             <Text style={{
