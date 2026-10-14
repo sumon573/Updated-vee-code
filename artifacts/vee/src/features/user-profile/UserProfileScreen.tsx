@@ -3,10 +3,10 @@
  * Real Firebase data.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, Image, Pressable,
-  ActivityIndicator, Alert, Platform,
+  ActivityIndicator, Alert, Platform, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import {
   followUser, unfollowUser,
   subscribeIsFollowing, subscribeFollowCounts,
 } from '@/src/services/followService';
+import { truncateTo12 } from '@/src/utils/truncateName';
 import {
   sendFriendRequest, cancelFriendRequest, acceptFriendRequest,
   subscribeFriendStatus, FriendStatus,
@@ -62,6 +63,55 @@ type Props = {
   uid: string;
   name: string;
 };
+
+/* ─────────────────────────── Premium Badge ─────────────────────────── */
+// 2026-10-14 (Sumon): Luxury badge with mist/fog animation.
+// Higher level = more premium (richer gradients, stronger glow).
+function PremiumBadge({ name, level }: { name: string; level: number }) {
+  const mist = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mist, { toValue: 1, duration: 3000, useNativeDriver: true }),
+        Animated.timing(mist, { toValue: 0, duration: 3000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  // Level-based premium colors: higher level = richer
+  const themes = [
+    { bg: '#FFF8E1', border: '#FFE0B2', text: '#E65100', glow: '#FF9800' }, // 0: Bronze
+    { bg: '#F3E5F5', border: '#CE93D8', text: '#7B1FA2', glow: '#9C27B0' }, // 1: Silver/Purple
+    { bg: '#FFF3E0', border: '#FFCC80', text: '#EF6C00', glow: '#FF9800' }, // 2: Gold
+  ];
+  const theme = themes[Math.min(level, themes.length - 1)];
+
+  const mistOpacity = mist.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.1, 0.35],
+  });
+
+  return (
+    <View style={{
+      borderRadius: 14, paddingHorizontal: 14, paddingVertical: 7,
+      backgroundColor: theme.bg, borderWidth: 1.5, borderColor: theme.border,
+      shadowColor: theme.glow, shadowOpacity: 0.3, shadowRadius: 10,
+      shadowOffset: { width: 0, height: 3 },
+      overflow: 'hidden',
+    }}>
+      {/* Mist/fog animation overlay */}
+      <Animated.View style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: '#FFFFFF', opacity: mistOpacity,
+      }} pointerEvents="none" />
+      <Text style={{ fontSize: 12, fontWeight: '800', color: theme.text }}>{name}</Text>
+    </View>
+  );
+}
+
 
 export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
   const { user: me } = useAuth();
@@ -255,7 +305,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
 
   // P1 fix (2026-10-12): || not ?? — Firebase can hold an empty-string name.
   // 2026-10-13: also check displayName/avatar/dp (Google users may have data in alternate fields)
-  const displayName = profile?.name || (profile as any)?.displayName || fallbackName || 'Unknown';
+  const displayName = profile?.name || (profile as any)?.displayName || fallbackName || 'Vee User';
   const photoURL    = profile?.photoURL || (profile as any)?.avatar || (profile as any)?.dp;
   const bio         = profile?.bio ?? '';
   const vId         = profile?.vId ?? '';
@@ -341,7 +391,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
           {/* Name + Bio (imo style, left-aligned) */}
           <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{truncateTo12(displayName)}</Text>
               {profile?.officialBadge && (
                 <View style={{ marginLeft: 6, backgroundColor: '#1DA1F2', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name="check" size={13} color="#fff" />
@@ -358,15 +408,20 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             </View>
           </View>
 
-          {/* Badge Pills (imo style) */}
+          {/* Badge Pills — 2026-10-14 (Sumon): Premium luxury with mist animation.
+              Higher level = more premium. Mist/fog effect for luxury feel. */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12, gap: 8 }}>
             {grantedBadges.slice(0, 3).map((badge, i) => (
-              <View key={i} style={{ backgroundColor: '#FFF8E1', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#FFE0B2' }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#E65100' }}>{badge.name || badge}</Text>
-              </View>
+              <PremiumBadge key={i} name={badge.name || badge} level={i} />
             ))}
-            <View style={{ backgroundColor: '#E8F4FD', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#0A7CC2' }}>⭐ {followCounts.followers} Follower</Text>
+            <View style={{
+              backgroundColor: '#E8F4FD', borderRadius: 14,
+              paddingHorizontal: 14, paddingVertical: 7,
+              borderWidth: 1, borderColor: '#0A7CC2' + '30',
+              shadowColor: '#0A7CC2', shadowOpacity: 0.15, shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+            }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#0A7CC2' }}>⭐ {followCounts.followers} Follower</Text>
             </View>
           </View>
 
