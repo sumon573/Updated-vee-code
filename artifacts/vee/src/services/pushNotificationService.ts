@@ -77,10 +77,24 @@ async function waitForInit(): Promise<void> {
   if (initDone) return;
   if (initPromise) {
     try { await initPromise; } catch { /* non-critical */ }
+    // 2026-10-14 (Sumon): initPromise resolve হলেও initDone false থাকতে পারে —
+    // poll করে initDone true হওয়া পর্যন্ত wait করি (max 10s)
+    for (let i = 0; i < 20 && !initDone; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!initDone) {
+      console.log('[OneSignal] ⚠️ waitForInit: initDone still false after 10s — proceeding anyway');
+    }
     return;
   }
-  // initialize() কখনো call হয়নি — 2s wait করে এগিয়ে যাই
-  await new Promise((r) => setTimeout(r, 2000));
+  // initialize() কখনো call হয়নি — initDone true হওয়া পর্যন্ত poll করি (max 10s)
+  // 2026-10-14 (Sumon): 2s fixed wait race condition ছিল — init শেষ না হতেই login হতো
+  for (let i = 0; i < 20 && !initDone; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!initDone) {
+    console.log('[OneSignal] ⚠️ waitForInit: initialize() never called, initDone false after 10s');
+  }
 }
 
 /** User login/signup-এর পর call করুন — Firebase UID দিয়ে OneSignal-কে link করে */
