@@ -6,6 +6,7 @@ import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
 import { VerifiedName } from '@/src/components/VerifiedName';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
+import { truncateTo12 } from '@/src/utils/truncateName';
 
 /* ─────────────────────────── Audience Modal ─────────────────────────── */
 export function AudienceModal({ visible, onClose, audience, myRole, onManageMember }: {
@@ -76,7 +77,7 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
                 </View>
                 <View style={{ flex: 1 }}>
                   <VerifiedName
-                    name={m.name}
+                    name={truncateTo12(m.name)}
                     uid={(m as any).uid || (m as any).id}
                     nameStyle={{ color: C.text, fontSize: 14, fontWeight: '700' }}
                     logoSize={14}
