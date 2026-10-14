@@ -891,7 +891,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
           >
             <FlatList
               ref={flatRef}

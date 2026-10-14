@@ -39,6 +39,7 @@
       "package": "com.vee.app",
       "minSdkVersion": 24,
       "targetSdkVersion": 35,
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#07020F"

@@ -136,7 +136,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               alignItems: 'center', justifyContent: 'center',
             }}>
               <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>
-                {initials(chat.participantName)}
+                {initials((!chat.participantName || chat.participantName === 'Unknown') ? 'Vee User' : chat.participantName)}
               </Text>
             </View>
           )}
@@ -162,7 +162,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
               flex: 1, color: C.text,
               fontSize: 16, fontWeight: hasUnread ? '700' : '600',
             }}>
-              {chat.participantName}
+              {(!chat.participantName || chat.participantName === 'Unknown') ? 'Vee User' : chat.participantName}
             </Text>
 
             <Text style={{
