@@ -30,6 +30,7 @@ import {
   acceptFriendRequest, rejectFriendRequest, removeFriend,
   cancelFriendRequest, subscribeSentRequestUids,
 } from '@/src/services/friendRequestService';
+import { truncateTo12 } from '@/src/utils/truncateName';
 import { useTranslation } from 'react-i18next';
 import ContactLongPressMenu from './components/ContactLongPressMenu';
 
@@ -582,7 +583,7 @@ export default function ContactsScreen() {
                       style={{ flex: 1 }}
                     >
                       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                        {item.fromName}
+                        {truncateTo12(item.fromName)}
                       </Text>
                       <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
                         #{item.fromVId}
@@ -662,7 +663,7 @@ export default function ContactsScreen() {
                     </Pressable>
                     <Pressable onPress={() => handleViewProfile(item)} style={{ flex: 1 }}>
                       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                        {item.name}
+                        {truncateTo12(item.name)}
                       </Text>
                       <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
                         {item.vId}
@@ -791,7 +792,7 @@ export default function ContactsScreen() {
                   {/* Info — 2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
                   <View style={{ flex: 1 }}>
                     <VerifiedName
-                      name={item.name}
+                      name={truncateTo12(item.name)}
                       uid={item.uid}
                       nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
                       logoSize={16}
