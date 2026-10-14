@@ -1,9 +1,13 @@
+import React, { useState, useEffect } from 'react';
 import { View, Text, Image, Alert, Pressable, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
+import { Avatar } from './Avatar';
+import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
+import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 
 /* ─────────────────────────── Member Manage Modal ─────────────────────────── */
 export function MemberManageModal({
@@ -52,6 +56,13 @@ export function MemberManageModal({
       ? t('voiceRoom.memberManage.roleAdmin')
       : t('voiceRoom.memberManage.roleMember');
 
+  // 2026-10-14 (Sumon): show frame + verified badge in profile modal
+  const hasVerifiedBadge = useVerifiedBadge(member?.id);
+  const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
+  useEffect(() => {
+    getOfficialBadgeIconUrl().then(setBadgeIconUrl).catch(() => setBadgeIconUrl(null));
+  }, []);
+
   return (
     <Modal visible={!!member} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
@@ -62,27 +73,29 @@ export function MemberManageModal({
           alignSelf: 'center', marginBottom: 20 }} />
 
         {/* ── Profile header: large photo + name + role badge ── */}
+        {/* 2026-10-14 (Sumon): show frame + verified badge in modal */}
         <View style={{ alignItems: 'center', marginBottom: 20 }}>
-          <View style={{
-            width: 76, height: 76, borderRadius: 38,
-            overflow: 'hidden',
-            backgroundColor: member.color + '33',
-            alignItems: 'center', justifyContent: 'center',
-            borderWidth: 3, borderColor: member.speaking ? C.gold : C.border,
-            marginBottom: 12,
-          }}>
-            {member.photoURL ? (
+          <View style={{ marginBottom: 12 }}>
+            <Avatar
+              initials={member.initials}
+              color={member.color}
+              size={76}
+              speaking={member.speaking}
+              accent={C.primary}
+              photoURL={member.photoURL}
+              frameType={(member as any).activeFrame || undefined}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{member.name}</Text>
+            {hasVerifiedBadge && badgeIconUrl && (
               <Image
-                source={{ uri: member.photoURL }}
-                style={{ width: 76, height: 76, borderRadius: 38 }}
+                source={{ uri: badgeIconUrl }}
+                style={{ width: 18, height: 18, marginLeft: 6 }}
+                resizeMode="contain"
               />
-            ) : (
-              <Text style={{ color: member.color, fontSize: 28, fontWeight: '800' }}>
-                {member.initials}
-              </Text>
             )}
           </View>
-          <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{member.name}</Text>
           <View style={{ backgroundColor: C.primary + '33', borderRadius: 20,
             paddingHorizontal: 12, paddingVertical: 4, marginTop: 6 }}>
             <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>{roleLabel}</Text>
