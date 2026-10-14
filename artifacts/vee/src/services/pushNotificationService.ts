@@ -58,6 +58,25 @@ export async function initializeOneSignal(appId: string): Promise<void> {
     try {
       os.initialize(appId);
       console.log('[OneSignal] initialize() done with appId:', appId);
+      // 2026-10-14 (Sumon): FOREGROUND notifications MUST show.
+      // By default OneSignal suppresses notifications when app is in foreground.
+      // We force-display them so notification works in ALL app states.
+      try {
+        if (os.Notifications && typeof os.Notifications.addEventListener === 'function') {
+          os.Notifications.addEventListener('foregroundWillDisplay', (event: any) => {
+            try {
+              event.preventDefault();
+              event.notification.display();
+              console.log('[OneSignal] Foreground notification displayed');
+            } catch (e) {
+              console.log('[OneSignal] Foreground display error:', e);
+            }
+          });
+          console.log('[OneSignal] Foreground handler registered');
+        }
+      } catch (e) {
+        console.log('[OneSignal] Foreground handler setup failed:', e);
+      }
       // Permission request (Android 13+)
       const granted = await os.Notifications.requestPermission(true);
       console.log('[OneSignal] Notification permission granted:', granted);

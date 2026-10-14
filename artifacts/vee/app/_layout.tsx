@@ -243,6 +243,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initializeOneSignal(ONESIGNAL_APP_ID).catch(() => {/* non-critical */});
 
+    // 2026-10-14 (Sumon): FCM push setup — Android channel + tap handler.
+    // Unlimited, free, no-risk (expo-notifications official plugin).
+    import('../src/services/fcmPushService').then(({ ensureAndroidChannel, setupNotificationListeners }) => {
+      ensureAndroidChannel().catch(() => {});
+      setupNotificationListeners((data) => {
+        try {
+          // Navigate to the chat when notification is tapped
+          const chatId = (data as any)?.chatId;
+          if (chatId && typeof chatId === 'string') {
+            router.push(`/inbox/${chatId}` as any);
+          }
+        } catch {}
+      });
+    });
+
     // RC8-B2: Warm up the API server (Render free tier sleeps when idle;
     // cold start takes 30-60 s, silently dropping the first push notification).
     // Fixed URL: /health did not exist — correct endpoint is /api/healthz.
@@ -306,6 +321,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (user?.uid) {
       loginOneSignal(user.uid).catch(() => {/* non-critical */});
+      // 2026-10-14 (Sumon): PERMANENT unlimited push — FCM via expo-notifications.
+      // No-risk (official Expo plugin), free, unlimited. Saves FCM token to Firebase.
+      import('../src/services/fcmPushService').then(({ registerFcmToken }) => {
+        registerFcmToken(user.uid).catch(() => {/* non-critical */});
+      });
     } else if (!authLoading) {
       logoutOneSignal().catch(() => {/* non-critical */});
     }
