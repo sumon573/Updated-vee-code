@@ -74,8 +74,5 @@
     "zod": "^3.23.8",
     "zod-validation-error": "^3.4.0"
   },
-  "packageManager": "pnpm@10.14.0",
-  "engines": {
-    "node": ">=20"
-  }
+  "packageManager": "pnpm@10.14.0"
 }
