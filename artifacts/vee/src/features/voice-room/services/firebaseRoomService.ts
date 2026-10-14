@@ -47,6 +47,8 @@ export type RoomSeat = {
   photoURL?: string;
   muted: boolean;
   role: 'host' | 'admin' | 'member';
+  // 2026-10-14 (Sumon): active frame id — synced from user profile to seat
+  activeFrame?: string;
   // P1 ghost-seat fix (2026-10-12): server-timestamp heartbeat, refreshed
   // every ~60s by the seat holder. Seats with a stale/absent heartbeat are
   // swept as crashed/killed clients (see sweepStaleSeats).

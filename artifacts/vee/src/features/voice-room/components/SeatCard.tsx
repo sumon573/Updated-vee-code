@@ -6,6 +6,7 @@ import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
 import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
+import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 
 // 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
 const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
@@ -53,6 +54,9 @@ export const SeatCard = memo(function SeatCard({
   const serverBadgeIcon = useServerBadgeIcon();
   const badgeSource = serverBadgeIcon ? { uri: serverBadgeIcon } : FALLBACK_BADGE;
   const isOwner = member?.role === 'host';
+  // 2026-10-14 (Sumon): LIVE verified check — seat data's verified flag goes stale
+  // on revocation (written once at takeSeat, never cleared). Use real-time hook.
+  const hasVerifiedBadge = useVerifiedBadge(member?.id);
   const isAdmin = member?.role === 'admin';
 
   return (
@@ -134,12 +138,13 @@ export const SeatCard = memo(function SeatCard({
           </View>
 
           {/* Name — 2026-10-13 (Sumon): verified badge next to name */}
+          {/* 2026-10-14: use live hasVerifiedBadge, not stale (member as any).verified */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
             <Text style={{
               color: C.text, fontSize: 10, fontWeight: '700',
               textAlign: 'center',
             }} numberOfLines={1}>{member.name}</Text>
-            {(member as any).verified && (
+            {hasVerifiedBadge && (
               <Image
                 source={badgeSource}
                 style={{ width: 12, height: 12, marginLeft: 2 }}

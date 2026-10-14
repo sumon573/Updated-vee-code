@@ -113,6 +113,10 @@ function fbSeatToParticipant(
     speaking: speakingUsers[seat.userId] === true,
     muted: seat.muted,
     role: seat.role,
+    // 2026-10-14 (Sumon): ROOT CAUSE FIX — activeFrame was never copied from
+    // seat data to Participant, so frame could NEVER show on seats even though
+    // Firebase had it. This one line fixes it.
+    activeFrame: (seat as any).activeFrame || undefined,
   };
 }
 
