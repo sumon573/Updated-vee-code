@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useLiveUserProfile, displayName } from '@/src/hooks/useLiveUserProfile';
+import { truncateTo12 } from '@/src/utils/truncateName';
 import { Chat } from '../types';
 import { formatTime } from '../data/chatUtils';
 
@@ -62,7 +63,7 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
   // If ID has a name → shows THAT name (never "Unknown"). If ID has DP → shows it.
   // Only "Vee User" fallback if genuinely no name. Real-time, no stale cache.
   const liveProfile = useLiveUserProfile(chat.participantId);
-  const shownName = displayName(liveProfile.name, chat.participantName);
+  const shownName = truncateTo12(displayName(liveProfile.name, chat.participantName));
   const avatarUri = liveProfile.avatar ?? chat.participantAvatar ?? null;
 
   /** Label for the last message type */
