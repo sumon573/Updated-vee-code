@@ -115,9 +115,23 @@ export async function loginOneSignal(uid: string): Promise<void> {
     // 2026-10-14 (Sumon): Verify login actually took effect — dashboard showed
     // 4/5 devices missing External User ID, causing silent notification failures.
     // Retry up to 3 times with verification.
+    // 2026-10-14 (Sumon): Logout first for clean state — stale external ID থাকলে conflict হতে পারে
     let loginVerified = false;
     for (let loginAttempt = 0; loginAttempt < 3 && !loginVerified; loginAttempt++) {
       try {
+        // First attempt: clear any stale login state
+        if (loginAttempt === 0) {
+          try {
+            const currentExternalId = (os as any)?.User?.externalId;
+            if (currentExternalId && currentExternalId !== uid) {
+              console.log(`[OneSignal] Stale externalId detected (${currentExternalId}), logging out first`);
+              await (os as any).logout();
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+          } catch {
+            // non-critical — proceed with login
+          }
+        }
         await os.login(uid);
         // Verify: check if external ID was actually set
         await new Promise((r) => setTimeout(r, 2000));
