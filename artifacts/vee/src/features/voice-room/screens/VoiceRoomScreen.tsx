@@ -2713,11 +2713,12 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Chat input (2026-10-14 polish): সুন্দর spacing, keyboard-এর উপরে থাকে */}
+        {/* ── Chat input (2026-10-14 polish): imo-style unified with bottom bar, no gap */}
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 10,
-          marginTop: 10, marginBottom: 8,
-          paddingHorizontal: 4, paddingVertical: 4,
+          marginTop: 0, marginBottom: 0,
+          paddingHorizontal: 4, paddingVertical: 8,
+          backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderFaint,
         }}>
           <ScalePress onPress={() => setEmojiPanelOpen(true)} style={{ padding: 8 }}>
             <Feather name="smile" size={26} color={C.sub} />
