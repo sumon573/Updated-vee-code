@@ -130,7 +130,7 @@ export const SeatCard = memo(function SeatCard({
             />
             {/* Mic status dot */}
             <View style={{
-              position: 'absolute', bottom: 0, right: 0,
+              position: 'absolute', bottom: 0, left: 0,
               width: 16, height: 16, borderRadius: 8,
               backgroundColor: member.muted ? C.red : C.mic,
               alignItems: 'center', justifyContent: 'center',
