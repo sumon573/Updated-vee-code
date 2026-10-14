@@ -8,6 +8,7 @@ import { Participant, Role } from '../types/room';
 import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
+import { truncateTo12 } from '@/src/utils/truncateName';
 
 /* ─────────────────────────── Member Manage Modal ─────────────────────────── */
 export function MemberManageModal({
@@ -87,7 +88,7 @@ export function MemberManageModal({
             />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{member.name}</Text>
+            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{truncateTo12(member.name)}</Text>
             {hasVerifiedBadge && badgeIconUrl && (
               <Image
                 source={{ uri: badgeIconUrl }}
