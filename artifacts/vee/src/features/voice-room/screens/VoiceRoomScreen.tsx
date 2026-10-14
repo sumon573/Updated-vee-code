@@ -14,7 +14,7 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
-import { setMinimizedRoom, getMinimizedRoom } from '@/src/store/minimizedRoom';
+import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
@@ -35,6 +35,7 @@ import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
 import { AudienceModal } from '../components/AudienceModal';
+import { LeaderboardModal } from './LeaderboardModal';
 import RoomMembersModal from '../components/RoomMembersModal';
 import { GiftsModal } from '../components/GiftsModal';
 import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
@@ -151,6 +152,40 @@ function fbChatToMsg(m: RoomChatMsg): ChatMsg {
 /* ═══════════════════════════════════════════
    MAIN SCREEN
 ═══════════════════════════════════════════ */
+/* ─────────────────────────── Live Audience Pill ─────────────────────────── */
+// 2026-10-14 (Sumon): imo-style live audience pill — small DP + count (1+, 2+, 1k+).
+// Position: top bar, next to Hourly Rank. Click → audience list (existing UI).
+function LiveAudiencePill({ count, onPress, avatarUrl }: { count: number; onPress: () => void; avatarUrl?: string }) {
+  const formatCount = (n: number): string => {
+    if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.0', '')}k+`;
+    return `${n}+`;
+  };
+  return (
+    <ScalePress onPress={onPress} style={{ marginLeft: 8 }}>
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        borderRadius: 20, paddingLeft: 12, paddingRight: 6, paddingVertical: 4,
+        borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)',
+      }}>
+        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
+          {formatCount(count)}
+        </Text>
+        {avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+        ) : (
+          <View style={{
+            width: 28, height: 28, borderRadius: 14,
+            backgroundColor: '#8B5CF6', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '800' }}>👥</Text>
+          </View>
+        )}
+      </View>
+    </ScalePress>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId } = useLocalSearchParams<{ roomId: string }>();
   const insets = useSafeAreaInsets();
@@ -901,6 +936,8 @@ export default function VoiceRoomScreen() {
   const [invToSeatIdx,    setInvToSeatIdx]    = useState(-1);
   const [inviteOpen,      setInviteOpen]      = useState(false);
   const [audienceOpen,    setAudienceOpen]    = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [taskCenterOpen, setTaskCenterOpen] = useState(false);
   const [membersOpen,     setMembersOpen]     = useState(false);
   const [giftsOpen,       setGiftsOpen]       = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
@@ -1398,6 +1435,8 @@ export default function VoiceRoomScreen() {
         color: myColor,
         ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
       }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+      // 2026-10-14 (Sumon): Track current room for logout cleanup (even when not minimized)
+      setCurrentRoom({ id: roomId, myUid, mySeatIdx: -1 });
 
       // Send join message to room chat (only if not already sent on entry)
       // Per Sumon 2026-10-12: everyone's entry visible, even audience
@@ -1426,6 +1465,8 @@ export default function VoiceRoomScreen() {
         leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
       } else {
         leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — unmount cleanup */});
+        // 2026-10-14 (Sumon): Clear current room tracking on unmount
+        clearCurrentRoom();
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1703,6 +1744,8 @@ export default function VoiceRoomScreen() {
     // Firebase hasn't synced yet. Update ref synchronously.
     const oldIdx = mySeatIdxRef.current;
     mySeatIdxRef.current = seatIdx;
+    // 2026-10-14 (Sumon): Update currentRoom seat index for logout cleanup
+    setCurrentRoom({ id: roomId, myUid, mySeatIdx: seatIdx });
     if (oldIdx >= 0 && oldIdx !== seatIdx) {
       removeSeat(roomId, oldIdx).catch(() => {});
     } else if (oldIdx < 0) {
@@ -2302,6 +2345,18 @@ export default function VoiceRoomScreen() {
                                 rejectSeatRequest(roomId, req.id).catch(() => {/* background: safe to swallow — request cleanup after alert shown */});
                                 return;
                               }
+                              // 2026-10-14 Bug #2 fix (Sumon): Ghost seat — user requested seat then LEFT
+                              // the room. Owner accepting creates a ghost. Verify user is still
+                              // in the room before takeSeat.
+                              const audienceSnap = await get(ref(database, `rooms/${roomId}/audience/${req.userId}`));
+                              if (!audienceSnap.exists()) {
+                                Alert.alert(
+                                  t('voiceRoom.screen.error'),
+                                  `${req.userName} is no longer in the room.`,
+                                );
+                                rejectSeatRequest(roomId, req.id).catch(() => {});
+                                return;
+                              }
                               // RACE FIX: the emptiness check above is read-then-act —
                               // someone may sit down in the gap before the write.
                               // Only mark the request approved when the seat was
@@ -2380,6 +2435,28 @@ export default function VoiceRoomScreen() {
                 </ScalePress>
               )}
             </View>
+          </View>
+          {/* ── Row 2: Hourly Rank + Live Audience (2026-10-14, imo-style) ── */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+            {/* Hourly Rank */}
+            <ScalePress onPress={() => setLeaderboardOpen(true)}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+              }}>
+                <Text style={{ fontSize: 16 }}>🏆</Text>
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                  Hourly Rank
+                </Text>
+              </View>
+            </ScalePress>
+            {/* Live Audience pill — imo position, 1+/2+/1k+ format */}
+            <LiveAudiencePill
+              count={audience.length}
+              onPress={() => setAudienceOpen(true)}
+              avatarUrl={audience[0]?.photoURL}
+            />
           </View>
         </View>
       </SafeAreaView>
@@ -2755,6 +2832,28 @@ export default function VoiceRoomScreen() {
           </View>
         </ScalePress>
 
+        {/* Task Center (2026-10-14, imo-style) — Live voice-room events, currently inactive */}
+        <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
+            <View style={{
+              width: 42, height: 42, borderRadius: 21,
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 20 }}>📅</Text>
+              <View style={{
+                position: 'absolute', top: 2, right: 2,
+                width: 10, height: 10, borderRadius: 5,
+                backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#000',
+              }} />
+            </View>
+            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700' }}>
+              Tasks
+            </Text>
+          </View>
+        </ScalePress>
+
         {/* Gifts */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
@@ -2947,6 +3046,10 @@ export default function VoiceRoomScreen() {
         audience={audience}
         myRole={myRole}
         onManageMember={(m) => { setAudienceOpen(false); setActiveMember(m); }}
+      />
+      <LeaderboardModal
+        visible={leaderboardOpen}
+        onClose={() => setLeaderboardOpen(false)}
       />
       <RoomMembersModal
         visible={membersOpen}
