@@ -11,7 +11,8 @@
  * Light mode only. All data is real — no demo content.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, ActivityIndicator, Image } from 'react-native';
+import { View, Text, ScrollView, Pressable, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,8 +22,7 @@ import {
   subscribeFrames,
   formatObtainedDate,
   formatValidity,
-  type GrantedFrame,
-} from '@/src/services/badgeService';
+  type GrantedFrame } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import * as Haptics from 'expo-haptics';
 // 2026-10-11 Issue #7: Nobel content renders INLINE in this tab — no extra
@@ -40,8 +40,7 @@ const C = {
   goldBg: '#FFF8E6',
   goldBorder: '#F5D67B',
   errorBg: '#FDECEA',
-  errorText: '#B3261E',
-} as const;
+  errorText: '#B3261E' } as const;
 
 // (2026-10-11 Issue #7: Nobel ranks now render inline via NobelScreen;
 // the static NOBEL_RANKS list was removed.)
@@ -180,8 +179,7 @@ export default function DecorationScreen() {
             style={{
               flex: 1, paddingVertical: 10, alignItems: 'center',
               borderBottomWidth: 2,
-              borderBottomColor: tab === t ? C.text : 'transparent',
-            }}
+              borderBottomColor: tab === t ? C.text : 'transparent' }}
           >
             <Text style={{ fontSize: 15, fontWeight: tab === t ? '800' : '500', color: tab === t ? C.text : C.muted }}>
               {t === 'frames' ? 'Frames' : 'Nobel'}
@@ -198,7 +196,7 @@ export default function DecorationScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={C.blue} size="large" />
+          <PremiumLoader size="large" />
         </View>
       ) : tab === 'nobel' ? (
         // 2026-10-11 Issue #7: Nobel content inline — no "Open My Noble" button.
@@ -218,8 +216,7 @@ export default function DecorationScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
-                  borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
-                }}
+                  borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder }}
               >
                 <FrameIcon icon={frame.icon} frameId={frame.id} frameName={frame.name} />
                 <View style={{ flex: 1, marginLeft: 14 }}>
@@ -270,15 +267,13 @@ export default function DecorationScreen() {
           <View style={{
             width: 140, height: 140,
             alignItems: 'center', justifyContent: 'center',
-            marginBottom: 24,
-          }}>
+            marginBottom: 24 }}>
             {/* Outer gold glow */}
             <View style={{
               position: 'absolute', width: 140, height: 140, borderRadius: 28,
               backgroundColor: '#D4AF37' + '18',
               shadowColor: '#D4AF37', shadowOpacity: 0.35, shadowRadius: 24,
-              shadowOffset: { width: 0, height: 10 }, elevation: 10,
-            }} />
+              shadowOffset: { width: 0, height: 10 }, elevation: 10 }} />
             {/* Ornate frame: layered gold borders */}
             <View style={{
               width: 104, height: 104, borderRadius: 20,
@@ -286,14 +281,12 @@ export default function DecorationScreen() {
               borderWidth: 5, borderColor: '#D4AF37',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#B8860B', shadowOpacity: 0.3, shadowRadius: 12,
-              shadowOffset: { width: 0, height: 6 }, elevation: 6,
-            }}>
+              shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
               <View style={{
                 width: 84, height: 84, borderRadius: 14,
                 borderWidth: 2, borderColor: '#F5D67B',
                 alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#FFFEF9',
-              }}>
+                backgroundColor: '#FFFEF9' }}>
                 {/* Crown jewel */}
                 <Text style={{ fontSize: 36 }}>👑</Text>
               </View>
@@ -304,26 +297,22 @@ export default function DecorationScreen() {
           </View>
           <Text style={{
             fontSize: 20, fontWeight: '800', color: '#1A1A1A',
-            textAlign: 'center', letterSpacing: 0.5,
-          }}>
+            textAlign: 'center', letterSpacing: 0.5 }}>
             Your Collection Awaits
           </Text>
           <View style={{
             marginTop: 12, paddingHorizontal: 20, paddingVertical: 8,
             borderRadius: 20, backgroundColor: '#D4AF37' + '14',
-            borderWidth: 1, borderColor: '#D4AF37' + '40',
-          }}>
+            borderWidth: 1, borderColor: '#D4AF37' + '40' }}>
             <Text style={{
               fontSize: 12, fontWeight: '700', color: '#B8860B',
-              letterSpacing: 1.5, textTransform: 'uppercase',
-            }}>
+              letterSpacing: 1.5, textTransform: 'uppercase' }}>
               ✦ Exclusive Frames ✦
             </Text>
           </View>
           <Text style={{
             fontSize: 14, color: '#6B6B6B', textAlign: 'center',
-            marginTop: 16, lineHeight: 22, paddingHorizontal: 32,
-          }}>
+            marginTop: 16, lineHeight: 22, paddingHorizontal: 32 }}>
             Prestigious frames are granted officially or earned as event rewards. Your luxury collection begins here.
           </Text>
         </View>
