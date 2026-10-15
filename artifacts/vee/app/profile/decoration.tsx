@@ -60,7 +60,10 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'nobel', label: 'Nobel', icon: '👑' },
 ];
 
-function ItemIcon({ icon, frameId, frameName }: { icon: string; frameId?: string; frameName?: string }) {
+import MistNameplate from '@/src/components/MistNameplate';
+import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+
+function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
   const isOfficial = (frameId || '').toLowerCase().includes('official') ||
     (frameName || '').toLowerCase().includes('official');
   if (isOfficial) {
@@ -72,6 +75,14 @@ function ItemIcon({ icon, frameId, frameName }: { icon: string; frameId?: string
         </View>
       </View>
     );
+  }
+  /* 2026-10-15 (Sumon): Mist animation for Viscount+ nameplates */
+  if (itemId && /^https?:\/\//i.test(icon)) {
+    const mistEntry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === itemId);
+    const mistColor = mistEntry?.nameplate.mistColor;
+    if (mistColor) {
+      return <MistNameplate imageUrl={icon} mistColor={mistColor} width={100} height={34} />;
+    }
   }
   if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
     return (
@@ -222,7 +233,7 @@ export default function DecorationScreen() {
         shadowOffset: { width: 0, height: 4 },
         elevation: isActive ? 4 : 0 }}
     >
-      <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} />
+      <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} itemId={item.id} />
       <View style={{ flex: 1, marginLeft: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>{item.name}</Text>
