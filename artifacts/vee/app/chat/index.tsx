@@ -7,10 +7,8 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  View, Text, TextInput, Pressable,
-  FlatList, Platform, ActivityIndicator, Alert,
-} from 'react-native';
+import { View, Text, TextInput, Pressable, FlatList, Platform, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -23,8 +21,7 @@ import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
 import { Chat } from '@/src/features/chat/types';
 import {
-  subscribeUserChats, pinChat, unpinChat, clearChat,
-} from '@/src/features/chat/services/firebaseDmService';
+  subscribeUserChats, pinChat, unpinChat, clearChat } from '@/src/features/chat/services/firebaseDmService';
 import { deleteStory } from '@/src/features/chat/services/firebaseStoryService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { useAuth } from '@/src/context/AuthContext';
@@ -39,8 +36,7 @@ const C = {
   dim: '#C7C7CC',
   border: '#E5E5EA',
   inputBg: '#F2F2F7',
-  glass: '#F2F2F7',
-} as const;
+  glass: '#F2F2F7' } as const;
 
 type ChatScreenProps = {
   /** Called when the user taps the Planet bubble in the story bar. */
@@ -69,8 +65,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
   // ── Stories (Firebase, ধাপ ৫) ─────────────────────────────────────────────
   const {
     stories, loading: storiesLoading,
-    publish, recordView, react: reactStory, markGroupSeen,
-  } = useStories();
+    publish, recordView, react: reactStory, markGroupSeen } = useStories();
 
   const [search, setSearch]             = useState('');
   const [searchActive, setSearchActive] = useState(false);
@@ -108,8 +103,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
         content: story.content,
         bgGradient: story.bgGradient,
         mentions: story.mentions,
-        privacy: story.privacy,
-      });
+        privacy: story.privacy });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -151,8 +145,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
             } catch {
               Alert.alert(t('chat.error'), t('chat.pinError'));
             }
-          },
-        },
+          } },
         {
           text: 'View Profile',
           onPress: () => {
@@ -160,8 +153,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
             router.push(
               `/user-profile?uid=${encodeURIComponent(chat.participantId)}&name=${encodeURIComponent(chat.participantName)}` as never,
             );
-          },
-        },
+          } },
         {
           text: 'Delete Chat History',
           style: 'destructive',
@@ -181,12 +173,10 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
                     } catch {
                       Alert.alert(t('chat.error'), 'Could not delete chat history.');
                     }
-                  },
-                },
+                  } },
               ],
             );
-          },
-        },
+          } },
         { text: t('chat.cancel'), style: 'cancel' },
       ],
     );
@@ -253,8 +243,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           width: 80, height: 80, borderRadius: 40,
           backgroundColor: 'rgba(139,92,246,0.12)',
           borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
+          alignItems: 'center', justifyContent: 'center' }}>
           <Feather name="message-circle" size={36} color={C.glow} />
         </View>
         <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', marginTop: 18 }}>
@@ -267,8 +256,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           onPress={() => setSearchModalOpen(true)}
           style={{
             marginTop: 22, backgroundColor: C.primary,
-            borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12,
-          }}
+            borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}
         >
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
             {t('chat.newChat')}
@@ -297,8 +285,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
             <Text style={{
               color: C.muted, fontSize: 11, fontWeight: '700',
               letterSpacing: 0.8, marginBottom: 8, marginTop: 4,
-              paddingHorizontal: 2,
-            }}>
+              paddingHorizontal: 2 }}>
               {t('chat.pinned')}
             </Text>
             {pinnedChats.map(item => (
@@ -313,8 +300,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               <Text style={{
                 color: C.muted, fontSize: 11, fontWeight: '700',
                 letterSpacing: 0.8, marginBottom: 8, marginTop: 12,
-                paddingHorizontal: 2,
-              }}>
+                paddingHorizontal: 2 }}>
                 {t('chat.allMessages')}
               </Text>
             )}
@@ -332,8 +318,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             paddingTop: Platform.OS === 'web' ? 67 : 0,
-            paddingBottom: 14,
-          }}>
+            paddingBottom: 14 }}>
             <Text style={{ flex: 1, color: C.text, fontSize: 26, fontWeight: '900' }}>
               {t('chat.title')}
             </Text>
@@ -348,8 +333,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
                 width: 42, height: 42, borderRadius: 21,
                 backgroundColor: C.glass,
                 borderWidth: 1, borderColor: C.border,
-                alignItems: 'center', justifyContent: 'center',
-              }}
+                alignItems: 'center', justifyContent: 'center' }}
             >
               <Feather name="edit" size={18} color={C.muted} />
             </Pressable>
@@ -362,8 +346,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               backgroundColor: C.inputBg, borderRadius: 14,
               paddingHorizontal: 12, paddingVertical: 10,
               marginBottom: 12, gap: 8,
-              borderWidth: 1, borderColor: C.border,
-            }}>
+              borderWidth: 1, borderColor: C.border }}>
               <Feather name="search" size={16} color={C.muted} />
               <TextInput
                 autoFocus
@@ -385,8 +368,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
                 backgroundColor: C.inputBg, borderRadius: 14,
                 paddingHorizontal: 12, paddingVertical: 10,
                 marginBottom: 12, gap: 8,
-                borderWidth: 1, borderColor: C.border,
-              }}
+                borderWidth: 1, borderColor: C.border }}
             >
               <Feather name="search" size={16} color={C.dim} />
               <Text style={{ color: C.dim, fontSize: 15 }}>{t('chat.searchPlaceholder')}</Text>
@@ -396,7 +378,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           {/* ── Loading ── */}
           {loadingChats ? (
             <View style={{ alignItems: 'center', paddingTop: 40 }}>
-              <ActivityIndicator color={C.glow} />
+              <PremiumLoader size="medium" />
             </View>
           ) : (
             /* ── List ── */
