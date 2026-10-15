@@ -8,7 +8,7 @@
  * Maintenance is REAL and persisted: each rank-up (or first gift) opens a
  * 30-day window (maintenanceDeadline) with a required amount
  * (maintenanceRequired = ceil(rankMinXP / 2)). Gifts inside the window add
- * to maintenanceXP; a window that expires unmet marks the rank lapsed and
+ * to maintenanceXP; a window that expires unmet DEMOTES the rank one step
  * suspends privileges until the requirement is met again.
  *
  * Privileges render honestly: enforced privileges show active (✓) once the
@@ -28,7 +28,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
-  subscribeNoble, formatXP, formatDeadline,
+  subscribeNoble, formatXP, formatDeadline, refreshNobleState,
 } from '@/src/services/nobleService';
 
 const { width } = Dimensions.get('window');
@@ -53,6 +53,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     if (!user?.uid) { setLoading(false); return; }
     setLoading(true);
     setError(null);
+    // 2026-10-15 (Sumon): lazy demotion — roll over expired windows on view.
+    refreshNobleState(user.uid).catch(() => {});
     const unsub = subscribeNoble(
       user.uid,
       (s) => {
@@ -101,17 +103,15 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   const remaining = noble ? Math.max(0, noble.maintenanceRequired - noble.maintenanceXP) : 0;
   const maintenanceLine = !noble
     ? 'Send diamonds as gifts in voice rooms to earn Noble XP.'
-    : noble.lapsed
-      ? `Noble maintenance lapsed — send 👑${formatXP(noble.maintenanceRequired)} to restore your ${rank.name} privileges.`
-      : remaining > 0
-        ? `Need 👑${formatXP(remaining)} to secure your current noble level ${rank.name} ${ROMAN[sub - 1]} (Deadline: ${formatDeadline(noble.maintenanceDeadline)})`
-        : `Your ${rank.name} ${ROMAN[sub - 1]} level is secured until ${formatDeadline(noble.maintenanceDeadline)}.`;
+    : remaining > 0
+      ? `Need 👑${formatXP(remaining)} to secure your current noble level ${rank.name} ${ROMAN[sub - 1]} (Deadline: ${formatDeadline(noble.maintenanceDeadline)})`
+      : `Your ${rank.name} ${ROMAN[sub - 1]} level is secured until ${formatDeadline(noble.maintenanceDeadline)}.`;
 
   const renderPrivilege = (key: string) => {
     const def = PRIVILEGES.find((p) => p.key === key) as PrivilegeDef;
     // Earned = user reached the rank that grants it.
     const earned = rankIdx >= def.minRankIndex;
-    const active = earned && def.enforced && !(noble?.lapsed ?? false);
+    const active = earned && def.enforced;
     const locked = earned && !active;
     return (
       <View key={def.key} style={{ width: (width - 64) / 3, alignItems: 'center', marginBottom: 20 }}>
@@ -151,7 +151,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
 
   const anyLocked = selectedRank.privileges.some((k) => {
     const def = PRIVILEGES.find((p) => p.key === k) as PrivilegeDef;
-    return rankIdx >= def.minRankIndex && (!def.enforced || (noble?.lapsed ?? false));
+    return rankIdx >= def.minRankIndex && !def.enforced;
   });
 
   return (
