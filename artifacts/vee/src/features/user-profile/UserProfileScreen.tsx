@@ -4,10 +4,8 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  View, Text, ScrollView, Image, Pressable,
-  ActivityIndicator, Alert, Platform, Animated,
-} from 'react-native';
+import { View, Text, ScrollView, Image, Pressable, Alert, Platform, Animated } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -19,13 +17,11 @@ import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, VeeUser } from '@/src/services/userService';
 import {
   followUser, unfollowUser,
-  subscribeIsFollowing, subscribeFollowCounts,
-} from '@/src/services/followService';
+  subscribeIsFollowing, subscribeFollowCounts } from '@/src/services/followService';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import {
   sendFriendRequest, cancelFriendRequest, acceptFriendRequest,
-  subscribeFriendStatus, FriendStatus,
-} from '@/src/services/friendRequestService';
+  subscribeFriendStatus, FriendStatus } from '@/src/services/friendRequestService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { blockUser, unblockUser, isBlockedByMe } from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
@@ -43,16 +39,14 @@ const C = {
   border: '#E5E5EA',
   surface: '#F2F2F7',
   online: '#22C55E',
-  red: '#EF4444',
-} as const;
+  red: '#EF4444' } as const;
 
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
     <View style={{
       flex: 1, alignItems: 'center', paddingVertical: 14,
       backgroundColor: C.surface, borderRadius: 14,
-      borderWidth: 1, borderColor: '#E5E5EA',
-    }}>
+      borderWidth: 1, borderColor: '#E5E5EA' }}>
       <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{value}</Text>
       <Text style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{label}</Text>
     </View>
@@ -91,8 +85,7 @@ function PremiumBadge({ name, level }: { name: string; level: number }) {
 
   const mistOpacity = mist.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.1, 0.35],
-  });
+    outputRange: [0.1, 0.35] });
 
   return (
     <View style={{
@@ -100,13 +93,11 @@ function PremiumBadge({ name, level }: { name: string; level: number }) {
       backgroundColor: theme.bg, borderWidth: 1.5, borderColor: theme.border,
       shadowColor: theme.glow, shadowOpacity: 0.3, shadowRadius: 10,
       shadowOffset: { width: 0, height: 3 },
-      overflow: 'hidden',
-    }}>
+      overflow: 'hidden' }}>
       {/* Mist/fog animation overlay */}
       <Animated.View style={{
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: '#FFFFFF', opacity: mistOpacity,
-      }} pointerEvents="none" />
+        backgroundColor: '#FFFFFF', opacity: mistOpacity }} pointerEvents="none" />
       <Text style={{ fontSize: 12, fontWeight: '800', color: theme.text }}>{name}</Text>
     </View>
   );
@@ -264,8 +255,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
               } finally {
                 setBlockLoading(false);
               }
-            },
-          },
+            } },
         ],
       );
     } else {
@@ -288,8 +278,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
               } finally {
                 setBlockLoading(false);
               }
-            },
-          },
+            } },
         ],
       );
     }
@@ -298,7 +287,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={C.glow} size="large" />
+        <PremiumLoader size="large" />
       </View>
     );
   }
@@ -325,8 +314,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
           {/* Back header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingHorizontal: 16, paddingTop: topPad + 10, paddingBottom: 8,
-          }}>
+            paddingHorizontal: 16, paddingTop: topPad + 10, paddingBottom: 8 }}>
             <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
               <Feather name="arrow-left" size={24} color={C.text} />
             </Pressable>
@@ -343,8 +331,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                       {
                         text: isBlocked ? t('userProfile.unblock', 'Unblock') : t('userProfile.block', 'Block'),
                         style: isBlocked ? 'default' : 'destructive',
-                        onPress: () => handleBlock(),
-                      },
+                        onPress: () => handleBlock() },
                       { text: t('common.cancel', 'Cancel'), style: 'cancel' },
                     ],
                   );
@@ -419,8 +406,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
               paddingHorizontal: 14, paddingVertical: 7,
               borderWidth: 1, borderColor: '#0A7CC2' + '30',
               shadowColor: '#0A7CC2', shadowOpacity: 0.15, shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-            }}>
+              shadowOffset: { width: 0, height: 2 } }}>
               <Text style={{ fontSize: 12, fontWeight: '800', color: '#0A7CC2' }}>⭐ {followCounts.followers} Follower</Text>
             </View>
           </View>
@@ -483,8 +469,7 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
           {!isMe && (
             <View style={{
               flexDirection: 'row', gap: 12,
-              marginHorizontal: 20, marginBottom: 24,
-            }}>
+              marginHorizontal: 20, marginBottom: 24 }}>
               {/* Left: Chat / Add / Accept / Cancel / Unblock */}
               <Pressable
                 onPress={() => {
@@ -502,11 +487,10 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                   flex: 1, paddingVertical: 14, borderRadius: 16,
                   backgroundColor: '#E8F4FD',
                   alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
+                  flexDirection: 'row', gap: 8 }}
               >
                 {(friendActionLoading || blockLoading) ? (
-                  <ActivityIndicator color="#0A7CC2" size="small" />
+                  <PremiumLoader size="small" />
                 ) : (
                   <>
                     <Feather
@@ -543,11 +527,10 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
                   flex: 1, paddingVertical: 14, borderRadius: 16,
                   backgroundColor: '#E8F4FD',
                   alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
+                  flexDirection: 'row', gap: 8 }}
               >
                 {followLoading ? (
-                  <ActivityIndicator color="#0A7CC2" size="small" />
+                  <PremiumLoader size="small" />
                 ) : (
                   <>
                     <Feather
@@ -569,16 +552,14 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
           <View style={{
             marginHorizontal: 20,
             borderTopWidth: 1, borderTopColor: C.border,
-            paddingTop: 20,
-          }}>
+            paddingTop: 20 }}>
             <Text style={{ color: C.mutedDim, fontSize: 12, fontWeight: '700', letterSpacing: 0.8 }}>
               {t('userProfile.sectionVeeProfile')}
             </Text>
             <View style={{
               backgroundColor: C.surface, borderRadius: 14,
               borderWidth: 1, borderColor: C.border,
-              padding: 16, marginTop: 12, gap: 12,
-            }}>
+              padding: 16, marginTop: 12, gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Text style={{ color: C.muted, fontSize: 14 }}>Vee ID: {vId || 'N/A'}</Text>
               </View>
