@@ -1,9 +1,7 @@
 import type { ComponentProps } from 'react';
 import { useRef, useState } from 'react';
-import {
-  View, Text, TextInput, Pressable, Modal, ScrollView,
-  Animated, Alert, Platform, ActivityIndicator, Image,
-} from 'react-native';
+import { View, Text, TextInput, Pressable, Modal, ScrollView, Animated, Alert, Platform, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -28,8 +26,7 @@ const C = {
   borderFaint: 'rgba(255,255,255,0.09)',
   inputBg:     'rgba(139,92,246,0.07)',
   error:       '#FF4B4B',
-  gold:        '#F59E0B',
-} as const;
+  gold:        '#F59E0B' } as const;
 
 const AVATAR_COLORS = [
   '#7C3AED', '#EC4899', '#3B82F6', '#10B981',
@@ -44,8 +41,7 @@ type Props = {
 };
 
 function Field({
-  icon, placeholder, value, onChange, multiline, maxLength,
-}: {
+  icon, placeholder, value, onChange, multiline, maxLength }: {
   icon: ComponentProps<typeof Feather>['name'];
   placeholder: string;
   value: string;
@@ -61,8 +57,7 @@ function Field({
 
   const borderColor = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [C.border, C.glow],
-  });
+    outputRange: [C.border, C.glow] });
 
   return (
     <Animated.View style={{
@@ -73,12 +68,10 @@ function Field({
       paddingHorizontal: 16, paddingVertical: multiline ? 12 : 0,
       minHeight: multiline ? 90 : 56, marginBottom: 14,
       shadowColor: C.glow, shadowOpacity: focused ? 0.2 : 0,
-      shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
-    }}>
+      shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        marginBottom: multiline ? 6 : 0, marginRight: multiline ? 0 : 10,
-      }}>
+        marginBottom: multiline ? 6 : 0, marginRight: multiline ? 0 : 10 }}>
         <Feather name={icon} size={16} color={focused ? C.glow : C.mutedDim} />
       </View>
       <TextInput
@@ -133,8 +126,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [1, 1], quality: 0.8,
-    });
+      allowsEditing: true, aspect: [1, 1], quality: 0.8 });
     if (!res.canceled && res.assets[0]) {
       setProfileImage(res.assets[0].uri);
     }
@@ -171,8 +163,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
+            accuracy: Location.Accuracy.Balanced });
           location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         }
       } catch { /* non-critical — room is created without location */ }
@@ -220,19 +211,16 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
               return {
                 hostName: p.name || p.displayName || user.displayName || t('voiceRoom.screen.defaultUserName'),
                 // P1 fix (2026-10-12): || not ?? — খালি-string photoURL অকেজো
-                hostPhotoURL: p.photoURL || user.photoURL || undefined,
-              };
+                hostPhotoURL: p.photoURL || user.photoURL || undefined };
             }
           } catch { /* fallback */ }
           return {
             hostName: user.displayName || t('voiceRoom.screen.defaultUserName'),
-            hostPhotoURL: user.photoURL || undefined,
-          };
+            hostPhotoURL: user.photoURL || undefined };
         })(),
         coverImageUrl,
         location,
-        hashedPin,
-      });
+        hashedPin });
 
       // Reset form
       setName('');
@@ -297,8 +285,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
             <View style={{
               flexDirection: 'row', alignItems: 'center',
               paddingTop: Platform.OS === 'web' ? 68 : 12,
-              marginBottom: 28,
-            }}>
+              marginBottom: 28 }}>
               <Pressable onPress={onClose} style={{ padding: 6, marginRight: 12 }}>
                 <Feather name="x" size={22} color={C.muted} />
               </Pressable>
@@ -317,8 +304,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                   borderWidth: 2.5, borderColor: profileColor,
                   shadowColor: profileColor, shadowOpacity: 0.5,
                   shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
-                  overflow: 'hidden',
-                }}>
+                  overflow: 'hidden' }}>
                   {profileImage
                     ? <Image source={{ uri: profileImage }} style={{ width: '100%', height: '100%' }} />
                     : <Feather name="mic" size={36} color="rgba(255,255,255,0.9)" />
@@ -344,8 +330,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                     borderColor: '#fff',
                     shadowColor: color,
                     shadowOpacity: profileColor === color ? 0.7 : 0,
-                    shadowRadius: 8,
-                  }} />
+                    shadowRadius: 8 }} />
                 </Pressable>
               ))}
             </View>
@@ -389,8 +374,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                     flex: 1, borderRadius: 16, padding: 14,
                     backgroundColor: isPublic === opt.value ? C.primary + '22' : C.inputBg,
                     borderWidth: 1.5,
-                    borderColor: isPublic === opt.value ? C.primary : C.border,
-                  }}>
+                    borderColor: isPublic === opt.value ? C.primary : C.border }}>
                     <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>
                       {opt.label}
                     </Text>
@@ -413,8 +397,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                   borderRadius: 16, borderWidth: 1.5,
                   borderColor: pinError ? C.error : C.border,
                   backgroundColor: C.inputBg, paddingHorizontal: 16,
-                  minHeight: 56,
-                }}>
+                  minHeight: 56 }}>
                   <Feather name={'lock'} size={16} color={pinError ? C.error : C.mutedDim} style={{ marginRight: 10 }} />
                   <TextInput
                     style={{ flex: 1, color: C.text, fontSize: 22, fontWeight: '700', letterSpacing: 10 }}
@@ -459,8 +442,7 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                       borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9,
                       backgroundColor: isActive ? C.primary + '22' : C.inputBg,
                       borderWidth: 1.5,
-                      borderColor: isActive ? C.primary : C.border,
-                    }}
+                      borderColor: isActive ? C.primary : C.border }}
                   >
                     <Text style={{ fontSize: 14 }}>{opt.emoji}</Text>
                     <Text style={{ color: isActive ? C.text : C.muted, fontSize: 13, fontWeight: isActive ? '800' : '600' }}>
@@ -479,10 +461,9 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                 alignItems: 'center',
                 shadowColor: C.primary, shadowOpacity: 0.5,
                 shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
-                opacity: creating ? 0.7 : 1,
-              }}>
+                opacity: creating ? 0.7 : 1 }}>
                 {creating
-                  ? <ActivityIndicator color="#fff" />
+                  ? <PremiumLoader size="medium" />
                   : <Text style={{ color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: 0.3 }}>
                       {t('voiceRoom.creation.createButton')}
                     </Text>
