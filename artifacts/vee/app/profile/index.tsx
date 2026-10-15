@@ -837,38 +837,38 @@ export default function ProfileScreen({
               />
             ) : null}
           </View>
-          {/* 2026-10-15 (Sumon): Active nameplate below the name — ONE at a time */}
-          {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
-            nameplateMist ? (
-              <View style={{ marginTop: 6, alignSelf: 'center' }}>
-                <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={140} height={28} />
-              </View>
-            ) : (
-              <Image
-                source={{ uri: activeNameplate.icon }}
-                style={{ width: 140, height: 28, marginTop: 6, alignSelf: 'center' }}
-                resizeMode="contain"
-              />
-            )
-          ) : null}
           {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
         </View>
 
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
-          {/* Nobel: the rank's own color + sub-level (2026-10-15, Sumon) —
-              matches the Nobel tab ("Knight I"), updates live on upgrade. */}
-          <PremiumPill
-            label={(() => {
-              const r = nobleState ? NOBLE_RANKS[nobleState.rankIndex] : undefined;
-              if (!r || !nobleState) return 'Non-Noble';
-              return `${r.name} ${NOBLE_ROMAN[nobleSubLevel(nobleState.xp, nobleState.rankIndex) - 1]}`;
-            })()}
-            colors={(() => {
-              const base = nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.color ?? '#7C3AED' : '#9AA0A6';
-              return [base, lightenHex(base, 45)] as [string, string];
-            })()}
-          />
+          {/* 2026-10-15 (Sumon): Equipped nameplate REPLACES the rank pill.
+              No nameplate = default "Knight I" pill. */}
+          {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
+            nameplateMist ? (
+              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={120} height={36} />
+            ) : (
+              <Image
+                source={{ uri: activeNameplate.icon }}
+                style={{ width: 120, height: 36 }}
+                resizeMode="contain"
+              />
+            )
+          ) : (
+            /* Nobel: the rank's own color + sub-level (2026-10-15, Sumon) —
+                matches the Nobel tab ("Knight I"), updates live on upgrade. */
+            <PremiumPill
+              label={(() => {
+                const r = nobleState ? NOBLE_RANKS[nobleState.rankIndex] : undefined;
+                if (!r || !nobleState) return 'Non-Noble';
+                return `${r.name} ${NOBLE_ROMAN[nobleSubLevel(nobleState.xp, nobleState.rankIndex) - 1]}`;
+              })()}
+              colors={(() => {
+                const base = nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.color ?? '#7C3AED' : '#9AA0A6';
+                return [base, lightenHex(base, 45)] as [string, string];
+              })()}
+            />
+          )}
           <LevelBadge level={userLevel} />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
             {/* Follower: ocean blue gradient (premium) */}
