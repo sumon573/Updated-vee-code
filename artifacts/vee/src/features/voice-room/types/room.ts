@@ -47,6 +47,10 @@ export type Participant = {
   activeFrame?: string;
   /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank speaking ripple */
   nobleRankIndex?: number;
+  /* 2026-10-15 (Sumon): equipped collectible IDs — ripple, entry effect, nameplate */
+  activeRipple?: string;
+  activeEntryEffect?: string;
+  activeNameplate?: string;
 };
 
 /**
