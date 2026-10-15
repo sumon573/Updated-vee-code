@@ -29,7 +29,7 @@
  * Ripple, Seat Priority) are flagged enforced:false and the UI shows
  * them honestly as locked — never as unlocked-but-dead.
  */
-import { ref, onValue, get, runTransaction } from 'firebase/database';
+import { ref, onValue, get, set, runTransaction } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate } from './badgeService';
 
@@ -93,6 +93,53 @@ export const NOBLE_RANKS: NobleRank[] = [
     privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'seatPriority'] },
 ];
 
+/**
+ * 2026-10-15 (Sumon): per-rank visual identity — EVERY noble rank gets its
+ * OWN entry effect + speaking ripple. Derived from the rank color.
+ */
+export interface NobleVisualTheme {
+  entryGradient: [string, string];
+  entryIcon: string;
+  rippleWave: string;
+  rippleMist: string[];
+  rippleParticles: string[];
+}
+function themeFor(color: string, entryIcon: string, particles: string[]): NobleVisualTheme {
+  return {
+    entryGradient: [color, lightenHex(color, 60)],
+    entryIcon,
+    rippleWave: color,
+    rippleMist: [color, lightenHex(color, 40), lightenHex(color, 80)],
+    rippleParticles: particles,
+  };
+}
+function lightenHex(hex: string, amt: number): string {
+  const n = hex.replace('#', '');
+  const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
+  const num = parseInt(full, 16);
+  if (!Number.isFinite(num)) return hex;
+  const r = Math.min(255, ((num >> 16) & 0xff) + amt);
+  const g = Math.min(255, ((num >> 8) & 0xff) + amt);
+  const b = Math.min(255, (num & 0xff) + amt);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+export const NOBLE_THEMES: NobleVisualTheme[] = [
+  themeFor('#8BC34A', '\uD83D\uDEE1\uFE0F', ['\uD83C\uDF43', '\uD83C\uDF3F', '☘️']),
+  themeFor('#26A69A', '⚔️', ['\uD83D\uDCA7', '\uD83D\uDCA6', '\uD83C\uDF0A']),
+  themeFor('#42A5F5', '\uD83D\uDD37', ['✨', '\uD83D\uDCAB', '❄️']),
+  themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C']),
+  themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69']),
+  themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡']),
+  themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F']),
+  themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B']),
+  themeFor('#E65100', '\uD83D\uDCA5', ['\uD83D\uDCA5', '\uD83D\uDD25', '⚡']),
+  themeFor('#BF360C', '\uD83D\uDC8E', ['\uD83D\uDC8E', '\uD83D\uDC51', '✨']),
+];
+export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
+  if (rankIndex < 0 || rankIndex >= NOBLE_THEMES.length) return null;
+  return NOBLE_THEMES[rankIndex];
+}
+
 export interface NobleState {
   xp: number;
   rankIndex: number;
@@ -144,18 +191,34 @@ function applyNobleGift(cur: unknown, price: number, now: number): NobleState {
     lapsed: false,
   };
   // Roll over expired windows (guard caps very long absences).
+  // 2026-10-15 (Sumon): DEMOTION — if the 30-day maintenance was NOT met,
+  // the noble DROPS ONE RANK (not just "lapsed"). XP is capped to the new
+  // rank's ceiling so the demotion sticks (no instant re-rank on next gift).
   let guard = 0;
   while (now > s.maintenanceDeadline && guard++ < 240) {
     const prev: NobleState = s;
     const maintained: boolean = prev.maintenanceXP >= prev.maintenanceRequired;
-    s = {
-      xp: prev.xp,
-      rankIndex: prev.rankIndex,
-      maintenanceRequired: prev.maintenanceRequired,
-      maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS,
-      maintenanceXP: 0,
-      lapsed: !maintained,
-    };
+    if (maintained) {
+      s = {
+        xp: prev.xp,
+        rankIndex: prev.rankIndex,
+        maintenanceRequired: prev.maintenanceRequired,
+        maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS,
+        maintenanceXP: 0,
+        lapsed: false,
+      };
+    } else {
+      const newRank = Math.max(0, prev.rankIndex - 1);
+      const newMaxXP = NOBLE_RANKS[newRank].maxXP;
+      s = {
+        xp: Math.min(prev.xp, newMaxXP),
+        rankIndex: newRank,
+        maintenanceRequired: maintenanceFor(newRank),
+        maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS,
+        maintenanceXP: 0,
+        lapsed: false,
+      };
+    }
   }
   const xp = s.xp + price;
   const maxRank = rankIndexForXP(xp);
@@ -171,15 +234,13 @@ function applyNobleGift(cur: unknown, price: number, now: number): NobleState {
     };
   }
   const maintenanceXP = s.maintenanceXP + price;
-  // Un-lapse as soon as the current window's requirement is met again.
-  const lapsed: boolean = s.lapsed && maintenanceXP < s.maintenanceRequired;
   return {
     xp,
     rankIndex: s.rankIndex,
     maintenanceRequired: s.maintenanceRequired,
     maintenanceDeadline: s.maintenanceDeadline,
     maintenanceXP,
-    lapsed,
+    lapsed: false,
   };
 }
 
@@ -260,6 +321,47 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
 export async function getNobleState(uid: string): Promise<NobleState | null> {
   const snap = await get(ref(database, `users/${uid}/noble`));
   return snap.exists() ? coerceState(snap.val()) : null;
+}
+
+/**
+ * 2026-10-15 (Sumon): lazy demotion check for views.
+ * Rolls over expired 30-day windows (demoting one rank per missed window)
+ * and writes back ONLY if something changed. Call on NobelScreen / profile
+ * mount so demotion applies even if the user never sends another gift.
+ */
+export async function refreshNobleState(uid: string): Promise<NobleState | null> {
+  if (!uid) return null;
+  try {
+    const nobleRef = ref(database, `users/${uid}/noble`);
+    const snap = await get(nobleRef);
+    if (!snap.exists()) return null;
+    const cur = coerceState(snap.val());
+    if (!cur) return null;
+    const now = Date.now();
+    let s: NobleState = cur;
+    let guard = 0;
+    let changed = false;
+    while (now > s.maintenanceDeadline && guard++ < 240) {
+      const prev: NobleState = s;
+      const maintained: boolean = prev.maintenanceXP >= prev.maintenanceRequired;
+      changed = true;
+      if (maintained) {
+        s = { xp: prev.xp, rankIndex: prev.rankIndex, maintenanceRequired: prev.maintenanceRequired,
+              maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS, maintenanceXP: 0, lapsed: false };
+      } else {
+        const newRank = Math.max(0, prev.rankIndex - 1);
+        s = { xp: Math.min(prev.xp, NOBLE_RANKS[newRank].maxXP), rankIndex: newRank,
+              maintenanceRequired: maintenanceFor(newRank),
+              maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS, maintenanceXP: 0, lapsed: false };
+      }
+    }
+    if (changed) {
+      await set(nobleRef, s).catch(() => {});
+    }
+    return s;
+  } catch {
+    return null;
+  }
 }
 
 /** Live-subscribe to a user's noble state. */
