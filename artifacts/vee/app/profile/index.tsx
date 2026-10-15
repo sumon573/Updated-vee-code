@@ -202,6 +202,29 @@ function BadgePill({ label, icon }: { label: string; icon?: string }) {
   );
 }
 
+// 2026-10-15 (Sumon): Nobel rank helpers — the profile pill must show the
+// ACTUAL rank (name + sub-level like "Knight I") in the rank's own color.
+// Previously the pill was hardcoded purple and never changed on upgrade.
+const NOBLE_ROMAN = ['I', 'II', 'III'] as const;
+function nobleSubLevel(xp: number, rankIdx: number): number {
+  const r = NOBLE_RANKS[rankIdx];
+  if (!r) return 1;
+  const span = r.maxXP - r.minXP;
+  if (!Number.isFinite(span) || span <= 0) return 1;
+  return Math.min(3, Math.floor(((xp - r.minXP) / span) * 3) + 1);
+}
+/** Lighten a hex color — second stop of the pill gradient. */
+function lightenHex(hex: string, amt: number): string {
+  const n = hex.replace('#', '');
+  const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
+  const num = parseInt(full, 16);
+  if (!Number.isFinite(num)) return hex;
+  const r = Math.min(255, ((num >> 16) & 0xff) + amt);
+  const g = Math.min(255, ((num >> 8) & 0xff) + amt);
+  const b = Math.min(255, (num & 0xff) + amt);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
 function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
@@ -835,10 +858,18 @@ export default function ProfileScreen({
 
         {/* ─── Badge Pills ─── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
-          {/* Nobel: royal purple gradient (premium) */}
+          {/* Nobel: the rank's own color + sub-level (2026-10-15, Sumon) —
+              matches the Nobel tab ("Knight I"), updates live on upgrade. */}
           <PremiumPill
-            label={nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.name ?? 'Non-Noble' : 'Non-Noble'}
-            colors={['#7C3AED', '#A855F7']}
+            label={(() => {
+              const r = nobleState ? NOBLE_RANKS[nobleState.rankIndex] : undefined;
+              if (!r || !nobleState) return 'Non-Noble';
+              return `${r.name} ${NOBLE_ROMAN[nobleSubLevel(nobleState.xp, nobleState.rankIndex) - 1]}`;
+            })()}
+            colors={(() => {
+              const base = nobleState ? NOBLE_RANKS[nobleState.rankIndex]?.color ?? '#7C3AED' : '#9AA0A6';
+              return [base, lightenHex(base, 45)] as [string, string];
+            })()}
           />
           <LevelBadge level={userLevel} />
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
