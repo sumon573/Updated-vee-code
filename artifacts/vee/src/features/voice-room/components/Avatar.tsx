@@ -37,10 +37,13 @@ type FlowerParticle = {
   fSize: number; char: string; spin: number;
 };
 
-function SpeakingRipple({ size, visible, nobleRankIndex }: { size: number; visible: boolean; nobleRankIndex?: number }) {
-  // 2026-10-15 (Sumon): per-rank ripple theme — every noble rank gets its OWN
-  // ripple colors + particles. Non-nobles get the default premium theme.
+function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size: number; visible: boolean; nobleRankIndex?: number; activeRipple?: string }) {
+  // 2026-10-15 (Sumon): equipped ripple takes priority — if user equipped a
+  // ripple from Decoration, use its design. Else fallback to per-rank theme.
+  // Non-nobles get the default premium theme.
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
+  // TODO: When Sumon provides ripple designs, look up activeRipple in the
+  // user's ripples collection and use its custom colors/particles.
   const mistColors = theme ? theme.rippleMist : MIST_COLORS;
   const particleChars = theme ? theme.rippleParticles : FLOWER_CHARS;
   const waveColor = theme ? theme.rippleWave : '#FFFFFF';
@@ -194,14 +197,14 @@ function SpeakingRipple({ size, visible, nobleRankIndex }: { size: number; visib
 // 2026-10-15 (Sumon): NO fake zoom/pulse. DP is 100% stable.
 // Speaking indicator = premium ripple (waves + mist + flowers) OUTSIDE the frame,
 // ONLY while actually speaking (voice detected).
-export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex }: {
+export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex, activeRipple }: {
   initials: string; color: string; size: number; speaking: boolean; accent: string;
-  photoURL?: string; frameType?: string; nobleRankIndex?: number;
+  photoURL?: string; frameType?: string; nobleRankIndex?: number; activeRipple?: string;
 }) {
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       {/* Ripple BEHIND the avatar — expands outward */}
-      <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} />
+      <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} activeRipple={activeRipple} />
       {/* DP — completely stable, no animation */}
       <View style={{
         width: size, height: size, borderRadius: size / 2,

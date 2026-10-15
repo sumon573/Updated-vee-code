@@ -129,6 +129,7 @@ export const SeatCard = memo(function SeatCard({
               photoURL={member.photoURL}
               frameType={liveFrameId || undefined}
               nobleRankIndex={member.nobleRankIndex}
+              activeRipple={(member as any).activeRipple}
             />
             {/* Mic status dot */}
             <View style={{
