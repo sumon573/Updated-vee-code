@@ -19,13 +19,9 @@
  */
 
 import {
-  useEffect, useRef, useState, useCallback, useMemo,
-} from 'react';
-import {
-  View, Text, FlatList, TextInput, Pressable,
-  KeyboardAvoidingView, Platform, Animated,
-  Dimensions, Alert, Modal, Image, Linking, ActivityIndicator,
-} from 'react-native';
+  useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, Animated, Dimensions, Alert, Modal, Image, Linking } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -38,8 +34,7 @@ import {
   subscribeMessages, sendMessage, markAllSeen,
   subscribeTyping, subscribePresence, setTyping,
   addReaction, deleteMessage, clearChat,
-  loadOlderMessages, DM_PAGE_SIZE,
-} from '../services/firebaseDmService';
+  loadOlderMessages, DM_PAGE_SIZE } from '../services/firebaseDmService';
 // 2026-10-13 (Sumon): showNotification সরানো হলো — InAppNotification কোথাও
 // mount করা নেই (dead code), আর খোলা chat-এ banner+haptic শুধু বিরক্তি; নতুন
 // message এমনিতেই list-এ scroll হয়ে দেখা যায়।
@@ -74,8 +69,7 @@ const C = {
   inputBg: '#F2F2F7',
   headerBg: 'rgba(255,255,255,0.97)',
   onlineGreen: '#22C55E',
-  offlineGray: '#C7C7CC',
-} as const;
+  offlineGray: '#C7C7CC' } as const;
 
 // ── Typing dots ────────────────────────────────────────────────────────────────
 function TypingDots() {
@@ -107,15 +101,13 @@ function TypingDots() {
       backgroundColor: '#E9E9EB',
       borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
       borderWidth: 1, borderColor: C.border,
-      alignSelf: 'flex-start', marginLeft: 14, marginBottom: 6,
-    }}>
+      alignSelf: 'flex-start', marginLeft: 14, marginBottom: 6 }}>
       {dots.map((dot, i) => (
         <Animated.View key={i} style={{
           width: 7, height: 7, borderRadius: 4,
           backgroundColor: C.glow,
           opacity: dot,
-          transform: [{ translateY: dot.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
-        }} />
+          transform: [{ translateY: dot.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }] }} />
       ))}
     </View>
   );
@@ -134,8 +126,7 @@ function VideoViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
   return (
     <View style={{
       flex: 1, backgroundColor: '#000',
-      alignItems: 'center', justifyContent: 'center',
-    }}>
+      alignItems: 'center', justifyContent: 'center' }}>
       <Pressable
         style={{ position: 'absolute', top: 55, right: 20, zIndex: 10, padding: 8 }}
         onPress={onClose}
@@ -149,8 +140,7 @@ function VideoViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
         backgroundColor: 'rgba(255,255,255,0.12)',
         alignItems: 'center', justifyContent: 'center',
         borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
-        marginBottom: 24,
-      }}>
+        marginBottom: 24 }}>
         <Feather name="play-circle" size={56} color="#fff" />
       </View>
 
@@ -163,8 +153,7 @@ function VideoViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
         style={{
           backgroundColor: C.primary, borderRadius: 14,
           paddingHorizontal: 28, paddingVertical: 14,
-          flexDirection: 'row', alignItems: 'center', gap: 8,
-        }}
+          flexDirection: 'row', alignItems: 'center', gap: 8 }}
       >
         <Feather name="external-link" size={18} color="#fff" />
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
@@ -483,8 +472,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           messageId: replyTarget.id,
           senderName: replyTarget.senderId === myUid ? t('chat.replyingToYou') : displayName,
           preview: replyTarget.content.slice(0, 60),
-          type: replyTarget.type,
-        }
+          type: replyTarget.type }
       : undefined;
 
     // 2026-10-12 audit fix (HIGH DM-1): do NOT clear input before the send
@@ -553,8 +541,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
-      allowsEditing: false,
-    });
+      allowsEditing: false });
     if (result.canceled || !result.assets[0]) return;
 
     const asset = result.assets[0];
@@ -630,8 +617,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               t('chat.blockSuccess', { name: displayName }),
               [{ text: 'OK', onPress: () => router.back() }],
             );
-          },
-        },
+          } },
       ],
     );
   }, [chatId, myUid, effectiveParticipantId, displayName, participantPhotoURL, router, t]);
@@ -646,8 +632,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           reportedUid: effectiveParticipantId,
           reportedName: displayName,
           reason,
-          roomId: chatId,
-        });
+          roomId: chatId });
       } catch { /* নিচে success দেখাই */ }
       Alert.alert(t('chat.reported'), t('chat.reportSuccess'));
     };
@@ -681,8 +666,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             } catch {
               Alert.alert(t('chat.error'), t('chat.clearChatError'));
             }
-          },
-        },
+          } },
       ],
     );
   }, [chatId, myUid, t]);
@@ -762,18 +746,16 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         style={{
           alignItems: 'center',
           paddingVertical: 12,
-          paddingHorizontal: 20,
-        }}
+          paddingHorizontal: 20 }}
       >
         {loadingOlder ? (
-          <ActivityIndicator size="small" color={C.glow} />
+          <PremiumLoader size="small" />
         ) : hasMoreOlder ? (
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 6,
             backgroundColor: 'rgba(124,58,237,0.12)',
             borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
-            borderWidth: 1, borderColor: 'rgba(124,58,237,0.25)',
-          }}>
+            borderWidth: 1, borderColor: 'rgba(124,58,237,0.25)' }}>
             <Feather name="chevrons-up" size={14} color={C.glow} />
             <Text style={{ color: C.glow, fontSize: 13, fontWeight: '600' }}>
               Load earlier messages
@@ -798,8 +780,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: C.headerBg,
             paddingHorizontal: 14, paddingVertical: 10,
-            borderBottomWidth: 1, borderBottomColor: C.border,
-          }}>
+            borderBottomWidth: 1, borderBottomColor: C.border }}>
             <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginRight: 10 }}>
               <Feather name="arrow-left" size={22} color="#000000" />
             </Pressable>
@@ -819,8 +800,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 backgroundColor: 'rgba(124,58,237,0.25)',
                 borderWidth: 2, borderColor: C.glow,
                 alignItems: 'center', justifyContent: 'center',
-                overflow: 'hidden',
-              }}>
+                overflow: 'hidden' }}>
                 {participantPhotoURL ? (
                   <Image
                     source={{ uri: participantPhotoURL }}
@@ -836,8 +816,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 position: 'absolute', bottom: 1, right: 1,
                 width: 11, height: 11, borderRadius: 6,
                 backgroundColor: isOnline ? C.onlineGreen : C.offlineGray,
-                borderWidth: 2, borderColor: C.bg,
-              }} />
+                borderWidth: 2, borderColor: C.bg }} />
             </Pressable>
 
             {/* Name + status */}
@@ -861,8 +840,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   width: 44, height: 44, borderRadius: 22,
                   backgroundColor: 'rgba(34,197,94,0.15)',
                   borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                 <Feather name="phone" size={22} color={C.onlineGreen} />
               </Pressable>
               {/* Video call hidden until implemented — the "coming soon" alert
@@ -875,8 +853,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   width: 44, height: 44, borderRadius: 22,
                   backgroundColor: 'rgba(139,92,246,0.12)',
                   borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)',
-                  alignItems: 'center', justifyContent: 'center',
-                }}
+                  alignItems: 'center', justifyContent: 'center' }}
               >
                 <Feather name="video" size={22} color={C.glow} />
               </Pressable>
@@ -885,8 +862,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               <Pressable hitSlop={12} onPress={handleMoreOptions}
                 style={{
                   width: 44, height: 44, borderRadius: 22,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                 <Feather name="more-vertical" size={22} color={C.muted} />
               </Pressable>
             </View>
@@ -921,7 +897,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 // A1: show spinner during initial load, not false "empty".
                 initialLoading ? (
                   <View style={{ alignItems: 'center', paddingTop: 80 }}>
-                    <ActivityIndicator color={C.glow} size="large" />
+                    <PremiumLoader size="large" />
                   </View>
                 ) : (
                   <View style={{ alignItems: 'center', paddingTop: 80 }}>
@@ -940,8 +916,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 flexDirection: 'row', alignItems: 'center',
                 backgroundColor: 'rgba(124,58,237,0.12)',
                 borderTopWidth: 1, borderTopColor: 'rgba(124,58,237,0.3)',
-                paddingHorizontal: 14, paddingVertical: 10, gap: 10,
-              }}>
+                paddingHorizontal: 14, paddingVertical: 10, gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: C.glow, fontWeight: '700', fontSize: 12, marginBottom: 2 }}>
                     {replyTarget.senderId === myUid
@@ -964,8 +939,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 paddingHorizontal: 16, paddingVertical: 10,
                 backgroundColor: 'rgba(239,68,68,0.12)',
                 borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.3)',
-                alignItems: 'center',
-              }}>
+                alignItems: 'center' }}>
                 <Text style={{ color: '#DC2626', fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
                   {blockDirection === 'byMe' || blockDirection === 'mutual'
                     ? t('chat.blockedBannerByMe', { name: displayName })
@@ -989,8 +963,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   shadowColor: '#000', shadowOpacity: 0.3,
                   shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
                   elevation: 6,
-                  zIndex: 100,
-                }}
+                  zIndex: 100 }}
               >
                 <Feather name="chevron-down" size={22} color="#fff" />
               </Pressable>
@@ -1002,16 +975,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               paddingHorizontal: 12, paddingVertical: 10,
               borderTopWidth: 1, borderTopColor: C.border,
               backgroundColor: C.headerBg, gap: 10,
-              opacity: blockDirection !== 'none' ? 0.4 : 1,
-            }}>
+              opacity: blockDirection !== 'none' ? 0.4 : 1 }}>
               {/* Attachment */}
               <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia}>
                 <View style={{
                   width: 40, height: 40, borderRadius: 20,
                   backgroundColor: uploadingMedia ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.18)',
                   borderWidth: 1, borderColor: 'rgba(124,58,237,0.35)',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name={uploadingMedia ? 'loader' : 'image'} size={18} color={C.glow} />
                 </View>
               </Pressable>
@@ -1025,8 +996,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   backgroundColor: C.inputBg,
                   borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
                   color: '#000000', fontSize: 15,
-                  borderWidth: 1, borderColor: C.border,
-                }}
+                  borderWidth: 1, borderColor: C.border }}
                 placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
                 placeholderTextColor={C.muted}
                 multiline
@@ -1046,8 +1016,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   shadowColor: C.primary,
                   shadowOpacity: inputText.trim() ? 0.25 : 0,
                   shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
-                  elevation: inputText.trim() ? 6 : 0,
-                }}>
+                  elevation: inputText.trim() ? 6 : 0 }}>
                   <Feather name="send" size={18} color={inputText.trim() ? '#fff' : C.dim} />
                 </View>
               </Pressable>
@@ -1079,8 +1048,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               shadowColor: '#000',
               shadowOpacity: 0.2,
               shadowRadius: 16,
-              shadowOffset: { width: 0, height: 4 },
-            }}
+              shadowOffset: { width: 0, height: 4 } }}
             onPress={(e) => e.stopPropagation()}
           >
             {/* Title */}
@@ -1104,8 +1072,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 flexDirection: 'row', alignItems: 'center', gap: 14,
                 paddingHorizontal: 18, paddingVertical: 15,
                 backgroundColor: pressed ? '#F5F5F5' : 'transparent',
-                borderRadius: 12,
-              })}
+                borderRadius: 12 })}
             >
               <Text style={{ fontSize: 22 }}>🗑️</Text>
               <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF' }}>
@@ -1120,8 +1087,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 flexDirection: 'row', alignItems: 'center', gap: 14,
                 paddingHorizontal: 18, paddingVertical: 15,
                 backgroundColor: pressed ? '#F5F5F5' : 'transparent',
-                borderRadius: 12,
-              })}
+                borderRadius: 12 })}
             >
               <Text style={{ fontSize: 22 }}>⚠️</Text>
               <Text style={{ fontSize: 16, fontWeight: '600', color: '#007AFF' }}>
@@ -1136,8 +1102,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 flexDirection: 'row', alignItems: 'center', gap: 14,
                 paddingHorizontal: 18, paddingVertical: 15,
                 backgroundColor: pressed ? '#F5F5F5' : 'transparent',
-                borderRadius: 12,
-              })}
+                borderRadius: 12 })}
             >
               <Text style={{ fontSize: 22 }}>🚫</Text>
               <Text style={{ fontSize: 16, fontWeight: '600', color: '#FF3B30' }}>
@@ -1153,8 +1118,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   backgroundColor: pressed ? '#D6EBFF' : '#E3F2FD',
                   borderRadius: 14,
                   paddingVertical: 13,
-                  alignItems: 'center',
-                })}
+                  alignItems: 'center' })}
               >
                 <Text style={{ fontSize: 16, fontWeight: '700', color: '#007AFF' }}>
                   {t('chat.cancel')}
@@ -1198,8 +1162,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   saved: t('chat.saved'),
                   msgSaveToGallery: t('chat.msgSaveToGallery') + ' successfully.',
                   error: t('chat.error'),
-                  saveToGalleryFailed: t('chat.saveToGalleryFailed'),
-                });
+                  saveToGalleryFailed: t('chat.saveToGalleryFailed') });
               }}
             >
               <Feather name="download" size={24} color="#fff" />
