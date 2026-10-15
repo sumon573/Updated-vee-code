@@ -10,15 +10,8 @@
  * (same source as the profile Gifts section). No demo content.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  Image,
-  ActivityIndicator,
-  Modal,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, Image, Modal } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -26,12 +19,10 @@ import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribeUser,
   getUser,
-  type VeeUser,
-} from '@/src/services/userService';
+  type VeeUser } from '@/src/services/userService';
 import {
   subscribeTransactionHistory,
-  type WalletTransaction,
-} from '@/src/features/wallet/walletService';
+  type WalletTransaction } from '@/src/features/wallet/walletService';
 
 // Light-mode colors (same tokens as profile/index.tsx)
 const C = {
@@ -43,8 +34,7 @@ const C = {
   card: '#F2F2F7',
   blue: '#007AFF',
   blueLight: '#E3F2FD',
-  gold: '#F59E0B',
-} as const;
+  gold: '#F59E0B' } as const;
 
 /**
  * Canonical gift catalog — MUST match the api-server GIFT_CATALOG and
@@ -59,8 +49,7 @@ const GIFT_CATALOG: Record<string, { emoji: string; coins: number; name: string 
   '5': { emoji: '🏆', coins: 200, name: 'Trophy' },
   '6': { emoji: '🚀', coins: 500, name: 'Rocket' },
   '7': { emoji: '👑', coins: 1000, name: 'Crown' },
-  '8': { emoji: '🎆', coins: 2000, name: 'Firework' },
-};
+  '8': { emoji: '🎆', coins: 2000, name: 'Firework' } };
 
 type SortMode = 'quantity' | 'value';
 type Tab = 'display' | 'board';
@@ -254,8 +243,7 @@ export default function GiftDisplayScreen() {
             backgroundColor: C.card,
             borderRadius: 16,
             alignItems: 'center',
-            justifyContent: 'center',
-          }}
+            justifyContent: 'center' }}
         >
           <Text style={{ fontSize: 36 }}>{GIFT_CATALOG[giftId]?.emoji ?? '🎁'}</Text>
         </View>
@@ -270,7 +258,7 @@ export default function GiftDisplayScreen() {
   if (!loaded) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={C.blue} />
+        <PremiumLoader size="large" />
       </SafeAreaView>
     );
   }
@@ -292,8 +280,7 @@ export default function GiftDisplayScreen() {
               borderRadius: 40,
               backgroundColor: C.blueLight,
               alignItems: 'center',
-              justifyContent: 'center',
-            }}
+              justifyContent: 'center' }}
           >
             <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{initials(displayName)}</Text>
           </View>
@@ -318,8 +305,7 @@ export default function GiftDisplayScreen() {
             flexDirection: 'row',
             backgroundColor: C.card,
             borderRadius: 12,
-            padding: 4,
-          }}
+            padding: 4 }}
         >
           {(['display', 'board'] as Tab[]).map((t) => {
             const active = tab === t;
@@ -336,15 +322,13 @@ export default function GiftDisplayScreen() {
                   shadowColor: active ? '#000' : 'transparent',
                   shadowOpacity: active ? 0.08 : 0,
                   shadowRadius: 4,
-                  elevation: active ? 2 : 0,
-                }}
+                  elevation: active ? 2 : 0 }}
               >
                 <Text
                   style={{
                     fontSize: 15,
                     fontWeight: active ? '700' : '500',
-                    color: active ? C.text : C.muted,
-                  }}
+                    color: active ? C.text : C.muted }}
                 >
                   {t === 'display' ? 'Gift Display' : 'Gift Board'}
                 </Text>
@@ -364,8 +348,7 @@ export default function GiftDisplayScreen() {
               justifyContent: 'space-between',
               paddingHorizontal: 16,
               paddingTop: 16,
-              paddingBottom: 8,
-            }}
+              paddingBottom: 8 }}
           >
             <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }}>Other Gifts</Text>
             <Pressable
@@ -401,8 +384,7 @@ export default function GiftDisplayScreen() {
                   color: C.text,
                   paddingHorizontal: 16,
                   paddingTop: 20,
-                  paddingBottom: 8,
-                }}
+                  paddingBottom: 8 }}
               >
                 Inactive Gifts
               </Text>
@@ -432,8 +414,7 @@ export default function GiftDisplayScreen() {
                       backgroundColor: C.card,
                       borderRadius: 14,
                       padding: 12,
-                      marginBottom: 8,
-                    }}
+                      marginBottom: 8 }}
                   >
                     <Text
                       style={{
@@ -441,8 +422,7 @@ export default function GiftDisplayScreen() {
                         fontWeight: '800',
                         color: i < 3 ? C.gold : C.muted,
                         width: 28,
-                        textAlign: 'center',
-                      }}
+                        textAlign: 'center' }}
                     >
                       {i + 1}
                     </Text>
@@ -456,8 +436,7 @@ export default function GiftDisplayScreen() {
                           borderRadius: 22,
                           backgroundColor: C.blueLight,
                           alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
+                          justifyContent: 'center' }}
                       >
                         <Text style={{ fontSize: 18, fontWeight: '800', color: C.blue }}>
                           {initials(name)}
@@ -508,8 +487,7 @@ export default function GiftDisplayScreen() {
               shadowOpacity: 0.12,
               shadowRadius: 8,
               elevation: 4,
-              minWidth: 140,
-            }}
+              minWidth: 140 }}
           >
             {(['quantity', 'value'] as SortMode[]).map((m) => (
               <Pressable
@@ -524,8 +502,7 @@ export default function GiftDisplayScreen() {
                   style={{
                     fontSize: 14,
                     fontWeight: sortMode === m ? '700' : '400',
-                    color: sortMode === m ? C.blue : C.text,
-                  }}
+                    color: sortMode === m ? C.blue : C.text }}
                 >
                   {m === 'quantity' ? 'By quantity' : 'By value'}
                 </Text>
@@ -555,8 +532,7 @@ export default function GiftDisplayScreen() {
               paddingTop: 10,
               paddingBottom: 36,
               paddingHorizontal: 24,
-              alignItems: 'center',
-            }}
+              alignItems: 'center' }}
           >
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 18 }} />
             <Text style={{ fontSize: 96 }}>{previewInfo?.emoji ?? '🎁'}</Text>
