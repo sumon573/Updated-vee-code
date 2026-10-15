@@ -298,6 +298,43 @@ function ObsidianExitButton() {
   );
 }
 
+/* ── SapphireInviteButton — Option B (2026-10-15, Sumon picked):
+   Premium blue person-plus + orbiting sparkles. NO background box. ── */
+function OrbitSparkle({ delay, size }: { delay: number; size: number }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1, duration: 4000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, delay]);
+  const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [0.3, 1, 0.3, 1, 0.3] });
+  return (
+    <Animated.View style={{
+      position: 'absolute', width: size, height: size,
+      alignItems: 'center', justifyContent: 'center',
+      transform: [{ rotate }],
+    }}>
+      <Animated.Text style={{ position: 'absolute', top: -4, fontSize: 10, opacity }}>✨</Animated.Text>
+    </Animated.View>
+  );
+}
+function SapphireInviteButton() {
+  return (
+    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+      {/* 2026-10-15 (Sumon): NO background box — floating blue person-plus + orbit sparkles. */}
+      <Feather name="user-plus" size={26} color="#007AFF" style={{ textShadowColor: 'rgba(0,122,255,0.5)', textShadowRadius: 8 }} />
+      <OrbitSparkle delay={0} size={56} />
+      <OrbitSparkle delay={2000} size={56} />
+    </View>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
@@ -3105,8 +3142,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => setInviteOpen(true)}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
-            <Feather name="user-plus" size={21} color={C.text} />
+            {/* 2026-10-15 (Sumon): Option B Sapphire Orbit invite button. */}
+            <SapphireInviteButton />
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.invite')}
             </Text>
