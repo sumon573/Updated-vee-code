@@ -944,6 +944,26 @@ export default function VoiceRoomScreen() {
   const [giftsOpen,       setGiftsOpen]       = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
+  // 2026-10-15 (Sumon): keep the manage-modal member LIVE — activeMember was a
+  // frozen snapshot taken at open time, so an admin frame removal (which goes
+  // live everywhere else via the seat/audience sync) stayed visible in the
+  // modal until room re-entry. Re-resolve from the live seats/audience arrays;
+  // only push a new object when a visible field actually changed.
+  useEffect(() => {
+    if (!activeMember) return;
+    const fresh =
+      seats.find((s) => s?.id === activeMember.id) ??
+      audience.find((a) => a.id === activeMember.id) ??
+      null;
+    if (!fresh) return;
+    const changed =
+      (fresh as any).activeFrame !== (activeMember as any).activeFrame ||
+      fresh.name !== activeMember.name ||
+      fresh.photoURL !== activeMember.photoURL ||
+      fresh.role !== activeMember.role ||
+      fresh.muted !== activeMember.muted;
+    if (changed) setActiveMember(fresh);
+  }, [seats, audience, activeMember]);
   const [exitModalOpen,   setExitModalOpen]   = useState(false);
   const [emojiPanelOpen,  setEmojiPanelOpen]  = useState(false);
 
