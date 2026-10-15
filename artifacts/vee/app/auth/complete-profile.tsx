@@ -7,10 +7,8 @@
  * AuthGuard redirects here when an authenticated user has no DB profile.
  */
 import { useState } from 'react';
-import {
-  View, Text, TextInput, Pressable, Image,
-  ActivityIndicator, Alert, ScrollView,
-} from 'react-native';
+import { View, Text, TextInput, Pressable, Image, Alert, ScrollView } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -28,8 +26,7 @@ const C = {
   text: '#0A1A33',
   muted: '#6B7280',
   blue: '#1E9BF0',
-  error: '#FF4B4B',
-} as const;
+  error: '#FF4B4B' } as const;
 
 export default function CompleteProfileScreen() {
   const { t } = useTranslation();
@@ -51,8 +48,7 @@ export default function CompleteProfileScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
-      });
+        quality: 0.8 });
       if (!result.canceled && result.assets?.[0]?.uri) {
         setPhotoLocalUri(result.assets[0].uri);
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -86,8 +82,7 @@ export default function CompleteProfileScreen() {
         try {
           const uploaded = await uploadImage(photoLocalUri, {
             folder: 'vee/avatars',
-            transformation: 'c_fill,w_400,h_400,q_auto',
-          });
+            transformation: 'c_fill,w_400,h_400,q_auto' });
           photoURL = uploaded.url;
         } catch {
           Alert.alert(
@@ -108,8 +103,7 @@ export default function CompleteProfileScreen() {
         bio: '',
         createdAt: Date.now(),
         lastSeen: Date.now(),
-        online: true,
-      });
+        online: true });
 
       await initializeWallet(fbUser.uid).catch(() => {});
       setupPresence(fbUser.uid);
@@ -148,8 +142,7 @@ export default function CompleteProfileScreen() {
               justifyContent: 'center',
               overflow: 'hidden',
               borderWidth: 2,
-              borderColor: '#E8E8EC',
-            }}
+              borderColor: '#E8E8EC' }}
           >
             {photoLocalUri ? (
               <Image
@@ -172,8 +165,7 @@ export default function CompleteProfileScreen() {
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 3,
-              borderColor: '#FFFFFF',
-            }}
+              borderColor: '#FFFFFF' }}
           >
             <Feather name="camera" size={16} color="#FFFFFF" />
           </View>
@@ -186,8 +178,7 @@ export default function CompleteProfileScreen() {
             fontWeight: '800',
             color: C.text,
             textAlign: 'center',
-            marginTop: 28,
-          }}
+            marginTop: 28 }}
         >
           {t('auth.completeProfile.title')}
         </Text>
@@ -197,8 +188,7 @@ export default function CompleteProfileScreen() {
             color: C.muted,
             textAlign: 'center',
             marginTop: 8,
-            lineHeight: 22,
-          }}
+            lineHeight: 22 }}
         >
           {t('auth.completeProfile.subtitle')}
         </Text>
@@ -214,8 +204,7 @@ export default function CompleteProfileScreen() {
             borderColor: '#E8E8EC',
             paddingHorizontal: 18,
             fontSize: 17,
-            color: C.text,
-          }}
+            color: C.text }}
           placeholder={t('auth.completeProfile.namePlaceholder')}
           placeholderTextColor="#A9A9B3"
           value={name}
@@ -249,11 +238,10 @@ export default function CompleteProfileScreen() {
             shadowOpacity: 0.3,
             shadowRadius: 10,
             shadowOffset: { width: 0, height: 4 },
-            elevation: 5,
-          })}
+            elevation: 5 })}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <PremiumLoader size="medium" />
           ) : (
             <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '700' }}>
               {t('auth.completeProfile.doneButton')}
