@@ -51,15 +51,15 @@ const C = {
  * GiftsModal.tsx exactly: 1:💝 10, 2:🌹 25, 3:🎁 50, 4:💎 100,
  * 5:🏆 200, 6:🚀 500, 7:👑 1000, 8:🎆 2000.
  */
-const GIFT_CATALOG: Record<string, { emoji: string; coins: number }> = {
-  '1': { emoji: '💝', coins: 10 },
-  '2': { emoji: '🌹', coins: 25 },
-  '3': { emoji: '🎁', coins: 50 },
-  '4': { emoji: '💎', coins: 100 },
-  '5': { emoji: '🏆', coins: 200 },
-  '6': { emoji: '🚀', coins: 500 },
-  '7': { emoji: '👑', coins: 1000 },
-  '8': { emoji: '🎆', coins: 2000 },
+const GIFT_CATALOG: Record<string, { emoji: string; coins: number; name: string }> = {
+  '1': { emoji: '💝', coins: 10, name: 'Heart' },
+  '2': { emoji: '🌹', coins: 25, name: 'Rose' },
+  '3': { emoji: '🎁', coins: 50, name: 'Gift' },
+  '4': { emoji: '💎', coins: 100, name: 'Diamond' },
+  '5': { emoji: '🏆', coins: 200, name: 'Trophy' },
+  '6': { emoji: '🚀', coins: 500, name: 'Rocket' },
+  '7': { emoji: '👑', coins: 1000, name: 'Crown' },
+  '8': { emoji: '🎆', coins: 2000, name: 'Firework' },
 };
 
 type SortMode = 'quantity' | 'value';
@@ -90,6 +90,8 @@ export default function GiftDisplayScreen() {
   const [tab, setTab] = useState<Tab>('display');
   const [sortMode, setSortMode] = useState<SortMode>('quantity');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  // 2026-10-15 (Sumon): imo-style tap-to-preview — gift big image + name + diamond price + x count
+  const [previewGift, setPreviewGift] = useState<{ giftId: string; count: number } | null>(null);
   const [sortMenuTop, setSortMenuTop] = useState(0);
   const sortBtnRef = useRef<View>(null);
   const [contributors, setContributors] = useState<Record<string, VeeUser | null>>({});
@@ -229,7 +231,11 @@ export default function GiftDisplayScreen() {
 
   const renderGiftCell = useCallback(
     ([giftId, count]: [string, number], dimmed: boolean) => (
-      <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center', opacity: dimmed ? 0.45 : 1 }}>
+      <Pressable
+        key={giftId}
+        onPress={() => setPreviewGift({ giftId, count })}
+        style={{ width: '25%', padding: 4, alignItems: 'center', opacity: dimmed ? 0.45 : 1 }}
+      >
         <View
           style={{
             width: '100%',
@@ -243,10 +249,12 @@ export default function GiftDisplayScreen() {
           <Text style={{ fontSize: 36 }}>{GIFT_CATALOG[giftId]?.emoji ?? '🎁'}</Text>
         </View>
         <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
-      </View>
+      </Pressable>
     ),
     [],
   );
+
+  const previewInfo = previewGift ? GIFT_CATALOG[previewGift.giftId] : undefined;
 
   if (!loaded) {
     return (
@@ -514,6 +522,48 @@ export default function GiftDisplayScreen() {
             ))}
           </View>
         </Pressable>
+      </Modal>
+
+      {/* ── Gift preview bottom sheet (imo-style): big image + name + diamond price + x count ── */}
+      <Modal
+        visible={!!previewGift}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPreviewGift(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            onPress={() => setPreviewGift(null)}
+          />
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingTop: 10,
+              paddingBottom: 36,
+              paddingHorizontal: 24,
+              alignItems: 'center',
+            }}
+          >
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 18 }} />
+            <Text style={{ fontSize: 96 }}>{previewInfo?.emoji ?? '🎁'}</Text>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: C.text, marginTop: 12 }}>
+              {previewInfo?.name ?? 'Inactive gift'}
+            </Text>
+            {previewInfo && (
+              <Text style={{ fontSize: 16, fontWeight: '700', color: C.gold, marginTop: 6 }}>
+                💎 {previewInfo.coins} diamonds
+              </Text>
+            )}
+            {previewGift && (
+              <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>
+                ×{previewGift.count} received
+              </Text>
+            )}
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
