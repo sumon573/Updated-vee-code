@@ -9,7 +9,8 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, Alert, ActivityIndicator, Modal, TextInput, Pressable, Linking } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native';
@@ -30,12 +31,10 @@ import {
   subscribeMyRoomsCombined,
   verifyRoomPin,
   setPinVerifiedForSession,
-  type RoomInfo,
-} from '../services/firebaseRoomService';
+  type RoomInfo } from '../services/firebaseRoomService';
 import {
   getVoiceBreadcrumb,
-  clearVoiceBreadcrumb,
-} from '../utils/voiceCrashBreadcrumb';
+  clearVoiceBreadcrumb } from '../utils/voiceCrashBreadcrumb';
 import { VoiceRoom } from '../types/room';
 import { useLiveAudienceCounts } from '../hooks/useLiveAudienceCounts';
 import { useAuth } from '@/src/context/AuthContext';
@@ -64,8 +63,7 @@ const C = {
   border: '#E5E5EA',
   chipBg: 'rgba(139,92,246,0.14)',
   chipBgActive: '#7C3AED',
-  surface: '#F2F2F7',
-} as const;
+  surface: '#F2F2F7' } as const;
 
 // "Recommended" tabs — match the new RoomCategory type
 type RecommendedTab = 'trending' | 'nearby' | 'game' | 'music' | 'talk' | 'study' | 'new';
@@ -103,8 +101,7 @@ function toVoiceRoom(r: RoomInfo): VoiceRoom {
     createdAt: r.createdAt,
     memberPreviews: r.memberPreviews,
     coverImageUrl: r.coverImageUrl,
-    isPublic: r.isPublic,
-  };
+    isPublic: r.isPublic };
 }
 
 function goToRoom(id: string) {
@@ -126,8 +123,7 @@ function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => voi
             backgroundColor: 'rgba(139,92,246,0.12)',
             borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6,
             borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-            gap: 4,
-          }}>
+            gap: 4 }}>
             <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>
               {t('voiceRoom.home.seeAll')}
             </Text>
@@ -151,14 +147,12 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
           borderStyle: 'dashed',
           alignItems: 'center', justifyContent: 'center',
           shadowColor: '#A855F7', shadowOpacity: 0.15,
-          shadowRadius: 16, shadowOffset: { width: 0, height: 0 },
-        }}>
+          shadowRadius: 16, shadowOffset: { width: 0, height: 0 } }}>
           <Feather name="plus" size={30} color={C.glow} />
         </View>
         <Text style={{
           color: C.text, fontSize: 13, fontWeight: '800',
-          marginTop: 8, textAlign: 'center',
-        }}>
+          marginTop: 8, textAlign: 'center' }}>
           {t('voiceRoom.home.createRoom')}
         </Text>
       </View>
@@ -167,8 +161,7 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
 }
 
 function CategoryChip({
-  label, icon, active, onPress,
-}: {
+  label, icon, active, onPress }: {
   label: string;
   icon: ComponentProps<typeof Feather>['name'];
   active?: boolean;
@@ -182,8 +175,7 @@ function CategoryChip({
         borderRadius: 999,
         backgroundColor: active ? C.chipBgActive : C.chipBg,
         borderWidth: 1,
-        borderColor: active ? C.glow : 'rgba(139,92,246,0.25)',
-      }}>
+        borderColor: active ? C.glow : 'rgba(139,92,246,0.25)' }}>
         <Feather name={icon} size={13} color={active ? '#fff' : C.muted} />
         <Text style={{ color: active ? '#fff' : C.muted, fontSize: 13, fontWeight: '700' }}>
           {label}
@@ -212,8 +204,7 @@ type VoiceRoomHomeProps = {
 
 export default function VoiceRoomHome({
   onLockParentScroll,
-  onUnlockParentScroll,
-}: VoiceRoomHomeProps = {}) {
+  onUnlockParentScroll }: VoiceRoomHomeProps = {}) {
   const { user } = useAuth();
   const { t } = useTranslation();
 
@@ -256,8 +247,7 @@ export default function VoiceRoomHome({
         t('voiceRoom.home.voiceCrashMsg', {
           roomId: crumb.roomId,
           stage: crumb.stage,
-          when,
-        }),
+          when }),
       );
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -363,8 +353,7 @@ export default function VoiceRoomHome({
           return;
         }
         const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+          accuracy: Location.Accuracy.Balanced });
         setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       } catch {
         setLocationDenied(true);
@@ -434,7 +423,7 @@ export default function VoiceRoomHome({
       >
         {isLoading ? (
           <View style={{ paddingTop: 60, alignItems: 'center' }}>
-            <ActivityIndicator color={C.glow} size="large" />
+            <PremiumLoader size="large" />
           </View>
         ) : (
           <>
@@ -470,8 +459,7 @@ export default function VoiceRoomHome({
             {myRooms.length === 0 && (
               <View style={{
                 backgroundColor: C.surface, borderRadius: 14,
-                padding: 18, marginBottom: 8, alignItems: 'center',
-              }}>
+                padding: 18, marginBottom: 8, alignItems: 'center' }}>
                 <Feather name="mic" size={24} color={C.muted} />
                 <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
                   {t('voiceRoom.home.noMyRooms')}
@@ -487,8 +475,7 @@ export default function VoiceRoomHome({
                 borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
                 marginBottom: 4,
                 borderWidth: 1, borderColor: 'rgba(245,158,11,0.22)',
-                gap: 12,
-              }}>
+                gap: 12 }}>
                 <Text style={{ fontSize: 22 }}>🏆</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '900' }}>
@@ -532,7 +519,7 @@ export default function VoiceRoomHome({
             {/* Fix 6: Show location states for nearby tab */}
             {activeTab === 'nearby' && locationLoading && (
               <View style={{ alignItems: 'center', paddingVertical: 28 }}>
-                <ActivityIndicator color={C.glow} />
+                <PremiumLoader size="medium" />
                 <Text style={{ color: C.muted, fontSize: 13, marginTop: 10 }}>
                   {t('voiceRoom.home.gettingLocation')}
                 </Text>
@@ -616,8 +603,7 @@ export default function VoiceRoomHome({
                 backgroundColor: '#F0F0F0',
                 borderRadius: 24,
                 paddingHorizontal: 16,
-                paddingVertical: 10,
-              }}>
+                paddingVertical: 10 }}>
                 <Pressable onPress={() => { setRoomSearchOpen(false); setRoomSearchQuery(''); }} style={{ marginRight: 8 }}>
                   <Feather name="arrow-left" size={22} color="#616161" />
                 </Pressable>
@@ -684,8 +670,7 @@ export default function VoiceRoomHome({
             <View style={{
               backgroundColor: '#FFFFFF', borderRadius: 24, padding: 28,
               borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
-              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20,
-            }}>
+              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18, gap: 10 }}>
                 <Feather name="lock" size={20} color="#F59E0B" />
                 <Text style={{ color: '#000000', fontSize: 18, fontWeight: '900', flex: 1 }} numberOfLines={1}>
@@ -702,8 +687,7 @@ export default function VoiceRoomHome({
                   borderColor: pinError ? '#FF4B4B' : 'rgba(139,92,246,0.35)',
                   color: '#000000', fontSize: 26, fontWeight: '800',
                   textAlign: 'center', letterSpacing: 14,
-                  paddingVertical: 14, marginBottom: 8,
-                }}
+                  paddingVertical: 14, marginBottom: 8 }}
                 placeholder="••••"
                 placeholderTextColor="#C7C7CC"
                 value={pinInput}
@@ -729,8 +713,7 @@ export default function VoiceRoomHome({
                   backgroundColor: pinVerifying ? '#C7C7CC' : '#7C3AED',
                   borderRadius: 14, paddingVertical: 14,
                   alignItems: 'center',
-                  opacity: pinVerifying ? 0.7 : 1,
-                }}
+                  opacity: pinVerifying ? 0.7 : 1 }}
               >
                 <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
                   {pinVerifying ? 'Verifying…' : 'Join Room'}
