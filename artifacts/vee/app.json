@@ -107,7 +107,8 @@
           "microphonePermission": "Vee uses the microphone to record voice stories."
         }
       ],
-      "@livekit/react-native-expo-plugin"
+      "@livekit/react-native-expo-plugin",
+      "./plugins/withVoiceForegroundService/app.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true,
