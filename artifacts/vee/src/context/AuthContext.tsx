@@ -206,12 +206,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (!profile) {
                 // No DB profile — create one from Auth data so others see the
                 // real name/DP. Vee ID backfill (above) handles the vId.
+                // 2026-10-15 (Sumon): Google sign-in MUST use the Google
+                // account name — never fall back to generic 'User'. Reload
+                // first so displayName is fresh from the provider.
+                let googleName = firebaseUser.displayName || '';
+                let googlePhoto = firebaseUser.photoURL || '';
+                try {
+                  await firebaseUser.reload();
+                  googleName = firebaseUser.displayName || googleName;
+                  googlePhoto = firebaseUser.photoURL || googlePhoto;
+                } catch { /* reload is best-effort */ }
+                // Also check provider data (Google provider may have it even
+                // if top-level displayName is empty).
+                if (!googleName && Array.isArray((firebaseUser as any).providerData)) {
+                  for (const p of (firebaseUser as any).providerData) {
+                    if (p && p.displayName) { googleName = p.displayName; break; }
+                  }
+                  if (!googlePhoto) {
+                    for (const p of (firebaseUser as any).providerData) {
+                      if (p && p.photoURL) { googlePhoto = p.photoURL; break; }
+                    }
+                  }
+                }
+                const fallbackName = firebaseUser.email
+                  ? firebaseUser.email.split('@')[0]
+                  : `Vee${firebaseUser.uid.slice(0, 6)}`;
                 await createUser({
                   uid: firebaseUser.uid,
                   vId: '',
-                  name: firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'User'),
+                  name: googleName || fallbackName,
                   email: firebaseUser.email ?? '',
-                  photoURL: firebaseUser.photoURL ?? '',
+                  photoURL: googlePhoto,
                   bio: '',
                   createdAt: Date.now(),
                   lastSeen: Date.now(),
