@@ -110,16 +110,16 @@ export default function NobleRankPreview({
             <View style={{
               backgroundColor: '#1a1a2e', padding: 24, alignItems: 'center',
             }}>
-              {/* DP with Frame */}
-              <View style={{ width: 110, height: 110, marginBottom: 12 }}>
+              {/* DP with Frame - 1.6x matches voice room implementation */}
+              <View style={{ width: 144, height: 144, marginBottom: 12 }}>
                 {userPhotoURL ? (
                   <Image
                     source={{ uri: userPhotoURL }}
-                    style={{ width: 90, height: 90, borderRadius: 45, margin: 10 }}
+                    style={{ width: 90, height: 90, borderRadius: 45, margin: 27 }}
                   />
                 ) : (
                   <View style={{
-                    width: 90, height: 90, borderRadius: 45, margin: 10,
+                    width: 90, height: 90, borderRadius: 45, margin: 27,
                     backgroundColor: '#667eea', alignItems: 'center', justifyContent: 'center',
                   }}>
                     <Text style={{ fontSize: 32, fontWeight: '800', color: '#fff' }}>
@@ -131,7 +131,7 @@ export default function NobleRankPreview({
                   <Image
                     source={{ uri: frameUrl }}
                     style={{
-                      position: 'absolute', width: 110, height: 110,
+                      position: 'absolute', width: 144, height: 144,
                     }}
                     resizeMode="contain"
                   />
@@ -143,19 +143,19 @@ export default function NobleRankPreview({
                 {userName || 'Vee User'}
               </Text>
 
-              {/* Nameplate */}
+              {/* Nameplate - 5:1 ratio matches actual design */}
               {nameplateUrl && /^https?:\/\//i.test(nameplateUrl) ? (
                 mistColor ? (
                   <MistNameplate
                     imageUrl={nameplateUrl}
                     mistColor={mistColor}
-                    width={140}
-                    height={32}
+                    width={150}
+                    height={30}
                   />
                 ) : (
                   <Image
                     source={{ uri: nameplateUrl }}
-                    style={{ width: 140, height: 32 }}
+                    style={{ width: 150, height: 30 }}
                     resizeMode="contain"
                   />
                 )
