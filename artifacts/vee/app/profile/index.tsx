@@ -803,10 +803,13 @@ export default function ProfileScreen({
                   const activeFrameObj = grantedFrames.find((f) => f.id === activeFrameId);
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
+                    // 2026-10-15: Nobel frames have ~51% inner opening — 128px (1.6x of 80px DP) ensures fit
+                    const isNobleFrame = activeFrameId.startsWith('noble-frame-');
+                    const frameSize = isNobleFrame ? 128 : 92;
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
-                        style={{ position: 'absolute', width: 92, height: 92 }}
+                        style={{ position: 'absolute', width: frameSize, height: frameSize }}
                         resizeMode="contain"
                       />
                     );
@@ -845,11 +848,12 @@ export default function ProfileScreen({
           {/* 2026-10-15 (Sumon): Equipped nameplate IS the rank display. Final — no old pill. */}
           {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
             nameplateMist ? (
-              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={120} height={36} />
+              // 2026-10-15: Nameplate images are 5:1 ratio — 150x30 matches exactly
+              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={150} height={30} />
             ) : (
               <Image
                 source={{ uri: activeNameplate.icon }}
-                style={{ width: 120, height: 36 }}
+                style={{ width: 150, height: 30 }}
                 resizeMode="contain"
               />
             )
