@@ -768,29 +768,34 @@ export default function ContactsScreen() {
                 <View style={{ height: 1, backgroundColor: C.border, marginLeft: 76 }} />
               )}
               renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => handleViewProfile(item)}
-                  onLongPress={() => handleContactLongPress(item)}
-                  delayLongPress={350}
+                <View
                   style={{
                     flexDirection: 'row', alignItems: 'center',
                     backgroundColor: C.bg,
                     paddingVertical: 12, paddingHorizontal: 16,
                   }}
                 >
-                  {/* Avatar */}
-                  <View style={{ position: 'relative', marginRight: 12 }}>
-                    <UserAvatar user={item} />
-                    {item.online && (
-                      <View style={{
-                        position: 'absolute', bottom: 1, right: 1,
-                        width: 12, height: 12, borderRadius: 6,
-                        backgroundColor: C.online, borderWidth: 2, borderColor: C.bg,
-                      }} />
-                    )}
-                  </View>
-                  {/* Info — 2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
-                  <View style={{ flex: 1 }}>
+                  {/* DP — tap → profile screen (2026-10-15, Sumon) */}
+                  <Pressable onPress={() => handleViewProfile(item)}>
+                    <View style={{ position: 'relative', marginRight: 12 }}>
+                      <UserAvatar user={item} />
+                      {item.online && (
+                        <View style={{
+                          position: 'absolute', bottom: 1, right: 1,
+                          width: 12, height: 12, borderRadius: 6,
+                          backgroundColor: C.online, borderWidth: 2, borderColor: C.bg,
+                        }} />
+                      )}
+                    </View>
+                  </Pressable>
+                  {/* Name / Vee ID — tap → chat directly; long-press → contact menu.
+                      2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
+                  <Pressable
+                    onPress={() => handleMessage(item)}
+                    onLongPress={() => handleContactLongPress(item)}
+                    delayLongPress={350}
+                    style={{ flex: 1 }}
+                  >
                     <VerifiedName
                       name={truncateTo12(item.name)}
                       uid={item.uid}
@@ -800,8 +805,8 @@ export default function ContactsScreen() {
                     <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
                       {item.vId}
                     </Text>
-                  </View>
-                </Pressable>
+                  </Pressable>
+                </View>
               )}
             />
           )}
