@@ -2978,22 +2978,13 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={handleMicBarPress}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: mySeatIdx < 0 ? accentColor + '22'
-                : muted ? 'rgba(239,68,68,0.16)' : 'rgba(34,197,94,0.16)',
-              borderWidth: 1.5,
-              borderColor: mySeatIdx < 0 ? accentColor + '66'
-                : muted ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-              <Feather
-                name={mySeatIdx < 0 ? 'user-plus' : muted ? 'mic-off' : 'mic'}
+            {/* 2026-10-15 (Sumon): no background box — clean floating icon.
+                Mute state shown via icon color. */}
+            <Feather
+              name={mySeatIdx < 0 ? 'user-plus' : muted ? 'mic-off' : 'mic'}
                 size={21}
                 color={mySeatIdx < 0 ? accentColor : muted ? C.red : C.mic}
               />
-            </View>
             <Text style={{
               color: mySeatIdx < 0 ? accentColor : muted ? C.red : C.mic,
               fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3009,15 +3000,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-              <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={21} color={speakerOn ? C.text : C.sub} />
-            </View>
+            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
+            <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={21} color={speakerOn ? C.text : C.sub} />
             <Text style={{ color: speakerOn ? C.text : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.speaker')}
             </Text>
@@ -3043,12 +3027,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: C.pink,
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: C.pink, shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-              elevation: 4 }}>
-              <Text style={{ fontSize: 21 }}>🎁</Text>
-            </View>
+            {/* 2026-10-15 (Sumon): no background box — clean floating gift. */}
+            <Text style={{ fontSize: 28 }}>🎁</Text>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.gift')}
             </Text>
@@ -3060,15 +3040,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => setInviteOpen(true)}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-              <Feather name="user-plus" size={21} color={C.text} />
-            </View>
+            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
+            <Feather name="user-plus" size={21} color={C.text} />
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.invite')}
             </Text>
@@ -3080,15 +3053,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: 'rgba(239,68,68,0.15)',
-              borderWidth: 1.5, borderColor: 'rgba(239,68,68,0.4)',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-              <Feather name="log-out" size={19} color="#EF4444" />
-            </View>
+            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
+            <Feather name="log-out" size={19} color="#EF4444" />
             <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.exit')}
             </Text>
