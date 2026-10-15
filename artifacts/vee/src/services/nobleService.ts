@@ -346,8 +346,21 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     const hasRipple = ripplesSnap?.exists() && ripplesSnap.hasChild(`noble-ripple-${rank.key}`);
     const hasEffect = effectsSnap?.exists() && effectsSnap.hasChild(`noble-effect-${rank.key}`);
 
-    // Grant only what's missing — grantNobleRankItems is idempotent per item
-    if (!hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect) {
+    // 2026-10-15 (Sumon): Also update icons if catalog has newer design URLs.
+    // grantNobleRankItems uses set() so it's safe to re-run — updates stale fallback icons.
+    const catalog = rewardsForRank(state.rankIndex);
+    let needsUpdate = !hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect;
+    if (!needsUpdate && catalog) {
+      // Check if existing plate has outdated icon
+      const plateId = `noble-plate-${rank.key}`;
+      const existingPlate = platesSnap?.child(plateId).val();
+      const expectedIcon = rewardIcon(catalog.nameplate);
+      if (existingPlate && existingPlate.icon !== expectedIcon) {
+        needsUpdate = true;
+      }
+    }
+    // Grant only what's missing or outdated — grantNobleRankItems is idempotent per item
+    if (needsUpdate) {
       await grantNobleRankItems(uid, state.rankIndex);
     }
   } catch {
