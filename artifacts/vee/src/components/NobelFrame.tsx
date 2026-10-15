@@ -1,7 +1,7 @@
 /**
- * NobelFrame — Animated Nobel crown frame.
- * 2026-10-15 (Sumon): Crown stays on top, gentle float (not falling).
- * Subtle glow pulse + optional sparkles. Battery-friendly.
+ * NobelFrame — Static Nobel crown frame with sparkle shimmer.
+ * 2026-10-15 (Sumon): Frame STAYS STILL (no movement). Sparkles twinkle
+ * around the entire frame perimeter. Battery-friendly.
  */
 import React, { useEffect, useRef } from 'react';
 import { Animated, View, Image, StyleSheet } from 'react-native';
@@ -11,44 +11,84 @@ type Props = {
   imageUrl: string;
   /** Show sparkles (default true for Count+) */
   sparkles?: boolean;
+  /** Frame color for glow (defaults to Count purple) */
+  glowColor?: string;
 };
 
-export default function NobelFrame({ size, imageUrl, sparkles = true }: Props) {
-  const floatAnim = useRef(new Animated.Value(0)).current;
+// Sparkle positions around the frame (percentages)
+const SPARKLE_POSITIONS = [
+  { top: '2%', left: '20%' },
+  { top: '8%', left: '75%' },
+  { top: '25%', left: '92%' },
+  { top: '50%', left: '97%' },
+  { top: '75%', left: '88%' },
+  { top: '90%', left: '65%' },
+  { top: '95%', left: '35%' },
+  { top: '85%', left: '8%' },
+  { top: '60%', left: '0%' },
+  { top: '35%', left: '3%' },
+];
+
+function Twinkle({ delay, size: s }: { delay: number; size: number }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const twinkle = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 0, duration: 800, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 0.5, duration: 800, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    twinkle.start();
+    return () => twinkle.stop();
+  }, []);
+
+  return (
+    <Animated.Text
+      style={{
+        fontSize: s,
+        opacity,
+        transform: [{ scale }],
+        textShadowColor: '#FFFFFF',
+        textShadowRadius: 4,
+      }}
+    >
+      ✨
+    </Animated.Text>
+  );
+}
+
+export default function NobelFrame({ size, imageUrl, sparkles = true, glowColor = '#7E57C2' }: Props) {
   const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Gentle float: -3px to +3px (crown stays on top, just moves slightly)
-    const float = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, { toValue: -3, duration: 1500, useNativeDriver: true }),
-        Animated.timing(floatAnim, { toValue: 3, duration: 1500, useNativeDriver: true }),
-        Animated.timing(floatAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
-      ])
-    );
-    // Glow pulse
+    // Glow pulse only — frame itself never moves
     const glow = Animated.loop(
       Animated.sequence([
         Animated.timing(glowAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
         Animated.timing(glowAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
       ])
     );
-    float.start();
     glow.start();
-    return () => {
-      float.stop();
-      glow.stop();
-    };
+    return () => glow.stop();
   }, []);
 
   const glowOpacity = glowAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.3, 0.7],
+    outputRange: [0.4, 0.8],
   });
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      {/* Glow layer */}
+      {/* Glow layer — pulsing, frame stays still */}
       <Animated.View
         style={[
           styles.glow,
@@ -56,29 +96,24 @@ export default function NobelFrame({ size, imageUrl, sparkles = true }: Props) {
             width: size,
             height: size,
             borderRadius: size / 2,
+            borderColor: glowColor,
+            shadowColor: glowColor,
             opacity: glowOpacity,
           },
         ]}
       />
-      {/* Frame with gentle float */}
-      <Animated.View style={{ transform: [{ translateY: floatAnim }] }}>
-        <Image
-          source={{ uri: imageUrl }}
-          style={{ width: size, height: size }}
-          resizeMode="contain"
-        />
-      </Animated.View>
-      {/* Sparkles */}
-      {sparkles && (
-        <>
-          <Animated.View style={[styles.spark, { top: '5%', left: '15%', opacity: glowOpacity }]}>
-            <Image
-              source={{ uri: 'data:image/png;base64,iVBORw0KGgo=' }}
-              style={{ width: 0, height: 0 }}
-            />
-          </Animated.View>
-        </>
-      )}
+      {/* Frame — STATIC, no movement */}
+      <Image
+        source={{ uri: imageUrl }}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
+      {/* Sparkles around the entire frame */}
+      {sparkles && SPARKLE_POSITIONS.map((pos, i) => (
+        <View key={i} style={[styles.spark, pos as any]}>
+          <Twinkle delay={i * 300} size={size * 0.12} />
+        </View>
+      ))}
     </View>
   );
 }
@@ -93,8 +128,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#7E57C2',
-    shadowColor: '#7E57C2',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 12,
