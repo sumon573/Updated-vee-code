@@ -23,6 +23,8 @@ export interface RewardDesign {
   fallbackIcon: string;
   /** Extra config (e.g. ripple colors) */
   config?: Record<string, unknown>;
+  /** Mist animation color — set for Viscount+ nameplates (2026-10-15 Sumon) */
+  mistColor?: string;
 }
 
 export interface RankRewards {
@@ -59,8 +61,15 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'viscount', rankName: 'Viscount', rankColor: '#42A5F5',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
+    nameplate: {
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-viscount.png',
+      fallbackIcon: '🎖️',
+      mistColor: '#BBDEFB', // 2026-10-15 (Sumon): mist animation starts from Viscount
+    },
+    badge: {
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-viscount.png',
+      fallbackIcon: '👑',
+    },
     frame: null, ripple: null, entryEffect: null,
   },
   {
