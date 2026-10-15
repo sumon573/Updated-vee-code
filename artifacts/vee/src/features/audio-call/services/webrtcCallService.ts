@@ -53,6 +53,7 @@ import {
   onDisconnect,
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
+import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/services/voiceForegroundService';
 import { buildCallRoomId } from './firebaseCallService';
 import { isExpoGo } from '@/src/utils/platform';
 
@@ -185,6 +186,9 @@ export class WebRTCCallSession {
       );
       return;
     }
+    // 2026-10-15 (Sumon): BACKGROUND AUDIO — foreground service keeps the
+    // call's mic + audio alive when the app is backgrounded (like IMO).
+    startVoiceForegroundService('Call in progress');
 
     try {
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -350,6 +354,8 @@ export class WebRTCCallSession {
   hangup(): void {
     if (this.ended) return;
     this.ended = true;
+    // 2026-10-15 (Sumon): call over — drop the foreground service.
+    stopVoiceForegroundService();
 
     // Remove RTDB listeners first so our own node removal can't retrigger them.
     this.unsubscribers.forEach((off) => {
