@@ -277,18 +277,23 @@ function TwinkleSparkle({ delay, style }: { delay: number; style: any }) {
   );
 }
 function ObsidianGiftButton() {
+  // 2026-10-15 (Sumon): NO background box — only floating gift + sparkles.
   return (
-    <View style={{
-      width: 52, height: 52, borderRadius: 15,
-      backgroundColor: '#1A1A2E',
-      borderWidth: 1.5, borderColor: '#D4AF37',
-      alignItems: 'center', justifyContent: 'center',
-      shadowColor: '#D4AF37', shadowOpacity: 0.25, shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-      <Text style={{ fontSize: 28 }}>🎁</Text>
-      <TwinkleSparkle delay={0} style={{ position: 'absolute', top: 2, left: 4, fontSize: 10 }} />
-      <TwinkleSparkle delay={600} style={{ position: 'absolute', top: 5, right: 5, fontSize: 10 }} />
-      <TwinkleSparkle delay={1200} style={{ position: 'absolute', bottom: 4, left: 7, fontSize: 10 }} />
+    <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 30 }}>🎁</Text>
+      <TwinkleSparkle delay={0} style={{ position: 'absolute', top: 0, left: 2, fontSize: 10 }} />
+      <TwinkleSparkle delay={600} style={{ position: 'absolute', top: 3, right: 3, fontSize: 10 }} />
+      <TwinkleSparkle delay={1200} style={{ position: 'absolute', bottom: 2, left: 5, fontSize: 10 }} />
+    </View>
+  );
+}
+
+/* ── ObsidianExitButton — Option B (2026-10-15, Sumon picked):
+   2026-10-15 (Sumon): NO background box — only floating ✕. ── */
+function ObsidianExitButton() {
+  return (
+    <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 26, fontWeight: '900', color: '#FF5252', lineHeight: 30 }}>✕</Text>
     </View>
   );
 }
@@ -3113,8 +3118,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
-            <Feather name="log-out" size={19} color="#EF4444" />
+            {/* 2026-10-15 (Sumon): Option B Obsidian Exit button. */}
+            <ObsidianExitButton />
             <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.exit')}
             </Text>
