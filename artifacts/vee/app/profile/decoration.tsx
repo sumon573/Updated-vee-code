@@ -264,13 +264,67 @@ export default function DecorationScreen() {
           })}
         </ScrollView>
       ) : (
-        <View style={{ flex: 1, alignItems: 'center', paddingTop: 72, paddingHorizontal: 48 }}>
-          <Text style={{ fontSize: 44, marginBottom: 12 }}>🖼️</Text>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
-            No frames yet
+        <View style={{ flex: 1, alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 }}>
+          {/* Premium empty state — 2026-10-14 (Sumon): glossy gradient icon, not demo emoji */}
+          {/* 2026-10-15 (Sumon): PREMIUM LUXURY empty state — ornate gold frame mockup */}
+          <View style={{
+            width: 140, height: 140,
+            alignItems: 'center', justifyContent: 'center',
+            marginBottom: 24,
+          }}>
+            {/* Outer gold glow */}
+            <View style={{
+              position: 'absolute', width: 140, height: 140, borderRadius: 28,
+              backgroundColor: '#D4AF37' + '18',
+              shadowColor: '#D4AF37', shadowOpacity: 0.35, shadowRadius: 24,
+              shadowOffset: { width: 0, height: 10 }, elevation: 10,
+            }} />
+            {/* Ornate frame: layered gold borders */}
+            <View style={{
+              width: 104, height: 104, borderRadius: 20,
+              backgroundColor: '#FFFDF5',
+              borderWidth: 5, borderColor: '#D4AF37',
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: '#B8860B', shadowOpacity: 0.3, shadowRadius: 12,
+              shadowOffset: { width: 0, height: 6 }, elevation: 6,
+            }}>
+              <View style={{
+                width: 84, height: 84, borderRadius: 14,
+                borderWidth: 2, borderColor: '#F5D67B',
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: '#FFFEF9',
+              }}>
+                {/* Crown jewel */}
+                <Text style={{ fontSize: 36 }}>👑</Text>
+              </View>
+            </View>
+            {/* Sparkles */}
+            <Text style={{ position: 'absolute', top: 8, right: 18, fontSize: 16 }}>✨</Text>
+            <Text style={{ position: 'absolute', bottom: 12, left: 14, fontSize: 12 }}>✨</Text>
+          </View>
+          <Text style={{
+            fontSize: 20, fontWeight: '800', color: '#1A1A1A',
+            textAlign: 'center', letterSpacing: 0.5,
+          }}>
+            Your Collection Awaits
           </Text>
-          <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
-            Frames are granted officially or claimed as event rewards.
+          <View style={{
+            marginTop: 12, paddingHorizontal: 20, paddingVertical: 8,
+            borderRadius: 20, backgroundColor: '#D4AF37' + '14',
+            borderWidth: 1, borderColor: '#D4AF37' + '40',
+          }}>
+            <Text style={{
+              fontSize: 12, fontWeight: '700', color: '#B8860B',
+              letterSpacing: 1.5, textTransform: 'uppercase',
+            }}>
+              ✦ Exclusive Frames ✦
+            </Text>
+          </View>
+          <Text style={{
+            fontSize: 14, color: '#6B6B6B', textAlign: 'center',
+            marginTop: 16, lineHeight: 22, paddingHorizontal: 32,
+          }}>
+            Prestigious frames are granted officially or earned as event rewards. Your luxury collection begins here.
           </Text>
         </View>
       )}
