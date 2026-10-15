@@ -1,15 +1,18 @@
 /**
- * LeaderboardModal — Real rankings (2026-10-09)
+ * LeaderboardModal — Real weekly rankings, premium luxury finish (2026-10-15)
  *
- * Four tabs, all real data:
+ * Four tabs, ALL real data, ranked:
  *   • Top Rooms     — active rooms sorted by live member count
  *   • Top Live      — currently live rooms, by members
- *   • Top Senders   — users who sent the most gifts (weekly)
- *   • Top Receivers — users who received the most gifts (weekly)
+ *   • Top Senders   — most diamonds sent as gifts THIS WEEK (leaderboard_senders/{weekId})
+ *   • Top Receivers — most diamonds earned from gifts THIS WEEK (leaderboard/{weekId})
  *
+ * Gift sends record weekly stats (walletService.recordWeeklyLeaderboardStats),
+ * so the user tabs are genuinely live — no demo content.
+ * A pinned "Your Rank" bar shows the viewer's own rank with DP + name.
  * Light mode. Rankings update live via Firebase subscriptions.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, Modal, Pressable, FlatList,
   ActivityIndicator, TouchableOpacity, Image,
@@ -17,10 +20,11 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { get, ref, query, orderByChild, limitToLast, onValue } from 'firebase/database';
-import { database } from '@/src/config/firebase';
+import { auth, database } from '@/src/config/firebase';
 import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
+import { getCurrentWeekId } from '@/src/utils/weekId';
 
-// ─── Light palette ───────────────────────────────────────────────────────────
+// ─── Light premium palette ───────────────────────────────────────────────────
 
 const C = {
   bg:      '#FFFFFF',
@@ -31,8 +35,12 @@ const C = {
   border:  '#E5E5EA',
   surface: '#F2F2F7',
   gold:    '#F59E0B',
+  goldBg:  '#FFFBEB',
+  goldBd:  '#FDE68A',
   silver:  '#94A3B8',
+  silverBg: '#F8FAFC',
   bronze:  '#B45309',
+  bronzeBg: '#FFF7ED',
   green:   '#22C55E',
 } as const;
 
@@ -48,34 +56,79 @@ type LeaderboardEntry = {
 
 type Tab = 'rooms' | 'live' | 'senders' | 'receivers';
 
+/** Compact diamond amounts: 1250 → "1.2k", 10992450 → "11m" (Sumon, 2026-10-13). */
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
+  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
+  if (n >= 1_000) return `${parseFloat((n / 1_000).toFixed(1))}k`;
+  return `${n}`;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+const MEDAL = ['🥇', '🥈', '🥉'] as const;
+const TINT_BG = [C.goldBg, C.silverBg, C.bronzeBg] as const;
+const TINT_BD = [C.goldBd, '#E2E8F0', '#FDBA74'] as const;
+const TINT_TX = [C.gold, C.silver, C.bronze] as const;
+
 function RankBadge({ rank }: { rank: number }) {
-  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
-  const color = rank === 1 ? C.gold : rank === 2 ? C.silver : rank === 3 ? C.bronze : C.muted;
+  const top3 = rank <= 3;
   return (
     <View style={{
-      width: 34, height: 34, borderRadius: 17,
+      width: top3 ? 40 : 34, height: top3 ? 40 : 34, borderRadius: top3 ? 20 : 17,
       alignItems: 'center', justifyContent: 'center',
-      backgroundColor: medal ? color + '1A' : C.surface,
-      borderWidth: medal ? 1 : 0, borderColor: color,
+      backgroundColor: top3 ? TINT_BG[rank - 1] : C.surface,
+      borderWidth: top3 ? 1.5 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
       marginRight: 12,
     }}>
-      {medal
-        ? <Text style={{ fontSize: 16 }}>{medal}</Text>
+      {top3
+        ? <Text style={{ fontSize: 20 }}>{MEDAL[rank - 1]}</Text>
         : <Text style={{ color: C.muted, fontSize: 13, fontWeight: '800' }}>{rank}</Text>
       }
     </View>
   );
 }
 
-function EmptyState({ icon, message }: { icon: React.ComponentProps<typeof Feather>['name']; message: string }) {
+function DPAvatar({ name, photoURL, size, ring }: {
+  name: string; photoURL?: string; size: number; ring?: string;
+}) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-      <Feather name={icon} size={36} color={C.muted} />
-      <Text style={{ color: C.muted, fontSize: 14, marginTop: 12, textAlign: 'center', paddingHorizontal: 32 }}>
-        {message}
-      </Text>
+    <View style={{
+      width: size + 4, height: size + 4, borderRadius: (size + 4) / 2,
+      alignItems: 'center', justifyContent: 'center',
+      borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
+      marginRight: 12,
+    }}>
+      {photoURL ? (
+        <Image source={{ uri: photoURL }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+      ) : (
+        <View style={{
+          width: size, height: size, borderRadius: size / 2,
+          backgroundColor: C.primary + '1A', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ color: C.primary, fontSize: size * 0.38, fontWeight: '800' }}>
+            {(name?.[0] ?? '?').toUpperCase()}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function EmptyState({ icon, message, hint }: { icon: React.ComponentProps<typeof Feather>['name']; message: string; hint?: string }) {
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 56, paddingHorizontal: 40 }}>
+      <View style={{
+        width: 72, height: 72, borderRadius: 36, backgroundColor: C.goldBg,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+        borderWidth: 1, borderColor: C.goldBd,
+      }}>
+        <Feather name={icon} size={30} color={C.gold} />
+      </View>
+      <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', textAlign: 'center' }}>{message}</Text>
+      {!!hint && (
+        <Text style={{ color: C.muted, fontSize: 13, marginTop: 6, textAlign: 'center' }}>{hint}</Text>
+      )}
     </View>
   );
 }
@@ -91,6 +144,8 @@ export function LeaderboardModal({
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('rooms');
+  const weekId = useMemo(() => getCurrentWeekId(), []);
+  const myUid = auth.currentUser?.uid ?? null;
 
   // ── Top Rooms (live subscription) ──────────────────────────────────────────
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
@@ -109,14 +164,14 @@ export function LeaderboardModal({
     return unsub;
   }, [visible]);
 
-  // ── Top Senders (live subscription) ────────────────────────────────────────
+  // ── Top Senders — REAL weekly data ─────────────────────────────────────────
   const [senders, setSenders] = useState<LeaderboardEntry[]>([]);
   const [sendersLoading, setSendersLoading] = useState(true);
 
   useEffect(() => {
     if (!visible || tab !== 'senders') return;
     setSendersLoading(true);
-    const q = query(ref(database, 'leaderboard_senders'), orderByChild('weeklySent'), limitToLast(30));
+    const q = query(ref(database, `leaderboard_senders/${weekId}`), orderByChild('weeklySent'), limitToLast(30));
     const unsub = onValue(q, (snap) => {
       if (!snap.exists()) {
         setSenders([]);
@@ -141,16 +196,16 @@ export function LeaderboardModal({
       setSendersLoading(false);
     });
     return unsub;
-  }, [visible, tab]);
+  }, [visible, tab, weekId]);
 
-  // ── Top Receivers (live subscription) ──────────────────────────────────────
+  // ── Top Receivers — REAL weekly data ───────────────────────────────────────
   const [receivers, setReceivers] = useState<LeaderboardEntry[]>([]);
   const [receiversLoading, setReceiversLoading] = useState(true);
 
   useEffect(() => {
     if (!visible || tab !== 'receivers') return;
     setReceiversLoading(true);
-    const q = query(ref(database, 'leaderboard'), orderByChild('weeklyEarned'), limitToLast(30));
+    const q = query(ref(database, `leaderboard/${weekId}`), orderByChild('weeklyEarned'), limitToLast(30));
     const unsub = onValue(q, (snap) => {
       if (!snap.exists()) {
         setReceivers([]);
@@ -175,9 +230,60 @@ export function LeaderboardModal({
       setReceiversLoading(false);
     });
     return unsub;
-  }, [visible, tab]);
+  }, [visible, tab, weekId]);
+
+  // ── My own weekly stats (for the pinned "Your Rank" bar) ───────────────────
+  const [mySent, setMySent] = useState<number | null>(null);
+  const [myEarned, setMyEarned] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!visible || !myUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [sSnap, rSnap] = await Promise.all([
+          get(ref(database, `leaderboard_senders/${weekId}/${myUid}/weeklySent`)),
+          get(ref(database, `leaderboard/${weekId}/${myUid}/weeklyEarned`)),
+        ]);
+        if (cancelled) return;
+        setMySent(sSnap.exists() && typeof sSnap.val() === 'number' ? sSnap.val() : 0);
+        setMyEarned(rSnap.exists() && typeof rSnap.val() === 'number' ? rSnap.val() : 0);
+      } catch {
+        if (!cancelled) { setMySent(0); setMyEarned(0); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [visible, myUid, weekId]);
 
   const liveRooms = rooms.filter(r => r.isLive);
+
+  // ── My rank per tab ────────────────────────────────────────────────────────
+  const mySenderRank = useMemo(() => {
+    const i = senders.findIndex(e => e.uid === myUid);
+    if (i >= 0) return i + 1;
+    return (mySent ?? 0) > 0 ? 31 : 0; // 31 = "30+" (outside loaded top-30)
+  }, [senders, myUid, mySent]);
+
+  const myReceiverRank = useMemo(() => {
+    const i = receivers.findIndex(e => e.uid === myUid);
+    if (i >= 0) return i + 1;
+    return (myEarned ?? 0) > 0 ? 31 : 0;
+  }, [receivers, myUid, myEarned]);
+
+  const myRoomRank = useMemo(() => {
+    if (!myUid) return 0;
+    const i = rooms.findIndex(r => r.ownerId === myUid);
+    return i >= 0 ? i + 1 : 0;
+  }, [rooms, myUid]);
+
+  const myLiveRank = useMemo(() => {
+    if (!myUid) return 0;
+    const i = liveRooms.findIndex(r => r.ownerId === myUid);
+    return i >= 0 ? i + 1 : 0;
+  }, [liveRooms, myUid]);
+
+  const myName = auth.currentUser?.displayName || 'Vee User';
+  const myPhoto = auth.currentUser?.photoURL ?? undefined;
 
   const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [
     { key: 'rooms',     label: t('leaderboard.topRooms', { defaultValue: 'Top Rooms' }),         icon: 'home' },
@@ -185,6 +291,139 @@ export function LeaderboardModal({
     { key: 'senders',   label: t('leaderboard.topSenders', { defaultValue: 'Top Senders' }),      icon: 'gift' },
     { key: 'receivers', label: t('leaderboard.topReceivers', { defaultValue: 'Top Receivers' }), icon: 'award' },
   ];
+
+  // ── Row renderers ──────────────────────────────────────────────────────────
+
+  const renderUserRow = (item: LeaderboardEntry, index: number, stat: number, statLabel: string) => {
+    const rank = index + 1;
+    const top3 = rank <= 3;
+    const isMe = item.uid === myUid;
+    return (
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: top3 ? 14 : 11, paddingHorizontal: top3 ? 12 : 0,
+        borderRadius: top3 ? 16 : 0,
+        backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
+        borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
+        borderBottomWidth: top3 ? 1 : 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
+        marginBottom: top3 ? 8 : 0,
+      }}>
+        <RankBadge rank={rank} />
+        <DPAvatar name={item.name} photoURL={item.photoURL} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700' }} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {isMe && (
+              <View style={{ backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+                  {t('leaderboard.you', { defaultValue: 'YOU' })}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{statLabel}</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 17, fontWeight: '800' }}>
+            💎{fmtCompact(stat)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRoomRow = (item: RoomInfo, index: number, showLive: boolean) => {
+    const rank = index + 1;
+    const top3 = rank <= 3;
+    const isMine = item.ownerId === myUid;
+    return (
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: top3 ? 14 : 12, paddingHorizontal: top3 ? 12 : 0,
+        borderRadius: top3 ? 16 : 0,
+        backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
+        borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
+        borderBottomWidth: top3 ? 1 : 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
+        marginBottom: top3 ? 8 : 0,
+      }}>
+        <RankBadge rank={rank} />
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700' }} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {showLive && (
+              <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>LIVE</Text>
+              </View>
+            )}
+            {isMine && (
+              <View style={{ backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+                  {t('leaderboard.you', { defaultValue: 'YOU' })}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+            {item.ownerName ?? ''}
+          </Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 18, fontWeight: '800' }}>
+            {item.memberCount}
+          </Text>
+          <Text style={{ color: C.muted, fontSize: 11 }}>
+            {t('leaderboard.members', { defaultValue: 'members' })}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  // ── Pinned "Your Rank" bar ─────────────────────────────────────────────────
+  const yourRankBar = (
+    rank: number, stat: number | null, statLabel: string, emptyHint: string,
+  ) => (
+    <View style={{
+      marginHorizontal: 20, marginBottom: 20, marginTop: 4,
+      borderRadius: 18, padding: 14,
+      backgroundColor: C.goldBg, borderWidth: 1.5, borderColor: C.goldBd,
+      flexDirection: 'row', alignItems: 'center',
+      shadowColor: C.gold, shadowOpacity: 0.18, shadowRadius: 10, elevation: 4,
+    }}>
+      <View style={{
+        width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+        alignItems: 'center', justifyContent: 'center', marginRight: 12,
+        borderWidth: 1.5, borderColor: C.gold,
+      }}>
+        <Text style={{ color: C.gold, fontSize: 15, fontWeight: '900' }}>
+          {rank > 0 ? (rank > 30 ? '30+' : `#${rank}`) : '–'}
+        </Text>
+      </View>
+      <DPAvatar name={myName} photoURL={myPhoto} size={40} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: C.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
+          {t('leaderboard.yourRank', { defaultValue: 'YOUR RANK' })}
+        </Text>
+        <Text style={{ color: C.text, fontSize: 15, fontWeight: '800' }} numberOfLines={1}>{myName}</Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={{ color: C.text, fontSize: 16, fontWeight: '800' }}>
+          {stat !== null ? `💎${fmtCompact(stat)}` : '–'}
+        </Text>
+        <Text style={{ color: C.muted, fontSize: 11 }}>{rank > 0 ? statLabel : emptyHint}</Text>
+      </View>
+    </View>
+  );
+
+  const loading = (
+    <View style={{ paddingVertical: 48, alignItems: 'center' }}>
+      <ActivityIndicator color={C.primary} />
+    </View>
+  );
 
   return (
     <Modal
@@ -210,14 +449,32 @@ export function LeaderboardModal({
           alignSelf: 'center', marginTop: 12,
         }} />
 
+        {/* ── Premium header ── */}
         <View style={{
           flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 20, paddingTop: 16, paddingBottom: 14,
+          paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12,
         }}>
-          <Text style={{ fontSize: 18, marginRight: 8 }}>🏆</Text>
-          <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '800' }}>
-            {t('leaderboard.title', { defaultValue: 'Leaderboard' })}
-          </Text>
+          <View style={{
+            width: 44, height: 44, borderRadius: 22, backgroundColor: C.goldBg,
+            alignItems: 'center', justifyContent: 'center', marginRight: 12,
+            borderWidth: 1.5, borderColor: C.goldBd,
+          }}>
+            <Text style={{ fontSize: 22 }}>🏆</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.3 }}>
+              {t('leaderboard.title', { defaultValue: 'Leaderboard' })}
+            </Text>
+            <View style={{
+              alignSelf: 'flex-start', backgroundColor: C.goldBg, borderRadius: 10,
+              paddingHorizontal: 8, paddingVertical: 3, marginTop: 4,
+              borderWidth: 1, borderColor: C.goldBd,
+            }}>
+              <Text style={{ color: C.gold, fontSize: 11, fontWeight: '800' }}>
+                ✨ {t('leaderboard.thisWeek', { defaultValue: 'This Week' })}
+              </Text>
+            </View>
+          </View>
           <Pressable onPress={onClose} hitSlop={14}>
             <Feather name="x" size={22} color={C.muted} />
           </Pressable>
@@ -236,15 +493,19 @@ export function LeaderboardModal({
                 onPress={() => setTab(key)}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
-                  paddingVertical: 9, paddingHorizontal: 14, borderRadius: 20,
+                  paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20,
                   backgroundColor: active ? C.primary : C.surface,
+                  borderWidth: active ? 0 : 1, borderColor: active ? 'transparent' : C.border,
                   gap: 6,
+                  shadowColor: active ? C.primary : 'transparent',
+                  shadowOpacity: active ? 0.3 : 0, shadowRadius: active ? 8 : 0,
+                  elevation: active ? 3 : 0,
                 }}
               >
                 <Feather name={icon} size={14} color={active ? '#fff' : C.muted} />
                 <Text style={{
                   color: active ? '#fff' : C.muted,
-                  fontSize: 13, fontWeight: '700',
+                  fontSize: 13, fontWeight: '800',
                 }}>
                   {label}
                 </Text>
@@ -256,184 +517,99 @@ export function LeaderboardModal({
         {/* ── Top Rooms ── */}
         {tab === 'rooms' && (
           roomsLoading
-            ? <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-                <ActivityIndicator color={C.primary} />
-              </View>
+            ? loading
             : rooms.length === 0
-              ? <EmptyState icon="mic-off" message={t('leaderboard.noData', { defaultValue: 'No rooms yet' })} />
-              : <FlatList
-                  data={rooms}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
-                  renderItem={({ item, index }) => (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center',
-                      paddingVertical: 12,
-                      borderBottomWidth: 1, borderBottomColor: C.surface,
-                    }}>
-                      <RankBadge rank={index + 1} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                          {item.ownerName ?? ''}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ color: C.primary, fontSize: 18, fontWeight: '800' }}>
-                          {item.memberCount}
-                        </Text>
-                        <Text style={{ color: C.muted, fontSize: 11 }}>
-                          {t('leaderboard.members', { defaultValue: 'members' })}
-                        </Text>
-                      </View>
-                    </View>
+              ? <EmptyState icon="home" message={t('leaderboard.noData', { defaultValue: 'No rooms yet' })} />
+              : <>
+                  <FlatList
+                    data={rooms}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                    renderItem={({ item, index }) => renderRoomRow(item, index, false)}
+                  />
+                  {yourRankBar(
+                    myRoomRank, null,
+                    t('leaderboard.members', { defaultValue: 'members' }),
+                    t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
                   )}
-                />
+                </>
         )}
 
         {/* ── Top Live ── */}
         {tab === 'live' && (
           roomsLoading
-            ? <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-                <ActivityIndicator color={C.primary} />
-              </View>
+            ? loading
             : liveRooms.length === 0
               ? <EmptyState icon="radio" message={t('leaderboard.noLive', { defaultValue: 'No live rooms right now' })} />
-              : <FlatList
-                  data={liveRooms}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
-                  renderItem={({ item, index }) => (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center',
-                      paddingVertical: 12,
-                      borderBottomWidth: 1, borderBottomColor: C.surface,
-                    }}>
-                      <RankBadge rank={index + 1} />
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          <View style={{
-                            backgroundColor: '#FEE2E2', borderRadius: 8,
-                            paddingHorizontal: 6, paddingVertical: 2,
-                          }}>
-                            <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>LIVE</Text>
-                          </View>
-                        </View>
-                        <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                          {item.ownerName ?? ''}
-                        </Text>
-                      </View>
-                      <Text style={{ color: C.primary, fontSize: 18, fontWeight: '800' }}>
-                        {item.memberCount}
-                      </Text>
-                    </View>
+              : <>
+                  <FlatList
+                    data={liveRooms}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                    renderItem={({ item, index }) => renderRoomRow(item, index, true)}
+                  />
+                  {yourRankBar(
+                    myLiveRank, null,
+                    t('leaderboard.members', { defaultValue: 'members' }),
+                    t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
                   )}
-                />
+                </>
         )}
 
         {/* ── Top Senders ── */}
         {tab === 'senders' && (
           sendersLoading
-            ? <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-                <ActivityIndicator color={C.primary} />
-              </View>
+            ? loading
             : senders.length === 0
-              ? <EmptyState icon="gift" message={t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })} />
-              : <FlatList
-                  data={senders}
-                  keyExtractor={(item) => item.uid}
-                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
-                  renderItem={({ item, index }) => (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center',
-                      paddingVertical: 12,
-                      borderBottomWidth: 1, borderBottomColor: C.surface,
-                    }}>
-                      <RankBadge rank={index + 1} />
-                      {item.photoURL ? (
-                        <Image
-                          source={{ uri: item.photoURL }}
-                          style={{ width: 42, height: 42, borderRadius: 21, marginRight: 12 }}
-                        />
-                      ) : (
-                        <View style={{
-                          width: 42, height: 42, borderRadius: 21, marginRight: 12,
-                          backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <Text style={{ color: C.muted, fontSize: 16, fontWeight: '700' }}>
-                            {item.name[0]?.toUpperCase() ?? '?'}
-                          </Text>
-                        </View>
-                      )}
-                      <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ color: C.primary, fontSize: 18, fontWeight: '800' }}>
-                          {item.weeklySent ?? 0}
-                        </Text>
-                        <Text style={{ color: C.muted, fontSize: 11 }}>
-                          {t('leaderboard.gifts', { defaultValue: 'gifts' })}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
+              ? <EmptyState
+                  icon="gift"
+                  message={t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })}
+                  hint={t('leaderboard.sendersHint', { defaultValue: 'Send gifts in voice rooms to climb the ranks!' })}
                 />
+              : <>
+                  <FlatList
+                    data={senders}
+                    keyExtractor={(item) => item.uid}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                    renderItem={({ item, index }) => renderUserRow(
+                      item, index, item.weeklySent ?? 0,
+                      t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
+                    )}
+                  />
+                  {yourRankBar(
+                    mySenderRank, mySent,
+                    t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
+                    t('leaderboard.sendersHint', { defaultValue: 'Send gifts to rank!' }),
+                  )}
+                </>
         )}
 
         {/* ── Top Receivers ── */}
         {tab === 'receivers' && (
           receiversLoading
-            ? <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-                <ActivityIndicator color={C.primary} />
-              </View>
+            ? loading
             : receivers.length === 0
-              ? <EmptyState icon="award" message={t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })} />
-              : <FlatList
-                  data={receivers}
-                  keyExtractor={(item) => item.uid}
-                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48 }}
-                  renderItem={({ item, index }) => (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center',
-                      paddingVertical: 12,
-                      borderBottomWidth: 1, borderBottomColor: C.surface,
-                    }}>
-                      <RankBadge rank={index + 1} />
-                      {item.photoURL ? (
-                        <Image
-                          source={{ uri: item.photoURL }}
-                          style={{ width: 42, height: 42, borderRadius: 21, marginRight: 12 }}
-                        />
-                      ) : (
-                        <View style={{
-                          width: 42, height: 42, borderRadius: 21, marginRight: 12,
-                          backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          <Text style={{ color: C.muted, fontSize: 16, fontWeight: '700' }}>
-                            {item.name[0]?.toUpperCase() ?? '?'}
-                          </Text>
-                        </View>
-                      )}
-                      <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ color: C.gold, fontSize: 18, fontWeight: '800' }}>
-                          💎{item.weeklyEarned ?? 0}
-                        </Text>
-                        <Text style={{ color: C.muted, fontSize: 11 }}>
-                          {t('leaderboard.diamonds', { defaultValue: 'diamonds' })}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
+              ? <EmptyState
+                  icon="award"
+                  message={t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })}
+                  hint={t('leaderboard.receiversHint', { defaultValue: 'Receive gifts in voice rooms to climb the ranks!' })}
                 />
+              : <>
+                  <FlatList
+                    data={receivers}
+                    keyExtractor={(item) => item.uid}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                    renderItem={({ item, index }) => renderUserRow(
+                      item, index, item.weeklyEarned ?? 0,
+                      t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
+                    )}
+                  />
+                  {yourRankBar(
+                    myReceiverRank, myEarned,
+                    t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
+                    t('leaderboard.receiversHint', { defaultValue: 'Receive gifts to rank!' }),
+                  )}
+                </>
         )}
       </View>
     </Modal>
