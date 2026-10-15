@@ -335,6 +335,48 @@ export async function recordWeeklyLeaderboardStats(args: {
   }
 }
 
+/**
+ * 2026-10-15 (Sumon): PERMANENT gift count aggregate — lifetime per-gift
+ * received counts at wallets/{uid}/giftCounts/{giftId}. Incremented via
+ * transaction on EVERY gift received (both VPS primary and Firebase fallback
+ * paths; self-gifts excluded). The Gift Display screen reads this (not the
+ * 50-transaction history limit), so counts stay accurate forever — even with
+ * crores of gifts.
+ */
+export async function recordGiftReceivedCount(toUid: string, giftId: string): Promise<void> {
+  if (!toUid || !giftId) return;
+  try {
+    const { runTransaction } = await import('firebase/database');
+    const countRef = ref(database, `wallets/${toUid}/giftCounts/${giftId}`);
+    await runTransaction(countRef, (cur) => {
+      const n = typeof cur === 'number' ? cur : 0;
+      return n + 1;
+    });
+  } catch {
+    // Non-critical — gift already completed; count syncs on next gift.
+  }
+}
+
+/** Subscribe to lifetime gift counts (for Gift Display screen). */
+export function subscribeGiftCounts(
+  uid: string,
+  callback: (counts: Record<string, number>) => void,
+): () => void {
+  const countsRef = ref(database, `wallets/${uid}/giftCounts`);
+  return onValue(countsRef, (snap) => {
+    const counts: Record<string, number> = {};
+    if (snap.exists()) {
+      snap.forEach((child) => {
+        const n = child.val();
+        if (typeof n === 'number' && n > 0) counts[child.key as string] = n;
+      });
+    }
+    callback(counts);
+  }, () => {
+    callback({});
+  });
+}
+
 async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
@@ -528,6 +570,10 @@ async function sendGiftViaFirebase(
         platformCommission,
       });
     }
+    // 2026-10-15 (Sumon): permanent lifetime gift count (self-gifts excluded).
+    if (toUid !== fromUid) {
+      recordGiftReceivedCount(toUid, giftId).catch(() => {});
+    }
   } catch {
     // History write failed — gift already completed, don't fail
   }
@@ -607,6 +653,8 @@ export async function sendGift({
         } catch {
           // XP write failed — gift stands; noble progress for this gift is lost.
         }
+        // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
+        recordGiftReceivedCount(toUid, giftId).catch(() => {});
         // Weekly leaderboard stats (best-effort; self-gifts excluded inside).
         try {
           const me = auth.currentUser;
