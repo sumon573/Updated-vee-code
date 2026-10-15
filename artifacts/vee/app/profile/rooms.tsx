@@ -11,10 +11,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import {
-  View, Text, FlatList, Pressable,
-  ActivityIndicator, Image, Alert,
-} from 'react-native';
+import { View, Text, FlatList, Pressable, Image, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -26,8 +24,7 @@ import {
   subscribeMyRoomsCombined,
   disbandRoom,
   cleanupStaleReservations,
-  type RoomInfo,
-} from '@/src/features/voice-room/services/firebaseRoomService';
+  type RoomInfo } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -41,8 +38,7 @@ const C = {
   border:  '#E5E5EA',
   surface: '#F2F2F7',
   gold:    '#F59E0B',
-  green:   '#22C55E',
-} as const;
+  green:   '#22C55E' } as const;
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
@@ -53,16 +49,14 @@ const ROLE_ORDER: Record<UserRole, number> = { owner: 0, admin: 1, member: 2 };
 const ROLE_CONFIG: Record<UserRole, { color: string; bg: string; border: string; label: string }> = {
   owner:  { color: C.gold,    bg: 'rgba(245,158,11,0.15)',  border: 'rgba(245,158,11,0.35)',  label: 'Owner'  },
   admin:  { color: '#7C3AED', bg: 'rgba(124,58,237,0.15)',  border: 'rgba(124,58,237,0.35)',  label: 'Admin'  },
-  member: { color: C.muted,   bg: 'rgba(142,142,147,0.08)', border: 'rgba(142,142,147,0.18)', label: 'Member' },
-};
+  member: { color: C.muted,   bg: 'rgba(142,142,147,0.08)', border: 'rgba(142,142,147,0.18)', label: 'Member' } };
 
 function RoleBadge({ role }: { role: UserRole }) {
   const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.member; // Fallback for unexpected roles
   return (
     <View style={{
       paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-      backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border,
-    }}>
+      backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }}>
       <Text style={{ color: cfg.color, fontSize: 11, fontWeight: '700' }}>{cfg.label}</Text>
     </View>
   );
@@ -71,8 +65,7 @@ function RoleBadge({ role }: { role: UserRole }) {
 // ─── Room card ────────────────────────────────────────────────────────────────
 
 function RoomCard({
-  room, role, onDelete, onRoomPress,
-}: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void }) {
+  room, role, onDelete, onRoomPress }: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void }) {
   // Backward compatible: rooms created before the `active` flag existed
   // (or with a missing field) are treated as active. Only an explicit
   // `active: false` means closed.
@@ -103,8 +96,7 @@ function RoomCard({
         borderWidth: 1,
         borderColor: isActive ? '#E5E5EA' : '#F2F2F7',
         padding: 12, marginBottom: 10,
-        opacity: isActive ? 1 : 0.55,
-      }}
+        opacity: isActive ? 1 : 0.55 }}
     >
       {/* Thumbnail */}
       {room.coverImageUrl ? (
@@ -117,8 +109,7 @@ function RoomCard({
           width: 52, height: 52, borderRadius: 12,
           backgroundColor: (room.themeColor || C.glow) + '33',
           borderWidth: 1, borderColor: (room.themeColor || C.glow) + '66',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
+          alignItems: 'center', justifyContent: 'center' }}>
           <Feather name={isActive ? 'mic' : 'mic-off'} size={22} color={isActive ? (room.themeColor || C.glow) : C.muted} />
         </View>
       )}
@@ -142,8 +133,7 @@ function RoomCard({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{
             width: 7, height: 7, borderRadius: 4,
-            backgroundColor: isActive ? C.green : C.muted,
-          }} />
+            backgroundColor: isActive ? C.green : C.muted }} />
           <Text style={{ color: isActive ? C.green : C.muted, fontSize: 11 }}>
             {isActive ? 'Live' : 'Closed'} · {room.memberCount ?? 0} members
           </Text>
@@ -156,8 +146,7 @@ function RoomCard({
           onPress={onDelete}
           hitSlop={10}
           style={{
-            padding: 6, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.1)',
-          }}
+            padding: 6, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.1)' }}
         >
           <Feather name="trash-2" size={16} color="#EF4444" />
         </Pressable>
@@ -240,8 +229,7 @@ export default function ProfileRoomsScreen() {
             } catch {
               Alert.alert('Delete failed', 'Could not delete the room. Please try again.');
             }
-          },
-        },
+          } },
       ],
     );
   };
@@ -257,8 +245,7 @@ export default function ProfileRoomsScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingVertical: 14,
-        borderBottomWidth: 1, borderBottomColor: C.border,
-      }}>
+        borderBottomWidth: 1, borderBottomColor: C.border }}>
         <Pressable onPress={() => router.back()} style={{ marginRight: 14 }}>
           <Feather name="arrow-left" size={24} color={C.text} />
         </Pressable>
@@ -270,7 +257,7 @@ export default function ProfileRoomsScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={C.glow} size="large" />
+          <PremiumLoader size="large" />
         </View>
       ) : sorted.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
