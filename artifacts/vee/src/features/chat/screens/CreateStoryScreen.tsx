@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  View, Text, FlatList, Pressable, Image,
-  Dimensions, ActivityIndicator, Alert,
-} from 'react-native';
+import { View, Text, FlatList, Pressable, Image, Dimensions, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
@@ -40,8 +38,7 @@ export default function CreateStoryScreen() {
       after: reset ? undefined : endCursor.current,
       album: (albumId ?? activeAlbum.current) as any,
       mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
-      sortBy: [MediaLibrary.SortBy.creationTime],
-    });
+      sortBy: [MediaLibrary.SortBy.creationTime] });
     endCursor.current = result.endCursor;
     hasNextPage.current = result.hasNextPage;
     if (reset) {
@@ -123,8 +120,7 @@ export default function CreateStoryScreen() {
       // Single select → go to share page
       router.push({
         pathname: '/story-share',
-        params: { assetId: asset.id, uri: asset.uri, mediaType: asset.mediaType },
-      });
+        params: { assetId: asset.id, uri: asset.uri, mediaType: asset.mediaType } });
     }
   }, [multiSelect, router]);
 
@@ -156,8 +152,7 @@ export default function CreateStoryScreen() {
         style={{
           width: ITEM_SIZE, height: ITEM_SIZE,
           margin: 1,
-          opacity: isSelected ? 0.7 : 1,
-        }}
+          opacity: isSelected ? 0.7 : 1 }}
       >
         <Image
           source={{ uri: item.uri }}
@@ -168,8 +163,7 @@ export default function CreateStoryScreen() {
           <View style={{
             position: 'absolute', bottom: 6, right: 6,
             backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
-            paddingHorizontal: 6, paddingVertical: 2,
-          }}>
+            paddingHorizontal: 6, paddingVertical: 2 }}>
             <Feather name="play" size={12} color="#fff" />
           </View>
         )}
@@ -177,8 +171,7 @@ export default function CreateStoryScreen() {
           <View style={{
             position: 'absolute', top: 6, right: 6,
             width: 24, height: 24, borderRadius: 12,
-            backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center',
-          }}>
+            backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center' }}>
             <Feather name="check" size={14} color="#fff" />
           </View>
         )}
@@ -192,16 +185,14 @@ export default function CreateStoryScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingTop: 50, paddingBottom: 12, paddingHorizontal: 16,
-        borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-      }}>
+        borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4 }}>
           <Feather name="x" size={24} color="#000" />
         </Pressable>
         <Text style={{
           flex: 1, textAlign: 'center',
           fontSize: 17, fontWeight: '700', color: '#000',
-          marginRight: 28,
-        }}>
+          marginRight: 28 }}>
           {t('story.createStory', { defaultValue: 'Create story' })}
         </Text>
       </View>
@@ -209,14 +200,12 @@ export default function CreateStoryScreen() {
       {/* Three cards: Text, Music, Collage */}
       <View style={{
         flexDirection: 'row', paddingHorizontal: 16,
-        paddingVertical: 12, gap: 12,
-      }}>
+        paddingVertical: 12, gap: 12 }}>
         <Pressable
           onPress={handleTextStory}
           style={{
             flex: 1, backgroundColor: '#f5f5f5', borderRadius: 12,
-            paddingVertical: 20, alignItems: 'center',
-          }}
+            paddingVertical: 20, alignItems: 'center' }}
         >
           <Text style={{ fontSize: 28, fontWeight: '800', color: '#000', marginBottom: 4 }}>Aa</Text>
           <Text style={{ fontSize: 13, color: '#000' }}>
@@ -227,8 +216,7 @@ export default function CreateStoryScreen() {
           onPress={handleMusicStory}
           style={{
             flex: 1, backgroundColor: '#f5f5f5', borderRadius: 12,
-            paddingVertical: 20, alignItems: 'center',
-          }}
+            paddingVertical: 20, alignItems: 'center' }}
         >
           <Feather name="music" size={28} color="#000" style={{ marginBottom: 4 }} />
           <Text style={{ fontSize: 13, color: '#000' }}>
@@ -239,8 +227,7 @@ export default function CreateStoryScreen() {
           onPress={handleCollageStory}
           style={{
             flex: 1, backgroundColor: '#f5f5f5', borderRadius: 12,
-            paddingVertical: 20, alignItems: 'center',
-          }}
+            paddingVertical: 20, alignItems: 'center' }}
         >
           <Feather name="grid" size={28} color="#000" style={{ marginBottom: 4 }} />
           <Text style={{ fontSize: 13, color: '#000' }}>
@@ -252,8 +239,7 @@ export default function CreateStoryScreen() {
       {/* Gallery header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 16, paddingVertical: 8,
-      }}>
+        paddingHorizontal: 16, paddingVertical: 8 }}>
         <Pressable
           onPress={() => setAlbumPickerOpen(true)}
           style={{ flexDirection: 'row', alignItems: 'center' }}
@@ -271,8 +257,7 @@ export default function CreateStoryScreen() {
           style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: multiSelect ? '#1877F2' : '#f0f0f0',
-            borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
-          }}
+            borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }}
         >
           <Feather
             name="image"
@@ -282,8 +267,7 @@ export default function CreateStoryScreen() {
           />
           <Text style={{
             fontSize: 13, fontWeight: '600',
-            color: multiSelect ? '#fff' : '#000',
-          }}>
+            color: multiSelect ? '#fff' : '#000' }}>
             {t('story.selectMultiple', { defaultValue: 'Select multiple' })}
           </Text>
         </Pressable>
@@ -292,7 +276,7 @@ export default function CreateStoryScreen() {
       {/* Photo grid */}
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color="#1877F2" />
+          <PremiumLoader size="large" />
         </View>
       ) : !hasPermission ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -311,7 +295,7 @@ export default function CreateStoryScreen() {
           onEndReachedThreshold={0.5}
           ListFooterComponent={
             loadingMore ? (
-              <ActivityIndicator size="small" color="#1877F2" style={{ paddingVertical: 16 }} />
+              <PremiumLoader size="small" />
             ) : null
           }
         />
@@ -326,8 +310,7 @@ export default function CreateStoryScreen() {
           backgroundColor: '#fff',
           alignItems: 'center', justifyContent: 'center',
           shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
-        }}
+          shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 }}
       >
         <Feather name="camera" size={24} color="#1877F2" />
       </Pressable>
@@ -341,15 +324,12 @@ export default function CreateStoryScreen() {
               pathname: '/story-share',
               params: {
                 mode: 'collage',
-                assets: JSON.stringify(selectedAssets.map(a => ({ id: a.id, uri: a.uri }))),
-              },
-            });
+                assets: JSON.stringify(selectedAssets.map(a => ({ id: a.id, uri: a.uri }))) } });
           }}
           style={{
             position: 'absolute', bottom: 30, left: 20, right: 90,
             backgroundColor: '#1877F2', borderRadius: 12,
-            paddingVertical: 14, alignItems: 'center',
-          }}
+            paddingVertical: 14, alignItems: 'center' }}
         >
           <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
             {t('story.continue', { defaultValue: 'Continue' })} ({selected.size})
@@ -364,18 +344,15 @@ export default function CreateStoryScreen() {
           style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 20,
-            justifyContent: 'center', alignItems: 'center',
-          }}
+            justifyContent: 'center', alignItems: 'center' }}
         >
           <View style={{
             backgroundColor: '#fff', borderRadius: 16,
             width: width - 60, maxHeight: height * 0.6,
-            overflow: 'hidden',
-          }}>
+            overflow: 'hidden' }}>
             <Text style={{
               fontSize: 16, fontWeight: '700', color: '#000',
-              padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-            }}>
+              padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
               {t('story.selectAlbum', { defaultValue: 'Select album' })}
             </Text>
             <FlatList
@@ -387,8 +364,7 @@ export default function CreateStoryScreen() {
                   style={{
                     paddingHorizontal: 16, paddingVertical: 14,
                     borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
-                    backgroundColor: (selectedAlbum ?? null) === item.id ? '#f0f7ff' : '#fff',
-                  }}
+                    backgroundColor: (selectedAlbum ?? null) === item.id ? '#f0f7ff' : '#fff' }}
                 >
                   <Text style={{ fontSize: 14, color: '#000' }}>{item.title}</Text>
                 </Pressable>
