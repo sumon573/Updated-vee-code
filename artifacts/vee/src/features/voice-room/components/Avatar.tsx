@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Text, Animated, Easing, Image, View } from 'react-native';
 import AnimatedFrame from '../../../components/AnimatedFrame';
 import { C } from '../constants/theme';
+import { nobleThemeFor } from '@/src/services/nobleService';
 
 /* ─────────────────────────── MsgText ─────────────────────────── */
 export function MsgText({ text, accent }: { text: string; accent: string }) {
@@ -36,7 +37,13 @@ type FlowerParticle = {
   fSize: number; char: string; spin: number;
 };
 
-function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
+function SpeakingRipple({ size, visible, nobleRankIndex }: { size: number; visible: boolean; nobleRankIndex?: number }) {
+  // 2026-10-15 (Sumon): per-rank ripple theme — every noble rank gets its OWN
+  // ripple colors + particles. Non-nobles get the default premium theme.
+  const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
+  const mistColors = theme ? theme.rippleMist : MIST_COLORS;
+  const particleChars = theme ? theme.rippleParticles : FLOWER_CHARS;
+  const waveColor = theme ? theme.rippleWave : '#FFFFFF';
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
@@ -52,7 +59,7 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
       dur: 1300 + Math.random() * 900,
       delay: (i / 14) * 1400,
       dotSize: 4 + Math.random() * 5,
-      color: MIST_COLORS[i % MIST_COLORS.length],
+      color: mistColors[i % mistColors.length],
     }));
   }
   const particles = particlesRef.current;
@@ -66,7 +73,7 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
       dur: 1500 + Math.random() * 1000,
       delay: (i / 7) * 1600,
       fSize: 10 + Math.random() * 5,
-      char: FLOWER_CHARS[i % FLOWER_CHARS.length],
+      char: particleChars[i % particleChars.length],
       spin: Math.random() > 0.5 ? 1 : -1,
     }));
   }
@@ -108,7 +115,7 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
         style={{
           position: 'absolute',
           width: waveD, height: waveD, borderRadius: waveD / 2,
-          borderWidth: 2, borderColor: 'rgba(255,255,255,0.95)',
+          borderWidth: 2, borderColor: waveColor,
           transform: [{ scale }], opacity,
         }}
       />
@@ -187,14 +194,14 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
 // 2026-10-15 (Sumon): NO fake zoom/pulse. DP is 100% stable.
 // Speaking indicator = premium ripple (waves + mist + flowers) OUTSIDE the frame,
 // ONLY while actually speaking (voice detected).
-export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType }: {
+export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex }: {
   initials: string; color: string; size: number; speaking: boolean; accent: string;
-  photoURL?: string; frameType?: string;
+  photoURL?: string; frameType?: string; nobleRankIndex?: number;
 }) {
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       {/* Ripple BEHIND the avatar — expands outward */}
-      <SpeakingRipple size={size} visible={speaking} />
+      <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} />
       {/* DP — completely stable, no animation */}
       <View style={{
         width: size, height: size, borderRadius: size / 2,
