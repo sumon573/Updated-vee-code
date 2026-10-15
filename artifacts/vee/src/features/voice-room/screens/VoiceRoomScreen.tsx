@@ -2809,8 +2809,9 @@ export default function VoiceRoomScreen() {
         backgroundColor: 'transparent',
       }}>
         {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={handleMicBarPress}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: mySeatIdx < 0 ? accentColor + '22'
@@ -2838,10 +2839,12 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
 
         {/* Speaker — uniform circle */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={toggleSpeaker}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: 'rgba(255,255,255,0.1)',
@@ -2857,10 +2860,12 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
 
         {/* Task Center (2026-10-14, imo-style) — Live voice-room events, currently inactive */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: 'rgba(255,255,255,0.1)',
@@ -2881,10 +2886,12 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
 
         {/* Gifts — hero */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.pink,
               alignItems: 'center', justifyContent: 'center',
               shadowColor: C.pink, shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
@@ -2897,10 +2904,12 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
 
         {/* Invite — uniform circle */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => setInviteOpen(true)}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: 'rgba(255,255,255,0.1)',
@@ -2916,10 +2925,12 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
 
         {/* Exit Room — uniform circle */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-          <View style={{ width: 60, alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
             <View style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: 'rgba(239,68,68,0.15)',
@@ -2935,6 +2946,7 @@ export default function VoiceRoomScreen() {
             </Text>
           </View>
         </ScalePress>
+        </View>
       </View>
       )}
 
