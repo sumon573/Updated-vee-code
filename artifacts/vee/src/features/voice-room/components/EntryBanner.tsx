@@ -8,11 +8,16 @@
  * `nobleRankIndex` (0-9) is computed by the SENDER from their real noble
  * state and broadcast with the entry event; receivers render the rank's theme.
  * Absent = non-noble standard blue banner.
+ *
+ * 2026-10-15 (Sumon): Count+ (rankIndex >= 3) gets PREMIUM animated entry:
+ * wide horizontal banner from right, DP with crown frame, name only,
+ * shimmering rank-color background + sparkles.
  */
 import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
+import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
 
 interface EntryBannerProps {
   /** The joiner's display name */
@@ -30,6 +35,11 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
   const rankName = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.name : null;
   const isNoble = !!theme && !!rankName;
+  // 2026-10-15 (Sumon): Count+ (index >= 3) gets PREMIUM animated entry effect
+  const isPremiumEntry = nobleRankIndex != null && nobleRankIndex >= 3;
+  const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
+  const catalog = rankKey ? NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rankKey) : null;
+  const frameUrl = catalog?.frame?.designUrl;
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -67,6 +77,94 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   }, []);
 
   const initials = name.trim().charAt(0).toUpperCase() || '?';
+
+  // 2026-10-15 (Sumon): PREMIUM entry for Count+ — wide banner from right,
+  // DP with crown frame, name only, shimmering rank color + sparkles.
+  if (isPremiumEntry && theme) {
+    const rankColor = NOBLE_RANKS[nobleRankIndex!]?.color || '#7E57C2';
+    return (
+      <Animated.View
+        style={{
+          transform: [{ translateX: slideAnim }],
+          opacity: opacityAnim,
+          position: 'absolute',
+          top: 60,
+          right: 0,
+          zIndex: 100,
+        }}
+        pointerEvents="none"
+      >
+        <LinearGradient
+          colors={[rankColor + 'F2', rankColor + 'D9']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderTopLeftRadius: 18,
+            borderBottomLeftRadius: 18,
+            paddingVertical: 10,
+            paddingLeft: 14,
+            paddingRight: 20,
+            borderWidth: 1,
+            borderRightWidth: 0,
+            borderColor: '#FFD70066',
+            shadowColor: rankColor,
+            shadowOffset: { width: -4, height: 0 },
+            shadowOpacity: 0.6,
+            shadowRadius: 16,
+            elevation: 8,
+            minWidth: 200,
+          }}
+        >
+          {/* DP with crown frame */}
+          <View style={{ width: 52, height: 52, marginRight: 12 }}>
+            {frameUrl && /^https?:\/\//i.test(frameUrl) ? (
+              <Image
+                source={{ uri: frameUrl }}
+                style={{ position: 'absolute', width: 52, height: 52 }}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={{
+                position: 'absolute', width: 52, height: 52, borderRadius: 26,
+                borderWidth: 2.5, borderColor: rankColor,
+              }} />
+            )}
+            {photoURL ? (
+              <Image
+                source={{ uri: photoURL }}
+                style={{ width: 40, height: 40, borderRadius: 20, margin: 6 }}
+              />
+            ) : (
+              <View style={{
+                width: 40, height: 40, borderRadius: 20, margin: 6,
+                backgroundColor: 'rgba(255,255,255,0.25)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>
+                  {initials}
+                </Text>
+              </View>
+            )}
+            <Text style={{ position: 'absolute', top: -10, left: 14, fontSize: 18 }}>
+              👑
+            </Text>
+          </View>
+          {/* Name only — no extra text */}
+          <Text
+            style={{ color: '#fff', fontSize: 17, fontWeight: '800' }}
+            numberOfLines={1}
+          >
+            {name}
+          </Text>
+          {/* Sparkles */}
+          <Text style={{ position: 'absolute', top: 4, right: 10, fontSize: 10 }}>✨</Text>
+          <Text style={{ position: 'absolute', bottom: 6, right: 28, fontSize: 10 }}>✨</Text>
+        </LinearGradient>
+      </Animated.View>
+    );
+  }
 
   return (
     <Animated.View
