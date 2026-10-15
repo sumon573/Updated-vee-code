@@ -4,10 +4,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  View, Text, FlatList, ActivityIndicator,
-  Pressable, Image, Platform,
-} from 'react-native';
+import { View, Text, FlatList, Pressable, Image, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -24,8 +22,7 @@ const C = {
   muted: '#8E8E93',
   dim: '#C7C7CC',
   border: '#E5E5EA',
-  surface: '#F2F2F7',
-} as const;
+  surface: '#F2F2F7' } as const;
 
 function UserRow({ user, onPress }: { user: VeeUser; onPress: () => void }) {
   const initials = user.name
@@ -38,8 +35,7 @@ function UserRow({ user, onPress }: { user: VeeUser; onPress: () => void }) {
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: C.surface, borderRadius: 16,
         padding: 12, marginBottom: 10,
-        borderWidth: 1, borderColor: C.border,
-      }}
+        borderWidth: 1, borderColor: C.border }}
     >
       {user.photoURL ? (
         <Image
@@ -50,8 +46,7 @@ function UserRow({ user, onPress }: { user: VeeUser; onPress: () => void }) {
         <View style={{
           width: 48, height: 48, borderRadius: 24, marginRight: 14,
           backgroundColor: 'rgba(139,92,246,0.25)',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
+          alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>{initials}</Text>
         </View>
       )}
@@ -121,8 +116,7 @@ export default function FollowersScreen() {
         <View style={{
           flexDirection: 'row', alignItems: 'center',
           paddingHorizontal: 16,
-          paddingTop: topPad + 10, paddingBottom: 16,
-        }}>
+          paddingTop: topPad + 10, paddingBottom: 16 }}>
           <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
             <Feather name="arrow-left" size={24} color={C.text} />
           </Pressable>
@@ -141,13 +135,11 @@ export default function FollowersScreen() {
               style={{
                 flex: 1, paddingVertical: 10, alignItems: 'center',
                 borderBottomWidth: 2,
-                borderBottomColor: activeTab === tab ? C.text : 'transparent',
-              }}
+                borderBottomColor: activeTab === tab ? C.text : 'transparent' }}
             >
               <Text style={{
                 fontSize: 15, fontWeight: activeTab === tab ? '800' : '500',
-                color: activeTab === tab ? C.text : C.muted,
-              }}>
+                color: activeTab === tab ? C.text : C.muted }}>
                 {tab === 'followers' ? 'Followers' : 'Following'}
               </Text>
             </Pressable>
@@ -156,7 +148,7 @@ export default function FollowersScreen() {
 
         {loading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={C.glow} size="large" />
+            <PremiumLoader size="large" />
           </View>
         ) : users.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60 }}>
