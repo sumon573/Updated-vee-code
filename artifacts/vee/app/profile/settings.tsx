@@ -8,11 +8,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, ScrollView, Pressable,
-  Switch, Alert, Platform, Modal, TextInput,
-  ActivityIndicator, Share,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, Alert, Platform, Modal, TextInput, Share } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -23,8 +20,7 @@ import {
   sendPasswordResetEmail,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  deleteUser,
-} from 'firebase/auth';
+  deleteUser } from 'firebase/auth';
 import { auth, database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
@@ -39,8 +35,7 @@ const C = {
   mutedDim: '#C7C7CC',
   border: '#E5E5EA',
   surface: '#F2F2F7',
-  red: '#EF4444',
-} as const;
+  red: '#EF4444' } as const;
 
 type AppSettings = {
   autoPlayMedia: boolean;
@@ -49,14 +44,12 @@ type AppSettings = {
 
 const DEFAULTS: AppSettings = {
   autoPlayMedia: true,
-  dataSaver: false,
-};
+  dataSaver: false };
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function SettingToggle({
-  icon, label, subtitle, value, onChange,
-}: {
+  icon, label, subtitle, value, onChange }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
   subtitle?: string;
@@ -68,13 +61,11 @@ function SettingToggle({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA',
-    }}>
+      borderWidth: 1, borderColor: '#E5E5EA' }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,
         backgroundColor: 'rgba(139,92,246,0.14)',
-        alignItems: 'center', justifyContent: 'center', marginRight: 14,
-      }}>
+        alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
         <Feather name={icon} size={18} color={C.glow} />
       </View>
       <View style={{ flex: 1 }}>
@@ -94,8 +85,7 @@ function SettingToggle({
 }
 
 function SettingButton({
-  icon, label, onPress, danger,
-}: {
+  icon, label, onPress, danger }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
   onPress: () => void;
@@ -107,13 +97,11 @@ function SettingButton({
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: C.surface, borderRadius: 16,
         padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: '#E5E5EA',
-      }}>
+        borderWidth: 1, borderColor: '#E5E5EA' }}>
         <View style={{
           width: 40, height: 40, borderRadius: 12,
           backgroundColor: danger ? 'rgba(239,68,68,0.12)' : 'rgba(139,92,246,0.14)',
-          alignItems: 'center', justifyContent: 'center', marginRight: 14,
-        }}>
+          alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
           <Feather name={icon} size={18} color={danger ? C.red : C.glow} />
         </View>
         <Text style={{ flex: 1, color: danger ? C.red : C.text, fontSize: 15, fontWeight: '700' }}>
@@ -128,8 +116,7 @@ function SettingButton({
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 function SettingInfo({
-  icon, label, subtitle,
-}: {
+  icon, label, subtitle }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
   subtitle?: string;
@@ -139,13 +126,11 @@ function SettingInfo({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA',
-    }}>
+      borderWidth: 1, borderColor: '#E5E5EA' }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,
         backgroundColor: 'rgba(139,92,246,0.14)',
-        alignItems: 'center', justifyContent: 'center', marginRight: 14,
-      }}>
+        alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
         <Feather name={icon} size={18} color={C.glow} />
       </View>
       <View style={{ flex: 1 }}>
@@ -169,15 +154,13 @@ function LanguageSelector() {
     <View style={{
       backgroundColor: C.surface, borderRadius: 16,
       marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA',
-    }}>
+      borderWidth: 1, borderColor: '#E5E5EA' }}>
       <ScalePress onPress={() => setExpanded((v) => !v)}>
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
           <View style={{
             width: 40, height: 40, borderRadius: 12,
             backgroundColor: 'rgba(139,92,246,0.14)',
-            alignItems: 'center', justifyContent: 'center', marginRight: 14,
-          }}>
+            alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
             <Feather name="globe" size={18} color={C.glow} />
           </View>
           <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }}>
@@ -200,8 +183,7 @@ function LanguageSelector() {
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',
                   paddingVertical: 12,
-                  borderTopWidth: 1, borderTopColor: C.border,
-                }}>
+                  borderTopWidth: 1, borderTopColor: C.border }}>
                   <Text style={{ fontSize: 18, marginRight: 12 }}>{opt.flag}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: C.text, fontSize: 15, fontWeight: selected ? '800' : '500' }}>
@@ -312,17 +294,13 @@ export default function SettingsScreen() {
           bio: profile.bio ?? '',
           createdAt: profile.createdAt
             ? new Date(profile.createdAt).toISOString()
-            : '',
-        },
+            : '' },
         wallet: {
-          diamondBalance: balance,
-        },
-      };
+          diamondBalance: balance } };
 
       await Share.share({
         title: 'My Vee Account Data',
-        message: JSON.stringify(exportData, null, 2),
-      });
+        message: JSON.stringify(exportData, null, 2) });
     } catch {
       Alert.alert(t('settings.error'), t('settings.downloadError'));
     }
@@ -380,8 +358,7 @@ export default function SettingsScreen() {
           {/* Back header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20,
-          }}>
+            paddingTop: topPad + 10, paddingBottom: 20 }}>
             <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
               <Feather name="arrow-left" size={24} color={C.text} />
             </Pressable>
@@ -393,8 +370,7 @@ export default function SettingsScreen() {
           {/* Appearance */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginBottom: 10 }}>
             {t('settings.sectionAppearance')}
           </Text>
           {/* The whole app ships in light mode — informational row, no fake toggle. */}
@@ -407,8 +383,7 @@ export default function SettingsScreen() {
           {/* Preferences */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
             PREFERENCES
           </Text>
           <SettingButton
@@ -426,8 +401,7 @@ export default function SettingsScreen() {
           {/* Media */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
             {t('settings.sectionMedia')}
           </Text>
           <SettingToggle
@@ -448,8 +422,7 @@ export default function SettingsScreen() {
           {/* Account */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
             {t('settings.sectionAccount')}
           </Text>
           <SettingButton
@@ -496,8 +469,7 @@ export default function SettingsScreen() {
                   {
                     text: t('settings.deleteAccountConfirm'),
                     style: 'destructive',
-                    onPress: () => setDeleteModalVisible(true),
-                  },
+                    onPress: () => setDeleteModalVisible(true) },
                 ],
               );
             }}
@@ -505,8 +477,7 @@ export default function SettingsScreen() {
 
           <Text style={{
             color: C.mutedDim, fontSize: 11,
-            textAlign: 'center', marginTop: 24,
-          }}>
+            textAlign: 'center', marginTop: 24 }}>
             {t('settings.version')}
           </Text>
         </ScrollView>
@@ -521,13 +492,11 @@ export default function SettingsScreen() {
       >
         <View style={{
           flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
-          alignItems: 'center', justifyContent: 'center', padding: 24,
-        }}>
+          alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <View style={{
             width: '100%', backgroundColor: '#FFFFFF',
             borderRadius: 20, padding: 24,
-            borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
-          }}>
+            borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
             <Text style={{ color: C.red, fontSize: 18, fontWeight: '900', marginBottom: 8 }}>
               ⚠️ Delete Account
             </Text>
@@ -548,8 +517,7 @@ export default function SettingsScreen() {
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
                 color: C.text, fontSize: 15,
                 borderWidth: 1, borderColor: '#E5E5EA',
-                marginBottom: 20,
-              }}
+                marginBottom: 20 }}
             />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -559,8 +527,7 @@ export default function SettingsScreen() {
                   flex: 1, paddingVertical: 14, borderRadius: 12,
                   backgroundColor: '#E5E5EA',
                   alignItems: 'center',
-                  borderWidth: 1, borderColor: '#E5E5EA',
-                }}
+                  borderWidth: 1, borderColor: '#E5E5EA' }}
               >
                 <Text style={{ color: C.muted, fontWeight: '700' }}>Cancel</Text>
               </Pressable>
@@ -572,11 +539,10 @@ export default function SettingsScreen() {
                   flex: 1, paddingVertical: 14, borderRadius: 12,
                   backgroundColor: 'rgba(239,68,68,0.18)',
                   alignItems: 'center',
-                  borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)',
-                }}
+                  borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}
               >
                 {deleteLoading
-                  ? <ActivityIndicator color={C.red} size="small" />
+                  ? <PremiumLoader size="small" />
                   : <Text style={{ color: C.red, fontWeight: '900' }}>Delete Forever</Text>}
               </Pressable>
             </View>
