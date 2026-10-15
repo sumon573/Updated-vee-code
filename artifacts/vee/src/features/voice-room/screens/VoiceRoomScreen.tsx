@@ -335,6 +335,49 @@ function SapphireInviteButton() {
   );
 }
 
+/* ── PulseMicButton — Option C (2026-10-15, Sumon picked):
+   Blue Feather mic + expanding pulse rings when unmuted.
+   Muted = red mic-off. NO background box. ── */
+function PulseRing({ delay, color }: { delay: number; color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, delay]);
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.5] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] });
+  return (
+    <Animated.View style={{
+      position: 'absolute', width: 44, height: 44, borderRadius: 22,
+      borderWidth: 2, borderColor: color,
+      opacity, transform: [{ scale }],
+    }} />
+  );
+}
+function PulseMicButton({ muted }: { muted: boolean }) {
+  const color = muted ? '#FF4444' : '#007AFF';
+  const iconName = muted ? 'mic-off' : 'mic';
+  return (
+    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+      {/* 2026-10-15 (Sumon): NO background box — floating mic + pulse rings. */}
+      {!muted && <PulseRing delay={0} color={color} />}
+      {!muted && <PulseRing delay={1000} color={color} />}
+      <Feather
+        name={iconName}
+        size={24}
+        color={color}
+        style={{ textShadowColor: color === '#007AFF' ? 'rgba(0,122,255,0.5)' : 'rgba(255,68,68,0.5)', textShadowRadius: 8 }}
+      />
+    </View>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
@@ -3080,15 +3123,15 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={handleMicBarPress}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): no background box — clean floating icon.
-                Mute state shown via icon color. */}
-            <Feather
-              name={mySeatIdx < 0 ? 'user-plus' : muted ? 'mic-off' : 'mic'}
-                size={21}
-                color={mySeatIdx < 0 ? accentColor : muted ? C.red : C.mic}
-              />
+            {/* 2026-10-15 (Sumon): Option C Pulse Ring mic button.
+                Join Seat keeps user-plus; seated uses PulseMicButton. */}
+            {mySeatIdx < 0 ? (
+              <Feather name="user-plus" size={21} color={accentColor} />
+            ) : (
+              <PulseMicButton muted={muted} />
+            )}
             <Text style={{
-              color: mySeatIdx < 0 ? accentColor : muted ? C.red : C.mic,
+              color: mySeatIdx < 0 ? accentColor : muted ? C.red : '#007AFF',
               fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {mySeatIdx < 0
                 ? t('voiceRoom.screen.joinSeat')
