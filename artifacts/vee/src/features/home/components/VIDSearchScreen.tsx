@@ -3,7 +3,8 @@
  * Opened from IMO Search page's "Add Friends".
  */
 import { useState } from 'react';
-import { View, Text, TextInput, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, FlatList, Image, TouchableOpacity } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -13,6 +14,7 @@ import { getBlockDirection, BlockDirection } from '@/src/services/blockService';
 import { showErrorWithCause } from '@/src/utils/errorDisplay';
 import { VerifiedName } from '@/src/components/VerifiedName';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
+import { truncateTo12 } from '@/src/utils/truncateName';
 
 export default function VIDSearchScreen() {
   const router = useRouter();
@@ -75,8 +77,7 @@ export default function VIDSearchScreen() {
             backgroundColor: '#F0F0F0',
             borderRadius: 24,
             paddingHorizontal: 16,
-            paddingVertical: 10,
-          }}
+            paddingVertical: 10 }}
         >
           <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 8 }}>
             <Ionicons name="arrow-back" size={22} color="#616161" />
@@ -92,7 +93,7 @@ export default function VIDSearchScreen() {
             placeholderTextColor="#9E9E9E"
           />
           {searching ? (
-            <ActivityIndicator size="small" color="#2196F3" />
+            <PremiumLoader size="small" />
           ) : (
             <TouchableOpacity onPress={handleSearch}>
               <Ionicons name="search" size={22} color="#2196F3" />
@@ -105,7 +106,7 @@ export default function VIDSearchScreen() {
       <View style={{ flex: 1, padding: 16 }}>
         {searching ? (
           <View style={{ alignItems: 'center', marginTop: 40 }}>
-            <ActivityIndicator size="large" color="#2196F3" />
+            <PremiumLoader size="large" />
             <Text style={{ marginTop: 12, color: '#757575' }}>Searching...</Text>
           </View>
         ) : searched && !result ? (
@@ -123,8 +124,7 @@ export default function VIDSearchScreen() {
               borderRadius: 12,
               padding: 16,
               flexDirection: 'row',
-              alignItems: 'center',
-            }}
+              alignItems: 'center' }}
           >
             {result.photoURL ? (
               <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
@@ -147,8 +147,7 @@ export default function VIDSearchScreen() {
                   borderRadius: 28,
                   backgroundColor: '#E0E0E0',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                  justifyContent: 'center' }}
               >
                 <Text style={{ fontSize: 22, fontWeight: '700', color: '#757575' }}>
                   {((result.name || (result.email ? result.email.split('@')[0] : null) || '?')).charAt(0).toUpperCase()}
@@ -163,7 +162,7 @@ export default function VIDSearchScreen() {
             )}
             <View style={{ flex: 1, marginLeft: 12 }}>
               <VerifiedName
-                name={result.name || (result.email ? result.email.split('@')[0] : null) || 'User'}
+                name={truncateTo12(result.name || (result.email ? result.email.split('@')[0] : null) || 'User')}
                 uid={result.uid || result.id}
                 nameStyle={{ fontSize: 17, fontWeight: '700', color: '#212121' }}
                 logoSize={18}
@@ -178,8 +177,7 @@ export default function VIDSearchScreen() {
                 backgroundColor: '#E3F2FD',
                 borderRadius: 20,
                 paddingHorizontal: 16,
-                paddingVertical: 8,
-              }}
+                paddingVertical: 8 }}
             >
               <Text style={{ color: '#007AFF', fontWeight: '600' }}>
                 {resultBlockedByMe ? 'Unblock' : 'Add'}
