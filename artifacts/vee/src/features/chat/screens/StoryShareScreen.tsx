@@ -17,11 +17,8 @@
  * - Every error surfaces its ACTUAL cause (getErrorCause).
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  View, Text, Pressable, Image, TextInput,
-  Dimensions, Alert, ActivityIndicator, ScrollView,
-  PanResponder, GestureResponderEvent,
-} from 'react-native';
+import { View, Text, Pressable, Image, TextInput, Dimensions, Alert, ScrollView, PanResponder, GestureResponderEvent } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -40,8 +37,7 @@ import DraggableZoomable from '../components/DraggableZoomable';
 import {
   uploadStoryImage,
   uploadStoryVideo,
-  uploadStoryAudio,
-} from '@/src/features/chat/services/cloudinaryService';
+  uploadStoryAudio } from '@/src/features/chat/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import type { DrawingStroke } from '@/src/features/chat/types';
 import { STORY_EFFECTS } from '@/src/features/chat/data/storyEffects';
@@ -171,8 +167,7 @@ export default function StoryShareScreen() {
         setCurrentStroke({
           color: drawColorRef.current,
           width: 5,
-          points: [{ x: locationX / w, y: locationY / h }],
-        });
+          points: [{ x: locationX / w, y: locationY / h }] });
       },
       onPanResponderMove: (e: GestureResponderEvent) => {
         const { locationX, locationY } = e.nativeEvent;
@@ -191,8 +186,7 @@ export default function StoryShareScreen() {
           return null;
         });
       },
-      onPanResponderTerminate: () => setCurrentStroke(null),
-    }),
+      onPanResponderTerminate: () => setCurrentStroke(null) }),
   ).current;
 
   // ── Camera (photo AND video for stories) ──
@@ -212,8 +206,7 @@ export default function StoryShareScreen() {
           const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.All,
             quality: 0.8,
-            videoMaxDuration: 60,
-          });
+            videoMaxDuration: 60 });
           if (!result.canceled && result.assets[0]) {
             setCameraUri(result.assets[0].uri);
             setCameraIsVideo(result.assets[0].type === 'video');
@@ -236,8 +229,7 @@ export default function StoryShareScreen() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'audio/*',
-        copyToCacheDirectory: true,
-      });
+        copyToCacheDirectory: true });
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
       setMusicUri(file.uri);
@@ -314,8 +306,7 @@ export default function StoryShareScreen() {
       const pos = await Location.getCurrentPositionAsync({});
       const places = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      });
+        longitude: pos.coords.longitude });
       const p = places[0];
       const name =
         p?.city || p?.district || p?.subregion || p?.name || p?.country || null;
@@ -354,8 +345,7 @@ export default function StoryShareScreen() {
             list.push({
               uid,
               name: u.name || u.displayName || 'Vee User',
-              photoURL: u.photoURL || (u as any).avatar || (u as any).dp,
-            });
+              photoURL: u.photoURL || (u as any).avatar || (u as any).dp });
           }
         } catch { /* skip unreadable profiles */ }
       }
@@ -437,8 +427,7 @@ export default function StoryShareScreen() {
         drawing: strokes.length > 0 ? strokes : undefined,
         locationName: location?.name,
         effect: effectIdx === 0 ? undefined : effectIdx,
-        textColor: '#FFFFFF',
-      };
+        textColor: '#FFFFFF' };
 
       if (isTextMode) {
         // 2026-10-11: Text + music — upload selected music as background.
@@ -453,8 +442,7 @@ export default function StoryShareScreen() {
           type: 'text',
           content: text.trim(),
           ...(musicUrl ? { musicUrl, musicName: musicNameOut } : {}),
-          ...common,
-        });
+          ...common });
       } else if (isMusicMode) {
         // REAL audio upload — the file is uploaded and its URL stored so it plays.
         const up = await uploadStoryAudio(musicUri!, musicName || undefined, musicMimeType || undefined);
@@ -463,8 +451,7 @@ export default function StoryShareScreen() {
           content: up.url,
           audioName: musicName || 'Music',
           cloudinaryId: up.publicId,
-          ...common,
-        });
+          ...common });
       } else if (isCollageMode) {
         // REAL collage: upload every selected photo, publish each as a story.
         for (const a of collageAssets) {
@@ -478,8 +465,7 @@ export default function StoryShareScreen() {
             privacy: privacy as 'public' | 'contacts',
             drawing: strokes.length > 0 ? strokes : undefined,
             locationName: location?.name,
-            effect: effectIdx === 0 ? undefined : effectIdx,
-          });
+            effect: effectIdx === 0 ? undefined : effectIdx });
         }
       } else {
         const mediaUri = assetUri || cameraUri;
@@ -499,8 +485,7 @@ export default function StoryShareScreen() {
             privacy: privacy as 'public' | 'contacts',
             drawing: strokes.length > 0 ? strokes : undefined,
             locationName: location?.name,
-            effect: effectIdx === 0 ? undefined : effectIdx,
-          });
+            effect: effectIdx === 0 ? undefined : effectIdx });
         } else {
           const up = await uploadStoryImage(mediaUri);
           // 2026-10-11: Photo + music — upload selected music as background.
@@ -522,8 +507,7 @@ export default function StoryShareScreen() {
             locationName: location?.name,
             effect: effectIdx === 0 ? undefined : effectIdx,
             ...(musicUrl ? { musicUrl, musicName: musicNameOut } : {}),
-            ...(photoText.trim() ? { overlayText: photoText.trim() } : {}),
-          });
+            ...(photoText.trim() ? { overlayText: photoText.trim() } : {}) });
         }
       }
 
@@ -583,8 +567,7 @@ export default function StoryShareScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-      }}>
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4 }}>
           <Feather name="x" size={24} color="#fff" />
         </Pressable>
@@ -594,8 +577,7 @@ export default function StoryShareScreen() {
             style={{
               flexDirection: 'row', alignItems: 'center',
               backgroundColor: 'rgba(255,255,255,0.2)',
-              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
-            }}
+              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }}
           >
             <Feather name="music" size={14} color="#fff" style={{ marginRight: 6 }} />
             <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
@@ -612,8 +594,7 @@ export default function StoryShareScreen() {
         onLayout={(e) => {
           const size = {
             w: e.nativeEvent.layout.width,
-            h: e.nativeEvent.layout.height,
-          };
+            h: e.nativeEvent.layout.height };
           layoutRef.current = size;
           setLayoutSize(size);
         }}
@@ -622,8 +603,7 @@ export default function StoryShareScreen() {
           <View style={{
             width: width - 40, minHeight: 300,
             backgroundColor: bgColor, borderRadius: 16,
-            justifyContent: 'center', alignItems: 'center', padding: 20,
-          }}>
+            justifyContent: 'center', alignItems: 'center', padding: 20 }}>
             <TextInput
               style={{
                 color: '#fff',
@@ -631,8 +611,7 @@ export default function StoryShareScreen() {
                 fontWeight: style.fontWeight,
                 fontStyle: style.fontStyle,
                 letterSpacing: style.letterSpacing,
-                textAlign: 'center', width: '100%',
-              }}
+                textAlign: 'center', width: '100%' }}
               placeholder={t('story.writeSomething', { defaultValue: 'Write something...' })}
               placeholderTextColor="rgba(255,255,255,0.6)"
               value={text}
@@ -662,8 +641,7 @@ export default function StoryShareScreen() {
                     textShadowColor: 'rgba(0,0,0,0.8)',
                     textShadowOffset: { width: 0, height: 2 },
                     textShadowRadius: 4,
-                    minWidth: 200,
-                  }}>
+                    minWidth: 200 }}>
                     {photoText}
                   </Text>
                 )}
@@ -673,8 +651,7 @@ export default function StoryShareScreen() {
             {photoTextOpen && (
               <View style={{
                 position: 'absolute', bottom: 20, left: 20, right: 20,
-                backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 12, padding: 12,
-              }}>
+                backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 12, padding: 12 }}>
                 <TextInput
                   style={{ color: '#fff', fontSize: 16 }}
                   placeholder={t('story.writeSomething', { defaultValue: 'Write something...' })}
@@ -697,8 +674,7 @@ export default function StoryShareScreen() {
           <View style={{
             width: width - 40, minHeight: 300,
             backgroundColor: bgColor, borderRadius: 16,
-            justifyContent: 'center', alignItems: 'center', padding: 20,
-          }}>
+            justifyContent: 'center', alignItems: 'center', padding: 20 }}>
             <Feather name="music" size={48} color="#fff" style={{ marginBottom: 16 }} />
             <Text style={{ color: '#fff', fontSize: 16, textAlign: 'center', marginBottom: 12 }}>
               {musicName || t('story.tapMusic', { defaultValue: 'Tap "Select Music" above to add music' })}
@@ -709,8 +685,7 @@ export default function StoryShareScreen() {
                 fontSize: style.fontSize,
                 fontWeight: style.fontWeight,
                 fontStyle: style.fontStyle,
-                textAlign: 'center', width: '100%',
-              }}
+                textAlign: 'center', width: '100%' }}
               placeholder={t('story.writeSomething', { defaultValue: 'Write something...' })}
               placeholderTextColor="rgba(255,255,255,0.6)"
               value={text}
@@ -721,16 +696,14 @@ export default function StoryShareScreen() {
         ) : isCollageMode ? (
           <View style={{
             width: width - 40, flexDirection: 'row', flexWrap: 'wrap',
-            borderRadius: 16, overflow: 'hidden',
-          }}>
+            borderRadius: 16, overflow: 'hidden' }}>
             {collageAssets.map((a) => (
               <Image
                 key={a.id}
                 source={{ uri: a.uri }}
                 style={{
                   width: (width - 40) / 2 - 2, height: (width - 40) / 2 - 2,
-                  margin: 1,
-                }}
+                  margin: 1 }}
                 resizeMode="cover"
               />
             ))}
@@ -747,8 +720,7 @@ export default function StoryShareScreen() {
             pointerEvents="none"
             style={{
               position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: effect.tint,
-            }}
+              backgroundColor: effect.tint }}
           />
         )}
 
@@ -758,8 +730,7 @@ export default function StoryShareScreen() {
             <View style={{
               flexDirection: 'row', alignItems: 'center',
               backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16,
-              paddingHorizontal: 12, paddingVertical: 6,
-            }}>
+              paddingHorizontal: 12, paddingVertical: 6 }}>
               <Feather name="map-pin" size={12} color="#fff" style={{ marginRight: 4 }} />
               <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{location.name}</Text>
               <Pressable onPress={() => setLocation(null)} style={{ marginLeft: 6 }}>
@@ -785,8 +756,7 @@ export default function StoryShareScreen() {
       {drawMode && (
         <View style={{
           position: 'absolute', top: 110, left: 0, right: 0, zIndex: 11,
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-        }}>
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           {DRAW_COLORS.map((c) => (
             <Pressable
               key={c}
@@ -794,16 +764,14 @@ export default function StoryShareScreen() {
               style={{
                 width: 28, height: 28, borderRadius: 14, backgroundColor: c,
                 borderWidth: drawColor === c ? 3 : 1,
-                borderColor: drawColor === c ? '#fff' : 'rgba(255,255,255,0.4)',
-              }}
+                borderColor: drawColor === c ? '#fff' : 'rgba(255,255,255,0.4)' }}
             />
           ))}
           <Pressable
             onPress={undoStroke}
             style={{
               backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 14,
-              paddingHorizontal: 10, paddingVertical: 6,
-            }}
+              paddingHorizontal: 10, paddingVertical: 6 }}
           >
             <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
               {t('story.undo', { defaultValue: 'Undo' })}
@@ -813,8 +781,7 @@ export default function StoryShareScreen() {
             onPress={handleDraw}
             style={{
               backgroundColor: '#1877F2', borderRadius: 14,
-              paddingHorizontal: 10, paddingVertical: 6,
-            }}
+              paddingHorizontal: 10, paddingVertical: 6 }}
           >
             <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
               {t('story.done', { defaultValue: 'Done' })}
@@ -827,8 +794,7 @@ export default function StoryShareScreen() {
       {emojiOpen && (
         <View style={{
           position: 'absolute', bottom: 170, left: 16, right: 16, zIndex: 11,
-          backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 16, paddingVertical: 10,
-        }}>
+          backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 16, paddingVertical: 10 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 12 }}>
             {EMOJIS.map((e) => (
               <Pressable key={e} onPress={() => insertEmoji(e)} style={{ padding: 4 }}>
@@ -844,16 +810,13 @@ export default function StoryShareScreen() {
         <View style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 30,
-          justifyContent: 'center', alignItems: 'center',
-        }}>
+          justifyContent: 'center', alignItems: 'center' }}>
           <View style={{
             backgroundColor: '#fff', borderRadius: 16,
-            width: width - 60, maxHeight: height * 0.6, overflow: 'hidden',
-          }}>
+            width: width - 60, maxHeight: height * 0.6, overflow: 'hidden' }}>
             <View style={{
               flexDirection: 'row', alignItems: 'center',
-              padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-            }}>
+              padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
               <Text style={{ flex: 1, fontSize: 16, fontWeight: '700', color: '#000' }}>
                 {t('story.mentionFriend', { defaultValue: 'Mention a friend' })}
               </Text>
@@ -862,7 +825,7 @@ export default function StoryShareScreen() {
               </Pressable>
             </View>
             {friendsLoading ? (
-              <ActivityIndicator size="large" color="#1877F2" style={{ padding: 24 }} />
+              <PremiumLoader size="large" />
             ) : friends.length === 0 ? (
               <Text style={{ padding: 24, textAlign: 'center', color: '#666', fontSize: 14 }}>
                 {t('story.noFriends', { defaultValue: 'No friends to mention yet' })}
@@ -876,16 +839,14 @@ export default function StoryShareScreen() {
                     style={{
                       flexDirection: 'row', alignItems: 'center',
                       paddingHorizontal: 16, paddingVertical: 12,
-                      borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
-                    }}
+                      borderBottomWidth: 1, borderBottomColor: '#f5f5f5' }}
                   >
                     {f.photoURL ? (
                       <Image source={{ uri: f.photoURL }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }} />
                     ) : (
                       <View style={{
                         width: 36, height: 36, borderRadius: 18, marginRight: 10,
-                        backgroundColor: '#e5e5e5', alignItems: 'center', justifyContent: 'center',
-                      }}>
+                        backgroundColor: '#e5e5e5', alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontWeight: '700', color: '#666' }}>
                           {f.name.charAt(0).toUpperCase()}
                         </Text>
@@ -903,8 +864,7 @@ export default function StoryShareScreen() {
       {/* Right toolbar — every control is real */}
       <View style={{
         position: 'absolute', right: 12, top: height * 0.3,
-        gap: 20, zIndex: 10,
-      }}>
+        gap: 20, zIndex: 10 }}>
         <Pressable onPress={handleEmoji} style={{ alignItems: 'center' }} hitSlop={10}>
           <Feather name="smile" size={24} color={emojiOpen ? '#1877F2' : '#fff'} />
         </Pressable>
@@ -916,7 +876,7 @@ export default function StoryShareScreen() {
         </Pressable>
         <Pressable onPress={handleLocation} style={{ alignItems: 'center' }} hitSlop={10}>
           {locationLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <PremiumLoader size="small" />
           ) : (
             <Feather name="map-pin" size={24} color={location ? '#1877F2' : '#fff'} />
           )}
@@ -937,14 +897,12 @@ export default function StoryShareScreen() {
       {/* Bottom area */}
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        paddingHorizontal: 16, paddingBottom: 30, zIndex: 10,
-      }}>
+        paddingHorizontal: 16, paddingBottom: 30, zIndex: 10 }}>
         {/* Background colors — TEXT stories ONLY, never photo/video */}
         {isTextMode && (
           <View style={{
             flexDirection: 'row', justifyContent: 'center',
-            marginBottom: 16, gap: 8,
-          }}>
+            marginBottom: 16, gap: 8 }}>
             {BG_COLORS.map((color) => (
               <Pressable
                 key={color}
@@ -953,8 +911,7 @@ export default function StoryShareScreen() {
                   width: 36, height: 36, borderRadius: 18,
                   backgroundColor: color,
                   borderWidth: bgColor === color ? 3 : 1,
-                  borderColor: bgColor === color ? '#fff' : 'rgba(255,255,255,0.3)',
-                }}
+                  borderColor: bgColor === color ? '#fff' : 'rgba(255,255,255,0.3)' }}
               />
             ))}
           </View>
@@ -963,15 +920,13 @@ export default function StoryShareScreen() {
         {/* Audience selector + Share button */}
         <View style={{
           flexDirection: 'row', alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
+          justifyContent: 'space-between' }}>
           <Pressable
             onPress={() => setAudienceOpen(!audienceOpen)}
             style={{
               flexDirection: 'row', alignItems: 'center',
               backgroundColor: 'rgba(255,255,255,0.2)',
-              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 10,
-            }}
+              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 10 }}
           >
             <Feather
               name="globe"
@@ -994,11 +949,10 @@ export default function StoryShareScreen() {
               width: 56, height: 56, borderRadius: 28,
               backgroundColor: '#1877F2',
               alignItems: 'center', justifyContent: 'center',
-              opacity: posting ? 0.6 : 1,
-            }}
+              opacity: posting ? 0.6 : 1 }}
           >
             {posting ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <PremiumLoader size="small" />
             ) : (
               <Feather name="send" size={24} color="#fff" />
             )}
@@ -1012,15 +966,13 @@ export default function StoryShareScreen() {
             backgroundColor: '#fff', borderRadius: 12,
             shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
             shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
-            overflow: 'hidden',
-          }}>
+            overflow: 'hidden' }}>
             <Pressable
               onPress={() => { setAudience('everyone'); setAudienceOpen(false); }}
               style={{
                 flexDirection: 'row', alignItems: 'center',
                 paddingHorizontal: 16, paddingVertical: 12,
-                backgroundColor: audience === 'everyone' ? '#f0f7ff' : '#fff',
-              }}
+                backgroundColor: audience === 'everyone' ? '#f0f7ff' : '#fff' }}
             >
               <Feather name="globe" size={16} color="#000" style={{ marginRight: 8 }} />
               <View>
@@ -1037,8 +989,7 @@ export default function StoryShareScreen() {
               style={{
                 flexDirection: 'row', alignItems: 'center',
                 paddingHorizontal: 16, paddingVertical: 12,
-                backgroundColor: audience === 'contacts' ? '#f0f7ff' : '#fff',
-              }}
+                backgroundColor: audience === 'contacts' ? '#f0f7ff' : '#fff' }}
             >
               <Feather name="users" size={16} color="#000" style={{ marginRight: 8 }} />
               <View>
