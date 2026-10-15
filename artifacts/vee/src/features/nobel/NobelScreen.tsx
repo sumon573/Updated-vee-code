@@ -18,18 +18,15 @@
  * Light mode only. Errors show their actual cause.
  */
 import React, { useEffect, useState } from 'react';
-import {
-  View, Text, Pressable, Image, ScrollView,
-  ActivityIndicator, Alert, Dimensions,
-} from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, Alert, Dimensions } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
-  subscribeNoble, formatXP, formatDeadline, refreshNobleState,
-} from '@/src/services/nobleService';
+  subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
 
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
@@ -97,7 +94,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#FF9800" />
+        <PremiumLoader size="large" />
       </View>
     );
   }
@@ -132,30 +129,26 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           width: 56, height: 56, borderRadius: 28,
           backgroundColor: locked ? '#F2F2F7' : '#FFF8E1',
           alignItems: 'center', justifyContent: 'center',
-          marginBottom: 8, opacity: locked ? 0.6 : 1,
-        }}>
+          marginBottom: 8, opacity: locked ? 0.6 : 1 }}>
           <Text style={{ fontSize: 28 }}>{def.icon}</Text>
           {locked && (
             <View style={{
               position: 'absolute', bottom: -2, right: -2,
-              backgroundColor: '#fff', borderRadius: 10, padding: 2,
-            }}>
+              backgroundColor: '#fff', borderRadius: 10, padding: 2 }}>
               <Feather name="lock" size={12} color="#8E8E93" />
             </View>
           )}
           {active && (
             <View style={{
               position: 'absolute', bottom: -2, right: -2,
-              backgroundColor: '#4CAF50', borderRadius: 10, padding: 2,
-            }}>
+              backgroundColor: '#4CAF50', borderRadius: 10, padding: 2 }}>
               <Feather name="check" size={12} color="#fff" />
             </View>
           )}
         </View>
         <Text style={{
           fontSize: 12, color: locked ? '#8E8E93' : '#333',
-          textAlign: 'center', fontWeight: '500',
-        }}>
+          textAlign: 'center', fontWeight: '500' }}>
           {def.name}
         </Text>
       </View>
@@ -173,8 +166,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       {!embedded && (
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
-      }}>
+        paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12 }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Feather name="arrow-left" size={24} color="#000" />
         </Pressable>
@@ -202,8 +194,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               ) : (
                 <View style={{
                   width: 72, height: 72, borderRadius: 36, backgroundColor: '#E0E0E0',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 24, fontWeight: '700', color: '#757575' }}>
                     {((profileName || user?.displayName || '?').charAt(0).toUpperCase())}
                   </Text>
@@ -217,8 +208,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                 backgroundColor: rank.color + '22',
                 borderWidth: 1.5, borderColor: rank.color,
                 borderRadius: 14, paddingHorizontal: 12, paddingVertical: 4,
-                marginTop: 8,
-              }}>
+                marginTop: 8 }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: rank.color }}>
                   {rank.name} {ROMAN[sub - 1]}
                 </Text>
@@ -240,8 +230,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                 <View style={{ flex: 1, height: 8, backgroundColor: '#F0F0F0', borderRadius: 4, overflow: 'hidden' }}>
                   <View style={{
                     width: `${progress * 100}%`, height: 8,
-                    backgroundColor: '#26A69A', borderRadius: 4,
-                  }} />
+                    backgroundColor: '#26A69A', borderRadius: 4 }} />
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#FF9800', marginLeft: 8 }}>
                   👑{isTop ? 'MAX' : formatXP(rank.maxXP)}
@@ -270,18 +259,15 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                       flexDirection: 'row', alignItems: 'center',
                       paddingHorizontal: 12, paddingVertical: 8, marginRight: 4,
                       borderBottomWidth: activeTab ? 2.5 : 0,
-                      borderBottomColor: '#FF9800',
-                    }}
+                      borderBottomColor: '#FF9800' }}
                   >
                     <View style={{
                       width: 10, height: 10, borderRadius: 5,
-                      backgroundColor: r.color, marginRight: 6,
-                    }} />
+                      backgroundColor: r.color, marginRight: 6 }} />
                     <Text style={{
                       fontSize: 14,
                       fontWeight: activeTab ? '700' : '400',
-                      color: activeTab ? '#FF9800' : '#9E9E9E',
-                    }}>
+                      color: activeTab ? '#FF9800' : '#9E9E9E' }}>
                       {r.name}
                     </Text>
                   </Pressable>
@@ -305,8 +291,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
 
             <View style={{
               flexDirection: 'row', flexWrap: 'wrap',
-              paddingHorizontal: 32, paddingTop: 12, justifyContent: 'flex-start',
-            }}>
+              paddingHorizontal: 32, paddingTop: 12, justifyContent: 'flex-start' }}>
               {selectedRank.privileges.map(renderPrivilege)}
             </View>
             {anyLocked && (
