@@ -4,10 +4,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  View, Text, ScrollView, Pressable, Platform,
-  ActivityIndicator, FlatList,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, Platform, FlatList } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -15,8 +13,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribeWalletBalance,
   subscribeTransactionHistory,
-  WalletTransaction,
-} from '@/src/features/wallet/walletService';
+  WalletTransaction } from '@/src/features/wallet/walletService';
 import { useTranslation } from 'react-i18next';
 
 const C = {
@@ -30,8 +27,7 @@ const C = {
   border: '#E5E5EA',
   surface: '#F2F2F7',
   green: '#22C55E',
-  red: '#EF4444',
-} as const;
+  red: '#EF4444' } as const;
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -58,8 +54,7 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 14, marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA',
-    }}>
+      borderWidth: 1, borderColor: '#E5E5EA' }}>
       {/* Emoji */}
       <View style={{
         width: 46, height: 46, borderRadius: 14,
@@ -67,8 +62,7 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
         borderWidth: 1,
         borderColor: isRecharge ? 'rgba(124,58,237,0.25)' : isReceived ? 'rgba(34,197,94,0.25)' : 'rgba(139,92,246,0.25)',
         alignItems: 'center', justifyContent: 'center',
-        marginRight: 14,
-      }}>
+        marginRight: 14 }}>
         <Text style={{ fontSize: 22 }}>{tx.emoji || (isRecharge ? '💎' : '🎁')}</Text>
       </View>
 
@@ -88,8 +82,7 @@ function TransactionItem({ tx }: { tx: WalletTransaction }) {
       {/* Amount */}
       <Text style={{
         fontSize: 16, fontWeight: '900',
-        color: (isRecharge || isReceived) ? C.green : C.muted,
-      }}>
+        color: (isRecharge || isReceived) ? C.green : C.muted }}>
         {(isRecharge || isReceived) ? '+' : '-'}{Math.abs(tx.diamonds)} 💎
       </Text>
     </View>
@@ -155,8 +148,7 @@ export default function WalletScreen() {
           {/* Back header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20,
-          }}>
+            paddingTop: topPad + 10, paddingBottom: 20 }}>
             <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
               <Feather name="arrow-left" size={24} color={C.text} />
             </Pressable>
@@ -170,21 +162,19 @@ export default function WalletScreen() {
             backgroundColor: 'rgba(124,58,237,0.18)',
             borderRadius: 24, padding: 24, marginBottom: 16,
             borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)',
-            alignItems: 'center',
-          }}>
+            alignItems: 'center' }}>
             <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.8 }}>
               {t('wallet.balance')}
             </Text>
             {loadingBalance ? (
-              <ActivityIndicator color={C.glow} size="large" style={{ marginTop: 12 }} />
+              <PremiumLoader size="large" />
             ) : (
               <Text style={{
                 color: C.text,
                 // 2026-10-14 (Sumon): Compact professional format — 1k, 10k, 100k, 1m, 1b
                 fontSize: 56,
                 fontWeight: '900',
-                marginTop: 6, letterSpacing: -1,
-              }}>
+                marginTop: 6, letterSpacing: -1 }}>
                 {(() => {
                   const n = balance ?? 0;
                   if (n >= 1_000_000_000) {
@@ -219,8 +209,7 @@ export default function WalletScreen() {
                 paddingVertical: 13,
                 paddingHorizontal: 32,
                 marginTop: 16,
-                gap: 8,
-              }}
+                gap: 8 }}
             >
               <Feather name="plus-circle" size={18} color={C.primary} />
               <Text style={{ color: C.primary, fontSize: 16, fontWeight: '900' }}>
@@ -234,8 +223,7 @@ export default function WalletScreen() {
             <View style={{
               flex: 1, backgroundColor: 'rgba(124,58,237,0.08)',
               borderRadius: 16, padding: 16, alignItems: 'center',
-              borderWidth: 1, borderColor: 'rgba(124,58,237,0.2)',
-            }}>
+              borderWidth: 1, borderColor: 'rgba(124,58,237,0.2)' }}>
               <Text style={{ color: C.primary, fontSize: 22, fontWeight: '900' }}>
                 +{totalRecharged}
               </Text>
@@ -248,21 +236,19 @@ export default function WalletScreen() {
           {/* Transaction history */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 12,
-          }}>
+            letterSpacing: 0.8, marginBottom: 12 }}>
             {t('wallet.historyTitle')}
           </Text>
 
           {loadingTxs ? (
             <View style={{ alignItems: 'center', paddingTop: 30 }}>
-              <ActivityIndicator color={C.glow} />
+              <PremiumLoader size="medium" />
             </View>
           ) : rechargeTxs.length === 0 ? (
             <View style={{
               alignItems: 'center', paddingVertical: 50,
               backgroundColor: C.surface, borderRadius: 20,
-              borderWidth: 1, borderColor: '#E5E5EA',
-            }}>
+              borderWidth: 1, borderColor: '#E5E5EA' }}>
               <Text style={{ fontSize: 40 }}>💎</Text>
               <Text style={{ color: C.text, fontSize: 16, fontWeight: '800', marginTop: 14 }}>
                 {t('wallet.noTransactions')}
@@ -278,8 +264,7 @@ export default function WalletScreen() {
               ))}
               <Text style={{
                 color: C.mutedDim, fontSize: 11,
-                textAlign: 'center', marginTop: 8,
-              }}>
+                textAlign: 'center', marginTop: 8 }}>
                 {t('wallet.showing', { count: rechargeTxs.length })}
               </Text>
             </>
