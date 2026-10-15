@@ -305,7 +305,7 @@ export function LeaderboardModal({
         borderRadius: top3 ? 16 : 0,
         backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
         borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
-        borderBottomWidth: top3 ? 1 : 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
+        borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
         marginBottom: top3 ? 8 : 0,
       }}>
         <RankBadge rank={rank} />
@@ -345,7 +345,7 @@ export function LeaderboardModal({
         borderRadius: top3 ? 16 : 0,
         backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
         borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
-        borderBottomWidth: top3 ? 1 : 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
+        borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
         marginBottom: top3 ? 8 : 0,
       }}>
         <RankBadge rank={rank} />
@@ -388,7 +388,7 @@ export function LeaderboardModal({
     rank: number, stat: number | null, statLabel: string, emptyHint: string,
   ) => (
     <View style={{
-      marginHorizontal: 20, marginBottom: 20, marginTop: 4,
+      marginTop: 12, marginBottom: 20,
       borderRadius: 18, padding: 14,
       backgroundColor: C.goldBg, borderWidth: 1.5, borderColor: C.goldBd,
       flexDirection: 'row', alignItems: 'center',
@@ -518,98 +518,94 @@ export function LeaderboardModal({
         {tab === 'rooms' && (
           roomsLoading
             ? loading
-            : rooms.length === 0
-              ? <EmptyState icon="home" message={t('leaderboard.noData', { defaultValue: 'No rooms yet' })} />
-              : <>
-                  <FlatList
-                    data={rooms}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
-                    renderItem={({ item, index }) => renderRoomRow(item, index, false)}
-                  />
-                  {yourRankBar(
-                    myRoomRank, null,
-                    t('leaderboard.members', { defaultValue: 'members' }),
-                    t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
-                  )}
-                </>
+            : <FlatList
+                data={rooms}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                ListEmptyComponent={
+                  <EmptyState icon="home" message={t('leaderboard.noData', { defaultValue: 'No rooms yet' })} />
+                }
+                ListFooterComponent={yourRankBar(
+                  myRoomRank, null,
+                  t('leaderboard.members', { defaultValue: 'members' }),
+                  t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
+                )}
+                renderItem={({ item, index }) => renderRoomRow(item, index, false)}
+              />
         )}
 
         {/* ── Top Live ── */}
         {tab === 'live' && (
           roomsLoading
             ? loading
-            : liveRooms.length === 0
-              ? <EmptyState icon="radio" message={t('leaderboard.noLive', { defaultValue: 'No live rooms right now' })} />
-              : <>
-                  <FlatList
-                    data={liveRooms}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
-                    renderItem={({ item, index }) => renderRoomRow(item, index, true)}
-                  />
-                  {yourRankBar(
-                    myLiveRank, null,
-                    t('leaderboard.members', { defaultValue: 'members' }),
-                    t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
-                  )}
-                </>
+            : <FlatList
+                data={liveRooms}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                ListEmptyComponent={
+                  <EmptyState icon="radio" message={t('leaderboard.noLive', { defaultValue: 'No live rooms right now' })} />
+                }
+                ListFooterComponent={yourRankBar(
+                  myLiveRank, null,
+                  t('leaderboard.members', { defaultValue: 'members' }),
+                  t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
+                )}
+                renderItem={({ item, index }) => renderRoomRow(item, index, true)}
+              />
         )}
 
         {/* ── Top Senders ── */}
         {tab === 'senders' && (
           sendersLoading
             ? loading
-            : senders.length === 0
-              ? <EmptyState
-                  icon="gift"
-                  message={t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })}
-                  hint={t('leaderboard.sendersHint', { defaultValue: 'Send gifts in voice rooms to climb the ranks!' })}
-                />
-              : <>
-                  <FlatList
-                    data={senders}
-                    keyExtractor={(item) => item.uid}
-                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
-                    renderItem={({ item, index }) => renderUserRow(
-                      item, index, item.weeklySent ?? 0,
-                      t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
-                    )}
+            : <FlatList
+                data={senders}
+                keyExtractor={(item) => item.uid}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                ListEmptyComponent={
+                  <EmptyState
+                    icon="gift"
+                    message={t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })}
+                    hint={t('leaderboard.sendersHint', { defaultValue: 'Send gifts in voice rooms to climb the ranks!' })}
                   />
-                  {yourRankBar(
-                    mySenderRank, mySent,
-                    t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
-                    t('leaderboard.sendersHint', { defaultValue: 'Send gifts to rank!' }),
-                  )}
-                </>
+                }
+                ListFooterComponent={yourRankBar(
+                  mySenderRank, mySent,
+                  t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
+                  t('leaderboard.sendersHint', { defaultValue: 'Send gifts to rank!' }),
+                )}
+                renderItem={({ item, index }) => renderUserRow(
+                  item, index, item.weeklySent ?? 0,
+                  t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
+                )}
+              />
         )}
 
         {/* ── Top Receivers ── */}
         {tab === 'receivers' && (
           receiversLoading
             ? loading
-            : receivers.length === 0
-              ? <EmptyState
-                  icon="award"
-                  message={t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })}
-                  hint={t('leaderboard.receiversHint', { defaultValue: 'Receive gifts in voice rooms to climb the ranks!' })}
-                />
-              : <>
-                  <FlatList
-                    data={receivers}
-                    keyExtractor={(item) => item.uid}
-                    contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
-                    renderItem={({ item, index }) => renderUserRow(
-                      item, index, item.weeklyEarned ?? 0,
-                      t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
-                    )}
+            : <FlatList
+                data={receivers}
+                keyExtractor={(item) => item.uid}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                ListEmptyComponent={
+                  <EmptyState
+                    icon="award"
+                    message={t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })}
+                    hint={t('leaderboard.receiversHint', { defaultValue: 'Receive gifts in voice rooms to climb the ranks!' })}
                   />
-                  {yourRankBar(
-                    myReceiverRank, myEarned,
-                    t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
-                    t('leaderboard.receiversHint', { defaultValue: 'Receive gifts to rank!' }),
-                  )}
-                </>
+                }
+                ListFooterComponent={yourRankBar(
+                  myReceiverRank, myEarned,
+                  t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
+                  t('leaderboard.receiversHint', { defaultValue: 'Receive gifts to rank!' }),
+                )}
+                renderItem={({ item, index }) => renderUserRow(
+                  item, index, item.weeklyEarned ?? 0,
+                  t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
+                )}
+              />
         )}
       </View>
     </Modal>
