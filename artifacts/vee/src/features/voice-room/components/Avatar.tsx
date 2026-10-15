@@ -40,9 +40,12 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
-  // 14 tiny mist dots — random outward trajectories, fixed per mount
-  const particles = useRef<MistParticle[]>(
-    Array.from({ length: 14 }, (_, i) => ({
+  // 14 tiny mist dots — random outward trajectories, fixed per mount (lazy init:
+  // useRef's argument would otherwise re-run Array.from + 14 Animated.Value allocs
+  // on every render)
+  const particlesRef = useRef<MistParticle[] | null>(null);
+  if (particlesRef.current === null) {
+    particlesRef.current = Array.from({ length: 14 }, (_, i) => ({
       anim: new Animated.Value(0),
       angle: (i / 14) * Math.PI * 2 + Math.random() * 0.5,
       dist: size * (0.62 + Math.random() * 0.72),
@@ -50,11 +53,13 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
       delay: (i / 14) * 1400,
       dotSize: 4 + Math.random() * 5,
       color: MIST_COLORS[i % MIST_COLORS.length],
-    }))
-  ).current;
-  // 7 tiny flowers mixed in
-  const flowers = useRef<FlowerParticle[]>(
-    Array.from({ length: 7 }, (_, i) => ({
+    }));
+  }
+  const particles = particlesRef.current;
+  // 7 tiny flowers mixed in (same lazy init)
+  const flowersRef = useRef<FlowerParticle[] | null>(null);
+  if (flowersRef.current === null) {
+    flowersRef.current = Array.from({ length: 7 }, (_, i) => ({
       anim: new Animated.Value(0),
       angle: (i / 7) * Math.PI * 2 + Math.random() * 0.6,
       dist: size * (0.66 + Math.random() * 0.78),
@@ -63,8 +68,9 @@ function SpeakingRipple({ size, visible }: { size: number; visible: boolean }) {
       fSize: 10 + Math.random() * 5,
       char: FLOWER_CHARS[i % FLOWER_CHARS.length],
       spin: Math.random() > 0.5 ? 1 : -1,
-    }))
-  ).current;
+    }));
+  }
+  const flowers = flowersRef.current;
 
   useEffect(() => {
     const all: Animated.Value[] = [w1, w2, w3,
