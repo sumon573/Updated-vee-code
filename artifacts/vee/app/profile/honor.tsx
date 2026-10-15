@@ -221,9 +221,19 @@ export default function HonorScreen() {
             <View style={{
               marginTop: 5, alignSelf: 'flex-start',
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
-              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}>
+              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3,
+              flexDirection: 'row', alignItems: 'center' }}>
+              {/^https?:\/\//i.test(activePlate.icon || '') ? (
+                <Image
+                  source={{ uri: activePlate.icon }}
+                  style={{ width: 60, height: 12, marginRight: 6 }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={{ fontSize: 12, marginRight: 4 }}>{activePlate.icon}</Text>
+              )}
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#8A6D00' }}>
-                {activePlate.icon} {activePlate.name}
+                {activePlate.name}
               </Text>
             </View>
           ) : null}
