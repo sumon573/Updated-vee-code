@@ -74,9 +74,19 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'count', rankName: 'Count', rankColor: '#7E57C2',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-count.png',
+      mistColor: '#CE93D8',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-count.png',
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-count.png',
+    },
     ripple: null, entryEffect: null,
   },
   {
