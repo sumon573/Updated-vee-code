@@ -6,10 +6,8 @@
  * terms links, Google button, Email button.
  */
 import { useState } from 'react';
-import {
-  View, Text, Pressable, Modal, ScrollView,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
-} from 'react-native';
+import { View, Text, Pressable, Modal, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -20,8 +18,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  signInWithGoogle, getGoogleAuthErrorKey,
-} from '@/src/services/googleAuthService';
+  signInWithGoogle, getGoogleAuthErrorKey } from '@/src/services/googleAuthService';
 
 const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
 
@@ -36,8 +33,7 @@ const C = {
   error: '#FF4B4B',
   errorBg: 'rgba(255,75,75,0.10)',
   infoBg: 'rgba(30,155,240,0.10)',
-  infoBorder: 'rgba(30,155,240,0.35)',
-} as const;
+  infoBorder: 'rgba(30,155,240,0.35)' } as const;
 
 type NoticeKind = 'error' | 'info';
 
@@ -174,8 +170,7 @@ export default function ImoLoginScreen() {
               alignItems: 'center',
               paddingHorizontal: 8,
               paddingTop: 6,
-              paddingBottom: 2,
-            }}
+              paddingBottom: 2 }}
           >
             <Pressable onPress={handleBack} hitSlop={14} style={{ padding: 8 }}>
               <Feather name="arrow-left" size={22} color="#000000" />
@@ -190,8 +185,7 @@ export default function ImoLoginScreen() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,
-                paddingVertical: 8,
-              }}
+                paddingVertical: 8 }}
             >
               <Feather name="globe" size={18} color="#000000" />
               <Text style={{ fontSize: 14, fontWeight: '600', color: '#000000' }}>
@@ -216,8 +210,7 @@ export default function ImoLoginScreen() {
                     fontWeight: '800',
                     color: C.text,
                     textAlign: 'center',
-                    marginTop: 18,
-                  }}
+                    marginTop: 18 }}
                 >
                   {t('auth.login.title')}
                 </Text>
@@ -228,8 +221,7 @@ export default function ImoLoginScreen() {
                     textAlign: 'center',
                     marginTop: 14,
                     lineHeight: 27,
-                    paddingHorizontal: 8,
-                  }}
+                    paddingHorizontal: 8 }}
                 >
                   {t('auth.login.subtitle')}
                 </Text>
@@ -242,8 +234,7 @@ export default function ImoLoginScreen() {
                     textAlign: 'center',
                     marginTop: 12,
                     lineHeight: 22,
-                    paddingHorizontal: 16,
-                  }}
+                    paddingHorizontal: 16 }}
                 >
                   {t('auth.phoneLogin.termsPrefix')}
                   <Text
@@ -272,8 +263,7 @@ export default function ImoLoginScreen() {
                     justifyContent: 'center',
                     marginTop: 22,
                     gap: 12,
-                    opacity: syncLoading ? 0.6 : 1,
-                  }}
+                    opacity: syncLoading ? 0.6 : 1 }}
                   hitSlop={10}
                 >
                   <View
@@ -285,8 +275,7 @@ export default function ImoLoginScreen() {
                       borderColor: syncContacts ? C.blue : '#9AA0A8',
                       backgroundColor: syncContacts ? C.blue : 'transparent',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
+                      justifyContent: 'center' }}
                   >
                     {syncContacts && <Feather name="check" size={17} color="#FFFFFF" />}
                   </View>
@@ -310,8 +299,7 @@ export default function ImoLoginScreen() {
                       paddingVertical: 11,
                       flexDirection: 'row',
                       alignItems: 'center',
-                      gap: 10,
-                    }}
+                      gap: 10 }}
                   >
                     <Feather
                       name={notice.kind === 'error' ? 'alert-circle' : 'info'}
@@ -323,8 +311,7 @@ export default function ImoLoginScreen() {
                         flex: 1,
                         fontSize: 14,
                         lineHeight: 20,
-                        color: notice.kind === 'error' ? C.error : C.text,
-                      }}
+                        color: notice.kind === 'error' ? C.error : C.text }}
                     >
                       {notice.text}
                     </Text>
@@ -351,11 +338,10 @@ export default function ImoLoginScreen() {
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 3 },
                     elevation: 3,
-                    opacity: googleLoading ? 0.7 : 1,
-                  })}
+                    opacity: googleLoading ? 0.7 : 1 })}
                 >
                   {googleLoading ? (
-                    <ActivityIndicator color={C.blue} />
+                    <PremiumLoader size="medium" />
                   ) : (
                     <>
                       <GoogleGLogo size={22} />
@@ -384,8 +370,7 @@ export default function ImoLoginScreen() {
                     shadowOpacity: 0.08,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 3 },
-                    elevation: 3,
-                  })}
+                    elevation: 3 })}
                 >
                   <Feather name="mail" size={22} color={C.blue} />
                   <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
@@ -413,8 +398,7 @@ export default function ImoLoginScreen() {
                 borderTopRightRadius: 20,
                 paddingTop: 10,
                 paddingBottom: 30,
-                paddingHorizontal: 20,
-              }}
+                paddingHorizontal: 20 }}
               onPress={() => {}}
             >
               <View style={{ alignItems: 'center', paddingBottom: 12 }}>
@@ -433,8 +417,7 @@ export default function ImoLoginScreen() {
                       paddingHorizontal: 8,
                       borderBottomWidth: 1,
                       borderBottomColor: '#F0F0F4',
-                      backgroundColor: pressed ? '#F7F7FA' : '#FFFFFF',
-                    })}
+                      backgroundColor: pressed ? '#F7F7FA' : '#FFFFFF' })}
                   >
                     <Text style={{ fontSize: 28, marginRight: 14 }}>{lang.flag}</Text>
                     <View style={{ flex: 1 }}>
@@ -464,8 +447,7 @@ export default function ImoLoginScreen() {
               backgroundColor: 'rgba(0,0,0,0.45)',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: 30,
-            }}
+              padding: 30 }}
             onPress={() => setDocOpen(null)}
           >
             <Pressable
@@ -474,8 +456,7 @@ export default function ImoLoginScreen() {
                 borderRadius: 18,
                 padding: 22,
                 maxHeight: '70%',
-                width: '100%',
-              }}
+                width: '100%' }}
               onPress={() => {}}
             >
               <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 12 }}>
@@ -497,8 +478,7 @@ export default function ImoLoginScreen() {
                   backgroundColor: C.blue,
                   borderRadius: 24,
                   paddingVertical: 12,
-                  alignItems: 'center',
-                }}
+                  alignItems: 'center' }}
               >
                 <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>OK</Text>
               </Pressable>
