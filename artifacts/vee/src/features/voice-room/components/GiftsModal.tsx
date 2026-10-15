@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, Modal, ActivityIndicator, Image } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Modal, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -44,8 +45,7 @@ const GIFTS: readonly GiftItem[] = [
 
 export function GiftsModal({
   visible, onClose, onGiftSent, members, initialRecipient,
-  walletBalance, myUid, myName, roomId,
-}: {
+  walletBalance, myUid, myName, roomId }: {
   visible: boolean;
   onClose: () => void;
   /** Called immediately after a successful gift send — for the room fly animation */
@@ -100,8 +100,7 @@ export function GiftsModal({
         emoji: g.emoji,
         name: t(g.nameKey),
         total: totalCost,
-        names: selectedMembers.map(m => m.name).join(', '),
-      }),
+        names: selectedMembers.map(m => m.name).join(', ') }),
       [
         { text: t('voiceRoom.gifts.cancel'), style: 'cancel' },
         {
@@ -109,8 +108,7 @@ export function GiftsModal({
           style: 'default',
           // M3 fix: guard against unexpected throws after diamonds may have
           // been charged (e.g. Crypto.randomUUID, onGiftSent callback).
-          onPress: () => { handleSend(g).catch(() => {}); },
-        },
+          onPress: () => { handleSend(g).catch(() => {}); } },
       ],
     );
   };
@@ -242,8 +240,7 @@ export function GiftsModal({
             giftId: g.id,
             emoji: g.emoji,
             coins: g.coins,
-            ts: serverTimestamp(),
-          };
+            ts: serverTimestamp() };
           if (senderAvatar) entry.fromAvatar = senderAvatar;
           if (r.photoURL) entry.toAvatar = r.photoURL;
           push(ref(database, `rooms/${roomId}/giftFeed`), entry).catch(() => {});
@@ -286,8 +283,7 @@ export function GiftsModal({
         senderUid: myUid,
         senderName: myName,
         senderAvatar,
-        recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
-      });
+        recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })) });
       setTimeout(() => { setSent(null); setSending(false); onClose(); }, 1600);
     } finally {
       // A throw anywhere above (e.g. inside the loop) must never leave the
@@ -402,7 +398,7 @@ export function GiftsModal({
             {sending && (
               <View style={{ position: 'absolute', top: 60, left: 0, right: 0,
                 alignItems: 'center', zIndex: 10 }}>
-                <ActivityIndicator size="large" color={C.gold} />
+                <PremiumLoader size="large" />
               </View>
             )}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between',
