@@ -939,7 +939,7 @@ export default function ProfileScreen({
         )}
 
         {/* ─── Decoration ─── */}
-        <SectionHeader title="Decoration" count={grantedFrames.length + grantedNameplates.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
+        <SectionHeader title="Decoration" count={grantedFrames.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
           <Pressable
             onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
@@ -956,22 +956,6 @@ export default function ProfileScreen({
             </LinearGradient>
             <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
             <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
-            style={{ width: '25%', padding: 4, alignItems: 'center' }}
-          >
-            {/* Nameplates: premium gradient tile with white tag icon */}
-            <LinearGradient
-              colors={['#F59E0B', '#FBBF24']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Feather name="tag" size={32} color="#FFFFFF" />
-            </LinearGradient>
-            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Nameplates</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedNameplates.length} owned</Text>
           </Pressable>
         </View>
 
