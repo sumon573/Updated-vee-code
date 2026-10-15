@@ -27,6 +27,7 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
   subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
+import NobleRankPreview from './NobleRankPreview';
 
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
@@ -45,6 +46,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRankIdx, setSelectedRankIdx] = useState(0);
+  // 2026-10-15 (Sumon): Rank preview modal
+  const [previewRankIdx, setPreviewRankIdx] = useState<number | null>(null);
   // 2026-10-15 (Sumon): profile name from RTDB — Nobel tab must show the SAME
   // name as the profile screen (profile uses RTDB profile.name, not auth).
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -287,6 +290,20 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               <Text style={{ fontSize: 13, color: '#757575', marginTop: 6 }}>
                 Experience: {formatXP(selectedRank.minXP)}~{formatXP(selectedRank.maxXP)}
               </Text>
+              {/* 2026-10-15 (Sumon): Preview how this rank looks on your profile */}
+              <Pressable
+                onPress={() => setPreviewRankIdx(selectedRankIdx)}
+                style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: '#E3F2FD', borderRadius: 20,
+                  paddingHorizontal: 18, paddingVertical: 9, marginTop: 10,
+                }}
+              >
+                <Feather name="eye" size={16} color="#007AFF" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#007AFF', marginLeft: 6 }}>
+                  Preview {selectedRank.name} on my profile
+                </Text>
+              </Pressable>
             </View>
 
             <View style={{
@@ -303,6 +320,18 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           </>
         )}
       </ScrollView>
+
+      {/* 2026-10-15 (Sumon): Rank preview modal */}
+      {previewRankIdx !== null && (
+        <NobleRankPreview
+          visible={previewRankIdx !== null}
+          onClose={() => setPreviewRankIdx(null)}
+          rankIndex={previewRankIdx}
+          userName={profileName || user?.displayName || 'Vee User'}
+          userPhotoURL={user?.photoURL}
+          userXP={xp}
+        />
+      )}
     </View>
   );
 }
