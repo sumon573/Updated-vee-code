@@ -147,6 +147,10 @@ export type SendGiftArgs = {
    * Defaults to a fresh UUID when omitted.
    */
   idempotencyKey?: string;
+  /** Recipient's display name (for the weekly leaderboard; optional) */
+  toName?: string;
+  /** Recipient's photo URL (for the weekly leaderboard; optional) */
+  toPhotoURL?: string;
 };
 
 export type SendGiftResult = {
@@ -284,10 +288,59 @@ const GIFT_PRICES: Record<string, number> = {
   '5': 200, '6': 500, '7': 1000, '8': 2000,
 };
 
+/**
+ * Weekly leaderboard stats (2026-10-15, Sumon) — makes the Leaderboard's
+ * Top Senders / Top Receivers tabs REAL.
+ *
+ * Best-effort: called after a gift succeeds on EITHER path (VPS primary or
+ * Firebase fallback). Writes per-ISO-week buckets so rankings reset
+ * automatically every week — no reset job needed.
+ *   leaderboard_senders/{weekId}/{fromUid} = { name, photoURL?, weeklySent }
+ *   leaderboard/{weekId}/{toUid}           = { name, photoURL?, weeklyEarned }
+ *
+ * Self-gifts are excluded (anti-farming, mirrors Noble XP). The database
+ * rules constrain each write's delta to a valid gift amount, so stats can
+ * only grow by real gift-sized increments.
+ */
+export async function recordWeeklyLeaderboardStats(args: {
+  fromUid: string;
+  toUid: string;
+  price: number;
+  recipientAmount: number;
+  senderName?: string | null;
+  senderPhotoURL?: string | null;
+  receiverName?: string | null;
+  receiverPhotoURL?: string | null;
+}): Promise<void> {
+  const { fromUid, toUid, price, recipientAmount } = args;
+  if (!fromUid || !toUid || fromUid === toUid) return;
+  if (!(price > 0) || !(recipientAmount > 0)) return;
+  try {
+    const { getCurrentWeekId } = await import('@/src/utils/weekId');
+    const { ref, update, increment } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const weekId = getCurrentWeekId();
+    const updates: Record<string, unknown> = {};
+    const sBase = `leaderboard_senders/${weekId}/${fromUid}`;
+    updates[`${sBase}/weeklySent`] = increment(price);
+    updates[`${sBase}/name`] = args.senderName || 'Vee User';
+    if (args.senderPhotoURL) updates[`${sBase}/photoURL`] = args.senderPhotoURL;
+    const rBase = `leaderboard/${weekId}/${toUid}`;
+    updates[`${rBase}/weeklyEarned`] = increment(recipientAmount);
+    updates[`${rBase}/name`] = args.receiverName || 'Vee User';
+    if (args.receiverPhotoURL) updates[`${rBase}/photoURL`] = args.receiverPhotoURL;
+    await update(ref(database), updates);
+  } catch {
+    // Best-effort — the gift already succeeded; leaderboard stats are non-critical.
+  }
+}
+
 async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
   idempotencyKey: string,
+  toName?: string,
+  toPhotoURL?: string,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
   const { ref, runTransaction, push, set, serverTimestamp, get, increment } = await import('firebase/database');
@@ -479,6 +532,26 @@ async function sendGiftViaFirebase(
     // History write failed — gift already completed, don't fail
   }
 
+  // Weekly leaderboard stats (best-effort; self-gifts excluded inside).
+  try {
+    const { auth: lbAuth } = await import('@/src/config/firebase');
+    const me = lbAuth.currentUser;
+    if (me && toUid !== fromUid) {
+      await recordWeeklyLeaderboardStats({
+        fromUid,
+        toUid,
+        price,
+        recipientAmount,
+        senderName: me.displayName,
+        senderPhotoURL: me.photoURL,
+        receiverName: toName,
+        receiverPhotoURL: toPhotoURL,
+      });
+    }
+  } catch {
+    // Non-critical
+  }
+
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
 }
 
@@ -486,6 +559,8 @@ export async function sendGift({
   toUid,
   giftId,
   idempotencyKey,
+  toName,
+  toPhotoURL,
 }: SendGiftArgs): Promise<SendGiftResult> {
   // Self-gifting is ALLOWED (per product requirement): the server debits and
   // credits the same account (net-zero), so the gift animation and history
@@ -532,6 +607,22 @@ export async function sendGift({
         } catch {
           // XP write failed — gift stands; noble progress for this gift is lost.
         }
+        // Weekly leaderboard stats (best-effort; self-gifts excluded inside).
+        try {
+          const me = auth.currentUser;
+          await recordWeeklyLeaderboardStats({
+            fromUid: serverFromUid,
+            toUid,
+            price: serverPrice,
+            recipientAmount: Math.floor(serverPrice * 0.7),
+            senderName: me?.displayName,
+            senderPhotoURL: me?.photoURL,
+            receiverName: toName,
+            receiverPhotoURL: toPhotoURL,
+          });
+        } catch {
+          // Non-critical
+        }
       }
       return {
         ok: true,
@@ -551,7 +642,7 @@ export async function sendGift({
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {
-    const fbResult = await sendGiftViaFirebase(toUid, giftId, key);
+    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL);
     if (fbResult.ok) return fbResult;
   } catch (e) {
     // Firebase fallback also failed — surface the meaningful error.
