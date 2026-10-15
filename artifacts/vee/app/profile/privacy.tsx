@@ -3,10 +3,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  View, Text, ScrollView, Switch, Pressable, Image,
-  ActivityIndicator, Alert, Platform,
-} from 'react-native';
+import { View, Text, ScrollView, Switch, Pressable, Image, Alert, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -15,8 +13,7 @@ import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import {
-  subscribeBlockedUsers, unblockUser, BlockRecord,
-} from '@/src/services/blockService';
+  subscribeBlockedUsers, unblockUser, BlockRecord } from '@/src/services/blockService';
 import { withTimeout } from '@/src/utils/withTimeout';
 
 /** Max ms to wait for an RTDB write ack before treating the save as queued. */
@@ -30,8 +27,7 @@ const C = {
   muted: '#8E8E93',
   mutedDim: '#C7C7CC',
   border: '#E5E5EA',
-  surface: '#F2F2F7',
-} as const;
+  surface: '#F2F2F7' } as const;
 
 type PrivacySettings = {
   showOnlineStatus: boolean;
@@ -46,12 +42,10 @@ const DEFAULTS: PrivacySettings = {
   showLastSeen: true,
   allowMessageFromAll: true,
   showProfileToAll: true,
-  allowRoomInvites: true,
-};
+  allowRoomInvites: true };
 
 function SettingRow({
-  icon, label, subtitle, value, onChange,
-}: {
+  icon, label, subtitle, value, onChange }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
   subtitle?: string;
@@ -63,14 +57,12 @@ function SettingRow({
       flexDirection: 'row', alignItems: 'center',
       backgroundColor: C.surface, borderRadius: 16,
       padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: C.border,
-    }}>
+      borderWidth: 1, borderColor: C.border }}>
       <View style={{
         width: 40, height: 40, borderRadius: 12,
         backgroundColor: 'rgba(139,92,246,0.14)',
         alignItems: 'center', justifyContent: 'center',
-        marginRight: 14,
-      }}>
+        marginRight: 14 }}>
         <Feather name={icon} size={18} color={C.glow} />
       </View>
       <View style={{ flex: 1 }}>
@@ -139,8 +131,7 @@ export default function PrivacyScreen() {
             } finally {
               setUnblockingUid(null);
             }
-          },
-        },
+          } },
       ],
     );
   };
@@ -176,7 +167,7 @@ export default function PrivacyScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={C.glow} size="large" />
+        <PremiumLoader size="large" />
       </View>
     );
   }
@@ -191,21 +182,19 @@ export default function PrivacyScreen() {
           {/* Back header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20,
-          }}>
+            paddingTop: topPad + 10, paddingBottom: 20 }}>
             <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
               <Feather name="arrow-left" size={24} color={C.text} />
             </Pressable>
             <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', flex: 1 }}>
               {t('privacy.title')}
             </Text>
-            {saving && <ActivityIndicator color={C.glow} size="small" />}
+            {saving && <PremiumLoader size="small" />}
           </View>
 
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginBottom: 10 }}>
             {t('privacy.sectionProfileStatus')}
           </Text>
 
@@ -233,8 +222,7 @@ export default function PrivacyScreen() {
 
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
             {t('privacy.sectionMessagesRooms')}
           </Text>
 
@@ -256,8 +244,7 @@ export default function PrivacyScreen() {
           {/* ── Blocked Users ── */}
           <Text style={{
             color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 24, marginBottom: 10,
-          }}>
+            letterSpacing: 0.8, marginTop: 24, marginBottom: 10 }}>
             BLOCKED USERS
           </Text>
 
@@ -265,8 +252,7 @@ export default function PrivacyScreen() {
             <View style={{
               backgroundColor: C.surface, borderRadius: 16, padding: 20,
               borderWidth: 1, borderColor: C.border,
-              alignItems: 'center',
-            }}>
+              alignItems: 'center' }}>
               <Feather name="slash" size={24} color={C.mutedDim} />
               <Text style={{ color: C.mutedDim, fontSize: 13, marginTop: 10 }}>
                 No blocked users
@@ -280,8 +266,7 @@ export default function PrivacyScreen() {
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: C.surface, borderRadius: 16,
                   padding: 14, marginBottom: 10,
-                  borderWidth: 1, borderColor: C.border,
-                }}
+                  borderWidth: 1, borderColor: C.border }}
               >
                 {b.targetAvatar ? (
                   <Image
@@ -292,8 +277,7 @@ export default function PrivacyScreen() {
                   <View style={{
                     width: 44, height: 44, borderRadius: 22, marginRight: 12,
                     backgroundColor: 'rgba(239,68,68,0.15)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
+                    alignItems: 'center', justifyContent: 'center' }}>
                     <Feather name="user" size={20} color="#EF4444" />
                   </View>
                 )}
@@ -311,11 +295,10 @@ export default function PrivacyScreen() {
                   style={{
                     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
                     backgroundColor: 'rgba(139,92,246,0.14)',
-                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)',
-                  }}
+                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)' }}
                 >
                   {unblockingUid === b.targetUid ? (
-                    <ActivityIndicator color={C.glow} size="small" />
+                    <PremiumLoader size="small" />
                   ) : (
                     <Text style={{ color: C.glow, fontSize: 12, fontWeight: '700' }}>
                       Unblock
