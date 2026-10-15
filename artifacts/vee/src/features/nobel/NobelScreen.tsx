@@ -48,6 +48,9 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRankIdx, setSelectedRankIdx] = useState(0);
+  // 2026-10-15 (Sumon): profile name from RTDB — Nobel tab must show the SAME
+  // name as the profile screen (profile uses RTDB profile.name, not auth).
+  const [profileName, setProfileName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
@@ -55,6 +58,16 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     setError(null);
     // 2026-10-15 (Sumon): lazy demotion — roll over expired windows on view.
     refreshNobleState(user.uid).catch(() => {});
+    // 2026-10-15 (Sumon): fetch RTDB profile name — must match profile screen.
+    (async () => {
+      try {
+        const { ref, get } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${user.uid}/name`)).catch(() => null);
+        const n = snap?.val();
+        if (typeof n === 'string' && n.trim()) setProfileName(n.trim());
+      } catch { /* fall back to auth displayName */ }
+    })();
     const unsub = subscribeNoble(
       user.uid,
       (s) => {
@@ -192,12 +205,12 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                   alignItems: 'center', justifyContent: 'center',
                 }}>
                   <Text style={{ fontSize: 24, fontWeight: '700', color: '#757575' }}>
-                    {(user?.displayName || '?').charAt(0).toUpperCase()}
+                    {((profileName || user?.displayName || '?').charAt(0).toUpperCase())}
                   </Text>
                 </View>
               )}
               <Text style={{ fontSize: 18, fontWeight: '700', color: '#000', marginTop: 10 }}>
-                {user?.displayName || 'Vee User'}
+                {profileName || user?.displayName || 'Vee User'}
               </Text>
               <View style={{
                 flexDirection: 'row', alignItems: 'center',
