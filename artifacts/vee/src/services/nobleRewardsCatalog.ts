@@ -47,8 +47,14 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'baron', rankName: 'Baron', rankColor: '#26A69A',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
+    nameplate: {
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-baron.png',
+      fallbackIcon: '🎖️',
+    },
+    badge: {
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-baron.png',
+      fallbackIcon: '👑',
+    },
     frame: null, ripple: null, entryEffect: null,
   },
   {
