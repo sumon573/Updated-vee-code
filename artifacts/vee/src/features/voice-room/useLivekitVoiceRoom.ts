@@ -32,6 +32,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/services/voiceForegroundService';
 import { useTranslation } from 'react-i18next';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
@@ -510,6 +511,10 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
       // 2. Audio session + connect. The URL comes ONLY from the server response.
       await rnSdk.AudioSession.startAudioSession();
+      // 2026-10-15 (Sumon): BACKGROUND AUDIO — foreground service (microphone)
+      // keeps talking + hearing alive when the app is backgrounded (like IMO).
+      // Without it Android suspends the app and the mic dies.
+      startVoiceForegroundService('Voice room active');
       // Crash breadcrumb: native audio session started — next is WebRTC connect.
       markVoiceStage('audio_session_started', roomId);
       const room = new lk.Room();
@@ -542,6 +547,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       } catch {
         // non-critical
       }
+      // Balance the foreground-service ref-count on failed join.
+      stopVoiceForegroundService();
       this.lk = null;
       this.rnSdk = null;
     }
@@ -562,6 +569,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     } catch {
       // non-critical
     }
+    // 2026-10-15 (Sumon): voice over — drop the foreground service.
+    stopVoiceForegroundService();
     this.lk = null;
     this.rnSdk = null;
     this.connection = 'ended';
