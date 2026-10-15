@@ -184,12 +184,14 @@ function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: 
   );
 }
 
-/* ── LiveDateIcon (2026-10-15, Sumon): the Tasks button shows the REAL
-   current date like a premium calendar page — red month strip + bold day
-   number. Ticks every 30s so a midnight rollover updates without reopening
-   the room. ── */
+/* ── LiveDateIcon — Royal Gold Calendar (2026-10-15, Sumon picked Option A):
+   Premium luxury calendar button: gold rings, gold gradient month strip,
+   bold day number (fully visible, never clipped), red live-event badge.
+   Ticks every 30s so the date rolls over at midnight without reopening
+   the room. Design NEVER changes — only month/day text updates.
+   liveCount = real live event count (badge hidden when 0, no demo numbers). ── */
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function LiveDateIcon() {
+function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
   const [todayKey, setTodayKey] = useState(() => new Date().toDateString());
   useEffect(() => {
     const id = setInterval(() => {
@@ -205,22 +207,42 @@ function LiveDateIcon() {
   void todayKey;
   return (
     <View style={{
-      width: 26, height: 28, borderRadius: 6, backgroundColor: '#FFFFFF',
-      overflow: 'hidden', alignItems: 'center',
-      shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 3,
-      shadowOffset: { width: 0, height: 1 }, elevation: 3 }}>
+      width: 40, height: 44, borderRadius: 10,
+      backgroundColor: '#FFFFFF', overflow: 'hidden', alignItems: 'center',
+      borderWidth: 2, borderColor: '#D4AF37',
+      shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 }, elevation: 5 }}>
+      {/* Gold rings */}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: -4, zIndex: 2 }}>
+        <View style={{ width: 6, height: 10, borderRadius: 3, backgroundColor: '#D4AF37' }} />
+        <View style={{ width: 6, height: 10, borderRadius: 3, backgroundColor: '#D4AF37' }} />
+      </View>
+      {/* Gold month strip */}
       <View style={{
-        width: '100%', backgroundColor: '#E5484D',
-        paddingVertical: 1.5, alignItems: 'center' }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 7, fontWeight: '800', letterSpacing: 0.5 }}>
-          {month}
+        width: '100%', marginTop: 1, paddingVertical: 3, alignItems: 'center',
+        backgroundColor: '#D4AF37' }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 }}>
+          {month.toUpperCase()}
         </Text>
       </View>
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#1A1A1A', fontSize: 14, fontWeight: '900' }}>
+      {/* Day number — fully visible, generous padding so never clipped */}
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 2 }}>
+        <Text style={{ color: '#1A1A2E', fontSize: 20, fontWeight: '900', lineHeight: 22 }}>
           {day}
         </Text>
       </View>
+      {/* Live event badge — only when count > 0 (never demo) */}
+      {liveCount > 0 && (
+        <View style={{
+          position: 'absolute', top: 4, right: 4,
+          minWidth: 16, height: 16, borderRadius: 8,
+          backgroundColor: '#FF3B30', borderWidth: 1.5, borderColor: '#FFFFFF',
+          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800' }}>
+            {liveCount > 99 ? '99+' : liveCount}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -3003,23 +3025,13 @@ export default function VoiceRoomScreen() {
         </ScalePress>
         </View>
 
-        {/* Task Center (2026-10-14, imo-style) — Live voice-room events, currently inactive */}
+        {/* Task Center — Royal Gold Calendar button (2026-10-15, Sumon picked Option A).
+            The calendar IS the button (no circular wrapper). Date updates live;
+            design never changes. */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
-              <LiveDateIcon />
-              <View style={{
-                position: 'absolute', top: 2, right: 2,
-                width: 10, height: 10, borderRadius: 5,
-                backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#000' }} />
-            </View>
+            <LiveDateIcon />
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               Tasks
             </Text>
