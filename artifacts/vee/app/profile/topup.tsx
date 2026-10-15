@@ -13,10 +13,8 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import {
-  View, Text, ScrollView, Pressable, TextInput,
-  ActivityIndicator, Alert, Platform,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, Alert, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -38,8 +36,7 @@ const C = {
   border: '#E5E5EA',
   surface: '#F2F2F7',
   green: '#22C55E',
-  red: '#EF4444',
-} as const;
+  red: '#EF4444' } as const;
 
 interface TopupPackage {
   id: string;
@@ -61,9 +58,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<any> {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
-      ...(init?.headers ?? {}),
-    },
-  });
+      ...(init?.headers ?? {}) } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error((data as any)?.error || (data as any)?.message || `Request failed (${res.status})`);
@@ -132,8 +127,7 @@ export default function TopUpScreen() {
       // L2 fix: server requires `network` field (was missing → 400 "Unsupported network").
       const res = (await authedFetch('/api/wallet/topup-crypto', {
         method: 'POST',
-        body: JSON.stringify({ txHash: hash, packageId: pkgId, network: 'trc20' }),
-      })) as { diamonds?: number; newBalance?: number };
+        body: JSON.stringify({ txHash: hash, packageId: pkgId, network: 'trc20' }) })) as { diamonds?: number; newBalance?: number };
       const credited = res.diamonds ?? 0;
       const balance = res.newBalance ?? 0;
       // FIX (2026-10-10): Record the recharge in wallet history (wallet screen
@@ -168,8 +162,7 @@ export default function TopUpScreen() {
           {/* Header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20,
-          }}>
+            paddingTop: topPad + 10, paddingBottom: 20 }}>
             <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
               <Feather name="arrow-left" size={24} color={C.text} />
             </Pressable>
@@ -181,21 +174,18 @@ export default function TopUpScreen() {
           {/* Recharge | Store tabs (2026-10-09) */}
           <View style={{
             flexDirection: 'row', backgroundColor: C.surface,
-            borderRadius: 14, padding: 4, marginBottom: 16,
-          }}>
+            borderRadius: 14, padding: 4, marginBottom: 16 }}>
             {(['recharge', 'store'] as const).map((tb) => (
               <Pressable
                 key={tb}
                 onPress={() => setMainTab(tb)}
                 style={{
                   flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-                  backgroundColor: mainTab === tb ? C.primaryBg : 'transparent',
-                }}
+                  backgroundColor: mainTab === tb ? C.primaryBg : 'transparent' }}
               >
                 <Text style={{
                   color: mainTab === tb ? '#fff' : C.muted,
-                  fontWeight: '800', fontSize: 14,
-                }}>
+                  fontWeight: '800', fontSize: 14 }}>
                   {tb === 'recharge' ? `➕ ${t('topup.rechargeTab')}` : `🏪 ${t('topup.storeTab')}`}
                 </Text>
               </Pressable>
@@ -210,7 +200,7 @@ export default function TopUpScreen() {
             </View>
           ) : loading ? (
             <View style={{ alignItems: 'center', paddingTop: 60 }}>
-              <ActivityIndicator color={C.glow} size="large" />
+              <PremiumLoader size="large" />
               <Text style={{ color: C.muted, marginTop: 12 }}>{t('topup.loading')}</Text>
             </View>
           ) : configError || !config ? (
@@ -232,11 +222,9 @@ export default function TopUpScreen() {
                 </Text>
                 <View style={{
                   backgroundColor: C.surface, borderRadius: 12,
-                  padding: 12, borderWidth: 1, borderColor: C.border,
-                }}>
+                  padding: 12, borderWidth: 1, borderColor: C.border }}>
                   <Text selectable style={{
-                    color: C.text, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  }}>
+                    color: C.text, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
                     {config.usdtTrc20Address}
                   </Text>
                 </View>
@@ -262,8 +250,7 @@ export default function TopUpScreen() {
                         backgroundColor: selected ? 'rgba(124,58,237,0.25)' : C.surface,
                         borderRadius: 16, padding: 14, alignItems: 'center',
                         borderWidth: 2,
-                        borderColor: selected ? C.glow : '#E5E5EA',
-                      }}
+                        borderColor: selected ? C.glow : '#E5E5EA' }}
                     >
                       <Text style={{ color: C.text, fontSize: 18, fontWeight: '900' }}>
                         💎{p.diamonds.toLocaleString()}
@@ -290,8 +277,7 @@ export default function TopUpScreen() {
                     backgroundColor: C.surface, borderRadius: 12,
                     padding: 14, color: C.text, fontSize: 13,
                     borderWidth: 1, borderColor: C.border,
-                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-                  }}
+                    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}
                 />
                 <Pressable
                   onPress={() => void handleSubmit()}
@@ -299,11 +285,10 @@ export default function TopUpScreen() {
                   style={{
                     backgroundColor: C.primaryBg, borderRadius: 14,
                     padding: 16, alignItems: 'center', marginTop: 14,
-                    opacity: submitting ? 0.6 : 1,
-                  }}
+                    opacity: submitting ? 0.6 : 1 }}
                 >
                   {submitting ? (
-                    <ActivityIndicator color={C.primary} />
+                    <PremiumLoader size="medium" />
                   ) : (
                     <Text style={{ color: C.primary, fontSize: 16, fontWeight: '900' }}>
                       {t('topup.verifyBtn', { diamonds: (pkg?.diamonds ?? 0).toLocaleString() })}
@@ -330,15 +315,13 @@ const styles = {
     padding: 18,
     borderWidth: 1,
     borderColor: '#E5E5EA',
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   stepTitle: {
     color: C.text,
     fontSize: 17,
     fontWeight: '900' as const,
     marginTop: 20,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   copyBtn: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -348,13 +331,10 @@ const styles = {
     padding: 12,
     marginTop: 12,
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.35)',
-  },
+    borderColor: 'rgba(139,92,246,0.35)' },
   retryBtn: {
     backgroundColor: C.primaryBg,
     borderRadius: 12,
     padding: 12,
     alignItems: 'center' as const,
-    marginTop: 14,
-  },
-};
+    marginTop: 14 } };
