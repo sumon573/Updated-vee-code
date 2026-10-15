@@ -189,6 +189,49 @@ function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: 
   );
 }
 
+/* ── LiveDateIcon (2026-10-15, Sumon): the Tasks button shows the REAL
+   current date like a premium calendar page — red month strip + bold day
+   number. Ticks every 30s so a midnight rollover updates without reopening
+   the room. ── */
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function LiveDateIcon() {
+  const [todayKey, setTodayKey] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = new Date().toDateString();
+      setTodayKey((prev) => (prev === k ? prev : k));
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+  const now = new Date();
+  const month = MONTHS_SHORT[now.getMonth()];
+  const day = now.getDate();
+  // Re-render is driven by todayKey; values below always reflect "now".
+  void todayKey;
+  return (
+    <View style={{
+      width: 26, height: 28, borderRadius: 6, backgroundColor: '#FFFFFF',
+      overflow: 'hidden', alignItems: 'center',
+      shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 3,
+      shadowOffset: { width: 0, height: 1 }, elevation: 3,
+    }}>
+      <View style={{
+        width: '100%', backgroundColor: '#E5484D',
+        paddingVertical: 1.5, alignItems: 'center',
+      }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 7, fontWeight: '800', letterSpacing: 0.5 }}>
+          {month}
+        </Text>
+      </View>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#1A1A1A', fontSize: 14, fontWeight: '900' }}>
+          {day}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId } = useLocalSearchParams<{ roomId: string }>();
   const insets = useSafeAreaInsets();
@@ -2830,7 +2873,8 @@ export default function VoiceRoomScreen() {
 
       {/* ═══ BOTTOM BAR ═══ */}
       {/* 2026-10-15 (Sumon): container background REMOVED — only the round buttons
-          float, no bar behind them. Uniform 46px circles (Gift 56px hero);
+          float, no bar behind them. ALL buttons uniform 46px circles
+          (2026-10-15: Gift resized 56px → 46px per Sumon — same size as others).
           fixed-width items + space-evenly = perfectly equal spacing.
           Hidden while the comment keyboard is open. */}
       {!keyboardOpen && (
@@ -2906,7 +2950,7 @@ export default function VoiceRoomScreen() {
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
               shadowOffset: { width: 0, height: 2 }, elevation: 4,
             }}>
-              <Text style={{ fontSize: 21 }}>📅</Text>
+              <LiveDateIcon />
               <View style={{
                 position: 'absolute', top: 2, right: 2,
                 width: 10, height: 10, borderRadius: 5,
@@ -2924,12 +2968,12 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: C.pink,
+            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: C.pink,
               alignItems: 'center', justifyContent: 'center',
-              shadowColor: C.pink, shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
-              elevation: 6,
+              shadowColor: C.pink, shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+              elevation: 4,
             }}>
-              <Text style={{ fontSize: 24 }}>🎁</Text>
+              <Text style={{ fontSize: 21 }}>🎁</Text>
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.gift')}
