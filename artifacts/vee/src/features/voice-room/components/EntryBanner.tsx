@@ -3,28 +3,33 @@
  * Matches IMO's entry effect: blue gradient pill badge with small DP and
  * name only (no ID). Slides in from the right. Auto-dismisses after 3s.
  *
- * NOTE 10 (2026-10-11): `fancy` renders the Noble "Fancy Entry Effects"
- * variant (gold gradient + crown) — shown ONLY when the joiner holds the
- * privilege (Marquis+ with maintenance secured). The flag is computed by
- * the SENDER from their real noble state and broadcast with the entry
- * event, so receivers just render it.
+ * 2026-10-15 (Sumon): PER-RANK entry effects — EVERY noble rank gets its
+ * OWN entry effect (rank-colored gradient + rank icon + rank name).
+ * `nobleRankIndex` (0-9) is computed by the SENDER from their real noble
+ * state and broadcast with the entry event; receivers render the rank's theme.
+ * Absent = non-noble standard blue banner.
  */
 import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 
 interface EntryBannerProps {
   /** The joiner's display name */
   name: string;
   /** The joiner's photo URL (optional) */
   photoURL?: string | null;
-  /** Noble fancy-entry variant (Marquis+ privilege, sender-verified) */
-  fancy?: boolean;
+  /** Noble rank index (0-9) — per-rank entry effect. Absent = non-noble. */
+  nobleRankIndex?: number;
   /** Called when the banner should be dismissed */
   onDismiss: () => void;
 }
 
-export default function EntryBanner({ name, photoURL, fancy, onDismiss }: EntryBannerProps) {
+export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss }: EntryBannerProps) {
+  // 2026-10-15 (Sumon): per-rank theme. Non-nobles get the standard blue.
+  const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
+  const rankName = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.name : null;
+  const isNoble = !!theme && !!rankName;
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -76,7 +81,7 @@ export default function EntryBanner({ name, photoURL, fancy, onDismiss }: EntryB
       pointerEvents="none"
     >
       <LinearGradient
-        colors={fancy ? ['#FFD54F', '#FF8F00'] : ['#4DA6FF', '#1E6FCC']}
+        colors={isNoble ? theme!.entryGradient : ['#4DA6FF', '#1E6FCC']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={{
@@ -86,8 +91,8 @@ export default function EntryBanner({ name, photoURL, fancy, onDismiss }: EntryB
           paddingVertical: 6,
           paddingLeft: 6,
           paddingRight: 16,
-          borderWidth: fancy ? 2 : 0,
-          borderColor: fancy ? '#FFF8E1' : 'transparent',
+          borderWidth: isNoble ? 2 : 0,
+          borderColor: isNoble ? '#FFF8E1' : 'transparent',
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.25,
@@ -118,7 +123,7 @@ export default function EntryBanner({ name, photoURL, fancy, onDismiss }: EntryB
           </View>
         )}
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} numberOfLines={1}>
-          {fancy ? `👑 ${name} is Coming` : `${name} is Coming`}
+          {isNoble ? `${theme!.entryIcon} ${name} • ${rankName}` : `${name} is Coming`}
         </Text>
       </LinearGradient>
     </Animated.View>
