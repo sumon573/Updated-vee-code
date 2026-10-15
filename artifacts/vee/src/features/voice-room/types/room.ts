@@ -45,6 +45,8 @@ export type Participant = {
   role: Role;
   /** 2026-10-13 (Sumon): active frame id for frame display */
   activeFrame?: string;
+  /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank speaking ripple */
+  nobleRankIndex?: number;
 };
 
 /**
