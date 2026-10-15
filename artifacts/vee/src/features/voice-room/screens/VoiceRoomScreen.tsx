@@ -378,6 +378,25 @@ function PulseMicButton({ muted }: { muted: boolean }) {
   );
 }
 
+/* ── LiquidGoldSpeaker — Option E (2026-10-15, Sumon picked):
+   Gold speaker + warm glow when ON, gray muted when OFF.
+   NO background box. ── */
+function LiquidGoldSpeaker({ speakerOn }: { speakerOn: boolean }) {
+  const color = speakerOn ? '#D4AF37' : '#6B7280';
+  const iconName = speakerOn ? 'volume-2' : 'volume-x';
+  return (
+    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+      {/* 2026-10-15 (Sumon): NO background box — floating gold speaker. */}
+      <Feather
+        name={iconName}
+        size={24}
+        color={color}
+        style={speakerOn ? { textShadowColor: 'rgba(212,175,55,0.6)', textShadowRadius: 10 } : { opacity: 0.6 }}
+      />
+    </View>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
@@ -3145,9 +3164,9 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): no background box — clean floating icon. */}
-            <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={21} color={speakerOn ? C.text : C.sub} />
-            <Text style={{ color: speakerOn ? C.text : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
+            {/* 2026-10-15 (Sumon): Option E Liquid Gold speaker. */}
+            <LiquidGoldSpeaker speakerOn={speakerOn} />
+            <Text style={{ color: speakerOn ? '#D4AF37' : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.speaker')}
             </Text>
           </View>
