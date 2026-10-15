@@ -40,6 +40,19 @@ export function MemberManageModal({
   isSeated?: boolean;
 }) {
   const { t } = useTranslation();
+
+  // 2026-10-15 (Sumon, URGENT): Rules of Hooks — ALL hooks must run before
+  // any early return. Previously `if (!member) return null` sat ABOVE these
+  // hooks, so opening the modal (member null → set) changed the hook count
+  // between renders → React threw "Rendered more hooks than during the
+  // previous render" → the "Something went wrong" screen on EVERY seat /
+  // audience ID tap. useVerifiedBadge already accepts undefined uid safely.
+  const hasVerifiedBadge = useVerifiedBadge(member?.id);
+  const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
+  useEffect(() => {
+    getOfficialBadgeIconUrl().then(setBadgeIconUrl).catch(() => setBadgeIconUrl(null));
+  }, []);
+
   if (!member) return null;
   const isOwnerMe = myRole === 'host';
   const isAdminMe = myRole === 'admin';
@@ -57,12 +70,8 @@ export function MemberManageModal({
       ? t('voiceRoom.memberManage.roleAdmin')
       : t('voiceRoom.memberManage.roleMember');
 
-  // 2026-10-14 (Sumon): show frame + verified badge in profile modal
-  const hasVerifiedBadge = useVerifiedBadge(member?.id);
-  const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
-  useEffect(() => {
-    getOfficialBadgeIconUrl().then(setBadgeIconUrl).catch(() => setBadgeIconUrl(null));
-  }, []);
+  // 2026-10-14 (Sumon): frame + verified badge shown in profile modal header
+  // (hooks live above the early return — see note there).
 
   return (
     <Modal visible={!!member} animationType="slide" transparent onRequestClose={onClose}>
