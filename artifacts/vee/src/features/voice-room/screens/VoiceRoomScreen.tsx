@@ -1348,7 +1348,9 @@ export default function VoiceRoomScreen() {
     if (!speakingUsers || Object.keys(speakingUsers).length === 0) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
       if (!s || s.id === myUid) return s;
-      const isSpeaking = speakingUsers[s.id] === true;
+      // 2026-10-15 (Sumon): muted seat NEVER ripples — guards stale speaking
+      // flags (remote mute / host-mute timing). A muted mic has no audio.
+      const isSpeaking = speakingUsers[s.id] === true && !s.muted;
       return isSpeaking !== s.speaking ? { ...s, speaking: isSpeaking } : s;
     }));
   }, [speakingUsers, myUid]);
@@ -1358,9 +1360,12 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx < 0) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) => {
       if (i !== mySeatIdx || !s) return s;
-      return s.speaking !== localSpeaking ? { ...s, speaking: localSpeaking } : s;
+      // 2026-10-15 (Sumon): own seat never ripples while muted — belt-and-braces
+      // with the engine clearing localSpeaking in setMuted (no Firebase wait).
+      const effectiveSpeaking = localSpeaking && !muted;
+      return s.speaking !== effectiveSpeaking ? { ...s, speaking: effectiveSpeaking } : s;
     }));
-  }, [localSpeaking, mySeatIdx]);
+  }, [localSpeaking, mySeatIdx, muted]);
 
   /* ── Join room: check if blocked before joining ── */
   useEffect(() => {
