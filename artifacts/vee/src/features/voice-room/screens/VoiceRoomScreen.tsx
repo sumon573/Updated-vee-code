@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import {
-  View, Text, FlatList, Alert, Pressable,
-  Animated, Platform, TextInput, ActivityIndicator, Image,
-  BackHandler, Modal, KeyboardAvoidingView, Keyboard,
-} from 'react-native';
+import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image, BackHandler, Modal, KeyboardAvoidingView, Keyboard } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -79,12 +76,10 @@ import {
   // Entry broadcast (2026-10-10): all users see everyone's entry
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   // Gift animation broadcast (2026-10-10): all users see gift fly animations
-  sendRoomGiftEvent, subscribeRoomGiftEvents,
-} from '../services/firebaseRoomService';
+  sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
-  type RoomChatMsg,
-} from '../services/firebaseRoomChatService';
+  type RoomChatMsg } from '../services/firebaseRoomChatService';
 
 /* ═══════════════════════════════════════════
    HELPERS
@@ -119,8 +114,7 @@ function fbSeatToParticipant(
     // Firebase had it. This one line fixes it.
     activeFrame: (seat as any).activeFrame || undefined,
     // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
-    nobleRankIndex: (seat as any).nobleRankIndex ?? undefined,
-  };
+    nobleRankIndex: (seat as any).nobleRankIndex ?? undefined };
 }
 
 function fbAudToParticipant(m: RoomAudienceMember): Participant {
@@ -137,8 +131,7 @@ function fbAudToParticipant(m: RoomAudienceMember): Participant {
     // 2026-10-13 (Sumon): active frame for audience list display
     activeFrame: (m as any).activeFrame || undefined,
     // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
-    nobleRankIndex: (m as any).nobleRankIndex ?? undefined,
-  };
+    nobleRankIndex: (m as any).nobleRankIndex ?? undefined };
 }
 
 function fbChatToMsg(m: RoomChatMsg): ChatMsg {
@@ -149,8 +142,7 @@ function fbChatToMsg(m: RoomChatMsg): ChatMsg {
     text: m.text,
     isMe: m.isMe ?? false,
     ts: m.ts,
-    replyTo: m.replyTo,
-  };
+    replyTo: m.replyTo };
 }
 
 /* ═══════════════════════════════════════════
@@ -174,8 +166,7 @@ function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: 
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: 'rgba(0,0,0,0.4)',
         borderRadius: 20, paddingLeft: 12, paddingRight: 6, paddingVertical: 4,
-        borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)',
-      }}>
+        borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)' }}>
         <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
           {formatCount(count)}
         </Text>
@@ -184,8 +175,7 @@ function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: 
         ) : (
           <View style={{
             width: 28, height: 28, borderRadius: 14,
-            backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center',
-          }}>
+            backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>{person?.initials || ''}</Text>
           </View>
         )}
@@ -218,12 +208,10 @@ function LiveDateIcon() {
       width: 26, height: 28, borderRadius: 6, backgroundColor: '#FFFFFF',
       overflow: 'hidden', alignItems: 'center',
       shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 3,
-      shadowOffset: { width: 0, height: 1 }, elevation: 3,
-    }}>
+      shadowOffset: { width: 0, height: 1 }, elevation: 3 }}>
       <View style={{
         width: '100%', backgroundColor: '#E5484D',
-        paddingVertical: 1.5, alignItems: 'center',
-      }}>
+        paddingVertical: 1.5, alignItems: 'center' }}>
         <Text style={{ color: '#FFFFFF', fontSize: 7, fontWeight: '800', letterSpacing: 0.5 }}>
           {month}
         </Text>
@@ -449,15 +437,13 @@ export default function VoiceRoomScreen() {
     muteRemoteUser,
     playUserStream,
     stopUserStream,
-    wasRestored,
-  } = useLivekitVoiceRoom({
+    wasRestored } = useLivekitVoiceRoom({
     // Empty until staged init completes — the hook skips native init for ''.
     roomID: voiceReady ? roomId : '',
     userID: myUid,
     // Use the stable voiceUserName (never changes after mount) so a profile
     // load doesn't trigger a full voice engine re-init mid-session.
-    userName: voiceUserName,
-  });
+    userName: voiceUserName });
 
   /* ── Core state ── */
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
@@ -593,8 +579,7 @@ export default function VoiceRoomScreen() {
         t('voiceRoom.screen.seatInviteMsg', {
           inviterName: invite.inviterName,
           number: invite.seatIdx + 1,
-          roomName: invite.roomName,
-        }),
+          roomName: invite.roomName }),
         [
           {
             text: t('voiceRoom.screen.accept'),
@@ -628,8 +613,7 @@ export default function VoiceRoomScreen() {
                   muted: true, role: 'member',
                   ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
                   ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
-                  ...(isVerified ? { verified: true } : {}),
-                });
+                  ...(isVerified ? { verified: true } : {}) });
               } catch {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
                 return;
@@ -640,18 +624,15 @@ export default function VoiceRoomScreen() {
                 sendRoomChatMsg(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
                   text: t('voiceRoom.screen.memberJoinedSeat', { name: myName, number: invite.seatIdx + 1 }),
-                  ts: Date.now(),
-                }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
+                  ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
               } else {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
               }
-            },
-          },
+            } },
           {
             text: t('voiceRoom.screen.decline'),
             style: 'cancel',
-            onPress: () => { removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup on decline */}); },
-          },
+            onPress: () => { removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup on decline */}); } },
         ],
       );
     });
@@ -673,8 +654,7 @@ export default function VoiceRoomScreen() {
       const translateY = new Animated.Value(0);
       const opacity = new Animated.Value(1);
       const newReactions: Record<string, SeatReaction> = {
-        [senderMember.id]: { emoji: reaction.emoji, translateY, opacity },
-      };
+        [senderMember.id]: { emoji: reaction.emoji, translateY, opacity } };
       Animated.parallel([
         Animated.timing(translateY, { toValue: -55, duration: 1600, useNativeDriver: true }),
         Animated.sequence([
@@ -732,8 +712,7 @@ export default function VoiceRoomScreen() {
       const patch: Record<string, unknown> = {
         userName: myProfile.name,
         initials: getInitials(myProfile.name),
-        ...(myProfile.photoURL ? { photoURL: myProfile.photoURL } : {}),
-      };
+        ...(myProfile.photoURL ? { photoURL: myProfile.photoURL } : {}) };
       try {
         const idx = mySeatIdxRef.current;
         if (idx >= 0) {
@@ -845,15 +824,13 @@ export default function VoiceRoomScreen() {
         setEntryBanner({
           name: displayName,
           photoURL: myPhotoURL || null,
-          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
-        });
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}) });
         // Broadcast entry to all participants
         sendRoomEntryEvent(roomId, {
           uid: myUid,
           name: displayName,
           photoURL: myPhotoURL || null,
-          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
-        }).catch(() => {/* non-critical */});
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {/* non-critical */});
       })();
     }
   }, [hasJoined, myUid, myProfile, myName, myPhotoURL, roomId]);
@@ -874,8 +851,7 @@ export default function VoiceRoomScreen() {
       setEntryBanner({
         name: entry.name || 'User',
         photoURL: entry.photoURL || null,
-        ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
-      });
+        ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
     });
   }, [roomId, myUid]);
 
@@ -1206,8 +1182,7 @@ export default function VoiceRoomScreen() {
         action: b.action,
         actionBy: b.byName,
         timestamp: b.blockedAt,
-        isActive: true,
-      }));
+        isActive: true }));
       setBlockedRecs(records);
     });
   }, [roomId]);
@@ -1297,8 +1272,7 @@ export default function VoiceRoomScreen() {
       senderName: 'System',
       senderColor: C.gold,
       text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
-      ts: Date.now(),
-    }).catch(() => {/* non-critical */});
+      ts: Date.now() }).catch(() => {/* non-critical */});
   }, [roomId, myUid, myName, ownerId, t]);
 
   /* ── mySeatIdx: declared early so all effects below can reference it safely ── */
@@ -1562,8 +1536,7 @@ export default function VoiceRoomScreen() {
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
           // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
-          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
-        }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
       }
       // 2026-10-15 (Sumon): persist active room — cold start auto-returns here.
       persistActiveRoom({ roomId, myUid, mySeatIdx: finalSeatIdx }).catch(() => {});
@@ -1580,8 +1553,7 @@ export default function VoiceRoomScreen() {
           senderName: 'System',
           senderColor: C.gold,
           text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-          ts: Date.now(),
-        }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
+          ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
       }
       presenceReadyRef.current = true;
     })();
@@ -1630,8 +1602,7 @@ export default function VoiceRoomScreen() {
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
           // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
-          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
-        };
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
         if (seatIdx >= 0) {
           // Re-claim our seat if it's empty or still ours; if someone else
           // took it while we were gone, fall back to audience.
@@ -1801,8 +1772,7 @@ export default function VoiceRoomScreen() {
                       color: myColor,
                       seatIdx,
                       ts: Date.now(),
-                      hostId: ownerId || myUid,
-                    });
+                      hostId: ownerId || myUid });
                     Alert.alert(
                       t('voiceRoom.screen.requestSentTitle'),
                       t('voiceRoom.screen.requestSentMsg'),
@@ -1810,8 +1780,7 @@ export default function VoiceRoomScreen() {
                   } catch {
                     Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.requestError'));
                   }
-                },
-              },
+                } },
               { text: t('voiceRoom.screen.cancel'), style: 'cancel' },
             ],
           );
@@ -1877,8 +1846,7 @@ export default function VoiceRoomScreen() {
       initials: member.initials,
       color: member.color,
       ...(member.photoURL ? { photoURL: member.photoURL } : {}),
-      ...(member.role && member.role !== 'host' ? { role: member.role } : {}),
-    }).then(() => {
+      ...(member.role && member.role !== 'host' ? { role: member.role } : {}) }).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }).catch((e: unknown) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -1913,8 +1881,7 @@ export default function VoiceRoomScreen() {
       muted: mySeatIdx >= 0 ? muted : true,
       role: seatRole,
       // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
-      ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
-    };
+      ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
   }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted]);
 
   const joinSeat = useCallback(async (seatIdx: number) => {
@@ -2135,8 +2102,7 @@ export default function VoiceRoomScreen() {
       blockedAt: Date.now(),
       blockedBy: myUid,
       byName: myName,
-      action,
-    };
+      action };
 
     // 2026-10-12: never claim success before the writes land — the old code
     // showed "blocked" even when every write was permission-denied.
@@ -2191,14 +2157,12 @@ export default function VoiceRoomScreen() {
             sendSeatInvite(member.id, {
               roomId, roomName, seatIdx,
               inviterUid: myUid, inviterName: myName,
-              ts: Date.now(),
-            }).then(() => {
+              ts: Date.now() }).then(() => {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }).catch(() => {
               Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.inviteSendError'));
             });
-          },
-        },
+          } },
         { text: t('voiceRoom.screen.cancel'), style: 'cancel' },
       ],
     );
@@ -2255,8 +2219,7 @@ export default function VoiceRoomScreen() {
       mySeatIdx,
       muted,
       role:     myRole,
-      ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}),
-    });
+      ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}) });
     setExitModalOpen(false);
     router.back();
   }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, myRole, roomImageUri]);
@@ -2310,8 +2273,7 @@ export default function VoiceRoomScreen() {
         senderColor: myColor,
         text,
         ts: Date.now(),
-        ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}),
-      });
+        ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}) });
       // Only clear input + scroll on success
       setChatInput('');
       setReplyingTo(null);
@@ -2368,8 +2330,7 @@ export default function VoiceRoomScreen() {
       senderName: myName,
       senderColor: myColor,
       text: t('voiceRoom.screen.sentGift', { emoji: info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
-      ts: Date.now(),
-    }).catch(() => {/* background: safe to swallow — ephemeral gift chat message */});
+      ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral gift chat message */});
 
     const fly = (toUid: string, toName: string, toAvatar: string | undefined, target: { x: number; y: number } | null) => {
       giftFlyRef.current?.playFly({
@@ -2379,8 +2340,7 @@ export default function VoiceRoomScreen() {
         giftId: info.giftId,
         emoji: info.emoji,
         coins: info.coins,
-        target,
-      });
+        target });
     };
     for (const r of info.recipients) {
       // Broadcast gift event so ALL participants see the animation (2026-10-10)
@@ -2393,8 +2353,7 @@ export default function VoiceRoomScreen() {
         fromAvatar: info.senderAvatar || null,
         toUid: r.uid,
         toName: r.name,
-        toAvatar: r.photoURL || null,
-      }).catch(() => {/* non-critical */});
+        toAvatar: r.photoURL || null }).catch(() => {/* non-critical */});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
@@ -2419,8 +2378,7 @@ export default function VoiceRoomScreen() {
       senderName: myName,
       senderColor: myColor,
       text: emoji,
-      ts: Date.now(),
-    }).catch(() => {/* background: safe to swallow — ephemeral emoji chat message */});
+      ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral emoji chat message */});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [roomId, myUid, myName, myColor]);
 
@@ -2498,8 +2456,7 @@ export default function VoiceRoomScreen() {
                 overflow: 'hidden',
                 borderWidth: 1.5, borderColor: accentColor + '66',
                 alignItems: 'center', justifyContent: 'center',
-                backgroundColor: accentColor + '22',
-              }}>
+                backgroundColor: accentColor + '22' }}>
                 {roomImageUri ? (
                   <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
                 ) : (
@@ -2525,8 +2482,7 @@ export default function VoiceRoomScreen() {
                   backgroundColor: accentColor, borderRadius: 20,
                   paddingHorizontal: 14, paddingVertical: 7,
                   shadowColor: accentColor, shadowOpacity: 0.5, shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                }}>
+                  shadowOffset: { width: 0, height: 2 } }}>
                   <Feather name="user-plus" size={14} color="#fff" />
                   <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>
                     {t('voiceRoom.screen.joinRoom')}
@@ -2540,8 +2496,7 @@ export default function VoiceRoomScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                 backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 999,
                 paddingHorizontal: 10, paddingVertical: 5,
-                borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
-              }}>
+                borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' }}>
                 <Text style={{ color: C.gold, fontSize: 13 }}>💎</Text>
                 <Text style={{ color: C.gold, fontSize: 13, fontWeight: '800' }}>
                   {fmtDiamonds(walletBalance)}
@@ -2600,8 +2555,7 @@ export default function VoiceRoomScreen() {
                                 initials: req.initials,
                                 color: req.color,
                                 muted: true,
-                                role: 'member',
-                              });
+                                role: 'member' });
                               if (!seatResult.success) {
                                 Alert.alert(t('voiceRoom.screen.seatNoLongerEmpty'), t('voiceRoom.screen.seatNoLongerEmptyMsg'));
                                 rejectSeatRequest(roomId, req.id).catch(() => {/* background: safe to swallow — request cleanup after alert shown */});
@@ -2613,8 +2567,7 @@ export default function VoiceRoomScreen() {
                                 senderName: 'System',
                                 senderColor: C.gold,
                                 text: t('voiceRoom.screen.memberJoinedSeatApproved', { name: req.userName, number: req.seatIdx + 1 }),
-                                ts: Date.now(),
-                              }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
+                                ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
                               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                             } catch (e) {
                               // 2026-10-12: show the real cause, not a generic message.
@@ -2624,8 +2577,7 @@ export default function VoiceRoomScreen() {
                                 t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
                               );
                             }
-                          },
-                        },
+                          } },
                         {
                           text: t('voiceRoom.screen.reject'),
                           style: 'destructive',
@@ -2641,8 +2593,7 @@ export default function VoiceRoomScreen() {
                                 t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
                               );
                             });
-                          },
-                        },
+                          } },
                         { text: t('voiceRoom.screen.later'), style: 'cancel' },
                       ],
                     );
@@ -2652,8 +2603,7 @@ export default function VoiceRoomScreen() {
                     flexDirection: 'row', alignItems: 'center', gap: 4,
                     backgroundColor: accentColor + '22', borderRadius: 999,
                     paddingHorizontal: 10, paddingVertical: 5,
-                    borderWidth: 1, borderColor: accentColor + '55',
-                  }}>
+                    borderWidth: 1, borderColor: accentColor + '55' }}>
                     <Feather name="mic" size={13} color={accentColor} />
                     <Text style={{ color: accentColor, fontSize: 12, fontWeight: '800' }}>
                       {pendingRequests.length}
@@ -2675,8 +2625,7 @@ export default function VoiceRoomScreen() {
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
                 backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
-              }}>
+                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 16 }}>🏆</Text>
                 <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
                   Hourly Rank
@@ -2706,8 +2655,7 @@ export default function VoiceRoomScreen() {
               backgroundColor: accentColor,
               flexDirection: 'row', alignItems: 'center', gap: 10,
               shadowColor: accentColor, shadowOpacity: 0.5,
-              shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
-            }}>
+              shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}>
               <Feather name="log-in" size={20} color="#fff" />
               <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', flex: 1 }}>
                 {t('voiceRoom.screen.joinBanner')}
@@ -2727,14 +2675,12 @@ export default function VoiceRoomScreen() {
             borderWidth: 1,
             borderColor: myRole === 'host'  ? C.gold + '66'
                        : myRole === 'admin' ? accentColor + '66'
-                       : C.borderFaint,
-          }}>
+                       : C.borderFaint }}>
             <Text style={{
               color: myRole === 'host'  ? C.gold
                    : myRole === 'admin' ? accentColor
                    : C.sub,
-              fontSize: 12, fontWeight: '800',
-            }}>
+              fontSize: 12, fontWeight: '800' }}>
               {myRole === 'host'
                 ? t('voiceRoom.screen.roleOwner')
                 : myRole === 'admin'
@@ -2756,8 +2702,7 @@ export default function VoiceRoomScreen() {
             backgroundColor: 'rgba(239,68,68,0.12)',
             borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)',
             borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
-            marginBottom: 10,
-          }}>
+            marginBottom: 10 }}>
             <Feather name="alert-triangle" size={18} color={C.red} />
             <Text style={{ flex: 1, color: C.text, fontSize: 12, fontWeight: '600' }}>
               {voiceError}
@@ -2765,8 +2710,7 @@ export default function VoiceRoomScreen() {
             <ScalePress onPress={retryConnection}>
               <View style={{
                 backgroundColor: C.red, borderRadius: 999,
-                paddingHorizontal: 14, paddingVertical: 7,
-              }}>
+                paddingHorizontal: 14, paddingVertical: 7 }}>
                 <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>
                   {t('voiceRoom.screen.retry')}
                 </Text>
@@ -2810,8 +2754,7 @@ export default function VoiceRoomScreen() {
           flex: 1, borderRadius: 16,
           backgroundColor: themeSurface + '55',
           borderWidth: 1, borderColor: accentColor + '22',
-          overflow: 'hidden',
-        }}>
+          overflow: 'hidden' }}>
           {/* Fix 11: Chat pagination — "Load earlier" button at the top */}
           <FlatList<ChatMsg>
             ref={chatRef}
@@ -2833,7 +2776,7 @@ export default function VoiceRoomScreen() {
                 style={{ alignItems: 'center', paddingVertical: 8 }}
               >
                 {loadingOlderMsgs
-                  ? <ActivityIndicator size="small" color={accentColor} />
+                  ? <PremiumLoader size="small" />
                   : <Text style={{ color: accentColor, fontSize: 12, fontWeight: '700' }}>
                       {t('voiceRoom.screen.loadEarlier')}
                     </Text>
@@ -2861,8 +2804,7 @@ export default function VoiceRoomScreen() {
                 shadowColor: '#000', shadowOpacity: 0.3,
                 shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
                 elevation: 6,
-                zIndex: 100,
-              }}
+                zIndex: 100 }}
             >
               <Feather name="chevron-down" size={20} color="#fff" />
             </Pressable>
@@ -2879,8 +2821,7 @@ export default function VoiceRoomScreen() {
             marginTop: 6, overflow: 'hidden',
             shadowColor: accentColor, shadowOpacity: 0.25,
             shadowRadius: 12, shadowOffset: { width: 0, height: -2 },
-            elevation: 8,
-          }}>
+            elevation: 8 }}>
             {mentionCandidates.slice(0, 6).map((m: Participant) => (
               <Pressable
                 key={m.id}
@@ -2891,15 +2832,13 @@ export default function VoiceRoomScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 10,
                   paddingHorizontal: 14, paddingVertical: 10,
-                  borderBottomWidth: 1, borderBottomColor: accentColor + '1A',
-                }}
+                  borderBottomWidth: 1, borderBottomColor: accentColor + '1A' }}
               >
                 <View style={{
                   width: 32, height: 32, borderRadius: 16,
                   backgroundColor: m.color + '33',
                   borderWidth: 1.5, borderColor: m.color + '66',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: m.color, fontSize: 11, fontWeight: '800' }}>{m.initials}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
@@ -2921,8 +2860,7 @@ export default function VoiceRoomScreen() {
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: 'rgba(255,255,255,0.07)',
             borderRadius: 10, padding: 8, marginTop: 6,
-            borderLeftWidth: 3, borderLeftColor: accentColor,
-          }}>
+            borderLeftWidth: 3, borderLeftColor: accentColor }}>
             <Text numberOfLines={1} style={{ flex: 1, color: C.sub, fontSize: 12 }}>
               ↩ {replyingTo.sender}: {replyingTo.text}
             </Text>
@@ -2937,8 +2875,7 @@ export default function VoiceRoomScreen() {
           flexDirection: 'row', alignItems: 'center', gap: 10,
           marginTop: 0, marginBottom: 0,
           paddingHorizontal: 4, paddingVertical: 8,
-          backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderFaint,
-        }}>
+          backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
           <ScalePress onPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }} style={{ padding: 8 }}>
             <Feather name="smile" size={26} color={C.sub} />
           </ScalePress>
@@ -2955,8 +2892,7 @@ export default function VoiceRoomScreen() {
               width: 38, height: 38, borderRadius: 19,
               backgroundColor: accentColor + '22',
               borderWidth: 1, borderColor: accentColor + '44',
-              alignItems: 'center', justifyContent: 'center',
-            }}
+              alignItems: 'center', justifyContent: 'center' }}
           >
             <Text style={{ color: accentColor, fontSize: 16, fontWeight: '900' }}>@</Text>
           </Pressable>
@@ -2967,8 +2903,7 @@ export default function VoiceRoomScreen() {
               backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.08)' : C.card, borderRadius: 24,
               paddingHorizontal: 18, paddingVertical: 12,
               borderWidth: 1, borderColor: amChatBlocked ? 'rgba(239,68,68,0.45)' : C.borderFaint,
-              minHeight: 46,
-            }}
+              minHeight: 46 }}
             value={chatInput}
             onChangeText={handleChatInput}
             placeholder={amChatBlocked
@@ -2990,8 +2925,7 @@ export default function VoiceRoomScreen() {
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? accentColor : C.muted),
               alignItems: 'center', justifyContent: 'center',
-              opacity: (sendingMsg || amChatBlocked) ? 0.5 : 1,
-            }}
+              opacity: (sendingMsg || amChatBlocked) ? 0.5 : 1 }}
           >
             <Feather name={amChatBlocked ? 'slash' : 'send'} size={18} color="#fff" />
           </Pressable>
@@ -3017,8 +2951,7 @@ export default function VoiceRoomScreen() {
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-evenly',
         paddingBottom: bottomPad, paddingTop: 10, paddingHorizontal: 8,
-        backgroundColor: 'transparent',
-      }}>
+        backgroundColor: 'transparent' }}>
         {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={handleMicBarPress}>
@@ -3032,8 +2965,7 @@ export default function VoiceRoomScreen() {
                 : muted ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}>
+              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
               <Feather
                 name={mySeatIdx < 0 ? 'user-plus' : muted ? 'mic-off' : 'mic'}
                 size={21}
@@ -3042,8 +2974,7 @@ export default function VoiceRoomScreen() {
             </View>
             <Text style={{
               color: mySeatIdx < 0 ? accentColor : muted ? C.red : C.mic,
-              fontSize: 10, fontWeight: '700', textAlign: 'center',
-            }}>
+              fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {mySeatIdx < 0
                 ? t('voiceRoom.screen.joinSeat')
                 : t('voiceRoom.screen.mic')}
@@ -3062,8 +2993,7 @@ export default function VoiceRoomScreen() {
               borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}>
+              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
               <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={21} color={speakerOn ? C.text : C.sub} />
             </View>
             <Text style={{ color: speakerOn ? C.text : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3083,14 +3013,12 @@ export default function VoiceRoomScreen() {
               borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}>
+              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
               <LiveDateIcon />
               <View style={{
                 position: 'absolute', top: 2, right: 2,
                 width: 10, height: 10, borderRadius: 5,
-                backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#000',
-              }} />
+                backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#000' }} />
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               Tasks
@@ -3106,8 +3034,7 @@ export default function VoiceRoomScreen() {
             <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: C.pink,
               alignItems: 'center', justifyContent: 'center',
               shadowColor: C.pink, shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-              elevation: 4,
-            }}>
+              elevation: 4 }}>
               <Text style={{ fontSize: 21 }}>🎁</Text>
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3127,8 +3054,7 @@ export default function VoiceRoomScreen() {
               borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}>
+              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
               <Feather name="user-plus" size={21} color={C.text} />
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3148,8 +3074,7 @@ export default function VoiceRoomScreen() {
               borderWidth: 1.5, borderColor: 'rgba(239,68,68,0.4)',
               alignItems: 'center', justifyContent: 'center',
               shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}>
+              shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
               <Feather name="log-out" size={19} color="#EF4444" />
             </View>
             <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3334,8 +3259,7 @@ export default function VoiceRoomScreen() {
             reportedUid: memberId,
             reportedName: memberName,
             reason: 'inappropriate',
-            roomId,
-          }).catch(() => {
+            roomId }).catch(() => {
             Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.memberManage.reportError'));
           });
           setActiveMember(null);
@@ -3378,8 +3302,7 @@ export default function VoiceRoomScreen() {
             <View style={{
               width: 72, height: 72, borderRadius: 36,
               backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center',
-              marginBottom: 20,
-            }}>
+              marginBottom: 20 }}>
               <Feather name="lock" size={30} color="#007AFF" />
             </View>
             <Text style={{ color: '#000000', fontSize: 20, fontWeight: '900', marginBottom: 6, textAlign: 'center' }} numberOfLines={1}>
@@ -3394,8 +3317,7 @@ export default function VoiceRoomScreen() {
                 borderColor: pinError ? '#FF4B4B' : '#E3F2FD',
                 color: '#000000', fontSize: 28, fontWeight: '800',
                 textAlign: 'center', letterSpacing: 16,
-                paddingVertical: 14, marginBottom: 8, width: 220,
-              }}
+                paddingVertical: 14, marginBottom: 8, width: 220 }}
               placeholder="••••"
               placeholderTextColor="#C7C7CC"
               value={pinInput}
@@ -3424,8 +3346,7 @@ export default function VoiceRoomScreen() {
               style={{
                 backgroundColor: '#E3F2FD', borderRadius: 14,
                 paddingVertical: 14, paddingHorizontal: 48, marginBottom: 12,
-                opacity: (pinVerifying || pinInput.length !== 4) ? 0.5 : 1,
-              }}
+                opacity: (pinVerifying || pinInput.length !== 4) ? 0.5 : 1 }}
             >
               <Text style={{ color: '#007AFF', fontSize: 16, fontWeight: '800' }}>
                 {pinVerifying ? t('voiceRoom.screen.pinVerifying') : t('voiceRoom.screen.pinJoin')}
