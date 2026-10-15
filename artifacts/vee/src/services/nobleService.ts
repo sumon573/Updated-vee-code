@@ -32,6 +32,7 @@
 import { ref, onValue, get, set, runTransaction } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
+import { rewardsForRank, rewardIcon } from './nobleRewardsCatalog';
 
 export const NOBLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -248,34 +249,39 @@ function applyNobleGift(cur: unknown, price: number, now: number): NobleState {
 async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void> {
   const rank = NOBLE_RANKS[rankIndex];
   if (!rank) return;
+  /* 2026-10-15 (Sumon): Read designs from the central catalog —
+   * when Sumon provides designs, plug URLs there and grants use them automatically. */
+  const catalog = rewardsForRank(rankIndex);
   const now = Date.now();
   const desc = `Noble privilege — earned by reaching ${rank.name} rank.`;
   await grantNameplate(uid, {
     id: `noble-plate-${rank.key}`,
     name: `${rank.name} Nameplate`,
-    icon: '🎖️',
+    icon: catalog ? rewardIcon(catalog.nameplate) : '🎖️',
     obtainedAt: now,
     validity: 'permanent',
     source: 'official',
     description: desc,
     grantedBy: 'noble-system',
   });
-  await grantBadge(uid, {
-    id: `noble-badge-${rank.key}`,
-    name: `${rank.name} Noble`,
-    icon: '👑',
-    obtainedAt: now,
-    validity: 'permanent',
-    source: 'official',
-    description: desc,
-    howToGet: 'Send diamonds as gifts in voice rooms to earn Noble XP.',
-    grantedBy: 'noble-system',
-  });
-  if (rank.privileges.includes('avatarFrame')) {
+  if (catalog?.badge) {
+    await grantBadge(uid, {
+      id: `noble-badge-${rank.key}`,
+      name: `${rank.name} Noble`,
+      icon: rewardIcon(catalog.badge),
+      obtainedAt: now,
+      validity: 'permanent',
+      source: 'official',
+      description: desc,
+      howToGet: 'Send diamonds as gifts in voice rooms to earn Noble XP.',
+      grantedBy: 'noble-system',
+    });
+  }
+  if (catalog?.frame) {
     await grantFrame(uid, {
       id: `noble-frame-${rank.key}`,
       name: `${rank.name} Frame`,
-      icon: '🖼️',
+      icon: rewardIcon(catalog.frame),
       obtainedAt: now,
       validity: 'permanent',
       source: 'official',
@@ -283,12 +289,12 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       grantedBy: 'noble-system',
     });
   }
-  /* 2026-10-15 (Sumon): Ripple for RoyalDuke+ (micRipple privilege) */
-  if (rank.privileges.includes('micRipple')) {
+  if (catalog?.ripple) {
     await grantRipple(uid, {
       id: `noble-ripple-${rank.key}`,
       name: `${rank.name} Ripple`,
-      icon: '🌊',
+      icon: rewardIcon(catalog.ripple),
+      colors: catalog.ripple.config?.colors as string[] | undefined,
       obtainedAt: now,
       validity: 'permanent',
       source: 'noble',
@@ -296,12 +302,11 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       grantedBy: 'noble-system',
     });
   }
-  /* 2026-10-15 (Sumon): Entry effect for Marquis+ (entryEffects privilege) */
-  if (rank.privileges.includes('entryEffects')) {
+  if (catalog?.entryEffect) {
     await grantEntryEffect(uid, {
       id: `noble-effect-${rank.key}`,
       name: `${rank.name} Entry`,
-      icon: '✨',
+      icon: rewardIcon(catalog.entryEffect),
       obtainedAt: now,
       validity: 'permanent',
       source: 'noble',
