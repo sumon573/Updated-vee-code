@@ -49,6 +49,9 @@ export type RoomSeat = {
   role: 'host' | 'admin' | 'member';
   // 2026-10-14 (Sumon): active frame id — synced from user profile to seat
   activeFrame?: string;
+  // 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank speaking ripple.
+  // Written by the seat holder from their real noble state at join time.
+  nobleRankIndex?: number;
   // P1 ghost-seat fix (2026-10-12): server-timestamp heartbeat, refreshed
   // every ~60s by the seat holder. Seats with a stale/absent heartbeat are
   // swept as crashed/killed clients (see sweepStaleSeats).
@@ -64,6 +67,8 @@ export type RoomAudienceMember = {
   role?: 'member' | 'admin';
   /** 2026-10-13 (Sumon): active frame id for audience list display */
   activeFrame?: string;
+  /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank entry effect. */
+  nobleRankIndex?: number;
 };
 
 export type RoomInfo = {
@@ -1401,11 +1406,12 @@ export type RoomEntryEvent = {
   photoURL?: string | null;
   ts: number;
   /**
-   * NOTE 10 (2026-10-11): Noble "Fancy Entry Effects" — true when the joiner
-   * holds the privilege (Marquis+ with maintenance secured). Computed by the
-   * SENDER from their real noble state; receivers render the fancy variant.
+   * 2026-10-15 (Sumon): noble rank index (0-9) of the joiner — for PER-RANK
+   * entry effects. Computed by the SENDER from their real noble state;
+   * receivers render the rank-specific variant. Absent = non-noble.
+   * (Replaces the old boolean fancyEntry.)
    */
-  fancyEntry?: boolean;
+  nobleRankIndex?: number;
 };
 
 /**
