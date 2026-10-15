@@ -5,17 +5,14 @@
  */
 
 import { useEffect, useState } from 'react';
-import {
-  View, Text, Image, ActivityIndicator,
-  FlatList, Dimensions, Alert,
-} from 'react-native';
+import { View, Text, Image, FlatList, Dimensions, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   subscribePlanetStories,
-  deleteStory,
-} from '../chat/services/firebaseStoryService';
+  deleteStory } from '../chat/services/firebaseStoryService';
 import { UserStories } from '../chat/types';
 import StoryViewer from '../chat/screens/StoryViewer';
 import ScalePress from '@/components/ScalePress';
@@ -31,13 +28,11 @@ const C = {
   text: '#000000',
   muted: '#B8A6D9',
   dim: '#4A3D6E',
-  border: '#1E1830',
-} as const;
+  border: '#1E1830' } as const;
 
 function StoryCard({
   userStory,
-  onPress,
-}: {
+  onPress }: {
   userStory: UserStories;
   onPress: () => void;
 }) {
@@ -53,8 +48,7 @@ function StoryCard({
         borderRadius: 16,
         overflow: 'hidden',
         backgroundColor: bgColor,
-        borderWidth: 1, borderColor: C.border,
-      }}>
+        borderWidth: 1, borderColor: C.border }}>
         {isImage && latestStory?.content ? (
           <Image
             source={{ uri: latestStory.content }}
@@ -76,8 +70,7 @@ function StoryCard({
         <View style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
           paddingHorizontal: 10, paddingVertical: 8,
-          backgroundColor: 'rgba(0,0,0,0.52)',
-        }}>
+          backgroundColor: 'rgba(0,0,0,0.52)' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {userStory.userAvatar ? (
               <Image
@@ -88,8 +81,7 @@ function StoryCard({
               <View style={{
                 width: 20, height: 20, borderRadius: 10,
                 backgroundColor: C.primary + '66',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
+                alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>
                   {userStory.userName[0]?.toUpperCase() ?? '?'}
                 </Text>
@@ -106,8 +98,7 @@ function StoryCard({
           <View style={{
             position: 'absolute', top: 8, right: 8,
             backgroundColor: C.primary,
-            borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2,
-          }}>
+            borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>
               {userStory.stories.length}
             </Text>
@@ -145,7 +136,7 @@ export default function PlanetScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={C.primary} />
+        <PremiumLoader size="large" />
       </View>
     );
   }
@@ -156,8 +147,7 @@ export default function PlanetScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 20, paddingVertical: 14,
-        borderBottomWidth: 1, borderBottomColor: C.border,
-      }}>
+        borderBottomWidth: 1, borderBottomColor: C.border }}>
         <Text style={{ fontSize: 22, marginRight: 8 }}>🌍</Text>
         <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', flex: 1 }}>
           {t('planet.title', { defaultValue: 'Planet' })}
