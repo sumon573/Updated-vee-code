@@ -31,7 +31,7 @@
  */
 import { ref, onValue, get, set, runTransaction } from 'firebase/database';
 import { database } from '../config/firebase';
-import { grantBadge, grantFrame, grantNameplate } from './badgeService';
+import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
 
 export const NOBLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -283,13 +283,72 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       grantedBy: 'noble-system',
     });
   }
+  /* 2026-10-15 (Sumon): Ripple for RoyalDuke+ (micRipple privilege) */
+  if (rank.privileges.includes('micRipple')) {
+    await grantRipple(uid, {
+      id: `noble-ripple-${rank.key}`,
+      name: `${rank.name} Ripple`,
+      icon: '🌊',
+      obtainedAt: now,
+      validity: 'permanent',
+      source: 'noble',
+      description: desc,
+      grantedBy: 'noble-system',
+    });
+  }
+  /* 2026-10-15 (Sumon): Entry effect for Marquis+ (entryEffects privilege) */
+  if (rank.privileges.includes('entryEffects')) {
+    await grantEntryEffect(uid, {
+      id: `noble-effect-${rank.key}`,
+      name: `${rank.name} Entry`,
+      icon: '✨',
+      obtainedAt: now,
+      validity: 'permanent',
+      source: 'noble',
+      description: desc,
+      grantedBy: 'noble-system',
+    });
+  }
 }
 
-/**
- * Record one gift's diamonds toward Noble XP. Call ONLY for completed,
- * non-replayed, non-self gifts (the caller guarantees this).
- * Atomic via runTransaction — concurrent gifts never double-count.
- */
+/* ── 2026-10-15 (Sumon): Self-healing — grant missing rank items ──
+ * Users who reached their rank before auto-grant existed never received
+ * their nameplate/badge/frame/ripple/entry-effect. This checks the user's
+ * current rank and grants any missing items. Called from refreshNobleState.
+ * Idempotent: re-running grants nothing new. */
+export async function healMissingNobleItems(uid: string): Promise<void> {
+  if (!uid) return;
+  try {
+    const nobleSnap = await get(ref(database, `users/${uid}/noble`));
+    if (!nobleSnap.exists()) return;
+    const state = coerceState(nobleSnap.val());
+    if (!state) return;
+    const rank = NOBLE_RANKS[state.rankIndex];
+    if (!rank) return;
+
+    // Check existing items in parallel
+    const [platesSnap, badgesSnap, framesSnap, ripplesSnap, effectsSnap] = await Promise.all([
+      get(ref(database, `users/${uid}/nameplates`)).catch(() => null),
+      get(ref(database, `users/${uid}/badges`)).catch(() => null),
+      get(ref(database, `users/${uid}/frames`)).catch(() => null),
+      get(ref(database, `users/${uid}/ripples`)).catch(() => null),
+      get(ref(database, `users/${uid}/entryEffects`)).catch(() => null),
+    ]);
+
+    const hasPlate = platesSnap?.exists() && platesSnap.hasChild(`noble-plate-${rank.key}`);
+    const hasBadge = badgesSnap?.exists() && badgesSnap.hasChild(`noble-badge-${rank.key}`);
+    const hasFrame = framesSnap?.exists() && framesSnap.hasChild(`noble-frame-${rank.key}`);
+    const hasRipple = ripplesSnap?.exists() && ripplesSnap.hasChild(`noble-ripple-${rank.key}`);
+    const hasEffect = effectsSnap?.exists() && effectsSnap.hasChild(`noble-effect-${rank.key}`);
+
+    // Grant only what's missing — grantNobleRankItems is idempotent per item
+    if (!hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect) {
+      await grantNobleRankItems(uid, state.rankIndex);
+    }
+  } catch {
+    // Non-critical — will retry on next refresh
+  }
+}
 export async function recordNobleXP(uid: string, price: number): Promise<void> {
   if (!uid || !(price > 0)) return;
   const nobleRef = ref(database, `users/${uid}/noble`);
@@ -358,6 +417,9 @@ export async function refreshNobleState(uid: string): Promise<NobleState | null>
     if (changed) {
       await set(nobleRef, s).catch(() => {});
     }
+    /* 2026-10-15 (Sumon): Self-heal — grant any missing rank rewards.
+     * Non-blocking: runs in background, never fails the refresh. */
+    healMissingNobleItems(uid).catch(() => {});
     return s;
   } catch {
     return null;

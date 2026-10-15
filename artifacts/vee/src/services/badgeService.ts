@@ -60,6 +60,38 @@ export interface GrantedFrame {
   grantedBy?: string;
 }
 
+/* ── 2026-10-15 (Sumon): Sound Ripple collectibles ──
+ * users/{uid}/ripples/{rippleId} → GrantedRipple
+ * Equippable speaking-ripple effects, shown in Decoration > Ripples. */
+export interface GrantedRipple {
+  id: string;
+  name: string;
+  /** emoji icon or image URL */
+  icon: string;
+  /** Ripple visual config: colors for the speaking waves */
+  colors?: string[];
+  obtainedAt: number;
+  validity: 'permanent' | number;
+  source: 'official' | 'event' | 'noble';
+  description?: string;
+  grantedBy?: string;
+}
+
+/* ── 2026-10-15 (Sumon): Entry Effect collectibles ──
+ * users/{uid}/entryEffects/{effectId} → GrantedEntryEffect
+ * Equippable room-entry animations, shown in Decoration > Entry FX. */
+export interface GrantedEntryEffect {
+  id: string;
+  name: string;
+  /** emoji icon or image URL */
+  icon: string;
+  obtainedAt: number;
+  validity: 'permanent' | number;
+  source: 'official' | 'event' | 'noble';
+  description?: string;
+  grantedBy?: string;
+}
+
 /**
  * Normalize a Firebase list that may be stored as an array OR as a
  * keyed map ({ id1: {...}, id2: {...} }). Returns a clean array.
@@ -77,7 +109,7 @@ function normalizeList<T extends { id: string }>(raw: unknown): T[] {
 
 function subscribeList<T extends { id: string }>(
   uid: string,
-  node: 'badges' | 'nameplates' | 'frames',
+  node: 'badges' | 'nameplates' | 'frames' | 'ripples' | 'entryEffects',
   callback: (items: T[]) => void,
 ): () => void {
   const listRef = ref(database, `users/${uid}/${node}`);
@@ -141,6 +173,30 @@ export function subscribeFrames(
   );
 }
 
+/* ── 2026-10-15 (Sumon): Subscribe to owned sound ripples ── */
+export function subscribeRipples(
+  uid: string,
+  callback: (ripples: GrantedRipple[]) => void,
+): () => void {
+  return subscribeList<GrantedRipple>(uid, 'ripples', (items) =>
+    callback(
+      rankHonors(items.filter((r) => isStillValid(r.validity))),
+    ),
+  );
+}
+
+/* ── 2026-10-15 (Sumon): Subscribe to owned entry effects ── */
+export function subscribeEntryEffects(
+  uid: string,
+  callback: (effects: GrantedEntryEffect[]) => void,
+): () => void {
+  return subscribeList<GrantedEntryEffect>(uid, 'entryEffects', (items) =>
+    callback(
+      rankHonors(items.filter((e) => isStillValid(e.validity))),
+    ),
+  );
+}
+
 /** Admin-side: grant a badge to a user (officially). */
 export async function grantBadge(uid: string, badge: GrantedBadge): Promise<void> {
   await set(ref(database, `users/${uid}/badges/${badge.id}`), {
@@ -157,6 +213,16 @@ export async function grantNameplate(uid: string, plate: GrantedNameplate): Prom
 /** Admin-side: grant a frame to a user (officially). */
 export async function grantFrame(uid: string, frame: GrantedFrame): Promise<void> {
   await set(ref(database, `users/${uid}/frames/${frame.id}`), frame);
+}
+
+/* ── 2026-10-15 (Sumon): Grant a sound ripple ── */
+export async function grantRipple(uid: string, ripple: GrantedRipple): Promise<void> {
+  await set(ref(database, `users/${uid}/ripples/${ripple.id}`), ripple);
+}
+
+/* ── 2026-10-15 (Sumon): Grant an entry effect ── */
+export async function grantEntryEffect(uid: string, effect: GrantedEntryEffect): Promise<void> {
+  await set(ref(database, `users/${uid}/entryEffects/${effect.id}`), effect);
 }
 
 /** "First obtained on" date — visible to everyone (friends/public). Format: DD-MM-YYYY */

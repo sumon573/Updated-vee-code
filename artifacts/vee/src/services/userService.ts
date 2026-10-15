@@ -51,6 +51,9 @@ export type VeeUser = {
   ownedNameplates?: string[];
   /** Currently equipped nameplate ID. */
   activeNameplate?: string;
+  /* 2026-10-15 (Sumon): Equipped sound ripple + entry effect IDs */
+  activeRipple?: string;
+  activeEntryEffect?: string;
   /** 4-digit premium Short ID (2026-10-09). Displayed in gold badge. */
   shortId?: string;
   /** Official verified badge (2026-10-09). Granted by admins only. */
@@ -147,6 +150,8 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
     ownedNameplates: Array.isArray(raw.ownedNameplates) ? raw.ownedNameplates.filter((n: unknown) => typeof n === 'string') : [],
     activeFrame: typeof raw.activeFrame === 'string' ? raw.activeFrame : undefined,
     activeNameplate: typeof raw.activeNameplate === 'string' ? raw.activeNameplate : undefined,
+    activeRipple: typeof raw.activeRipple === 'string' ? raw.activeRipple : undefined,
+    activeEntryEffect: typeof raw.activeEntryEffect === 'string' ? raw.activeEntryEffect : undefined,
     // Short ID + official badge (2026-10-09)
     shortId: typeof raw.shortId === 'string' ? raw.shortId : undefined,
     officialBadge: raw.officialBadge && typeof raw.officialBadge === 'object'
