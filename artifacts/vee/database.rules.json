@@ -658,7 +658,17 @@
             // recharge = any positive amount (packages are server-configured).
             ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && ((newData.child('type').val() === 'gift_sent' && (newData.child('diamonds').val() == -10 || newData.child('diamonds').val() == -25 || newData.child('diamonds').val() == -50 || newData.child('diamonds').val() == -100 || newData.child('diamonds').val() == -200 || newData.child('diamonds').val() == -500 || newData.child('diamonds').val() == -1000 || newData.child('diamonds').val() == -2000)) || (newData.child('type').val() === 'gift_received' && (newData.child('diamonds').val() == 7 || newData.child('diamonds').val() == 17 || newData.child('diamonds').val() == 35 || newData.child('diamonds').val() == 70 || newData.child('diamonds').val() == 140 || newData.child('diamonds').val() == 350 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1400 || newData.child('diamonds').val() == 10 || newData.child('diamonds').val() == 25 || newData.child('diamonds').val() == 50 || newData.child('diamonds').val() == 100 || newData.child('diamonds').val() == 200 || newData.child('diamonds').val() == 500 || newData.child('diamonds').val() == 1000 || newData.child('diamonds').val() == 2000) && newData.child('fromUid').val() === auth.uid) || (newData.child('type').val() === 'recharge' && newData.child('diamonds').isNumber() && newData.child('diamonds').val() > 0))"
           }
-        }
+        },
+        "giftCounts": {
+          // 2026-10-15 (Sumon): PERMANENT lifetime gift counts — wallets/{uid}/giftCounts/{giftId}.
+          // Readable by any signed-in user (Gift Display screen). Write = increment
+          // by exactly 1 only (any sender increments the RECIPIENT's count when
+          // a gift is sent). No decrements, no arbitrary sets — counts only grow.
+          ".read": "auth != null",
+          "$giftId": {
+            ".write": "auth != null && newData.isNumber() && ((!data.exists() && newData.val() == 1) || (data.exists() && data.isNumber() && newData.val() == data.val() + 1))"
+          }
+        },
       }
     },
 
