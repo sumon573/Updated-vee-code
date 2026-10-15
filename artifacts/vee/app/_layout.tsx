@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager, AppState } from 'react-native';
+import { View, Modal, Text, Pressable, Image, I18nManager, AppState } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 
 /**
  * CRASH CAUSE DISPLAY (2026-10-11, Sumon's rule): every JS error must show
@@ -40,8 +41,7 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
   Inter_700Bold,
-  useFonts,
-} from '@expo-google-fonts/inter';
+  useFonts } from '@expo-google-fonts/inter';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -60,16 +60,14 @@ import {
   initializeOneSignal,
   loginOneSignal,
   logoutOneSignal,
-  registerNotificationOpenedHandler,
-} from '@/src/services/pushNotificationService';
+  registerNotificationOpenedHandler } from '@/src/services/pushNotificationService';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import {
   subscribeIncomingCall,
   removeCallSignal,
   updateCallSignal,
-  type IncomingCall,
-} from '@/src/features/audio-call/services/firebaseCallService';
+  type IncomingCall } from '@/src/features/audio-call/services/firebaseCallService';
 import { isInteractionBlocked } from '@/src/services/blockService';
 import { tryGetApiBase } from '@/src/utils/platform';
 // NOTE 1 (2026-10-11): Global return-to-room bar for minimized voice rooms.
@@ -78,8 +76,7 @@ import RoomInvitePopup from '@/src/features/voice-room/components/RoomInvitePopu
 import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBar';
 import {
   isCallMinimizing,
-  getMinimizedCall,
-} from '@/src/features/audio-call/services/callMinimizeStore';
+  getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 
 // Expo can reject this call when the native splash screen has already been
 // dismissed (for example after a fast reload). Never leave that rejection
@@ -90,10 +87,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 2,
-      staleTime: 30_000,
-    },
-  },
-});
+      staleTime: 30_000 } } });
 
 // ─── Auth + Language Guard ────────────────────────────────────────────────────
 //
@@ -385,7 +379,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       // P1 fix (2026-10-12): white loading screen per the light-mode-everywhere rule.
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#007AFF" size="large" />
+        <PremiumLoader size="large" />
       </View>
     );
   }
@@ -441,8 +435,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 // Decline removes the Firebase signal.
 
 function IncomingCallListener({
-  uid, myName,
-}: {
+  uid, myName }: {
   uid: string;
   myName: string;
 }) {
@@ -620,16 +613,14 @@ function IncomingCallListener({
     >
       <View style={{
         flex: 1, justifyContent: 'flex-end',
-        backgroundColor: 'rgba(0,0,0,0.55)',
-      }}>
+        backgroundColor: 'rgba(0,0,0,0.55)' }}>
         <View style={{
           backgroundColor: '#0F0A1E',
           borderTopLeftRadius: 28, borderTopRightRadius: 28,
           paddingHorizontal: 28, paddingTop: 28, paddingBottom: 48,
           alignItems: 'center',
           borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
-          borderColor: 'rgba(139,92,246,0.3)',
-        }}>
+          borderColor: 'rgba(139,92,246,0.3)' }}>
           {/* Caller avatar */}
           <View style={{
             width: 84, height: 84, borderRadius: 42,
@@ -638,8 +629,7 @@ function IncomingCallListener({
             alignItems: 'center', justifyContent: 'center',
             overflow: 'hidden', marginBottom: 14,
             shadowColor: '#8B5CF6', shadowOpacity: 0.4,
-            shadowRadius: 18, shadowOffset: { width: 0, height: 4 },
-          }}>
+            shadowRadius: 18, shadowOffset: { width: 0, height: 4 } }}>
             {(incoming.callerPhotoURL || fallbackPhoto) ? (
               <Image
                 source={{ uri: (incoming.callerPhotoURL || fallbackPhoto) as string }}
@@ -657,8 +647,7 @@ function IncomingCallListener({
           </Text>
           <Text style={{
             color: 'rgba(255,255,255,0.55)', fontSize: 14,
-            marginTop: 5, marginBottom: 32, fontWeight: '500',
-          }}>
+            marginTop: 5, marginBottom: 32, fontWeight: '500' }}>
             Incoming Voice Call
           </Text>
 
@@ -673,8 +662,7 @@ function IncomingCallListener({
                   backgroundColor: '#EF4444',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 14,
-                  elevation: 8,
-                }}
+                  elevation: 8 }}
               >
                 <Feather name="phone-off" size={28} color="#fff" />
               </Pressable>
@@ -690,8 +678,7 @@ function IncomingCallListener({
                   backgroundColor: '#22C55E',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#22C55E', shadowOpacity: 0.5, shadowRadius: 14,
-                  elevation: 8,
-                }}
+                  elevation: 8 }}
               >
                 <Feather name="phone" size={28} color="#fff" />
               </Pressable>
@@ -714,8 +701,7 @@ function RootLayoutNav() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: '#FFFFFF' },
-          animation: 'fade_from_bottom',
-        }}
+          animation: 'fade_from_bottom' }}
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="auth/login" />
@@ -814,8 +800,7 @@ export default function RootLayout() {
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
-    Inter_700Bold,
-  });
+    Inter_700Bold });
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
