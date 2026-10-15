@@ -837,15 +837,32 @@
     // ─────────────────────────────────────────────────────────────────────
     "leaderboard": {
       ".read": "auth != null",
-      ".write": false,
-      ".indexOn": ["weeklyEarned"]
+      // 2026-10-15 (Sumon): REAL weekly leaderboard — per-ISO-week buckets
+      // ({weekId}/{uid}) so rankings reset automatically every week.
+      // The gift SENDER's app credits the receiver's weeklyEarned. The writer
+      // can never be the stat owner (no self-inflation); the added amount must
+      // be a valid 70% gift commission (7/17/35/70/140/350/700/1400) — mirrors
+      // the wallets/$uid/balance anti-mint pattern.
+      "$week": {
+        ".indexOn": ["weeklyEarned"],
+        "$uid": {
+          ".write": "auth != null && auth.uid !== $uid && newData.hasChildren(['name', 'weeklyEarned']) && newData.child('name').isString() && newData.child('weeklyEarned').isNumber() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString()) && ((!data.child('weeklyEarned').exists() && (newData.child('weeklyEarned').val() == 7 || newData.child('weeklyEarned').val() == 17 || newData.child('weeklyEarned').val() == 35 || newData.child('weeklyEarned').val() == 70 || newData.child('weeklyEarned').val() == 140 || newData.child('weeklyEarned').val() == 350 || newData.child('weeklyEarned').val() == 700 || newData.child('weeklyEarned').val() == 1400)) || (data.child('weeklyEarned').exists() && data.child('weeklyEarned').isNumber() && (newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 7 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 17 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 35 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 70 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 140 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 350 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 700 || newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() == 1400)))"
+        }
+      }
     },
     // LEADERBOARD FIX (2026-10-12): leaderboard_senders had NO rules —
     // top-level ".read": false made Top Senders permanently empty.
     "leaderboard_senders": {
       ".read": "auth != null",
-      ".write": false,
-      ".indexOn": ["weeklySent"]
+      // 2026-10-15 (Sumon): REAL weekly stats — the sender's app writes ONLY its
+      // own node (auth.uid === $uid); the added amount must be a valid gift
+      // price (10/25/50/100/200/500/1000/2000).
+      "$week": {
+        ".indexOn": ["weeklySent"],
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && newData.hasChildren(['name', 'weeklySent']) && newData.child('name').isString() && newData.child('weeklySent').isNumber() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString()) && ((!data.child('weeklySent').exists() && (newData.child('weeklySent').val() == 10 || newData.child('weeklySent').val() == 25 || newData.child('weeklySent').val() == 50 || newData.child('weeklySent').val() == 100 || newData.child('weeklySent').val() == 200 || newData.child('weeklySent').val() == 500 || newData.child('weeklySent').val() == 1000 || newData.child('weeklySent').val() == 2000)) || (data.child('weeklySent').exists() && data.child('weeklySent').isNumber() && (newData.child('weeklySent').val() - data.child('weeklySent').val() == 10 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 25 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 50 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 100 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 200 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 500 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 1000 || newData.child('weeklySent').val() - data.child('weeklySent').val() == 2000)))"
+        }
+      }
     },
 
     // ─────────────────────────────────────────────────────────────────────
