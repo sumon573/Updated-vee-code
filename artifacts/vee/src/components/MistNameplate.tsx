@@ -15,6 +15,8 @@ type MistParticle = {
   opacity: number;
   duration: number;
   delay: number;
+  driftX: number;
+  driftY: number;
 };
 
 function createParticles(count: number, width: number, height: number): MistParticle[] {
@@ -26,6 +28,8 @@ function createParticles(count: number, width: number, height: number): MistPart
     opacity: 0.15 + Math.random() * 0.25,
     duration: 3000 + Math.random() * 3000,
     delay: Math.random() * 2000,
+    driftX: (Math.random() - 0.5) * 30,
+    driftY: (Math.random() - 0.5) * 20,
   }));
 }
 
@@ -95,13 +99,13 @@ export default function MistNameplate({
                 {
                   translateX: p.anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, (Math.random() - 0.5) * 30],
+                    outputRange: [0, p.driftX],
                   }),
                 },
                 {
                   translateY: p.anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, (Math.random() - 0.5) * 20],
+                    outputRange: [0, p.driftY],
                   }),
                 },
               ],
