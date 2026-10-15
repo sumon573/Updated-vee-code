@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, FlatList, Alert, Pressable,
   Animated, Platform, TextInput, ActivityIndicator, Image,
-  BackHandler, Modal, KeyboardAvoidingView,
+  BackHandler, Modal, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -2244,11 +2244,31 @@ export default function VoiceRoomScreen() {
   const bottomPad  = Math.max(insets.bottom, Platform.OS === 'web' ? 20 : 8) + 14;
   const BOTTOM_BAR_H = bottomPad + 14 + 58;
 
+  /* ── Keyboard visibility (2026-10-15, Sumon) ──
+     While the comment keyboard is open the bottom action bar (Join Seat /
+     Speaker / Tasks / Gift / Invite / Exit) must NOT ride up above the
+     keyboard — it hides until the keyboard closes. Also keeps the latest
+     chat messages scrolled into view above the input. */
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const onShow = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardOpen(true);
+      setTimeout(() => chatRef.current?.scrollToEnd({ animated: true }), 120);
+    });
+    const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
+
   /* ═══ RENDER ═══ */
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      /* 2026-10-15 (Sumon): Android uses adjustResize (app.json
+         softwareKeyboardLayoutMode="resize") so the window already shrinks
+         above the keyboard — KAV height behavior would subtract the keyboard
+         height a SECOND time and collapse the chat (input hidden). iOS keeps
+         padding behavior; web keeps height. */
+      behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? undefined : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
@@ -2720,7 +2740,7 @@ export default function VoiceRoomScreen() {
           paddingHorizontal: 4, paddingVertical: 8,
           backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderFaint,
         }}>
-          <ScalePress onPress={() => setEmojiPanelOpen(true)} style={{ padding: 8 }}>
+          <ScalePress onPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }} style={{ padding: 8 }}>
             <Feather name="smile" size={26} color={C.sub} />
           </ScalePress>
 
@@ -2788,6 +2808,9 @@ export default function VoiceRoomScreen() {
       />
 
       {/* ═══ BOTTOM BAR ═══ */}
+      {/* 2026-10-15 (Sumon): hidden while the comment keyboard is open —
+          Gift / Mic / Tasks / Invite / Exit must not ride up above it. */}
+      {!keyboardOpen && (
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
@@ -2897,6 +2920,7 @@ export default function VoiceRoomScreen() {
           </View>
         </ScalePress>
       </View>
+      )}
 
       {/* ═══ MODALS ═══ */}
       {/* Fix 3/8/9: Cloudinary upload happens inside RoomInfoModal; we persist the URL here */}
