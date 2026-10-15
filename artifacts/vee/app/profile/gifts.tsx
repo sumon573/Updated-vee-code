@@ -95,6 +95,8 @@ export default function GiftDisplayScreen() {
   const [sortMenuTop, setSortMenuTop] = useState(0);
   const sortBtnRef = useRef<View>(null);
   const [contributors, setContributors] = useState<Record<string, VeeUser | null>>({});
+  // 2026-10-15 (Sumon): lifetime gift counts — permanent, not limited to 50 txs.
+  const [lifetimeCounts, setLifetimeCounts] = useState<Record<string, number>>({});
 
   // Open the sort dropdown anchored under the sort button (real position).
   const openSortMenu = useCallback(() => {
@@ -120,9 +122,15 @@ export default function GiftDisplayScreen() {
       setTxs(list);
       setLoaded(true);
     });
+    // 2026-10-15 (Sumon): subscribe lifetime gift counts (permanent aggregate).
+    let offCounts: (() => void) | undefined;
+    import('@/src/features/wallet/walletService').then(({ subscribeGiftCounts }) => {
+      offCounts = subscribeGiftCounts(uid, setLifetimeCounts);
+    }).catch(() => {});
     return () => {
       offUser();
       offTxs();
+      offCounts?.();
     };
   }, [uid]);
 
@@ -133,12 +141,15 @@ export default function GiftDisplayScreen() {
   );
 
   const giftCounts = useMemo(() => {
+    // 2026-10-15 (Sumon): prefer lifetime aggregate (accurate forever).
+    // Fall back to tx counting for users with no aggregate yet (legacy).
+    if (Object.keys(lifetimeCounts).length > 0) return lifetimeCounts;
     const counts: Record<string, number> = {};
     for (const t of receivedTxs) {
       counts[t.giftId] = (counts[t.giftId] ?? 0) + 1;
     }
     return counts;
-  }, [receivedTxs]);
+  }, [receivedTxs, lifetimeCounts]);
 
   const catalogEntries = useMemo(
     () =>
