@@ -348,8 +348,25 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
 
     // 2026-10-15 (Sumon): Also update icons if catalog has newer design URLs.
     // grantNobleRankItems uses set() so it's safe to re-run — updates stale fallback icons.
+    // Check ALL ranks up to current (not just current) — old ranks may have stale 🎖️ icons.
     const catalog = rewardsForRank(state.rankIndex);
     let needsUpdate = !hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect;
+    if (platesSnap?.exists()) {
+      for (let i = 0; i <= state.rankIndex; i++) {
+        const r = NOBLE_RANKS[i];
+        if (!r) continue;
+        const plateId = `noble-plate-${r.key}`;
+        const existingPlate = platesSnap.child(plateId).val();
+        if (existingPlate) {
+          const rankCatalog = rewardsForRank(i);
+          const expectedIcon = rankCatalog ? rewardIcon(rankCatalog.nameplate) : '🎖️';
+          if (existingPlate.icon !== expectedIcon) {
+            needsUpdate = true;
+            break;
+          }
+        }
+      }
+    }
     if (!needsUpdate && catalog) {
       // Check if existing plate has outdated icon
       const plateId = `noble-plate-${rank.key}`;
@@ -361,7 +378,10 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     }
     // Grant only what's missing or outdated — grantNobleRankItems is idempotent per item
     if (needsUpdate) {
-      await grantNobleRankItems(uid, state.rankIndex);
+      // Re-grant all ranks up to current to fix stale icons
+      for (let i = 0; i <= state.rankIndex; i++) {
+        await grantNobleRankItems(uid, i);
+      }
     }
   } catch {
     // Non-critical — will retry on next refresh
