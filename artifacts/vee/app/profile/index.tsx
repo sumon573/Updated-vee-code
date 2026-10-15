@@ -803,9 +803,9 @@ export default function ProfileScreen({
                   const activeFrameObj = grantedFrames.find((f) => f.id === activeFrameId);
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
-                    // 2026-10-15: Nobel frames have ~51% inner opening — 128px (1.6x of 80px DP) ensures fit
+                    // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
                     const isNobleFrame = activeFrameId.startsWith('noble-frame-');
-                    const frameSize = isNobleFrame ? 128 : 92;
+                    const frameSize = isNobleFrame ? 110 : 92;
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
@@ -848,12 +848,12 @@ export default function ProfileScreen({
           {/* 2026-10-15 (Sumon): Equipped nameplate IS the rank display. Final — no old pill. */}
           {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
             nameplateMist ? (
-              // 2026-10-15: Nameplate images are 5:1 ratio — 150x30 matches exactly
-              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={150} height={30} />
+              // 2026-10-15 (Sumon): Same size as Level/Follower pills — 100x20
+              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
             ) : (
               <Image
                 source={{ uri: activeNameplate.icon }}
-                style={{ width: 150, height: 30 }}
+                style={{ width: 100, height: 20 }}
                 resizeMode="contain"
               />
             )
