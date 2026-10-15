@@ -11,13 +11,13 @@
  * Renders nothing when the connection is healthy — zero visual noise.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Text, View } from 'react-native';
+import { Animated, Text, View } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import {
   subscribeNetworkStatus,
-  type NetworkState,
-} from '@/src/services/networkService';
+  type NetworkState } from '@/src/services/networkService';
 
 const CONNECTED_FLASH_MS = 2500;
 
@@ -71,8 +71,7 @@ export default function NetworkStatusBar() {
     Animated.timing(slideAnim, {
       toValue: visible ? 0 : 80,
       duration: 250,
-      useNativeDriver: true,
-    }).start();
+      useNativeDriver: true }).start();
   }, [visible, slideAnim]);
 
   if (!visible) return null;
@@ -95,8 +94,7 @@ export default function NetworkStatusBar() {
         bottom: 0,
         transform: [{ translateY: slideAnim }],
         zIndex: 998,
-        elevation: 12,
-      }}
+        elevation: 12 }}
     >
       <View
         style={{
@@ -105,15 +103,10 @@ export default function NetworkStatusBar() {
           justifyContent: 'center',
           backgroundColor: isProblem ? '#1C1C1E' : '#1F9D55',
           paddingTop: 9,
-          paddingBottom: Math.max(insets.bottom, 9),
-        }}
+          paddingBottom: Math.max(insets.bottom, 9) }}
       >
         {isProblem ? (
-          <ActivityIndicator
-            size="small"
-            color="#FFFFFF"
-            style={{ marginRight: 8, transform: [{ scale: 0.7 }] }}
-          />
+          <PremiumLoader size="small" />
         ) : (
           <Feather name="check-circle" size={14} color="#FFFFFF" style={{ marginRight: 7 }} />
         )}
