@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import {
-  View, Text, Modal, TextInput, Pressable, Alert, Image,
-  ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Animated, Dimensions,
-} from 'react-native';
+import { View, Text, Modal, TextInput, Pressable, Alert, Image, ScrollView, KeyboardAvoidingView, Platform, Animated, Dimensions } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -27,8 +24,7 @@ const C = {
   border: '#2A2542',
   inputBg: 'rgba(139,92,246,0.07)',
   glass: 'rgba(255,255,255,0.055)',
-  glassBorder: 'rgba(255,255,255,0.09)',
-} as const;
+  glassBorder: 'rgba(255,255,255,0.09)' } as const;
 
 const BG_PRESETS: [string, string][] = [
   ['#7C3AED', '#A855F7'],
@@ -44,8 +40,7 @@ const BG_PRESETS: [string, string][] = [
 type TabType = 'text' | 'photo';
 
 function BgPicker({
-  selected, onSelect,
-}: {
+  selected, onSelect }: {
   selected: [string, string];
   onSelect: (g: [string, string]) => void;
 }) {
@@ -57,8 +52,7 @@ function BgPicker({
             width: 36, height: 36, borderRadius: 18,
             backgroundColor: g[0],
             borderWidth: selected[0] === g[0] ? 2.5 : 0,
-            borderColor: '#fff',
-          }} />
+            borderColor: '#fff' }} />
         </Pressable>
       ))}
     </ScrollView>
@@ -70,8 +64,7 @@ type Contact = { id: string; name: string };
 function MentionPicker({
   contacts,
   mentions,
-  onToggle,
-}: {
+  onToggle }: {
   contacts: Contact[];
   mentions: string[];
   onToggle: (id: string) => void;
@@ -87,8 +80,7 @@ function MentionPicker({
               paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
               backgroundColor: selected ? C.primary : C.glass,
               borderWidth: 1,
-              borderColor: selected ? C.primary : C.glassBorder,
-            }}>
+              borderColor: selected ? C.primary : C.glassBorder }}>
               <Text style={{ color: selected ? '#fff' : C.muted, fontSize: 13, fontWeight: '700' }}>
                 {contact.name}
               </Text>
@@ -149,8 +141,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
   const pickPhoto = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [9, 16], quality: 0.85,
-    });
+      allowsEditing: true, aspect: [9, 16], quality: 0.85 });
     if (!res.canceled && res.assets[0]) {
       setPhotoUri(res.assets[0].uri);
     }
@@ -176,8 +167,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
         content,
         bgGradient,
         mentions,
-        privacy,
-      });
+        privacy });
       // Reset
       setText('');
       setPhotoUri(null);
@@ -222,10 +212,9 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                   <View style={{
                     backgroundColor: C.primary, borderRadius: 20,
                     paddingHorizontal: 18, paddingVertical: 9,
-                    opacity: publishing ? 0.6 : 1,
-                  }}>
+                    opacity: publishing ? 0.6 : 1 }}>
                     {publishing
-                      ? <ActivityIndicator color="#fff" size="small" />
+                      ? <PremiumLoader size="small" />
                       : <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{t('chat.storyPost')}</Text>
                     }
                   </View>
@@ -236,8 +225,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
               <View style={{
                 flexDirection: 'row', backgroundColor: C.glass,
                 borderRadius: 12, padding: 4, marginBottom: 20,
-                borderWidth: 1, borderColor: C.glassBorder,
-              }}>
+                borderWidth: 1, borderColor: C.glassBorder }}>
                 {(['text', 'photo'] as TabType[]).map((tabKey) => (
                   <Pressable
                     key={tabKey}
@@ -245,13 +233,11 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                     style={{
                       flex: 1, paddingVertical: 10, borderRadius: 10,
                       backgroundColor: tab === tabKey ? C.primary : 'transparent',
-                      alignItems: 'center',
-                    }}
+                      alignItems: 'center' }}
                   >
                     <Text style={{
                       color: tab === tabKey ? '#fff' : C.muted,
-                      fontWeight: '800', fontSize: 14,
-                    }}>
+                      fontWeight: '800', fontSize: 14 }}>
                       {tabKey === 'text' ? t('chat.storyTabText') : t('chat.storyTabPhoto')}
                     </Text>
                   </Pressable>
@@ -273,14 +259,12 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                     marginTop: 16, marginBottom: 20,
                     alignItems: 'center', justifyContent: 'center',
                     backgroundColor: bgGradient[0],
-                    borderWidth: 1, borderColor: C.glassBorder,
-                  }}>
+                    borderWidth: 1, borderColor: C.glassBorder }}>
                     <TextInput
                       style={{
                         color: '#fff', fontSize: 22, fontWeight: '800',
                         textAlign: 'center', paddingHorizontal: 24,
-                        width: '100%',
-                      }}
+                        width: '100%' }}
                       placeholder={t('chat.storyTextPlaceholder')}
                       placeholderTextColor="rgba(255,255,255,0.45)"
                       value={text}
@@ -301,8 +285,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                       borderWidth: 1.5, borderColor: C.border,
                       borderStyle: 'dashed',
                       alignItems: 'center', justifyContent: 'center',
-                      marginBottom: 20,
-                    }}>
+                      marginBottom: 20 }}>
                       {photoUri ? (
                         <View style={{ width: '100%', height: '100%' }}>
                           <Image
@@ -313,8 +296,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                           <View style={{
                             position: 'absolute', bottom: 0, left: 0, right: 0,
                             backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 8,
-                            alignItems: 'center',
-                          }}>
+                            alignItems: 'center' }}>
                             <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
                               {t('chat.storyTapToChange', { defaultValue: 'Tap to change photo' })}
                             </Text>
@@ -351,8 +333,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                       borderColor: privacy === p ? C.primary : C.glassBorder,
                       backgroundColor: privacy === p ? C.primary + '22' : C.glass,
                       alignItems: 'center', flexDirection: 'row',
-                      justifyContent: 'center', gap: 6,
-                    }}
+                      justifyContent: 'center', gap: 6 }}
                   >
                     <Feather
                       name={p === 'public' ? 'globe' : 'users'}
@@ -361,8 +342,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
                     />
                     <Text style={{
                       color: privacy === p ? C.primary : C.muted,
-                      fontSize: 13, fontWeight: '700',
-                    }}>
+                      fontSize: 13, fontWeight: '700' }}>
                       {p === 'public'
                         ? t('chat.storyPrivacyPublic', { defaultValue: 'Public' })
                         : t('chat.storyPrivacyContacts', { defaultValue: 'Contacts' })
