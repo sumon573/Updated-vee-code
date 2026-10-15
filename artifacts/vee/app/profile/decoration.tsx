@@ -1,12 +1,11 @@
 /**
- * Profile — Decoration Screen (NOTE 9, 2026-10-11).
+ * Profile — Decoration Screen (2026-10-15, Sumon).
  *
- * Tabs: "Frames" | "Nobel"
- * - Frames: real granted frames ONLY — officially granted (by admin) or
- *   claimed from special events (users/{uid}/frames in Firebase). NO demo
- *   frames. Empty state until any exist. Tap an owned frame to equip it.
- * - Nobel: links to the real Nobel screen (/nobel) — Nobel ranks are earned
- *   by sending diamonds as gifts in voice rooms (NOTE 10).
+ * LUXURY unified collection: Nameplates | Frames | Ripples | Entry FX | Nobel
+ * - Shows ONLY owned items (no badges — badges live in Honor section)
+ * - Tap to equip, "✓ USING" indicator on active item
+ * - Nobel rewards auto-grant on rank-up (healMissingNobleItems)
+ * - Store button at bottom for discovering/buying new items
  *
  * Light mode only. All data is real — no demo content.
  */
@@ -20,14 +19,19 @@ import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
 import {
   subscribeFrames,
+  subscribeNameplates,
+  subscribeRipples,
+  subscribeEntryEffects,
   formatObtainedDate,
   formatValidity,
-  type GrantedFrame } from '@/src/services/badgeService';
+  type GrantedFrame,
+  type GrantedNameplate,
+  type GrantedRipple,
+  type GrantedEntryEffect } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import * as Haptics from 'expo-haptics';
-// 2026-10-11 Issue #7: Nobel content renders INLINE in this tab — no extra
-// click to another screen.
 import NobelScreen from '@/src/features/nobel/NobelScreen';
+import AnimatedFrame from '@/src/components/AnimatedFrame';
 
 const C = {
   bg: '#FFFFFF',
@@ -37,18 +41,26 @@ const C = {
   border: '#E5E5EA',
   blue: '#007AFF',
   blueLight: '#E3F2FF',
+  gold: '#D4AF37',
+  goldDark: '#B8860B',
   goldBg: '#FFF8E6',
   goldBorder: '#F5D67B',
   errorBg: '#FDECEA',
-  errorText: '#B3261E' } as const;
+  errorText: '#B3261E',
+  success: '#4CAF50',
+  successBg: '#E8F5E9' } as const;
 
-// (2026-10-11 Issue #7: Nobel ranks now render inline via NobelScreen;
-// the static NOBEL_RANKS list was removed.)
+type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx' | 'nobel';
 
-import AnimatedFrame from '@/src/components/AnimatedFrame';
+const TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'frames', label: 'Frames', icon: '🖼️' },
+  { key: 'nameplates', label: 'Nameplates', icon: '📛' },
+  { key: 'ripples', label: 'Ripples', icon: '🌊' },
+  { key: 'entryfx', label: 'Entry FX', icon: '✨' },
+  { key: 'nobel', label: 'Nobel', icon: '👑' },
+];
 
-function FrameIcon({ icon, frameId, frameName }: { icon: string; frameId?: string; frameName?: string }) {
-  // 2026-10-13 (Sumon): Official frames show the live AnimatedFrame preview
+function ItemIcon({ icon, frameId, frameName }: { icon: string; frameId?: string; frameName?: string }) {
   const isOfficial = (frameId || '').toLowerCase().includes('official') ||
     (frameName || '').toLowerCase().includes('official');
   if (isOfficial) {
@@ -56,7 +68,6 @@ function FrameIcon({ icon, frameId, frameName }: { icon: string; frameId?: strin
       <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E3F2FD' }} />
         <View style={{ position: 'absolute' }}>
-          {/* 2026-10-14 (Sumon): frameId pass — server APNG preview */}
           <AnimatedFrame size={36} frameId={frameId} />
         </View>
       </View>
@@ -74,6 +85,61 @@ function FrameIcon({ icon, frameId, frameName }: { icon: string; frameId?: strin
   return <Text style={{ fontSize: 40 }}>{icon}</Text>;
 }
 
+function LuxuryEmptyState({ tab }: { tab: TabKey }) {
+  const config = {
+    frames: { icon: '🖼️', title: 'Your Collection Awaits', subtitle: 'Exclusive Frames', desc: 'Prestigious frames are granted officially or earned as event rewards.' },
+    nameplates: { icon: '📛', title: 'No Nameplates Yet', subtitle: 'Nameplates', desc: 'Earn nameplates through Nobel ranks and special events.' },
+    ripples: { icon: '🌊', title: 'No Ripples Yet', subtitle: 'Sound Ripples', desc: 'Unlock speaking ripples from Nobel ranks and events.' },
+    entryfx: { icon: '✨', title: 'No Entry Effects Yet', subtitle: 'Entry Effects', desc: 'Make a grand entrance — unlock effects from Nobel and events.' },
+    nobel: { icon: '👑', title: '', subtitle: '', desc: '' },
+  }[tab];
+
+  if (tab === 'nobel') return null;
+
+  return (
+    <View style={{ flex: 1, alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 }}>
+      <View style={{ width: 140, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+        <View style={{
+          position: 'absolute', width: 140, height: 140, borderRadius: 28,
+          backgroundColor: C.gold + '18',
+          shadowColor: C.gold, shadowOpacity: 0.35, shadowRadius: 24,
+          shadowOffset: { width: 0, height: 10 }, elevation: 10 }} />
+        <View style={{
+          width: 104, height: 104, borderRadius: 20,
+          backgroundColor: '#FFFDF5',
+          borderWidth: 5, borderColor: C.gold,
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: C.goldDark, shadowOpacity: 0.3, shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
+          <View style={{
+            width: 84, height: 84, borderRadius: 14,
+            borderWidth: 2, borderColor: C.goldBorder,
+            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: '#FFFEF9' }}>
+            <Text style={{ fontSize: 36 }}>{config.icon}</Text>
+          </View>
+        </View>
+        <Text style={{ position: 'absolute', top: 8, right: 18, fontSize: 16 }}>✨</Text>
+        <Text style={{ position: 'absolute', bottom: 12, left: 14, fontSize: 12 }}>✨</Text>
+      </View>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', letterSpacing: 0.5 }}>
+        {config.title}
+      </Text>
+      <View style={{
+        marginTop: 12, paddingHorizontal: 20, paddingVertical: 8,
+        borderRadius: 20, backgroundColor: C.gold + '14',
+        borderWidth: 1, borderColor: C.gold + '40' }}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: C.goldDark, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+          ✦ {config.subtitle} ✦
+        </Text>
+      </View>
+      <Text style={{ fontSize: 14, color: '#6B6B6B', textAlign: 'center', marginTop: 16, lineHeight: 22, paddingHorizontal: 32 }}>
+        {config.desc} Your luxury collection begins here.
+      </Text>
+    </View>
+  );
+}
+
 export default function DecorationScreen() {
   const { user } = useAuth();
   const { uid: paramUid } = useLocalSearchParams<{ uid?: string }>();
@@ -81,82 +147,162 @@ export default function DecorationScreen() {
   const isMe = !paramUid || paramUid === user?.uid;
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [frames, setFrames] = useState<GrantedFrame[]>([]);
+  const [nameplates, setNameplates] = useState<GrantedNameplate[]>([]);
+  const [ripples, setRipples] = useState<GrantedRipple[]>([]);
+  const [entryEffects, setEntryEffects] = useState<GrantedEntryEffect[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // NOTE 9: "Nameplates" tab renamed to "Nobel". Nameplates themselves live
-  // in the Honor page; this tab is informational until the Nobel screen ships.
-  const [tab, setTab] = useState<'frames' | 'nobel'>('frames');
+  const [tab, setTab] = useState<TabKey>('frames');
 
   useEffect(() => {
-    if (!targetUid) {
-      setLoading(false);
-      return;
-    }
+    if (!targetUid) { setLoading(false); return; }
     setLoading(true);
     setError(null);
-    let profileDone = false;
-    let framesDone = false;
+    let done = { profile: false, frames: false, plates: false, ripples: false, effects: false };
     const maybeDone = () => {
-      if (profileDone && framesDone) setLoading(false);
+      if (done.profile && done.frames && done.plates && done.ripples && done.effects) setLoading(false);
     };
-    const unsubProfile = subscribeUser(targetUid, (u) => {
-      profileDone = true;
-      setProfile(u);
-      maybeDone();
-    });
-    let unsubFrames: () => void = () => {};
+    const mark = (k: keyof typeof done) => { done[k] = true; maybeDone(); };
+
+    const unsubProfile = subscribeUser(targetUid, (u) => { setProfile(u); mark('profile'); });
+    const subs: (() => void)[] = [];
     try {
-      unsubFrames = subscribeFrames(targetUid, (f) => {
-        framesDone = true;
-        setFrames(f);
-        maybeDone();
-      });
+      subs.push(subscribeFrames(targetUid, (f) => { setFrames(f); mark('frames'); }));
+      subs.push(subscribeNameplates(targetUid, (p) => { setNameplates(p); mark('plates'); }));
+      subs.push(subscribeRipples(targetUid, (r) => { setRipples(r); mark('ripples'); }));
+      subs.push(subscribeEntryEffects(targetUid, (e) => { setEntryEffects(e); mark('effects'); }));
     } catch (e) {
-      setError(`Could not load frames: ${getErrorCause(e)}`);
-      framesDone = true;
-      maybeDone();
+      setError(`Could not load collection: ${getErrorCause(e)}`);
+      (['frames', 'plates', 'ripples', 'effects'] as const).forEach(mark);
     }
     const timeout = setTimeout(() => setLoading(false), 8000);
     return () => {
       clearTimeout(timeout);
       unsubProfile();
-      unsubFrames();
+      subs.forEach((u) => u());
     };
   }, [targetUid]);
 
-  const handleEquip = async (id: string) => {
+  const handleEquip = async (field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect', id: string) => {
     if (!isMe || !user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await updateUser(user.uid, { activeFrame: id });
+      await updateUser(user.uid, { [field]: id } as any);
     } catch (e) {
-      setError(`Could not equip frame: ${getErrorCause(e)}`);
+      setError(`Could not equip: ${getErrorCause(e)}`);
     }
   };
 
-  // 2026-10-13 (Sumon): Remove frame — DP shows without frame.
-  const handleRemove = async () => {
+  const handleRemove = async (field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect') => {
     if (!isMe || !user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await updateUser(user.uid, { activeFrame: null as unknown as undefined });
+      await updateUser(user.uid, { [field]: null as unknown as undefined } as any);
     } catch (e) {
-      setError(`Could not remove frame: ${getErrorCause(e)}`);
+      setError(`Could not remove: ${getErrorCause(e)}`);
     }
   };
 
-  const activeFrame = profile?.activeFrame;
+  const renderItemRow = (
+    item: { id: string; name: string; icon: string; obtainedAt: number; validity: 'permanent' | number; source: string },
+    isActive: boolean,
+    field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect',
+    sourceLabel: string,
+  ) => (
+    <View
+      key={item.id}
+      style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
+        borderWidth: isActive ? 2 : 1,
+        borderColor: isActive ? C.gold : C.goldBorder,
+        shadowColor: isActive ? C.gold : 'transparent',
+        shadowOpacity: isActive ? 0.25 : 0,
+        shadowRadius: isActive ? 12 : 0,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: isActive ? 4 : 0 }}
+    >
+      <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} />
+      <View style={{ flex: 1, marginLeft: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>{item.name}</Text>
+          {item.source === 'noble' && (
+            <View style={{ marginLeft: 8, backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>NOBEL</Text>
+            </View>
+          )}
+        </View>
+        <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+          Obtained {formatObtainedDate(item.obtainedAt)} · {sourceLabel}
+        </Text>
+        {isMe && (
+          <Text style={{ fontSize: 11, color: '#8A6D00', marginTop: 2, fontWeight: '700' }}>
+            {formatValidity(item.validity)}
+          </Text>
+        )}
+      </View>
+      {isMe ? (
+        isActive ? (
+          <View style={{ alignItems: 'center' }}>
+            <View style={{ backgroundColor: C.successBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.success }}>✓ USING</Text>
+            </View>
+            <Pressable
+              style={{ backgroundColor: C.errorBg, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
+              onPress={() => handleRemove(field)}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '700', color: C.errorText }}>Remove</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
+            onPress={() => handleEquip(field, item.id)}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Use</Text>
+          </Pressable>
+        )
+      ) : isActive ? (
+        <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 
-  // P1-2 (2026-10-12): if the equipped frame expired (or was removed), clear
-  // the pointer — an expired frame must be visible nowhere, including as the
-  // equipped one. `frames` here is already expiry-filtered by subscribeFrames.
-  useEffect(() => {
-    if (!isMe || !user?.uid || !activeFrame) return;
-    if (!frames.some((f) => f.id === activeFrame)) {
-      // null deletes the field via Firebase update()
-      updateUser(user.uid, { activeFrame: null as unknown as undefined }).catch(() => {});
+  const renderTabContent = () => {
+    if (tab === 'nobel') {
+      return (
+        <View style={{ flex: 1 }}>
+          <NobelScreen embedded />
+        </View>
+      );
     }
-  }, [isMe, user?.uid, activeFrame, frames]);
+
+    const data = {
+      frames: { items: frames, field: 'activeFrame' as const, active: profile?.activeFrame, label: 'Official' },
+      nameplates: { items: nameplates, field: 'activeNameplate' as const, active: profile?.activeNameplate, label: 'Official' },
+      ripples: { items: ripples, field: 'activeRipple' as const, active: (profile as any)?.activeRipple, label: 'Nobel' },
+      entryfx: { items: entryEffects, field: 'activeEntryEffect' as const, active: (profile as any)?.activeEntryEffect, label: 'Nobel' },
+    }[tab];
+
+    if (data.items.length === 0) {
+      return <LuxuryEmptyState tab={tab} />;
+    }
+
+    return (
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+      >
+        {data.items.map((item: any) =>
+          renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
+        )}
+      </ScrollView>
+    );
+  };
+
+  const visibleTabs = isMe ? TABS : TABS.filter((t) => t.key !== 'nobel');
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -169,24 +315,53 @@ export default function DecorationScreen() {
         </Text>
       </View>
 
-      {/* Tabs: Frames | Nobel (NOTE 9: Nameplates renamed to Nobel).
-          Nobel tab is OWNER-ONLY — visitors see only the Nobel name on the profile. */}
-      <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 12 }}>
-        {(isMe ? (['frames', 'nobel'] as const) : (['frames'] as const)).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setTab(t)}
-            style={{
-              flex: 1, paddingVertical: 10, alignItems: 'center',
-              borderBottomWidth: 2,
-              borderBottomColor: tab === t ? C.text : 'transparent' }}
-          >
-            <Text style={{ fontSize: 15, fontWeight: tab === t ? '800' : '500', color: tab === t ? C.text : C.muted }}>
-              {t === 'frames' ? 'Frames' : 'Nobel'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Luxury category tabs — scrollable */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
+        style={{ maxHeight: 52, marginBottom: 8 }}
+      >
+        {visibleTabs.map((t) => {
+          const isActive = tab === t.key;
+          const count = t.key === 'frames' ? frames.length
+            : t.key === 'nameplates' ? nameplates.length
+            : t.key === 'ripples' ? ripples.length
+            : t.key === 'entryfx' ? entryEffects.length : 0;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTab(t.key); }}
+              style={{
+                flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: 16, paddingVertical: 10, marginRight: 8,
+                borderRadius: 20,
+                backgroundColor: isActive ? C.gold : C.card,
+                borderWidth: isActive ? 0 : 1,
+                borderColor: C.border,
+                shadowColor: isActive ? C.gold : 'transparent',
+                shadowOpacity: isActive ? 0.3 : 0,
+                shadowRadius: isActive ? 8 : 0,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: isActive ? 3 : 0 }}
+            >
+              <Text style={{ fontSize: 14, marginRight: 6 }}>{t.icon}</Text>
+              <Text style={{ fontSize: 14, fontWeight: isActive ? '800' : '600', color: isActive ? '#fff' : C.text }}>
+                {t.label}
+              </Text>
+              {t.key !== 'nobel' && count > 0 && (
+                <View style={{
+                  marginLeft: 6, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2,
+                  backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : C.goldBg }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: isActive ? '#fff' : C.goldDark }}>
+                    {count}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {error && (
         <View style={{ backgroundColor: C.errorBg, paddingHorizontal: 16, paddingVertical: 10, marginHorizontal: 16, borderRadius: 10, marginBottom: 8 }}>
@@ -198,123 +373,27 @@ export default function DecorationScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <PremiumLoader size="large" />
         </View>
-      ) : tab === 'nobel' ? (
-        // 2026-10-11 Issue #7: Nobel content inline — no "Open My Noble" button.
-        <View style={{ flex: 1 }}>
-          <NobelScreen embedded />
-        </View>
-      ) : frames.length > 0 ? (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-        >
-          {frames.map((frame) => {
-            const isActive = activeFrame === frame.id;
-            return (
-              <View
-                key={frame.id}
-                style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
-                  borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder }}
-              >
-                <FrameIcon icon={frame.icon} frameId={frame.id} frameName={frame.name} />
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>
-                    {frame.name}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                    Obtained {formatObtainedDate(frame.obtainedAt)}
-                    {frame.source === 'event' ? ' · Event reward' : ' · Official'}
-                  </Text>
-                  {/* P1-10 (2026-10-12): validity visible to the owner only,
-                      mirroring honor.tsx — visitors see just the obtained date. */}
-                  {isMe && (
-                    <Text style={{ fontSize: 11, color: '#8A6D00', marginTop: 2, fontWeight: '700' }}>
-                      {formatValidity(frame.validity)}
-                    </Text>
-                  )}
-                </View>
-                {isMe ? (
-                  isActive ? (
-                    <Pressable
-                      style={{ backgroundColor: '#FDECEA', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
-                      onPress={handleRemove}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#B3261E' }}>Remove</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
-                      onPress={() => handleEquip(frame.id)}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Use</Text>
-                    </Pressable>
-                  )
-                ) : isActive ? (
-                  <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </ScrollView>
       ) : (
-        <View style={{ flex: 1, alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 }}>
-          {/* Premium empty state — 2026-10-14 (Sumon): glossy gradient icon, not demo emoji */}
-          {/* 2026-10-15 (Sumon): PREMIUM LUXURY empty state — ornate gold frame mockup */}
-          <View style={{
-            width: 140, height: 140,
-            alignItems: 'center', justifyContent: 'center',
-            marginBottom: 24 }}>
-            {/* Outer gold glow */}
-            <View style={{
-              position: 'absolute', width: 140, height: 140, borderRadius: 28,
-              backgroundColor: '#D4AF37' + '18',
-              shadowColor: '#D4AF37', shadowOpacity: 0.35, shadowRadius: 24,
-              shadowOffset: { width: 0, height: 10 }, elevation: 10 }} />
-            {/* Ornate frame: layered gold borders */}
-            <View style={{
-              width: 104, height: 104, borderRadius: 20,
-              backgroundColor: '#FFFDF5',
-              borderWidth: 5, borderColor: '#D4AF37',
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#B8860B', shadowOpacity: 0.3, shadowRadius: 12,
-              shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
-              <View style={{
-                width: 84, height: 84, borderRadius: 14,
-                borderWidth: 2, borderColor: '#F5D67B',
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#FFFEF9' }}>
-                {/* Crown jewel */}
-                <Text style={{ fontSize: 36 }}>👑</Text>
-              </View>
-            </View>
-            {/* Sparkles */}
-            <Text style={{ position: 'absolute', top: 8, right: 18, fontSize: 16 }}>✨</Text>
-            <Text style={{ position: 'absolute', bottom: 12, left: 14, fontSize: 12 }}>✨</Text>
-          </View>
-          <Text style={{
-            fontSize: 20, fontWeight: '800', color: '#1A1A1A',
-            textAlign: 'center', letterSpacing: 0.5 }}>
-            Your Collection Awaits
-          </Text>
-          <View style={{
-            marginTop: 12, paddingHorizontal: 20, paddingVertical: 8,
-            borderRadius: 20, backgroundColor: '#D4AF37' + '14',
-            borderWidth: 1, borderColor: '#D4AF37' + '40' }}>
-            <Text style={{
-              fontSize: 12, fontWeight: '700', color: '#B8860B',
-              letterSpacing: 1.5, textTransform: 'uppercase' }}>
-              ✦ Exclusive Frames ✦
+        <View style={{ flex: 1 }}>
+          {renderTabContent()}
+        </View>
+      )}
+
+      {/* Store button — bottom */}
+      {isMe && tab !== 'nobel' && (
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: C.border }}>
+          <Pressable
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/store' as any); }}
+            style={{
+              backgroundColor: C.blue, borderRadius: 16, paddingVertical: 16,
+              alignItems: 'center',
+              shadowColor: C.blue, shadowOpacity: 0.3, shadowRadius: 12,
+              shadowOffset: { width: 0, height: 6 }, elevation: 6 }}
+          >
+            <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>
+              🛍️ Store
             </Text>
-          </View>
-          <Text style={{
-            fontSize: 14, color: '#6B6B6B', textAlign: 'center',
-            marginTop: 16, lineHeight: 22, paddingHorizontal: 32 }}>
-            Prestigious frames are granted officially or earned as event rewards. Your luxury collection begins here.
-          </Text>
+          </Pressable>
         </View>
       )}
     </SafeAreaView>
