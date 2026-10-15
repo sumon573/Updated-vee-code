@@ -96,12 +96,19 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
       itemId?.includes('badge-') ? fallbackEntry.badge?.fallbackIcon :
       fallbackEntry.frame?.fallbackIcon
     ) : '🎖️';
+    const isFrame = itemId?.includes('frame-');
+    // 2026-10-15 (Sumon): Frames show as SQUARE (not circle) — full design visible
     return (
-      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{
+        width: isFrame ? 52 : 44, height: isFrame ? 52 : 44,
+        borderRadius: isFrame ? 8 : 22,
+        backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+      }}>
         <Image
           source={{ uri: icon }}
-          style={{ width: 44, height: 44, borderRadius: 22, position: 'absolute' }}
-          resizeMode="cover"
+          style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, position: 'absolute' }}
+          resizeMode="contain"
         />
         <Text style={{ fontSize: 24 }}>{fallbackIcon}</Text>
       </View>
@@ -345,7 +352,7 @@ export default function DecorationScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
-        style={{ maxHeight: 52, marginBottom: 8 }}
+        style={{ marginBottom: 8 }}
       >
         {visibleTabs.map((t) => {
           const isActive = tab === t.key;
