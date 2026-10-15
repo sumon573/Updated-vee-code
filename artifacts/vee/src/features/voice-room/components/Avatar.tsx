@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Text, Animated, Easing, Image, View } from 'react-native';
 import AnimatedFrame from '../../../components/AnimatedFrame';
+import NobelFrame from '../../../components/NobelFrame';
+import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
 import { C } from '../constants/theme';
 import { nobleThemeFor } from '@/src/services/nobleService';
 
@@ -226,9 +228,24 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
       {/* 2026-10-13 (Sumon): Animated frame overlay — pure RN, no native modules */}
       {frameType && frameType !== 'none' && (
         <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-          {/* 2026-10-13 (Sumon): server-hosted APNG; frameId resolves the admin-controlled URL.
-              compact: voice room-এ নাম ঢেকে না যায় */}
-          <AnimatedFrame size={size} frameId={frameType} compact />
+          {/* 2026-10-15 (Sumon): Nobel crown frames use RN animation (gentle float + glow).
+              Regular frames use server APNG. */}
+          {frameType.startsWith('noble-frame-') ? (
+            (() => {
+              const rankKey = frameType.replace('noble-frame-', '');
+              const catalog = NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rankKey);
+              const designUrl = catalog?.frame?.designUrl;
+              if (designUrl && /^https?:\/\//i.test(designUrl)) {
+                return <NobelFrame size={size * 1.3} imageUrl={designUrl} />;
+              }
+              // Fallback to regular frame if no design URL
+              return <AnimatedFrame size={size} frameId={frameType} compact />;
+            })()
+          ) : (
+            /* 2026-10-13 (Sumon): server-hosted APNG; frameId resolves the admin-controlled URL.
+                compact: voice room-এ নাম ঢেকে না যায় */
+            <AnimatedFrame size={size} frameId={frameType} compact />
+          )}
         </View>
       )}
     </View>
