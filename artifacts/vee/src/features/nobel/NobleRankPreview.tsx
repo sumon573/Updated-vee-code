@@ -149,13 +149,13 @@ export default function NobleRankPreview({
                   <MistNameplate
                     imageUrl={nameplateUrl}
                     mistColor={mistColor}
-                    width={150}
-                    height={30}
+                    width={100}
+                    height={20}
                   />
                 ) : (
                   <Image
                     source={{ uri: nameplateUrl }}
-                    style={{ width: 150, height: 30 }}
+                    style={{ width: 100, height: 20 }}
                     resizeMode="contain"
                   />
                 )
