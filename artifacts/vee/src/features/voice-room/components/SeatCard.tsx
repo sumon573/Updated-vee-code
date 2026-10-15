@@ -128,6 +128,7 @@ export const SeatCard = memo(function SeatCard({
               accent={accent}
               photoURL={member.photoURL}
               frameType={liveFrameId || undefined}
+              nobleRankIndex={member.nobleRankIndex}
             />
             {/* Mic status dot */}
             <View style={{
