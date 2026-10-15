@@ -118,6 +118,8 @@ function fbSeatToParticipant(
     // seat data to Participant, so frame could NEVER show on seats even though
     // Firebase had it. This one line fixes it.
     activeFrame: (seat as any).activeFrame || undefined,
+    // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
+    nobleRankIndex: (seat as any).nobleRankIndex ?? undefined,
   };
 }
 
@@ -134,6 +136,8 @@ function fbAudToParticipant(m: RoomAudienceMember): Participant {
     role: (m.role as Role | undefined) ?? 'member',
     // 2026-10-13 (Sumon): active frame for audience list display
     activeFrame: (m as any).activeFrame || undefined,
+    // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
+    nobleRankIndex: (m as any).nobleRankIndex ?? undefined,
   };
 }
 
@@ -475,7 +479,7 @@ export default function VoiceRoomScreen() {
     [blockedRecs, myUid],
   );
   // Entry effect: "X is Coming" banner (2026-10-10)
-  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; fancy?: boolean } | null>(null);
+  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
@@ -823,28 +827,32 @@ export default function VoiceRoomScreen() {
       hasShownSelfEntryRef.current = true;
       // Use myName/myPhotoURL (from RTDB profile) — not auth which may be empty
       const displayName = myName || 'User';
-      // NOTE 10 (2026-10-11): Noble "Fancy Entry Effects" — computed from the
-      // joiner's REAL noble state (Marquis+ with maintenance secured).
+      // 2026-10-15 (Sumon): PER-RANK entry effect — my real noble rank.
+      // Prefer the join-time ref; fall back to a direct read (entry effect can
+      // run before the join effect's async fetch completes).
       (async () => {
-        let fancyEntry = false;
-        try {
-          const { getNobleState } = await import('@/src/services/nobleService');
-          const noble = await getNobleState(myUid);
-          fancyEntry = !!noble && noble.rankIndex >= 4 && !noble.lapsed;
-        } catch {
-          // Noble read failed — fall back to the standard entry effect.
+        let myRank = myNobleRankRef.current;
+        if (myRank == null) {
+          try {
+            const { getNobleState } = await import('@/src/services/nobleService');
+            const noble = await getNobleState(myUid).catch(() => null);
+            if (noble && !noble.lapsed) {
+              myRank = noble.rankIndex;
+              myNobleRankRef.current = myRank;
+            }
+          } catch { /* non-noble — standard banner */ }
         }
         setEntryBanner({
           name: displayName,
           photoURL: myPhotoURL || null,
-          fancy: fancyEntry,
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
         });
         // Broadcast entry to all participants
         sendRoomEntryEvent(roomId, {
           uid: myUid,
           name: displayName,
           photoURL: myPhotoURL || null,
-          fancyEntry,
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
         }).catch(() => {/* non-critical */});
       })();
     }
@@ -866,7 +874,7 @@ export default function VoiceRoomScreen() {
       setEntryBanner({
         name: entry.name || 'User',
         photoURL: entry.photoURL || null,
-        fancy: entry.fancyEntry === true,
+        ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
       });
     });
   }, [roomId, myUid]);
@@ -1458,6 +1466,9 @@ export default function VoiceRoomScreen() {
   const hasLeftRef = useRef(false);
   // 2026-10-15 (Sumon): session restore / presence re-register guards.
   const presenceReadyRef = useRef(false); // join effect finished
+  // 2026-10-15 (Sumon): my noble rank index — fetched once at join, written
+  // to presence (seat/audience) so others render my per-rank ripple/entry.
+  const myNobleRankRef = useRef<number | undefined>(undefined);
   const mutedRef = useRef(false);
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
@@ -1468,6 +1479,14 @@ export default function VoiceRoomScreen() {
     let cancelled = false;
 
     (async () => {
+      // 2026-10-15 (Sumon): fetch my noble rank FIRST — presence (seat/audience)
+      // carries it so everyone sees my per-rank ripple + entry effect.
+      try {
+        const { getNobleState } = await import('@/src/services/nobleService');
+        const noble = await getNobleState(myUid).catch(() => null);
+        if (noble && !noble.lapsed) myNobleRankRef.current = noble.rankIndex;
+      } catch { /* non-noble or read failed — presence omits the field */ }
+      if (cancelled) return;
       // ROOM LOCK (2026-10-13, Sumon): "Lock Room" এখন সত্যিকারের গেট —
       // লক থাকলে নতুন দর্শক ঢুকতে পারবে না। শুধু owner/admin আর আগের
       // মেম্বাররা (userRooms/audience/seat রেকর্ড আছে) ফিরতে পারবে।
@@ -1542,6 +1561,8 @@ export default function VoiceRoomScreen() {
           initials: myInitials,
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+          // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
         }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
       }
       // 2026-10-15 (Sumon): persist active room — cold start auto-returns here.
@@ -1608,6 +1629,8 @@ export default function VoiceRoomScreen() {
           initials: myInitials,
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+          // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
         };
         if (seatIdx >= 0) {
           // Re-claim our seat if it's empty or still ours; if someone else
@@ -1889,6 +1912,8 @@ export default function VoiceRoomScreen() {
       // start muted only on first join from audience (mySeatIdx < 0).
       muted: mySeatIdx >= 0 ? muted : true,
       role: seatRole,
+      // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
+      ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
     };
   }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted]);
 
@@ -3262,7 +3287,7 @@ export default function VoiceRoomScreen() {
         <EntryBanner
           name={entryBanner.name}
           photoURL={entryBanner.photoURL}
-          fancy={entryBanner.fancy}
+          nobleRankIndex={entryBanner.nobleRankIndex}
           onDismiss={() => setEntryBanner(null)}
         />
       ) : null}
