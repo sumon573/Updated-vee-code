@@ -348,21 +348,48 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
 
     // 2026-10-15 (Sumon): Also update icons if catalog has newer design URLs.
     // grantNobleRankItems uses set() so it's safe to re-run — updates stale fallback icons.
-    // Check ALL ranks up to current (not just current) — old ranks may have stale 🎖️ icons.
+    // Check ALL ranks up to current (not just current) — old ranks may have stale fallback icons.
+    // 2026-10-15 (Sumon): Check nameplates AND badges AND frames — no demo icons ever.
     const catalog = rewardsForRank(state.rankIndex);
     let needsUpdate = !hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect;
-    if (platesSnap?.exists()) {
+    if (!needsUpdate) {
       for (let i = 0; i <= state.rankIndex; i++) {
         const r = NOBLE_RANKS[i];
         if (!r) continue;
+        const rankCatalog = rewardsForRank(i);
+        if (!rankCatalog) continue;
+        // Check nameplate
         const plateId = `noble-plate-${r.key}`;
-        const existingPlate = platesSnap.child(plateId).val();
+        const existingPlate = platesSnap?.child(plateId).val();
         if (existingPlate) {
-          const rankCatalog = rewardsForRank(i);
-          const expectedIcon = rankCatalog ? rewardIcon(rankCatalog.nameplate) : '🎖️';
+          const expectedIcon = rewardIcon(rankCatalog.nameplate);
           if (existingPlate.icon !== expectedIcon) {
             needsUpdate = true;
             break;
+          }
+        }
+        // Check badge
+        if (rankCatalog.badge) {
+          const badgeId = `noble-badge-${r.key}`;
+          const existingBadge = badgesSnap?.child(badgeId).val();
+          if (existingBadge) {
+            const expectedBadgeIcon = rewardIcon(rankCatalog.badge);
+            if (existingBadge.icon !== expectedBadgeIcon) {
+              needsUpdate = true;
+              break;
+            }
+          }
+        }
+        // Check frame
+        if (rankCatalog.frame) {
+          const frameId = `noble-frame-${r.key}`;
+          const existingFrame = framesSnap?.child(frameId).val();
+          if (existingFrame) {
+            const expectedFrameIcon = rewardIcon(rankCatalog.frame);
+            if (existingFrame.icon !== expectedFrameIcon) {
+              needsUpdate = true;
+              break;
+            }
           }
         }
       }
