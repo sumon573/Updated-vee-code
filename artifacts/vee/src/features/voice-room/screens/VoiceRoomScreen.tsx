@@ -34,7 +34,6 @@ import { SettingsModal } from '../components/SettingsModal';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
-import { AudienceModal } from '../components/AudienceModal';
 import { LeaderboardModal } from './LeaderboardModal';
 import RoomMembersModal from '../components/RoomMembersModal';
 import { GiftsModal } from '../components/GiftsModal';
@@ -154,12 +153,16 @@ function fbChatToMsg(m: RoomChatMsg): ChatMsg {
 ═══════════════════════════════════════════ */
 /* ─────────────────────────── Live Audience Pill ─────────────────────────── */
 // 2026-10-14 (Sumon): imo-style live audience pill — small DP + count (1+, 2+, 1k+).
-// Position: top bar, next to Hourly Rank. Click → audience list (existing UI).
-function LiveAudiencePill({ count, onPress, avatarUrl }: { count: number; onPress: () => void; avatarUrl?: string }) {
+// Position: top bar, next to Hourly Rank.
+// 2026-10-15 (Sumon): counts EVERYONE live in the room (seated + audience),
+// tap opens the full Live Audience page. DP is the exact real profile photo
+// of the first live person (initials avatar if they have no photo — never demo).
+function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: () => void; person?: Participant }) {
   const formatCount = (n: number): string => {
     if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.0', '')}k+`;
     return `${n}+`;
   };
+  const photoURL = person?.photoURL;
   return (
     <ScalePress onPress={onPress} style={{ marginLeft: 8 }}>
       <View style={{
@@ -171,14 +174,14 @@ function LiveAudiencePill({ count, onPress, avatarUrl }: { count: number; onPres
         <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
           {formatCount(count)}
         </Text>
-        {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+        {photoURL ? (
+          <Image source={{ uri: photoURL }} style={{ width: 28, height: 28, borderRadius: 14 }} />
         ) : (
           <View style={{
             width: 28, height: 28, borderRadius: 14,
-            backgroundColor: '#8B5CF6', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '800' }}>👥</Text>
+            <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>{person?.initials || ''}</Text>
           </View>
         )}
       </View>
@@ -935,7 +938,6 @@ export default function VoiceRoomScreen() {
   const [invToSeatOpen,   setInvToSeatOpen]   = useState(false);
   const [invToSeatIdx,    setInvToSeatIdx]    = useState(-1);
   const [inviteOpen,      setInviteOpen]      = useState(false);
-  const [audienceOpen,    setAudienceOpen]    = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
   const [membersOpen,     setMembersOpen]     = useState(false);
@@ -2471,11 +2473,13 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
-            {/* Live Audience pill — imo position, 1+/2+/1k+ format */}
+            {/* Live Audience pill — imo position, 1+/2+/1k+ format.
+                2026-10-15 (Sumon): counts everyone LIVE in the room, opens the
+                Live Audience page (same page the removed bottom row opened). */}
             <LiveAudiencePill
-              count={audience.length}
-              onPress={() => setAudienceOpen(true)}
-              avatarUrl={audience[0]?.photoURL}
+              count={allMembers.length}
+              onPress={() => setMembersOpen(true)}
+              person={allMembers[0]}
             />
           </View>
         </View>
@@ -2590,21 +2594,6 @@ export default function VoiceRoomScreen() {
             </View>
           ))}
         </View>
-
-        {/* ── Room members (imo style: owner → admins → members, total count) ── */}
-        <ScalePress onPress={() => setMembersOpen(true)}>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 8,
-            backgroundColor: C.card, borderRadius: 12, padding: 10,
-            borderWidth: 1, borderColor: C.borderFaint, marginBottom: 10,
-          }}>
-            <Feather name="users" size={15} color={C.sub} />
-            <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700' }}>
-              {t('voiceRoom.screen.members', { count: allMembers.length })}
-            </Text>
-            <Feather name="chevron-right" size={14} color={C.muted} style={{ marginLeft: 'auto' }} />
-          </View>
-        </ScalePress>
 
         {/* ── Room Chat ── */}
         <View style={{
@@ -3064,13 +3053,6 @@ export default function VoiceRoomScreen() {
         myUid={myUid}
         myName={myName}
         roomId={roomId}
-      />
-      <AudienceModal
-        visible={audienceOpen}
-        onClose={() => setAudienceOpen(false)}
-        audience={audience}
-        myRole={myRole}
-        onManageMember={(m) => { setAudienceOpen(false); setActiveMember(m); }}
       />
       <LeaderboardModal
         visible={leaderboardOpen}
