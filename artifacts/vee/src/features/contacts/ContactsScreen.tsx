@@ -5,10 +5,8 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import {
-  View, Text, FlatList, ActivityIndicator,
-  Pressable, Image, Alert, TextInput, Platform,
-} from 'react-native';
+import { View, Text, FlatList, Pressable, Image, Alert, TextInput, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -28,8 +26,7 @@ import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCall
 import {
   FriendRequest, subscribeIncomingRequests, subscribeFriendUids,
   acceptFriendRequest, rejectFriendRequest, removeFriend,
-  cancelFriendRequest, subscribeSentRequestUids,
-} from '@/src/services/friendRequestService';
+  cancelFriendRequest, subscribeSentRequestUids } from '@/src/services/friendRequestService';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import { useTranslation } from 'react-i18next';
 import ContactLongPressMenu from './components/ContactLongPressMenu';
@@ -46,8 +43,7 @@ const C = {
   inputBg: '#F2F2F7',
   online: '#22C55E',
   red: '#EF4444',
-  subTabBg: '#F2F2F7',
-} as const;
+  subTabBg: '#F2F2F7' } as const;
 
 function UserAvatar({ user }: { user: VeeUser }) {
   const initials = user.name
@@ -65,8 +61,7 @@ function UserAvatar({ user }: { user: VeeUser }) {
     <View style={{
       width: 52, height: 52, borderRadius: 26,
       backgroundColor: 'rgba(139,92,246,0.3)',
-      alignItems: 'center', justifyContent: 'center',
-    }}>
+      alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>{initials}</Text>
     </View>
   );
@@ -266,8 +261,7 @@ export default function ContactsScreen() {
             } finally {
               setCancellingUid(null);
             }
-          },
-        },
+          } },
       ],
     );
   }, [me?.uid, t]);
@@ -295,8 +289,7 @@ export default function ContactsScreen() {
             } catch {
               Alert.alert(t('contacts.error'), t('contacts.removeError'));
             }
-          },
-        },
+          } },
       ],
     );
   }, [me?.uid, t]);
@@ -338,8 +331,7 @@ export default function ContactsScreen() {
         isOnline: targetUser.online ?? false,
         hasStory: false,
         storySeen: false,
-        isPinned: false,
-      }),
+        isPinned: false }),
       update(ref(database, `userChats/${targetUser.uid}/${chatId}`), {
         id: chatId,
         participantId: me.uid,
@@ -352,8 +344,7 @@ export default function ContactsScreen() {
         isOnline: true,
         hasStory: false,
         storySeen: false,
-        isPinned: false,
-      }),
+        isPinned: false }),
     ]);
     router.push(
       `/inbox/${chatId}?participantId=${encodeURIComponent(targetUser.uid)}&participantName=${encodeURIComponent(targetUser.name)}` as never,
@@ -428,8 +419,7 @@ export default function ContactsScreen() {
         flexDirection: 'row', alignItems: 'center',
         paddingTop: topPad + 14,
         paddingHorizontal: 20,
-        paddingBottom: 12,
-      }}>
+        paddingBottom: 12 }}>
         <Text style={{ flex: 1, color: C.text, fontSize: 26, fontWeight: '900' }}>
           {t('contacts.title')}
         </Text>
@@ -439,8 +429,7 @@ export default function ContactsScreen() {
             width: 42, height: 42, borderRadius: 21,
             backgroundColor: C.surface,
             borderWidth: 1, borderColor: C.border,
-            alignItems: 'center', justifyContent: 'center',
-          }}
+            alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="user-plus" size={18} color={C.muted} />
         </Pressable>
@@ -452,31 +441,27 @@ export default function ContactsScreen() {
         marginHorizontal: 20, marginBottom: 14,
         backgroundColor: C.surface,
         borderRadius: 14, padding: 4,
-        borderWidth: 1, borderColor: C.border,
-      }}>
+        borderWidth: 1, borderColor: C.border }}>
         {(['friends', 'requests'] as Tab[]).map((t_) => (
           <Pressable
             key={t_}
             onPress={() => { setTab(t_); setSearch(''); }}
             style={{
               flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-              backgroundColor: tab === t_ ? C.primary : 'transparent',
-            }}
+              backgroundColor: tab === t_ ? C.primary : 'transparent' }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Text style={{
                 color: tab === t_ ? '#fff' : C.muted,
                 fontWeight: tab === t_ ? '800' : '500',
-                fontSize: 13,
-              }}>
+                fontSize: 13 }}>
                 {t_ === 'friends' ? t('contacts.tabFriends') : t('contacts.tabRequests')}
               </Text>
               {t_ === 'requests' && totalRequestsBadge > 0 && (
                 <View style={{
                   minWidth: 16, height: 16, borderRadius: 8,
                   backgroundColor: C.red, alignItems: 'center', justifyContent: 'center',
-                  paddingHorizontal: 3,
-                }}>
+                  paddingHorizontal: 3 }}>
                   <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>
                     {totalRequestsBadge}
                   </Text>
@@ -496,29 +481,25 @@ export default function ContactsScreen() {
             marginHorizontal: 20, marginBottom: 12,
             backgroundColor: C.subTabBg,
             borderRadius: 12, padding: 3,
-            borderWidth: 1, borderColor: C.border,
-          }}>
+            borderWidth: 1, borderColor: C.border }}>
             <Pressable
               onPress={() => setRequestSubTab('received')}
               style={{
                 flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
-                backgroundColor: requestSubTab === 'received' ? 'rgba(124,58,237,0.6)' : 'transparent',
-              }}
+                backgroundColor: requestSubTab === 'received' ? 'rgba(124,58,237,0.6)' : 'transparent' }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <Text style={{
                   color: requestSubTab === 'received' ? '#fff' : C.muted,
                   fontWeight: requestSubTab === 'received' ? '700' : '500',
-                  fontSize: 12,
-                }}>
+                  fontSize: 12 }}>
                   {t('contacts.requestsReceived')}
                 </Text>
                 {visibleIncoming.length > 0 && (
                   <View style={{
                     minWidth: 14, height: 14, borderRadius: 7,
                     backgroundColor: C.red, alignItems: 'center', justifyContent: 'center',
-                    paddingHorizontal: 2,
-                  }}>
+                    paddingHorizontal: 2 }}>
                     <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>
                       {visibleIncoming.length}
                     </Text>
@@ -530,14 +511,12 @@ export default function ContactsScreen() {
               onPress={() => setRequestSubTab('sent')}
               style={{
                 flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
-                backgroundColor: requestSubTab === 'sent' ? 'rgba(124,58,237,0.6)' : 'transparent',
-              }}
+                backgroundColor: requestSubTab === 'sent' ? 'rgba(124,58,237,0.6)' : 'transparent' }}
             >
               <Text style={{
                 color: requestSubTab === 'sent' ? '#fff' : C.muted,
                 fontWeight: requestSubTab === 'sent' ? '700' : '500',
-                fontSize: 12,
-              }}>
+                fontSize: 12 }}>
                 {t('contacts.requestsSent')}
               </Text>
             </Pressable>
@@ -551,8 +530,7 @@ export default function ContactsScreen() {
                   width: 72, height: 72, borderRadius: 36,
                   backgroundColor: 'rgba(139,92,246,0.12)',
                   borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-                  alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-                }}>
+                  alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
                   <Feather name="user-plus" size={32} color={C.glow} />
                 </View>
                 <Text style={{ color: C.text, fontSize: 18, fontWeight: '800' }}>
@@ -570,8 +548,7 @@ export default function ContactsScreen() {
                     flexDirection: 'row', alignItems: 'center',
                     backgroundColor: C.surface,
                     borderRadius: 16, padding: 12, marginBottom: 10,
-                    borderWidth: 1, borderColor: C.border,
-                  }}>
+                    borderWidth: 1, borderColor: C.border }}>
                     <Pressable
                       onPress={() => handleViewProfile({ uid: item.fromUid, name: item.fromName, vId: item.fromVId, photoURL: item.fromPhoto } as VeeUser)}
                       style={{ marginRight: 12 }}
@@ -598,11 +575,10 @@ export default function ContactsScreen() {
                           width: 36, height: 36, borderRadius: 18,
                           backgroundColor: 'rgba(34,197,94,0.18)',
                           borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}
+                          alignItems: 'center', justifyContent: 'center' }}
                       >
                         {requestActionUid === item.fromUid ? (
-                          <ActivityIndicator color={C.online} size="small" />
+                          <PremiumLoader size="small" />
                         ) : (
                           <Feather name="check" size={16} color={C.online} />
                         )}
@@ -615,8 +591,7 @@ export default function ContactsScreen() {
                           width: 36, height: 36, borderRadius: 18,
                           backgroundColor: 'rgba(239,68,68,0.1)',
                           borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}
+                          alignItems: 'center', justifyContent: 'center' }}
                       >
                         <Feather name="x" size={16} color={C.red} />
                       </Pressable>
@@ -629,7 +604,7 @@ export default function ContactsScreen() {
             /* Sent requests list */
             sentLoading ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <ActivityIndicator color={C.glow} size="large" />
+                <PremiumLoader size="large" />
               </View>
             ) : visibleSent.length === 0 ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
@@ -637,8 +612,7 @@ export default function ContactsScreen() {
                   width: 72, height: 72, borderRadius: 36,
                   backgroundColor: 'rgba(139,92,246,0.12)',
                   borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-                  alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-                }}>
+                  alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
                   <Feather name="send" size={32} color={C.glow} />
                 </View>
                 <Text style={{ color: C.text, fontSize: 18, fontWeight: '800' }}>
@@ -656,8 +630,7 @@ export default function ContactsScreen() {
                     flexDirection: 'row', alignItems: 'center',
                     backgroundColor: C.surface,
                     borderRadius: 16, padding: 12, marginBottom: 10,
-                    borderWidth: 1, borderColor: C.border,
-                  }}>
+                    borderWidth: 1, borderColor: C.border }}>
                     <Pressable onPress={() => handleViewProfile(item)} style={{ marginRight: 12 }}>
                       <UserAvatar user={item} />
                     </Pressable>
@@ -680,11 +653,10 @@ export default function ContactsScreen() {
                         paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
                         backgroundColor: 'rgba(239,68,68,0.1)',
                         borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
+                        alignItems: 'center', justifyContent: 'center' }}
                     >
                       {cancellingUid === item.uid ? (
-                        <ActivityIndicator color={C.red} size="small" />
+                        <PremiumLoader size="small" />
                       ) : (
                         <Text style={{ color: C.red, fontSize: 12, fontWeight: '700' }}>
                           {t('contacts.cancelRequest')}
@@ -706,8 +678,7 @@ export default function ContactsScreen() {
             marginHorizontal: 20, marginBottom: 12,
             backgroundColor: C.inputBg, borderRadius: 12,
             paddingHorizontal: 12, paddingVertical: 10,
-            borderWidth: 1, borderColor: C.border, gap: 8,
-          }}>
+            borderWidth: 1, borderColor: C.border, gap: 8 }}>
             <Feather name="search" size={16} color={C.dim} />
             <TextInput
               style={{ flex: 1, color: C.text, fontSize: 14 }}
@@ -725,7 +696,7 @@ export default function ContactsScreen() {
 
           {contactsLoading ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator color={C.glow} size="large" />
+              <PremiumLoader size="large" />
             </View>
           ) : filtered.length === 0 ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
@@ -733,8 +704,7 @@ export default function ContactsScreen() {
                 width: 72, height: 72, borderRadius: 36,
                 backgroundColor: 'rgba(139,92,246,0.12)',
                 borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-                alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-              }}>
+                alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
                 <Feather name="users" size={32} color={C.glow} />
               </View>
               <Text style={{ color: C.text, fontSize: 18, fontWeight: '800' }}>
@@ -749,8 +719,7 @@ export default function ContactsScreen() {
                   style={{
                     // 2026-10-13 (Sumon): বাটন স্ট্যান্ডার্ড #E3F2FD bg + #007AFF text
                     marginTop: 20, backgroundColor: '#E3F2FD',
-                    borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12,
-                  }}
+                    borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}
                 >
                   <Text style={{ color: '#007AFF', fontWeight: '800', fontSize: 14 }}>
                     {t('contacts.findPeopleBtn')}
@@ -772,8 +741,7 @@ export default function ContactsScreen() {
                   style={{
                     flexDirection: 'row', alignItems: 'center',
                     backgroundColor: C.bg,
-                    paddingVertical: 12, paddingHorizontal: 16,
-                  }}
+                    paddingVertical: 12, paddingHorizontal: 16 }}
                 >
                   {/* DP — tap → profile screen (2026-10-15, Sumon) */}
                   <Pressable onPress={() => handleViewProfile(item)}>
@@ -783,8 +751,7 @@ export default function ContactsScreen() {
                         <View style={{
                           position: 'absolute', bottom: 1, right: 1,
                           width: 12, height: 12, borderRadius: 6,
-                          backgroundColor: C.online, borderWidth: 2, borderColor: C.bg,
-                        }} />
+                          backgroundColor: C.online, borderWidth: 2, borderColor: C.bg }} />
                       )}
                     </View>
                   </Pressable>
