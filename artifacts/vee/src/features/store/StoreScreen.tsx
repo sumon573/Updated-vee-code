@@ -9,19 +9,16 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import {
-  View, Text, ScrollView, Pressable, ActivityIndicator, Alert,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   SHORT_ID_CATALOG, RANDOM_SHORT_ID_PRICE, TIER_COLORS, TIER_NAMES,
-  ShortIdItem,
-} from './shortIdCatalog';
+  ShortIdItem } from './shortIdCatalog';
 import {
-  claimShortId, claimRandomShortId, isShortIdAvailable,
-} from './shortIdService';
+  claimShortId, claimRandomShortId, isShortIdAvailable } from './shortIdService';
 import { getBalance } from '@/src/features/wallet/walletService';
 import { auth } from '@/src/config/firebase';
 
@@ -36,8 +33,7 @@ const C = {
   surface: '#F2F2F7',
   gold: '#FFD700',
   green: '#22C55E',
-  red: '#EF4444',
-} as const;
+  red: '#EF4444' } as const;
 
 type StoreTab = 'shortid' | 'frames';
 type IdKind = 'user' | 'room';
@@ -119,8 +115,7 @@ export function StoreScreen() {
             } finally {
               setBuying(null);
             }
-          },
-        },
+          } },
       ],
     );
   };
@@ -159,13 +154,11 @@ export function StoreScreen() {
             onPress={() => setTab(tb)}
             style={{
               flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-              backgroundColor: tab === tb ? C.primary : 'transparent',
-            }}
+              backgroundColor: tab === tb ? C.primary : 'transparent' }}
           >
             <Text style={{
               color: tab === tb ? '#fff' : C.muted,
-              fontWeight: '800', fontSize: 14,
-            }}>
+              fontWeight: '800', fontSize: 14 }}>
               {tb === 'shortid' ? `🆔 ${t('store.shortId')}` : `🖼️ ${t('store.frames')}`}
             </Text>
           </Pressable>
@@ -178,8 +171,7 @@ export function StoreScreen() {
           <View style={{
             backgroundColor: C.surface, borderRadius: 16, padding: 16,
             marginBottom: 16, flexDirection: 'row', alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
+            justifyContent: 'space-between' }}>
             <View>
               <Text style={{ color: C.muted, fontSize: 12 }}>{t('store.balance')}</Text>
               <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>
@@ -189,8 +181,7 @@ export function StoreScreen() {
             {myShortId && (
               <View style={{
                 backgroundColor: C.gold, borderRadius: 12, paddingHorizontal: 14,
-                paddingVertical: 8, alignItems: 'center',
-              }}>
+                paddingVertical: 8, alignItems: 'center' }}>
                 <Text style={{ color: '#000', fontSize: 10, fontWeight: '700' }}>
                   {t('store.myId')}
                 </Text>
@@ -209,8 +200,7 @@ export function StoreScreen() {
                 onPress={() => setIdKind(k)}
                 style={{
                   flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
-                  backgroundColor: idKind === k ? '#fff' : 'transparent',
-                }}
+                  backgroundColor: idKind === k ? '#fff' : 'transparent' }}
               >
                 <Text style={{ color: idKind === k ? C.text : C.muted, fontWeight: '700', fontSize: 13 }}>
                   {k === 'user' ? t('store.forAccount') : t('store.forRoom')}
@@ -226,8 +216,7 @@ export function StoreScreen() {
             style={{
               backgroundColor: C.green, borderRadius: 16, padding: 16,
               marginBottom: 16, flexDirection: 'row', alignItems: 'center',
-              justifyContent: 'space-between', opacity: buying ? 0.6 : 1,
-            }}
+              justifyContent: 'space-between', opacity: buying ? 0.6 : 1 }}
           >
             <View>
               <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
@@ -253,14 +242,12 @@ export function StoreScreen() {
                   backgroundColor: '#fff', borderRadius: 16, padding: 14,
                   marginBottom: 10, flexDirection: 'row', alignItems: 'center',
                   borderWidth: 1.5, borderColor: TIER_COLORS[item.tier],
-                  opacity: taken ? 0.5 : 1,
-                }}
+                  opacity: taken ? 0.5 : 1 }}
               >
                 <View style={{
                   width: 56, height: 56, borderRadius: 14,
                   backgroundColor: TIER_COLORS[item.tier],
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
+                  alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900' }}>
                     {item.id}
                   </Text>
@@ -278,14 +265,13 @@ export function StoreScreen() {
                     {t('store.sold')}
                   </Text>
                 ) : isBuying ? (
-                  <ActivityIndicator color={C.primary} />
+                  <PremiumLoader size="medium" />
                 ) : (
                   <Pressable
                     onPress={() => handleBuyId(item)}
                     style={{
                       backgroundColor: C.primary, borderRadius: 10,
-                      paddingHorizontal: 16, paddingVertical: 8,
-                    }}
+                      paddingHorizontal: 16, paddingVertical: 8 }}
                   >
                     <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>
                       {t('store.buy')}
