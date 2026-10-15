@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, Modal, TextInput, Image, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Modal, TextInput, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -98,8 +99,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
           photoURL: prof?.photoURL || live?.photoURL,
           speaking: live?.speaking ?? false,
           muted: live?.muted ?? true,
-          role: (m.role === 'owner' ? 'host' : m.role) as Participant['role'],
-        } as Participant;
+          role: (m.role === 'owner' ? 'host' : m.role) as Participant['role'] } as Participant;
       });
   })();
 
@@ -119,8 +119,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
           const data = snap.val() as { name?: string; photoURL?: string };
           setOwnerInfo({
             name: data.name || 'Room Owner',
-            photoURL: data.photoURL,
-          });
+            photoURL: data.photoURL });
         }
       } catch { /* non-critical */ }
     })();
@@ -166,8 +165,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true, aspect: [1, 1], quality: 0.85,
-    });
+      allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (result.canceled || !result.assets[0]) return;
     const localUri = result.assets[0].uri;
     setUploadingImage(true);
@@ -248,7 +246,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
                 alignItems: 'center', justifyContent: 'center',
                 borderWidth: 2.5, borderColor: accent + '66', overflow: 'hidden' }}>
                 {uploadingImage
-                  ? <ActivityIndicator color={accent} />
+                  ? <PremiumLoader size="medium" />
                   : roomImageUri
                     ? <Image source={{ uri: roomImageUri }} style={{ width: 84, height: 84 }} />
                     : <Feather name="mic" size={34} color={accent} />
@@ -340,8 +338,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
                       id: ownerId ?? '',
                       name: ownerInfo.name,
                       photoURL: ownerInfo.photoURL,
-                      role: 'host',
-                    } as Participant}
+                      role: 'host' } as Participant}
                     badge={t('voiceRoom.info.ownerBadge')}
                   />
                 ) : null}
@@ -386,8 +383,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
                     {
                       text: t('voiceRoom.info.disbandConfirm', { defaultValue: 'Disband' }),
                       style: 'destructive',
-                      onPress: () => { onClose(); onDisband?.(); },
-                    },
+                      onPress: () => { onClose(); onDisband?.(); } },
                   ],
                 );
               }}
