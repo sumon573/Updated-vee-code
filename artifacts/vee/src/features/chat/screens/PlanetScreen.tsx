@@ -13,10 +13,8 @@
  * - Every error surfaces its actual cause (getErrorCause).
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View, Text, FlatList, Pressable, Image,
-  Dimensions, ActivityIndicator, Share, Alert,
-} from 'react-native';
+import { View, Text, FlatList, Pressable, Image, Dimensions, Share, Alert } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
 import { useRealAuthor } from '../hooks/useRealAuthor';
 
@@ -46,8 +44,7 @@ import {
   subscribePlanetStories,
   reactToStory,
   recordStoryView,
-  recordStoryShare,
-} from '@/src/features/chat/services/firebaseStoryService';
+  recordStoryShare } from '@/src/features/chat/services/firebaseStoryService';
 import type { Story, UserStories } from '@/src/features/chat/types';
 import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
@@ -133,8 +130,7 @@ function PlanetAudioItem({ item, overlay }: { item: PlanetItem; overlay: React.R
           hitSlop={12}
           style={{
             marginTop: 20, width: 64, height: 64, borderRadius: 32,
-            backgroundColor: '#7C3AED', alignItems: 'center', justifyContent: 'center',
-          }}
+            backgroundColor: '#7C3AED', alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name={playing ? 'pause' : 'play'} size={28} color="#fff" />
         </Pressable>
@@ -161,8 +157,7 @@ function PlanetMediaOverlay({ story }: { story: Story }) {
           position: 'absolute', top: 90, alignSelf: 'center',
           flexDirection: 'row', alignItems: 'center',
           backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16,
-          paddingHorizontal: 12, paddingVertical: 6,
-        }}>
+          paddingHorizontal: 12, paddingVertical: 6 }}>
           <Feather name="map-pin" size={12} color="#fff" style={{ marginRight: 4 }} />
           <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
             {story.locationName}
@@ -174,8 +169,7 @@ function PlanetMediaOverlay({ story }: { story: Story }) {
 }
 
 function PlanetOverlay({
-  item, router, t, viewerUid,
-}: {
+  item, router, t, viewerUid }: {
   item: PlanetItem;
   router: ReturnType<typeof useRouter>;
   t: TFunction;
@@ -207,8 +201,7 @@ function PlanetOverlay({
   const handleShare = async () => {
     try {
       const result = await Share.share({
-        message: `Check out ${item.userName}'s story on Vee!`,
-      });
+        message: `Check out ${item.userName}'s story on Vee!` });
       // Only count actual shares, not dismissals.
       if (result.action === Share.sharedAction) {
         recordStoryShare(item.userId, item.story.id);
@@ -285,8 +278,7 @@ function PlanetImageItem({ item, active, overlay }: { item: PlanetItem; active: 
           <Text style={{
             color: '#fff', fontSize: 24, fontWeight: '800', textAlign: 'center',
             textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 },
-            textShadowRadius: 4, paddingHorizontal: 20,
-          }}>
+            textShadowRadius: 4, paddingHorizontal: 20 }}>
             {item.story.overlayText}
           </Text>
         </View>
@@ -342,8 +334,7 @@ export default function PlanetScreen() {
               story: s,
               userId: g.userId,
               userName: g.userName,
-              userAvatar: g.userAvatar,
-            });
+              userAvatar: g.userAvatar });
           }
         }
         setItems(flat);
@@ -411,8 +402,7 @@ export default function PlanetScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-      }}>
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
         <Pressable onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }} hitSlop={8}>
           <Feather name="x" size={24} color="#fff" />
         </Pressable>
@@ -428,7 +418,7 @@ export default function PlanetScreen() {
       {/* Video feed */}
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color="#fff" />
+          <PremiumLoader size="large" />
         </View>
       ) : loadError ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
