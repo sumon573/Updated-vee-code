@@ -3,10 +3,8 @@
  * Name / email / password / confirm / avatar / terms. All logic unchanged.
  */
 import { useState } from 'react';
-import {
-  View, Text, TextInput, Pressable, Modal,
-  Alert, ScrollView, ActivityIndicator, Platform, Image,
-} from 'react-native';
+import { View, Text, TextInput, Pressable, Modal, Alert, ScrollView, Platform, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -32,14 +30,12 @@ const C = {
   error: '#FF4B4B',
   errorBg: 'rgba(255,75,75,0.10)',
   inputBg: '#F7F7FA',
-  inputBorder: '#E8E8EC',
-} as const;
+  inputBorder: '#E8E8EC' } as const;
 
 // ─── Field Component ──────────────────────────────────────────────────────────
 
 function Field({
-  icon, placeholder, value, onChange, secure, keyboard, hint,
-}: {
+  icon, placeholder, value, onChange, secure, keyboard, hint }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   placeholder: string;
   value: string;
@@ -57,8 +53,7 @@ function Field({
         flexDirection: 'row', alignItems: 'center',
         borderRadius: 16, borderWidth: 1,
         borderColor: focused ? C.blue : C.inputBorder,
-        backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56,
-      }}>
+        backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56 }}>
         <Feather name={icon} size={18} color={focused ? C.blue : C.muted} style={{ marginRight: 12 }} />
         <TextInput
           style={{ flex: 1, color: C.text, fontSize: 16, height: '100%' }}
@@ -121,8 +116,7 @@ export default function SignupScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
-      });
+        quality: 0.8 });
       if (!result.canceled && result.assets[0]) {
         setPhotoLocalUri(result.assets[0].uri);
       }
@@ -200,8 +194,7 @@ export default function SignupScreen() {
           bio: '',
           createdAt: Date.now(),
           lastSeen: Date.now(),
-          online: true,
-        });
+          online: true });
       } catch (dbErr) {
         // background: safe to swallow — rollback is best-effort; the error is rethrown below
         await deleteUser(firebaseUser).catch(() => {});
@@ -256,12 +249,11 @@ export default function SignupScreen() {
                 borderWidth: 2, borderColor: C.inputBorder,
                 borderStyle: photoLocalUri ? 'solid' : 'dashed',
                 alignItems: 'center', justifyContent: 'center',
-                overflow: 'hidden',
-              }}>
+                overflow: 'hidden' }}>
                 {photoLocalUri
                   ? <Image source={{ uri: photoLocalUri }} style={{ width: 96, height: 96, borderRadius: 48 }} />
                   : photoUploading
-                    ? <ActivityIndicator color={C.blue} />
+                    ? <PremiumLoader size="medium" />
                     : <Feather name="user" size={32} color={C.muted} />
                 }
               </View>
@@ -269,8 +261,7 @@ export default function SignupScreen() {
                 position: 'absolute', bottom: 2, right: 2,
                 width: 30, height: 30, borderRadius: 15,
                 backgroundColor: C.blue, borderWidth: 2, borderColor: C.bg,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
+                alignItems: 'center', justifyContent: 'center' }}>
                 <Feather name="camera" size={13} color="#fff" />
               </View>
             </Pressable>
@@ -282,8 +273,7 @@ export default function SignupScreen() {
               backgroundColor: C.errorBg, borderRadius: 14,
               borderWidth: 1, borderColor: 'rgba(255,75,75,0.3)',
               paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16,
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-            }}>
+              flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Feather name="alert-circle" size={16} color={C.error} />
               <Text style={{ color: C.error, fontSize: 14, flex: 1, lineHeight: 20 }}>{errorMsg}</Text>
             </View>
@@ -307,8 +297,7 @@ export default function SignupScreen() {
                 width: 22, height: 22, borderRadius: 6, marginTop: 1,
                 borderWidth: 1.8, borderColor: C.blue,
                 backgroundColor: agreed ? C.blue : 'transparent',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
+                alignItems: 'center', justifyContent: 'center' }}>
                 {agreed && <Feather name="check" size={13} color="#fff" />}
               </View>
             </Pressable>
@@ -329,10 +318,9 @@ export default function SignupScreen() {
           <ScalePress onPress={handleSignUp} disabled={loading}>
             <View style={{
               height: 56, borderRadius: 28, backgroundColor: loading ? C.blueDark : C.blue,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
+              alignItems: 'center', justifyContent: 'center' }}>
               {loading
-                ? <ActivityIndicator color="#fff" />
+                ? <PremiumLoader size="medium" />
                 : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 1.5 }}>
                     {t('auth.signup.createButton')}
                   </Text>}
@@ -345,8 +333,7 @@ export default function SignupScreen() {
             <View style={{
               height: 56, borderRadius: 28, borderWidth: 1.6, borderColor: C.blue,
               alignItems: 'center', justifyContent: 'center',
-              backgroundColor: '#FFFFFF',
-            }}>
+              backgroundColor: '#FFFFFF' }}>
               <Text style={{ color: C.blue, fontSize: 13, fontWeight: '800', letterSpacing: 1.2 }}>
                 {t('auth.signup.alreadyHaveAccount')}
               </Text>
@@ -366,15 +353,13 @@ export default function SignupScreen() {
           <Pressable
             style={{
               flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-              alignItems: 'center', justifyContent: 'center', padding: 30,
-            }}
+              alignItems: 'center', justifyContent: 'center', padding: 30 }}
             onPress={() => setDocOpen(null)}
           >
             <Pressable
               style={{
                 backgroundColor: '#FFFFFF', borderRadius: 18,
-                padding: 22, maxHeight: '70%', width: '100%',
-              }}
+                padding: 22, maxHeight: '70%', width: '100%' }}
               onPress={() => {}}
             >
               <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 12 }}>
@@ -393,8 +378,7 @@ export default function SignupScreen() {
                 onPress={() => setDocOpen(null)}
                 style={{
                   marginTop: 18, backgroundColor: C.blue,
-                  borderRadius: 24, paddingVertical: 12, alignItems: 'center',
-                }}
+                  borderRadius: 24, paddingVertical: 12, alignItems: 'center' }}
               >
                 <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>OK</Text>
               </Pressable>
