@@ -236,7 +236,8 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
               const catalog = NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rankKey);
               const designUrl = catalog?.frame?.designUrl;
               if (designUrl && /^https?:\/\//i.test(designUrl)) {
-                return <NobelFrame size={size * 1.3} imageUrl={designUrl} />;
+                // 2026-10-15: Frame inner opening is ~51% of image — 1.6x ensures DP fits
+                return <NobelFrame size={size * 1.6} imageUrl={designUrl} />;
               }
               // Fallback to regular frame if no design URL
               return <AnimatedFrame size={size} frameId={frameType} compact />;
