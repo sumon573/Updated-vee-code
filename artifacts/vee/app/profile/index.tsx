@@ -7,6 +7,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, Alert, Modal, Image, Pressable, FlatList, Animated } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import MistNameplate from '@/src/components/MistNameplate';
+import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
@@ -692,6 +694,14 @@ export default function ProfileScreen({
   const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
   const vId = profile?.vId || '';
   const bio = profile?.bio || '';
+  /* 2026-10-15 (Sumon): ONE active nameplate shows below the name on profile */
+  const activeNameplate = grantedNameplates.find((n) => n.id === (profile as any)?.activeNameplate) || null;
+  /* Mist color for Viscount+ nameplates */
+  const nameplateMist = (() => {
+    if (!activeNameplate) return null;
+    const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === activeNameplate.id);
+    return entry?.nameplate.mistColor || null;
+  })();
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
@@ -827,6 +837,20 @@ export default function ProfileScreen({
               />
             ) : null}
           </View>
+          {/* 2026-10-15 (Sumon): Active nameplate below the name — ONE at a time */}
+          {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
+            nameplateMist ? (
+              <View style={{ marginTop: 6, alignSelf: 'center' }}>
+                <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={140} height={28} />
+              </View>
+            ) : (
+              <Image
+                source={{ uri: activeNameplate.icon }}
+                style={{ width: 140, height: 28, marginTop: 6, alignSelf: 'center' }}
+                resizeMode="contain"
+              />
+            )
+          ) : null}
           {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
         </View>
 
