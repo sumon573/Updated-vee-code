@@ -196,11 +196,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // FIX (2026-10-12): Backfill Google Auth profile data to DB if empty.
           // Google users may have empty DB name/photoURL (only visible to themselves
           // via Auth fallback). Others see empty. Copy from Auth if DB is empty.
+          // FIX (2026-10-15, Sumon): CREATE the DB profile if it doesn't exist at
+          // all (fail-open timeout can let users into home with no DB profile —
+          // then everyone sees them as "Vee User" with no name/DP).
           (async () => {
             try {
-              const { getUser, updateUser } = await import('@/src/services/userService');
+              const { getUser, updateUser, createUser } = await import('@/src/services/userService');
               const profile = await getUser(firebaseUser.uid);
-              if (profile) {
+              if (!profile) {
+                // No DB profile — create one from Auth data so others see the
+                // real name/DP. Vee ID backfill (above) handles the vId.
+                await createUser({
+                  uid: firebaseUser.uid,
+                  vId: '',
+                  name: firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'User'),
+                  email: firebaseUser.email ?? '',
+                  photoURL: firebaseUser.photoURL ?? '',
+                  bio: '',
+                  createdAt: Date.now(),
+                  lastSeen: Date.now(),
+                  online: true,
+                }).catch(() => {});
+              } else {
                 const updates: Record<string, string> = {};
                 if (!profile.name && firebaseUser.displayName) {
                   updates.name = firebaseUser.displayName;
@@ -263,24 +280,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2026-10-14 Bug #1 fix (Sumon): Logout must clean up voice room session.
     // Without this: minimize bar persists in new account, user ghosts in room,
     // mic stays on in background. Must-fix before market release.
+    // 2026-10-14 (Sumon): Also clean up when IN room (not minimized) and when
+    // app was killed with ID in room. Check currentRoom + minimizedRoom.
     try {
-      const { getMinimizedRoom, setMinimizedRoom } = await import('../store/minimizedRoom');
+      const { getMinimizedRoom, setMinimizedRoom, getCurrentRoom, clearCurrentRoom } = await import('../store/minimizedRoom');
       const minimized = getMinimizedRoom();
-      if (minimized) {
+      const current = getCurrentRoom();
+      // Use current room if in room, otherwise minimized room
+      const roomToClean = current || minimized;
+      if (roomToClean) {
         try {
           const { destroyPersistedVoiceRoomEngine } = await import('../features/voice-room/useLivekitVoiceRoom');
           destroyPersistedVoiceRoomEngine();
         } catch {}
         try {
           const { removeSeat, leaveAudience } = await import('../features/voice-room/services/firebaseRoomService');
-          if (minimized.mySeatIdx >= 0) {
-            await removeSeat(minimized.id, minimized.mySeatIdx).catch(() => {});
-            await leaveAudience(minimized.id, minimized.myUid).catch(() => {});
+          if (roomToClean.mySeatIdx >= 0) {
+            await removeSeat(roomToClean.id, roomToClean.mySeatIdx).catch(() => {});
+            await leaveAudience(roomToClean.id, roomToClean.myUid).catch(() => {});
           } else {
-            await leaveAudience(minimized.id, minimized.myUid).catch(() => {});
+            await leaveAudience(roomToClean.id, roomToClean.myUid).catch(() => {});
           }
         } catch {}
         setMinimizedRoom(null);
+        clearCurrentRoom();
       }
     } catch {}
     if (user) {
