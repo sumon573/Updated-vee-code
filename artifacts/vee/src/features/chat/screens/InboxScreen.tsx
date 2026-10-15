@@ -353,8 +353,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     });
   }, [effectiveParticipantId]);
 
-  // Live profile নাম থাকলে সেটাই, নইলে prop থেকে আসা নাম
-  const displayName = participantLiveName || participantName;
+  // 2026-10-15 (Sumon): NEVER show "Unknown" — live নাম থাকলে সেটাই,
+  // নইলে prop-এর নাম ("Unknown" হলে বাদ), সবশেষে "Vee User" fallback.
+  const _rawInboxName = participantLiveName || participantName;
+  const displayName = _rawInboxName && _rawInboxName.trim().length > 0 && _rawInboxName !== 'Unknown'
+    ? _rawInboxName.trim()
+    : 'Vee User';
 
   // ── Mark seen on open ──────────────────────────────────────────────────
   useEffect(() => {
