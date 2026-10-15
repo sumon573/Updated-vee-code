@@ -5,7 +5,8 @@
  * Modal was showing 404 on other users' profiles.
  */
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,8 +42,7 @@ export default function DpViewerScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
-      });
+        quality: 0.8 });
       if (result.canceled || !result.assets?.[0]?.uri) return;
       setUploading(true);
       const upload = await uploadProfilePhoto(result.assets[0].uri);
@@ -67,7 +67,7 @@ export default function DpViewerScreen() {
           <Feather name="x" size={28} color="#fff" />
         </Pressable>
         {loading ? (
-          <ActivityIndicator size="large" color="#fff" />
+          <PremiumLoader size="large" />
         ) : photoURL ? (
           <Image
             source={{ uri: photoURL }}
@@ -87,11 +87,10 @@ export default function DpViewerScreen() {
               marginTop: 32, flexDirection: 'row', alignItems: 'center',
               backgroundColor: '#1C1C1E', borderRadius: 24,
               paddingHorizontal: 28, paddingVertical: 12,
-              opacity: uploading ? 0.6 : 1,
-            }}
+              opacity: uploading ? 0.6 : 1 }}
           >
             {uploading ? (
-              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+              <PremiumLoader size="small" />
             ) : (
               <Feather name="edit-2" size={16} color="#fff" style={{ marginRight: 8 }} />
             )}
