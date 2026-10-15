@@ -293,7 +293,17 @@ export default function HonorScreen() {
                       borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
                       borderRadius: 14, padding: 12 }}
                   >
-                    <Text style={{ fontSize: 30 }}>{n.icon}</Text>
+                    <View style={{ width: 80, alignItems: 'center', justifyContent: 'center' }}>
+                      {/^https?:\/\//i.test(n.icon || '') ? (
+                        <Image
+                          source={{ uri: n.icon }}
+                          style={{ width: 80, height: 16 }}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <Text style={{ fontSize: 30 }}>{n.icon}</Text>
+                      )}
+                    </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>
                         {n.name}
