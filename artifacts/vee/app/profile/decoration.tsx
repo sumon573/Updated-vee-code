@@ -85,12 +85,26 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
     }
   }
   if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
+    /* 2026-10-15: Fallback to catalog emoji if image fails */
+    const fallbackEntry = NOBLE_REWARDS_CATALOG.find((r) =>
+      `noble-plate-${r.rankKey}` === itemId ||
+      `noble-badge-${r.rankKey}` === itemId ||
+      `noble-frame-${r.rankKey}` === itemId
+    );
+    const fallbackIcon = fallbackEntry ? (
+      itemId?.includes('plate-') ? fallbackEntry.nameplate.fallbackIcon :
+      itemId?.includes('badge-') ? fallbackEntry.badge?.fallbackIcon :
+      fallbackEntry.frame?.fallbackIcon
+    ) : '🎖️';
     return (
-      <Image
-        source={{ uri: icon }}
-        style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.card }}
-        resizeMode="cover"
-      />
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
+        <Image
+          source={{ uri: icon }}
+          style={{ width: 44, height: 44, borderRadius: 22, position: 'absolute' }}
+          resizeMode="cover"
+        />
+        <Text style={{ fontSize: 24 }}>{fallbackIcon}</Text>
+      </View>
     );
   }
   return <Text style={{ fontSize: 40 }}>{icon}</Text>;
