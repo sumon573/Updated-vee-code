@@ -27,6 +27,7 @@ try {
   // Non-fatal: layout simply stays in its default direction.
 }
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nextProvider } from 'react-i18next';
@@ -227,6 +228,36 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     profileChecked,
     hasProfile,
   ]);
+
+  // 2026-10-15 (Sumon): VOICE-ROOM SESSION RESTORE.
+  // If the app was killed (long background) while the user was in a voice
+  // room, the in-memory room state is gone — but the persisted active room
+  // survives. Return the user to their room (restore=1 → no duplicate
+  // "joined" message, seat reclaimed if still free). Runs once per cold start,
+  // after auth settles. A notification deep link always wins.
+  const restoreCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!user || authLoading || !profileChecked || !hasProfile || !rootNavigationState?.key) return;
+    if (restoreCheckedRef.current) return;
+    restoreCheckedRef.current = true;
+    (async () => {
+      try {
+        const persisted = await getPersistedActiveRoom().catch(() => null);
+        if (!persisted || persisted.myUid !== user.uid) return;
+        if (pendingDeepLinkRef.current) return;
+        if ((segments as string[])?.includes('voice-room')) return;
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const infoSnap = await get(ref(database, `rooms/${persisted.roomId}/info`)).catch(() => null);
+        if (!infoSnap?.exists()) {
+          // Room was deleted while we were away — drop the stale entry.
+          await clearPersistedActiveRoom().catch(() => {});
+          return;
+        }
+        router.replace({ pathname: '/voice-room', params: { roomId: persisted.roomId, restore: '1' } } as any);
+      } catch { /* non-critical — user stays on home */ }
+    })();
+  }, [user, authLoading, profileChecked, hasProfile, rootNavigationState?.key, segments]);
 
   // RC8-B2: Clean expired stories for the current user only (fire-and-forget).
   // Global cleanup across all users is now handled by the server-side scheduler
