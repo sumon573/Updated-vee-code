@@ -39,7 +39,10 @@ export interface RankRewards {
 export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'knight', rankName: 'Knight', rankColor: '#8BC34A',
-    nameplate: { fallbackIcon: '🎖️' },
+    nameplate: {
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-knight.png',
+      fallbackIcon: '🎖️',
+    },
     badge: null, frame: null, ripple: null, entryEffect: null,
   },
   {
