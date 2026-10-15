@@ -8,13 +8,14 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { ref, get, onValue, update } from 'firebase/database';
+import { ref, get, onValue, update, set, serverTimestamp, onDisconnect } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
+import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
@@ -233,7 +234,9 @@ function LiveDateIcon() {
 }
 
 export default function VoiceRoomScreen() {
-  const { roomId: paramRoomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
+  // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
+  const isRestore = restore === '1';
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -1453,6 +1456,10 @@ export default function VoiceRoomScreen() {
      cleanup on unmount). Prevents the double-remove that occurred when
      router.back() unmounted the screen right after handleLeave ran. ── */
   const hasLeftRef = useRef(false);
+  // 2026-10-15 (Sumon): session restore / presence re-register guards.
+  const presenceReadyRef = useRef(false); // join effect finished
+  const mutedRef = useRef(false);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   /* ── Join room: add to Firebase audience ── */
   useEffect(() => {
@@ -1505,19 +1512,47 @@ export default function VoiceRoomScreen() {
       }
       if (cancelled) return;
 
-      joinRoomAsAudience(roomId, {
-        userId: myUid,
-        userName: myName,
-        initials: myInitials,
-        color: myColor,
-        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-      }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+      // 2026-10-15 (Sumon): SESSION RESTORE — cold start auto-returned us here
+      // (restore=1). Reclaim our seat if we had one and it's still free/ours;
+      // if someone else took it, fall through to audience.
+      let finalSeatIdx = -1;
+      if (isRestore) {
+        try {
+          const persisted = await getPersistedActiveRoom();
+          if (persisted && persisted.roomId === roomId && persisted.myUid === myUid && persisted.mySeatIdx >= 0) {
+            const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${persisted.mySeatIdx}`)).catch(() => null);
+            const curSeat = seatSnap?.val() as { userId?: string } | null;
+            if (!curSeat || curSeat.userId === myUid) {
+              const seatData = buildSeatData();
+              const res = await takeSeat(roomId, persisted.mySeatIdx, seatData).catch(() => ({ success: false }));
+              if (res && res.success) {
+                finalSeatIdx = persisted.mySeatIdx;
+                mySeatIdxRef.current = finalSeatIdx;
+              }
+            }
+          }
+        } catch { /* best-effort — fall back to audience */ }
+      }
+      if (cancelled) return;
+
+      if (finalSeatIdx < 0) {
+        joinRoomAsAudience(roomId, {
+          userId: myUid,
+          userName: myName,
+          initials: myInitials,
+          color: myColor,
+          ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+      }
+      // 2026-10-15 (Sumon): persist active room — cold start auto-returns here.
+      persistActiveRoom({ roomId, myUid, mySeatIdx: finalSeatIdx }).catch(() => {});
       // 2026-10-14 (Sumon): Track current room for logout cleanup (even when not minimized)
-      setCurrentRoom({ id: roomId, myUid, mySeatIdx: -1 });
+      setCurrentRoom({ id: roomId, myUid, mySeatIdx: finalSeatIdx });
 
       // Send join message to room chat (only if not already sent on entry)
       // Per Sumon 2026-10-12: everyone's entry visible, even audience
-      if (!hasSentEntryChatMsgRef.current) {
+      // 2026-10-15 (Sumon): on session restore we never left — no "joined" spam.
+      if (!isRestore && !hasSentEntryChatMsgRef.current) {
         hasSentEntryChatMsgRef.current = true;
         sendRoomChatMsg(roomId, {
           senderId: 'system',
@@ -1527,6 +1562,7 @@ export default function VoiceRoomScreen() {
           ts: Date.now(),
         }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
       }
+      presenceReadyRef.current = true;
     })();
 
     return () => {
@@ -1545,9 +1581,69 @@ export default function VoiceRoomScreen() {
         // 2026-10-14 (Sumon): Clear current room tracking on unmount
         clearCurrentRoom();
       }
+      // 2026-10-15 (Sumon): unmount without minimize = left the room —
+      // clear persisted room (minimize sets hasLeftRef first, so it's excluded).
+      clearPersistedActiveRoom().catch(() => {});
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasJoined]);
+
+  /* ── 2026-10-15 (Sumon): re-register presence on Firebase reconnect.
+     Long background can drop the socket → onDisconnect wipes our
+     audience/seat entry server-side, but this screen is still mounted so the
+     join effect never re-runs. Without this the user becomes a ghost: inside
+     the room UI but invisible in counts (the pill showed 0+). ── */
+  useEffect(() => {
+    if (!hasJoined) return;
+    const connRef = ref(database, '.info/connected');
+    let wasConnected = true;
+    let disposed = false;
+    const reRegisterPresence = async () => {
+      if (disposed || hasLeftRef.current || !presenceReadyRef.current) return;
+      try {
+        const seatIdx = mySeatIdxRef.current;
+        const audData = {
+          userId: myUid,
+          userName: myName,
+          initials: myInitials,
+          color: myColor,
+          ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        };
+        if (seatIdx >= 0) {
+          // Re-claim our seat if it's empty or still ours; if someone else
+          // took it while we were gone, fall back to audience.
+          const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${seatIdx}`)).catch(() => null);
+          const cur = seatSnap?.val() as { userId?: string } | null;
+          if (!cur || cur.userId === myUid) {
+            const seatData = buildSeatData();
+            // Keep the live mic state (not the possibly stale seat flag).
+            seatData.muted = mutedRef.current;
+            const seatRef = ref(database, `rooms/${roomId}/seats/${seatIdx}`);
+            await set(seatRef, { ...seatData, seatTs: serverTimestamp() }).catch(() => {});
+            onDisconnect(seatRef).remove().catch(() => {});
+            persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
+          } else {
+            mySeatIdxRef.current = -1;
+            setCurrentRoom({ id: roomId, myUid, mySeatIdx: -1 });
+            persistActiveRoom({ roomId, myUid, mySeatIdx: -1 }).catch(() => {});
+            await joinRoomAsAudience(roomId, audData).catch(() => {});
+          }
+        } else {
+          await joinRoomAsAudience(roomId, audData).catch(() => {});
+        }
+      } catch { /* best-effort — next reconnect retries */ }
+    };
+    const unsub = onValue(connRef, (snap) => {
+      const connected = snap.val() === true;
+      if (!connected) { wasConnected = false; return; }
+      if (!wasConnected) {
+        wasConnected = true;
+        void reRegisterPresence();
+      }
+    });
+    return () => { disposed = true; unsub(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasJoined, roomId]);
 
   /* ── Cleanup scroll timer on unmount ── */
   useEffect(() => {
@@ -1770,22 +1866,16 @@ export default function VoiceRoomScreen() {
     });
   }, [seats, myUid, roomId, stopPublishing, stopUserStream, t]);
 
-  const joinSeat = useCallback(async (seatIdx: number) => {
-    // Already sitting in this seat — nothing to do. (takeSeat's transaction
-    // would abort on our own occupied seat, so short-circuit here.)
-    if (mySeatIdx === seatIdx) return;
-    const target = seats[seatIdx];
-    if (target && target.id !== myUid) {
-      Alert.alert(t('voiceRoom.screen.seatOccupied'), t('voiceRoom.screen.seatOccupiedFirst'));
-      return;
-    }
-
+  // 2026-10-15 (Sumon): builds the seat member object. Extracted from
+  // joinSeat so session restore + presence re-register can reclaim the
+  // identical seat (same frame, badge, role, mute).
+  const buildSeatData = useCallback((): NonNullable<RoomSeat> => {
     // role: the owner MUST always be seated as 'host', even if room info
     // (ownerId) hasn't finished loading yet — otherwise a race seats the
     // owner as 'member' and they lose host powers + see the wrong badge.
     // Belt-and-braces: check ownerId directly, not just the myRole memo.
     const seatRole: Role = (ownerId && ownerId === myUid) ? 'host' : myRole;
-    const seatData: NonNullable<RoomSeat> = {
+    return {
       userId: myUid,
       userName: myName,
       initials: myInitials,
@@ -1800,6 +1890,21 @@ export default function VoiceRoomScreen() {
       muted: mySeatIdx >= 0 ? muted : true,
       role: seatRole,
     };
+  }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted]);
+
+  const joinSeat = useCallback(async (seatIdx: number) => {
+    // Already sitting in this seat — nothing to do. (takeSeat's transaction
+    // would abort on our own occupied seat, so short-circuit here.)
+    if (mySeatIdx === seatIdx) return;
+    const target = seats[seatIdx];
+    if (target && target.id !== myUid) {
+      Alert.alert(t('voiceRoom.screen.seatOccupied'), t('voiceRoom.screen.seatOccupiedFirst'));
+      return;
+    }
+
+    // 2026-10-15 (Sumon): shared seat-data builder (extracted) so session
+    // restore + presence re-register can reclaim the identical seat.
+    const seatData: NonNullable<RoomSeat> = buildSeatData();
 
     // RACE FIX: await the takeSeat transaction BEFORE vacating the old seat.
     // Previously takeSeat() was fire-and-forget and removeSeat(oldSeat) ran
@@ -1823,6 +1928,8 @@ export default function VoiceRoomScreen() {
     mySeatIdxRef.current = seatIdx;
     // 2026-10-14 (Sumon): Update currentRoom seat index for logout cleanup
     setCurrentRoom({ id: roomId, myUid, mySeatIdx: seatIdx });
+    // 2026-10-15 (Sumon): persist seat for session restore after app kill.
+    persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
     if (oldIdx >= 0 && oldIdx !== seatIdx) {
       removeSeat(roomId, oldIdx).catch(() => {});
     } else if (oldIdx < 0) {
@@ -1834,7 +1941,7 @@ export default function VoiceRoomScreen() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t]);
+  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData]);
 
   /**
    * CRITICAL-3 fix: Mic bar button behaves differently by role.
@@ -2076,6 +2183,9 @@ export default function VoiceRoomScreen() {
     // BUG 11 fix: mark as already cleaned up so the effect cleanup
     // (triggered by router.back() → unmount) doesn't run it a second time.
     hasLeftRef.current = true;
+    // 2026-10-15 (Sumon): explicit leave — clear persisted room so a later
+    // cold start does NOT auto-return to a room the user chose to leave.
+    clearPersistedActiveRoom().catch(() => {});
 
     if (mySeatIdx >= 0) {
       stopPublishing();
