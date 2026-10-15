@@ -23,9 +23,8 @@
  * Light mode only. Errors show their actual cause.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View, Text, ScrollView, Pressable, ActivityIndicator, Modal, Image, Alert, Animated,
-} from 'react-native';
+import { View, Text, ScrollView, Pressable, Modal, Image, Alert, Animated } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -36,8 +35,7 @@ import {
   subscribeNameplates,
   formatObtainedDate,
   formatValidity,
-  type GrantedNameplate,
-} from '@/src/services/badgeService';
+  type GrantedNameplate } from '@/src/services/badgeService';
 import type { GrantedBadge } from '@/src/data/honor';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
@@ -51,8 +49,7 @@ const C = {
   gold: '#F5A623',
   goldBg: '#FFF8E6',
   goldBorder: '#F5D67B',
-  blue: '#007AFF',
-} as const;
+  blue: '#007AFF' } as const;
 
 export default function HonorScreen() {
   const { user } = useAuth();
@@ -78,8 +75,7 @@ export default function HonorScreen() {
         toValue: 1,
         friction: 5,
         tension: 80,
-        useNativeDriver: true,
-      }).start();
+        useNativeDriver: true }).start();
     }
   }, [selected, badgeScale]);
 
@@ -168,7 +164,7 @@ export default function HonorScreen() {
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={C.gold} />
+        <PremiumLoader size="large" />
       </SafeAreaView>
     );
   }
@@ -186,8 +182,7 @@ export default function HonorScreen() {
       <View style={{
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 12, paddingVertical: 10,
-        borderBottomWidth: 1, borderBottomColor: C.border,
-      }}>
+        borderBottomWidth: 1, borderBottomColor: C.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Pressable onPress={() => router.back()} style={{ padding: 8 }} hitSlop={8}>
             <Feather name="chevron-left" size={24} color={C.text} />
@@ -214,8 +209,7 @@ export default function HonorScreen() {
         ) : (
           <View style={{
             width: 52, height: 52, borderRadius: 26, backgroundColor: C.card,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
+            alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 20, fontWeight: '800', color: C.muted }}>
               {displayName[0]?.toUpperCase()}
             </Text>
@@ -227,8 +221,7 @@ export default function HonorScreen() {
             <View style={{
               marginTop: 5, alignSelf: 'flex-start',
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
-              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3,
-            }}>
+              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#8A6D00' }}>
                 {activePlate.icon} {activePlate.name}
               </Text>
@@ -250,14 +243,12 @@ export default function HonorScreen() {
             >
               <Text style={{
                 fontSize: 15, fontWeight: active ? '800' : '500',
-                color: active ? C.blue : C.muted,
-              }}>
+                color: active ? C.blue : C.muted }}>
                 {label}
               </Text>
               <View style={{
                 height: 3, width: 40, borderRadius: 2, marginTop: 6,
-                backgroundColor: active ? C.blue : 'transparent',
-              }} />
+                backgroundColor: active ? C.blue : 'transparent' }} />
             </Pressable>
           );
         })}
@@ -284,8 +275,7 @@ export default function HonorScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <Text style={{
             fontSize: 13, fontWeight: '700', color: C.muted,
-            paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8,
-          }}>
+            paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
             Nameplate
           </Text>
           {nameplates.length > 0 ? (
@@ -301,8 +291,7 @@ export default function HonorScreen() {
                       flexDirection: 'row', alignItems: 'center',
                       backgroundColor: C.goldBg,
                       borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
-                      borderRadius: 14, padding: 12,
-                    }}
+                      borderRadius: 14, padding: 12 }}
                   >
                     <Text style={{ fontSize: 30 }}>{n.icon}</Text>
                     <View style={{ flex: 1, marginLeft: 12 }}>
@@ -350,8 +339,7 @@ export default function HonorScreen() {
         <Pressable
           style={{
             flex: 1, backgroundColor: 'rgba(0,0,0,0.92)',
-            alignItems: 'center', justifyContent: 'center', padding: 32,
-          }}
+            alignItems: 'center', justifyContent: 'center', padding: 32 }}
           onPress={() => setSelected(null)}
         >
           <Pressable
@@ -377,8 +365,7 @@ export default function HonorScreen() {
             {isOwn && selected?.validity && (
               <View style={{
                 marginTop: 12, backgroundColor: 'rgba(255,255,255,0.12)',
-                borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6,
-              }}>
+                borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFD60A' }}>
                   {formatValidity(selected.validity)}
                 </Text>
@@ -387,15 +374,13 @@ export default function HonorScreen() {
             {(selected?.description || selected?.howToGet) ? (
               <Text style={{
                 fontSize: 15, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic', textAlign: 'center',
-                marginTop: 16, lineHeight: 22, paddingHorizontal: 20,
-              }}>
+                marginTop: 16, lineHeight: 22, paddingHorizontal: 20 }}>
                 {selected?.description || selected?.howToGet}
               </Text>
             ) : null}
             {/* Obtained date — visible to everyone */}
             <Text style={{
-              fontSize: 15, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', marginTop: 20,
-            }}>
+              fontSize: 15, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic', marginTop: 20 }}>
               First obtained on {formatObtainedDate(selected?.obtainedAt || 0)}
             </Text>
           </Pressable>
@@ -406,8 +391,7 @@ export default function HonorScreen() {
 }
 
 function BadgeSection({
-  title, badges, onOpen,
-}: {
+  title, badges, onOpen }: {
   title: string;
   badges: GrantedBadge[];
   onOpen: (b: GrantedBadge) => void;
@@ -417,8 +401,7 @@ function BadgeSection({
     <View>
       <Text style={{
         fontSize: 13, fontWeight: '700', color: C.muted,
-        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8,
-      }}>
+        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
         {title}
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 8 }}>
@@ -431,8 +414,7 @@ function BadgeSection({
             <View style={{
               width: '100%', aspectRatio: 1, borderRadius: 16,
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
+              alignItems: 'center', justifyContent: 'center' }}>
               {/^https?:\/\//i.test(b.icon || '') ? (
                 <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
               ) : (
@@ -441,8 +423,7 @@ function BadgeSection({
             </View>
             <Text style={{
               fontSize: 11, fontWeight: '700', color: C.text,
-              marginTop: 5, textAlign: 'center',
-            }} numberOfLines={2}>
+              marginTop: 5, textAlign: 'center' }} numberOfLines={2}>
               {b.name}
             </Text>
           </Pressable>
