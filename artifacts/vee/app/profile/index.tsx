@@ -5,10 +5,8 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  View, Text, Alert, Modal,
-  ActivityIndicator, Image, Pressable, FlatList, Animated,
-} from 'react-native';
+import { View, Text, Alert, Modal, Image, Pressable, FlatList, Animated } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
@@ -27,13 +25,11 @@ import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
 import {
   sendFriendRequest, cancelFriendRequest, acceptFriendRequest, rejectFriendRequest,
-  subscribeFriendStatus, FriendStatus,
-} from '@/src/services/friendRequestService';
+  subscribeFriendStatus, FriendStatus } from '@/src/services/friendRequestService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import {
   unblockUser, getBlockDirection,
-  subscribeBlockedUsers, BlockDirection,
-} from '@/src/services/blockService';
+  subscribeBlockedUsers, BlockDirection } from '@/src/services/blockService';
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
@@ -44,14 +40,12 @@ import { useTranslation } from 'react-i18next';
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
 const GIFTS: Record<string, string> = {
   '1': '💝', '2': '🌹', '3': '🎁', '4': '💎',
-  '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆',
-};
+  '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆' };
 
 // Gift diamond prices (for ranking "big gifts" in the 1-line preview)
 const GIFT_RANK_PRICE: Record<string, number> = {
   '1': 10, '2': 25, '3': 50, '4': 100,
-  '5': 200, '6': 500, '7': 1000, '8': 2000,
-};
+  '5': 200, '6': 500, '7': 1000, '8': 2000 };
 
 // IMO light-mode colors
 const C = {
@@ -63,8 +57,7 @@ const C = {
   card: '#F2F2F7',
   blue: '#007AFF',
   blueLight: '#E3F2FD',
-  green: '#34C759',
-} as const;
+  green: '#34C759' } as const;
 
 // ─── Section Header (IMO style: title left, count + arrow right) ───
 
@@ -103,24 +96,19 @@ const TIER_STYLE: Record<LevelTier, { colors: [string, string, string]; label: s
   bronze: {
     colors: ['#8C6239', '#CD7F32', '#F0B46A'],
     label: 'Bronze',
-    glow: 'rgba(205,127,50,0.35)',
-  },
+    glow: 'rgba(205,127,50,0.35)' },
   silver: {
     colors: ['#7E8FA0', '#B8C6D4', '#EDF2F7'],
     label: 'Silver',
-    glow: 'rgba(184,198,212,0.4)',
-  },
+    glow: 'rgba(184,198,212,0.4)' },
   gold: {
     colors: ['#9A6B0F', '#E8B91A', '#FFE873'],
     label: 'Gold',
-    glow: 'rgba(232,185,26,0.45)',
-  },
+    glow: 'rgba(232,185,26,0.45)' },
   max: {
     colors: ['#5B1A9E', '#9D4EDD', '#FFD700'],
     label: 'Max',
-    glow: 'rgba(157,78,221,0.5)',
-  },
-};
+    glow: 'rgba(157,78,221,0.5)' } };
 
 /** One drifting mist particle. */
 function MistParticle({ delay, size, left, duration }: { delay: number; size: number; left: number; duration: number }) {
@@ -154,8 +142,7 @@ function MistParticle({ delay, size, left, duration }: { delay: number; size: nu
         borderRadius: size / 2,
         backgroundColor: '#FFFFFF',
         opacity: fade,
-        transform: [{ translateY: drift.interpolate({ inputRange: [-1, 0], outputRange: [-22, 0] }) }],
-      }}
+        transform: [{ translateY: drift.interpolate({ inputRange: [-1, 0], outputRange: [-22, 0] }) }] }}
     />
   );
 }
@@ -178,8 +165,7 @@ function LevelBadge({ level }: { level: number }) {
           paddingVertical: 5,
           flexDirection: 'row',
           alignItems: 'center',
-          overflow: 'hidden',
-        }}
+          overflow: 'hidden' }}
       >
         <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
           {style.label} Lv {level}
@@ -194,8 +180,7 @@ function BadgePill({ label, icon }: { label: string; icon?: string }) {
     <View style={{
       backgroundColor: C.card, borderRadius: 12,
       paddingHorizontal: 10, paddingVertical: 5, marginRight: 6, marginBottom: 6,
-      flexDirection: 'row', alignItems: 'center',
-    }}>
+      flexDirection: 'row', alignItems: 'center' }}>
       {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
       <Text style={{ fontSize: 12, color: C.muted, fontWeight: '500' }}>{label}</Text>
     </View>
@@ -239,8 +224,7 @@ function PremiumPill({ label, icon, colors }: { label: string; icon?: string; co
           paddingHorizontal: 10,
           paddingVertical: 5,
           flexDirection: 'row',
-          alignItems: 'center',
-        }}
+          alignItems: 'center' }}
       >
         {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
         <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{label}</Text>
@@ -283,13 +267,11 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
             position: 'absolute', bottom: 6, left: 6,
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 10,
-            paddingHorizontal: 7, paddingVertical: 3,
-          }}>
+            paddingHorizontal: 7, paddingVertical: 3 }}>
             <Animated.View style={{
               width: 7, height: 7, borderRadius: 3.5,
               backgroundColor: '#FF3B30', marginRight: 4,
-              opacity: pulseAnim,
-            }} />
+              opacity: pulseAnim }} />
             <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
               {item.memberCount || 0}
             </Text>
@@ -300,8 +282,7 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
           <View style={{
             position: 'absolute', bottom: 6, right: 6,
             backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
-            paddingHorizontal: 6, paddingVertical: 2,
-          }}>
+            paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>👥 {item.memberCount}</Text>
           </View>
         )}
@@ -309,8 +290,7 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
         <View style={{
           position: 'absolute', top: 6, right: 6,
           backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
-          padding: 4,
-        }}>
+          padding: 4 }}>
           {item.isPublic === false ? (
             <Feather name="lock" size={12} color="#F59E0B" />
           ) : (
@@ -330,8 +310,7 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
 export default function ProfileScreen({
   onNavigateToContacts,
   targetUid,
-  targetName,
-}: {
+  targetName }: {
   onNavigateToContacts?: () => void;
   /** When set, renders ANOTHER user's profile with the IDENTICAL layout.
    *  Only differences: no settings icon, three-dots shows their vId,
@@ -536,8 +515,7 @@ export default function ProfileScreen({
             } finally {
               setActionLoading(false);
             }
-          },
-        },
+          } },
         {
           text: t('userProfile.decline', 'Decline'),
           style: 'destructive',
@@ -550,8 +528,7 @@ export default function ProfileScreen({
             } finally {
               setActionLoading(false);
             }
-          },
-        },
+          } },
         { text: t('common.cancel', 'Cancel'), style: 'cancel' },
       ]);
       return;
@@ -643,8 +620,7 @@ export default function ProfileScreen({
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
-      });
+        quality: 0.85 });
       if (result.canceled || !result.assets[0]) return;
       setUploadingDp(true);
       try {
@@ -656,8 +632,7 @@ export default function ProfileScreen({
         const upload = await uploadProfilePhoto(result.assets[0].uri);
         await updateUser(user.uid, {
           photoURL: upload.url,
-          ...(upload.publicId ? { photoPublicId: upload.publicId } : {}),
-        });
+          ...(upload.publicId ? { photoPublicId: upload.publicId } : {}) });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (err) {
         Alert.alert('Could not update photo', `Reason: ${getErrorCause(err)}`);
@@ -672,7 +647,7 @@ export default function ProfileScreen({
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={C.blue} />
+        <PremiumLoader size="large" />
       </SafeAreaView>
     );
   }
@@ -699,8 +674,7 @@ export default function ProfileScreen({
           <View style={{
             width: 84, height: 84, borderRadius: 42,
             backgroundColor: '#FEE2E2',
-            alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-          }}>
+            alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
             <Feather name="slash" size={36} color="#DC2626" />
           </View>
           <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, textAlign: 'center' }}>
@@ -1015,11 +989,10 @@ export default function ProfileScreen({
               style={{
                 flex: 1, backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                opacity: actionLoading ? 0.6 : 1,
-              }}
+                opacity: actionLoading ? 0.6 : 1 }}
             >
               {actionLoading ? (
-                <ActivityIndicator size="small" color={C.blue} />
+                <PremiumLoader size="small" />
               ) : (
                 <>
                   <Feather
@@ -1049,8 +1022,7 @@ export default function ProfileScreen({
                 flex: 1, backgroundColor: isFollowingTarget ? C.card : C.blueLight,
                 borderRadius: 16, paddingVertical: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                opacity: actionLoading ? 0.6 : 1,
-              }}
+                opacity: actionLoading ? 0.6 : 1 }}
             >
               <Feather name={isFollowingTarget ? 'check' : 'plus'} size={16} color={C.blue} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
