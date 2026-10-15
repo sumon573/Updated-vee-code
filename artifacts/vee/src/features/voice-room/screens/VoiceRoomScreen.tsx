@@ -252,6 +252,47 @@ function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
 // spam when the screen remounts without the restore=1 param.
 const sentJoinMsgKeys = new Set<string>();
 
+/* ── ObsidianGiftButton — Option C (2026-10-15, Sumon picked):
+   Premium gift button: obsidian dark + gold border, twinkling sparkles
+   (Animated loop, staggered). Matches Royal Gold Task calendar luxury. ── */
+function TwinkleSparkle({ delay, style }: { delay: number; style: any }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, delay]);
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] });
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.25] });
+  return (
+    <Animated.Text style={[{ opacity, transform: [{ scale }] }, style]}>
+      ✨
+    </Animated.Text>
+  );
+}
+function ObsidianGiftButton() {
+  return (
+    <View style={{
+      width: 52, height: 52, borderRadius: 15,
+      backgroundColor: '#1A1A2E',
+      borderWidth: 1.5, borderColor: '#D4AF37',
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#D4AF37', shadowOpacity: 0.25, shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+      <Text style={{ fontSize: 28 }}>🎁</Text>
+      <TwinkleSparkle delay={0} style={{ position: 'absolute', top: 2, left: 4, fontSize: 10 }} />
+      <TwinkleSparkle delay={600} style={{ position: 'absolute', top: 5, right: 5, fontSize: 10 }} />
+      <TwinkleSparkle delay={1200} style={{ position: 'absolute', bottom: 4, left: 7, fontSize: 10 }} />
+    </View>
+  );
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
@@ -3046,8 +3087,8 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): no background box — clean floating gift. */}
-            <Text style={{ fontSize: 28 }}>🎁</Text>
+            {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
+            <ObsidianGiftButton />
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.gift')}
             </Text>
