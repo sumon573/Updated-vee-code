@@ -247,6 +247,11 @@ function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
   );
 }
 
+// 2026-10-15 (Sumon): MODULE-LEVEL join-message dedup — survives component
+// remounts (background return, etc.). Key: roomId + uid. Prevents "joined"
+// spam when the screen remounts without the restore=1 param.
+const sentJoinMsgKeys = new Set<string>();
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
@@ -820,6 +825,8 @@ export default function VoiceRoomScreen() {
   // joins too, so they see the effect working (not just when others join).
   // ALSO broadcast the entry so ALL room participants see it.
   const hasShownSelfEntryRef = useRef(false);
+  // 2026-10-15 (Sumon): MODULE-LEVEL dedup — component remounts (background
+  // return, etc.) must NOT resend "joined" spam. Keyed by room+user.
   const hasSentEntryChatMsgRef = useRef(false);
   useEffect(() => {
     // Wait for myProfile to load (has real name + photoURL from RTDB)
@@ -1568,8 +1575,11 @@ export default function VoiceRoomScreen() {
       // Send join message to room chat (only if not already sent on entry)
       // Per Sumon 2026-10-12: everyone's entry visible, even audience
       // 2026-10-15 (Sumon): on session restore we never left — no "joined" spam.
-      if (!isRestore && !hasSentEntryChatMsgRef.current) {
+      // 2026-10-15 (Sumon): module-level dedup — remounts never resend.
+      const joinKey = `${roomId}:${myUid}`;
+      if (!isRestore && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
+        sentJoinMsgKeys.add(joinKey);
         sendRoomChatMsg(roomId, {
           senderId: 'system',
           senderName: 'System',
@@ -2191,37 +2201,46 @@ export default function VoiceRoomScreen() {
   }, [audience, seats, roomId, roomName, myUid, myName, t]);
 
   const handleLeave = useCallback(() => {
+    // 2026-10-15 (Sumon): BULLETPROOF EXIT — router.back() MUST run even if
+    // cleanup throws (e.g. stopPublishing on a dead engine after session
+    // restore). A stuck exit screen is worse than a leftover Firebase record.
     // BUG 11 fix: mark as already cleaned up so the effect cleanup
     // (triggered by router.back() → unmount) doesn't run it a second time.
     hasLeftRef.current = true;
-    // 2026-10-15 (Sumon): explicit leave — clear persisted room so a later
-    // cold start does NOT auto-return to a room the user chose to leave.
-    clearPersistedActiveRoom().catch(() => {});
+    try {
+      // 2026-10-15 (Sumon): explicit leave — clear persisted room so a later
+      // cold start does NOT auto-return to a room the user chose to leave.
+      clearPersistedActiveRoom().catch(() => {});
+      // 2026-10-15 (Sumon): clear join-msg dedup so a future rejoin sends fresh.
+      sentJoinMsgKeys.delete(`${roomId}:${myUid}`);
 
-    if (mySeatIdx >= 0) {
-      stopPublishing();
-      // 2026-10-12: an admin leaving surrenders their admin powers atomically
-      // with the seat removal (removeSeat handles both in one update).
-      const demoteUid = myRole === 'admin' ? myUid : undefined;
-      removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
-      // 2026-10-12 audit fix (HIGH): seated users KEEP their audience record
-      // — clean it here or ghost audience records accumulate forever
-      // (onDisconnect only fires if the connection drops, not on clean exit).
-      leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
-    } else if (hasJoined) {
-      leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
-      // Audience admin leaving: drop powers too (best-effort; owner self-heal
-      // never re-adds since the label is gone with the audience record).
-      if (myRole === 'admin') {
-        revokeRoomAdmin(roomId, myUid).catch(() => {});
+      if (mySeatIdx >= 0) {
+        try { stopPublishing(); } catch { /* dead engine — safe to swallow */ }
+        // 2026-10-12: an admin leaving surrenders their admin powers atomically
+        // with the seat removal (removeSeat handles both in one update).
+        const demoteUid = myRole === 'admin' ? myUid : undefined;
+        removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
+        // 2026-10-12 audit fix (HIGH): seated users KEEP their audience record
+        // — clean it here or ghost audience records accumulate forever
+        // (onDisconnect only fires if the connection drops, not on clean exit).
+        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
+      } else if (hasJoined) {
+        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
+        // Audience admin leaving: drop powers too (best-effort; owner self-heal
+        // never re-adds since the label is gone with the audience record).
+        if (myRole === 'admin') {
+          revokeRoomAdmin(roomId, myUid).catch(() => {});
+        }
       }
+      // Issue 8 fix: Rooms persist until the owner explicitly deletes them from
+      // Settings. Do NOT auto-close when the host leaves — other users can still
+      // rejoin and the room remains discoverable in the room list.
+    } finally {
+      // ALWAYS navigate away — even if everything above threw.
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      setExitModalOpen(false);
+      router.back();
     }
-    // Issue 8 fix: Rooms persist until the owner explicitly deletes them from
-    // Settings. Do NOT auto-close when the host leaves — other users can still
-    // rejoin and the room remains discoverable in the room list.
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    setExitModalOpen(false);
-    router.back();
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
 
   const handleMinimize = useCallback(() => {
