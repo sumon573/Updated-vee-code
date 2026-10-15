@@ -8,6 +8,7 @@ import { View, ActivityIndicator, Modal, Text, Pressable, Image, I18nManager, Ap
  */
 import { installGlobalCrashHandler, CrashOverlay } from '@/src/utils/crashReporter';
 import { HonorCelebration } from '@/src/components/HonorCelebration';
+import NobleLevelUpCelebration from '@/src/features/nobel/NobleLevelUpCelebration';
 installGlobalCrashHandler();
 
 /**
@@ -849,6 +850,8 @@ export default function RootLayout() {
                       <RootLayoutNav />
                       {/* 2026-10-13 (Sumon): Honor/Frame grant celebration */}
                       <HonorCelebration />
+                      {/* 2026-10-15 (Sumon): Noble rank-up mist celebration */}
+                      <NobleLevelUpCelebration />
                     </AuthGuard>
                   </GestureHandlerRootView>
                 </QueryClientProvider>
