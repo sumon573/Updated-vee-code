@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import {
-  View, Text, ScrollView, Alert, Pressable, Modal, Share, ActivityIndicator, Image,
-} from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Modal, Share, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -37,8 +36,7 @@ function getInitials(name: string): string {
 
 /* ─────────────────────────── Invite Modal ─────────────────────────── */
 export function InviteModal({
-  visible, onClose, roomId, roomName,
-}: {
+  visible, onClose, roomId, roomName }: {
   visible: boolean;
   onClose: () => void;
   roomId: string;
@@ -76,8 +74,7 @@ export function InviteModal({
                 initials: getInitials(v.name || 'V'),
                 color: getColor(uid),
                 online: v.online === true,
-                photoURL: v.photoURL || undefined,
-              });
+                photoURL: v.photoURL || undefined });
             }
           } catch { /* skip */ }
         }));
@@ -118,8 +115,7 @@ export function InviteModal({
       }
       // Also open native share sheet
       await Share.share({
-        message: t('voiceRoom.inviteModal.shareContactMsg', { name: contact.name, roomName, link }),
-      });
+        message: t('voiceRoom.inviteModal.shareContactMsg', { name: contact.name, roomName, link }) });
       setInvited((prev: string[]) => [...prev, contact.uid]);
     } catch { /* ignore */ }
   };
@@ -130,12 +126,10 @@ export function InviteModal({
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: '#0F0A1E', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.border, maxHeight: '88%',
-      }}>
+        borderWidth: 1, borderColor: C.border, maxHeight: '88%' }}>
         <View style={{
           width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
-          alignSelf: 'center', marginTop: 12, marginBottom: 4,
-        }} />
+          alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 4 }}>
             {t('voiceRoom.inviteModal.title')}
@@ -147,16 +141,14 @@ export function InviteModal({
           {/* Link copy */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', backgroundColor: C.card,
-            borderRadius: 14, padding: 14, borderWidth: 1, borderColor: C.borderFaint, marginBottom: 18,
-          }}>
+            borderRadius: 14, padding: 14, borderWidth: 1, borderColor: C.borderFaint, marginBottom: 18 }}>
             <Text style={{ flex: 1, color: C.sub, fontSize: 12 }} numberOfLines={1}>{link}</Text>
             <Pressable
               onPress={copyLink}
               style={{
                 marginLeft: 10, backgroundColor: copied ? C.mic + '33' : C.primary + '22',
                 borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6,
-                borderWidth: 1, borderColor: copied ? C.mic : C.primary,
-              }}
+                borderWidth: 1, borderColor: copied ? C.mic : C.primary }}
             >
               <Text style={{ color: copied ? C.mic : C.primary, fontSize: 12, fontWeight: '800' }}>
                 {copied ? t('voiceRoom.inviteModal.copied') : t('voiceRoom.inviteModal.copy')}
@@ -167,14 +159,13 @@ export function InviteModal({
           {/* Contacts list */}
           <Text style={{
             color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
-            textTransform: 'uppercase', marginBottom: 12,
-          }}>
+            textTransform: 'uppercase', marginBottom: 12 }}>
             {t('voiceRoom.inviteModal.contactsLabel')}
           </Text>
 
           {loading && (
             <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-              <ActivityIndicator color={C.primary} />
+              <PremiumLoader size="medium" />
               <Text style={{ color: C.sub, fontSize: 13, marginTop: 8 }}>
                 {t('voiceRoom.inviteModal.loadingContacts')}
               </Text>
@@ -193,14 +184,12 @@ export function InviteModal({
           {contacts.map((c: Contact) => (
             <View key={c.uid} style={{
               flexDirection: 'row', alignItems: 'center',
-              paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.borderFaint,
-            }}>
+              paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
               {/* 2026-10-14 (Sumon): Real DP — photoURL থাকলে Image, না থাকলে initials */}
               <View style={{
                 width: 42, height: 42, borderRadius: 21, backgroundColor: c.color + '33',
                 alignItems: 'center', justifyContent: 'center', borderWidth: 2,
-                borderColor: c.color + '55', marginRight: 12, overflow: 'hidden',
-              }}>
+                borderColor: c.color + '55', marginRight: 12, overflow: 'hidden' }}>
                 {c.photoURL ? (
                   <Image source={{ uri: c.photoURL }} style={{ width: 42, height: 42 }} />
                 ) : (
@@ -221,8 +210,7 @@ export function InviteModal({
                 style={{
                   backgroundColor: invited.includes(c.uid) ? C.mic + '22' : C.primary + '22',
                   borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7,
-                  borderWidth: 1, borderColor: invited.includes(c.uid) ? C.mic : C.primary,
-                }}
+                  borderWidth: 1, borderColor: invited.includes(c.uid) ? C.mic : C.primary }}
               >
                 <Text style={{ color: invited.includes(c.uid) ? C.mic : C.primary, fontSize: 12, fontWeight: '800' }}>
                   {invited.includes(c.uid) ? t('voiceRoom.inviteModal.sent') : t('voiceRoom.inviteModal.invite')}
@@ -239,8 +227,7 @@ export function InviteModal({
             }}
             style={{
               marginTop: 20, backgroundColor: C.primary, borderRadius: 16, paddingVertical: 15,
-              alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
-            }}
+              alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
           >
             <Feather name="share-2" size={18} color={C.text} />
             <Text style={{ color: C.text, fontWeight: '800', fontSize: 15 }}>
