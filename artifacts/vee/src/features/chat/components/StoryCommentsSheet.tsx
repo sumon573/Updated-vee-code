@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View, Text, Pressable, Image, TextInput, FlatList,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
-} from 'react-native';
+import { View, Text, Pressable, Image, TextInput, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -30,8 +28,7 @@ type Props = {
 export default function StoryCommentsSheet({
   visible, comments, reactions,
   currentUserId, currentUserName, currentUserAvatar,
-  onClose, onSendComment,
-}: Props) {
+  onClose, onSendComment }: Props) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string; name: string } | null>(null);
@@ -118,8 +115,7 @@ export default function StoryCommentsSheet({
   return (
     <View style={{
       position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
-      backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 50,
-    }}>
+      backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 50 }}>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
@@ -193,7 +189,7 @@ export default function StoryCommentsSheet({
               style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: text.trim() ? '#3b82f6' : 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}
             >
               {sending ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <PremiumLoader size="small" />
               ) : (
                 <Feather name="send" size={18} color="#fff" />
               )}
