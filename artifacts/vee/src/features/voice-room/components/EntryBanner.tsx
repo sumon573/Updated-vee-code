@@ -147,7 +147,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
                 </Text>
               </View>
             )}
-            <Text style={{ position: 'absolute', top: -10, left: 14, fontSize: 18 }}>
+            <Text style={{ position: 'absolute', top: -11, left: 16, fontSize: 18 }}>
               👑
             </Text>
           </View>
