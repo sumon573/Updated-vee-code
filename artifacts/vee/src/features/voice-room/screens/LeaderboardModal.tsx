@@ -13,10 +13,8 @@
  * Light mode. Rankings update live via Firebase subscriptions.
  */
 import { useState, useEffect, useMemo } from 'react';
-import {
-  View, Text, Modal, Pressable, FlatList,
-  ActivityIndicator, TouchableOpacity, Image,
-} from 'react-native';
+import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { get, ref, query, orderByChild, limitToLast, onValue } from 'firebase/database';
@@ -41,8 +39,7 @@ const C = {
   silverBg: '#F8FAFC',
   bronze:  '#B45309',
   bronzeBg: '#FFF7ED',
-  green:   '#22C55E',
-} as const;
+  green:   '#22C55E' } as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,8 +76,7 @@ function RankBadge({ rank }: { rank: number }) {
       alignItems: 'center', justifyContent: 'center',
       backgroundColor: top3 ? TINT_BG[rank - 1] : C.surface,
       borderWidth: top3 ? 1.5 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
-      marginRight: 12,
-    }}>
+      marginRight: 12 }}>
       {top3
         ? <Text style={{ fontSize: 20 }}>{MEDAL[rank - 1]}</Text>
         : <Text style={{ color: C.muted, fontSize: 13, fontWeight: '800' }}>{rank}</Text>
@@ -97,15 +93,13 @@ function DPAvatar({ name, photoURL, size, ring }: {
       width: size + 4, height: size + 4, borderRadius: (size + 4) / 2,
       alignItems: 'center', justifyContent: 'center',
       borderWidth: ring ? 2 : 0, borderColor: ring ?? 'transparent',
-      marginRight: 12,
-    }}>
+      marginRight: 12 }}>
       {photoURL ? (
         <Image source={{ uri: photoURL }} style={{ width: size, height: size, borderRadius: size / 2 }} />
       ) : (
         <View style={{
           width: size, height: size, borderRadius: size / 2,
-          backgroundColor: C.primary + '1A', alignItems: 'center', justifyContent: 'center',
-        }}>
+          backgroundColor: C.primary + '1A', alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: C.primary, fontSize: size * 0.38, fontWeight: '800' }}>
             {(name?.[0] ?? '?').toUpperCase()}
           </Text>
@@ -121,8 +115,7 @@ function EmptyState({ icon, message, hint }: { icon: React.ComponentProps<typeof
       <View style={{
         width: 72, height: 72, borderRadius: 36, backgroundColor: C.goldBg,
         alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-        borderWidth: 1, borderColor: C.goldBd,
-      }}>
+        borderWidth: 1, borderColor: C.goldBd }}>
         <Feather name={icon} size={30} color={C.gold} />
       </View>
       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', textAlign: 'center' }}>{message}</Text>
@@ -137,8 +130,7 @@ function EmptyState({ icon, message, hint }: { icon: React.ComponentProps<typeof
 
 export function LeaderboardModal({
   visible,
-  onClose,
-}: {
+  onClose }: {
   visible: boolean;
   onClose: () => void;
 }) {
@@ -185,8 +177,7 @@ export function LeaderboardModal({
           uid: child.key!,
           name: v.name || 'Vee User',
           photoURL: v.photoURL,
-          weeklySent: typeof v.weeklySent === 'number' ? v.weeklySent : 0,
-        });
+          weeklySent: typeof v.weeklySent === 'number' ? v.weeklySent : 0 });
       });
       list.sort((a, b) => (b.weeklySent ?? 0) - (a.weeklySent ?? 0));
       setSenders(list);
@@ -219,8 +210,7 @@ export function LeaderboardModal({
           uid: child.key!,
           name: v.name || 'Vee User',
           photoURL: v.photoURL,
-          weeklyEarned: typeof v.weeklyEarned === 'number' ? v.weeklyEarned : 0,
-        });
+          weeklyEarned: typeof v.weeklyEarned === 'number' ? v.weeklyEarned : 0 });
       });
       list.sort((a, b) => (b.weeklyEarned ?? 0) - (a.weeklyEarned ?? 0));
       setReceivers(list);
@@ -306,8 +296,7 @@ export function LeaderboardModal({
         backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
         borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
         borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
-        marginBottom: top3 ? 8 : 0,
-      }}>
+        marginBottom: top3 ? 8 : 0 }}>
         <RankBadge rank={rank} />
         <DPAvatar name={item.name} photoURL={item.photoURL} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
         <View style={{ flex: 1 }}>
@@ -346,8 +335,7 @@ export function LeaderboardModal({
         backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
         borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
         borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
-        marginBottom: top3 ? 8 : 0,
-      }}>
+        marginBottom: top3 ? 8 : 0 }}>
         <RankBadge rank={rank} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -392,13 +380,11 @@ export function LeaderboardModal({
       borderRadius: 18, padding: 14,
       backgroundColor: C.goldBg, borderWidth: 1.5, borderColor: C.goldBd,
       flexDirection: 'row', alignItems: 'center',
-      shadowColor: C.gold, shadowOpacity: 0.18, shadowRadius: 10, elevation: 4,
-    }}>
+      shadowColor: C.gold, shadowOpacity: 0.18, shadowRadius: 10, elevation: 4 }}>
       <View style={{
         width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
         alignItems: 'center', justifyContent: 'center', marginRight: 12,
-        borderWidth: 1.5, borderColor: C.gold,
-      }}>
+        borderWidth: 1.5, borderColor: C.gold }}>
         <Text style={{ color: C.gold, fontSize: 15, fontWeight: '900' }}>
           {rank > 0 ? (rank > 30 ? '30+' : `#${rank}`) : '–'}
         </Text>
@@ -421,7 +407,7 @@ export function LeaderboardModal({
 
   const loading = (
     <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-      <ActivityIndicator color={C.primary} />
+      <PremiumLoader size="medium" />
     </View>
   );
 
@@ -442,23 +428,19 @@ export function LeaderboardModal({
         borderTopLeftRadius: 26, borderTopRightRadius: 26,
         maxHeight: '90%',
         shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20,
-        elevation: 10,
-      }}>
+        elevation: 10 }}>
         <View style={{
           width: 40, height: 4, borderRadius: 2, backgroundColor: C.border,
-          alignSelf: 'center', marginTop: 12,
-        }} />
+          alignSelf: 'center', marginTop: 12 }} />
 
         {/* ── Premium header ── */}
         <View style={{
           flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12,
-        }}>
+          paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12 }}>
           <View style={{
             width: 44, height: 44, borderRadius: 22, backgroundColor: C.goldBg,
             alignItems: 'center', justifyContent: 'center', marginRight: 12,
-            borderWidth: 1.5, borderColor: C.goldBd,
-          }}>
+            borderWidth: 1.5, borderColor: C.goldBd }}>
             <Text style={{ fontSize: 22 }}>🏆</Text>
           </View>
           <View style={{ flex: 1 }}>
@@ -468,8 +450,7 @@ export function LeaderboardModal({
             <View style={{
               alignSelf: 'flex-start', backgroundColor: C.goldBg, borderRadius: 10,
               paddingHorizontal: 8, paddingVertical: 3, marginTop: 4,
-              borderWidth: 1, borderColor: C.goldBd,
-            }}>
+              borderWidth: 1, borderColor: C.goldBd }}>
               <Text style={{ color: C.gold, fontSize: 11, fontWeight: '800' }}>
                 ✨ {t('leaderboard.thisWeek', { defaultValue: 'This Week' })}
               </Text>
@@ -483,8 +464,7 @@ export function LeaderboardModal({
         {/* Tabs — 2x2 grid for 4 categories */}
         <View style={{
           flexDirection: 'row', flexWrap: 'wrap',
-          paddingHorizontal: 20, marginBottom: 12, gap: 8,
-        }}>
+          paddingHorizontal: 20, marginBottom: 12, gap: 8 }}>
           {tabs.map(({ key, label, icon }) => {
             const active = tab === key;
             return (
@@ -499,14 +479,12 @@ export function LeaderboardModal({
                   gap: 6,
                   shadowColor: active ? C.primary : 'transparent',
                   shadowOpacity: active ? 0.3 : 0, shadowRadius: active ? 8 : 0,
-                  elevation: active ? 3 : 0,
-                }}
+                  elevation: active ? 3 : 0 }}
               >
                 <Feather name={icon} size={14} color={active ? '#fff' : C.muted} />
                 <Text style={{
                   color: active ? '#fff' : C.muted,
-                  fontSize: 13, fontWeight: '800',
-                }}>
+                  fontSize: 13, fontWeight: '800' }}>
                   {label}
                 </Text>
               </TouchableOpacity>
