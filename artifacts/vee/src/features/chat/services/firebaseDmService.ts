@@ -532,7 +532,8 @@ export function sanitizeChat(chatId: string, raw: any): Chat | null {
   return {
     id: chatId,
     participantId: typeof raw.participantId === 'string' ? raw.participantId : '',
-    participantName: typeof raw.participantName === 'string' ? raw.participantName : 'Unknown',
+    // 2026-10-15 (Sumon): fallback is 'Vee User', NEVER 'Unknown'.
+    participantName: typeof raw.participantName === 'string' ? raw.participantName : 'Vee User',
     participantAvatar: typeof raw.participantAvatar === 'string' ? raw.participantAvatar : undefined,
     lastMessage: typeof raw.lastMessage === 'string' ? raw.lastMessage : '',
     lastMessageType: typeof raw.lastMessageType === 'string' ? raw.lastMessageType : 'text',
