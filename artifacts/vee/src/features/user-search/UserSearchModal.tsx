@@ -7,10 +7,8 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  View, Text, Modal, TextInput, Pressable, FlatList,
-  ActivityIndicator, Image, Platform,
-} from 'react-native';
+import { View, Text, Modal, TextInput, Pressable, FlatList, Image, Platform } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -22,8 +20,7 @@ import { followUser } from '@/src/services/followService';
 import {
   sendFriendRequest,
   getFriendStatus,
-  FriendStatus,
-} from '@/src/services/friendRequestService';
+  FriendStatus } from '@/src/services/friendRequestService';
 import { isFollowing as checkIsFollowing } from '@/src/services/followService';
 import { subscribeBlockedUsers } from '@/src/services/blockService';
 import { useTranslation } from 'react-i18next';
@@ -48,8 +45,7 @@ const C = {
   dim: '#C7C7CC',
   inputBg: '#F2F2F7',
   online: '#22C55E',
-  green: '#22C55E',
-} as const;
+  green: '#22C55E' } as const;
 
 type Props = {
   visible: boolean;
@@ -84,8 +80,7 @@ function UserAvatar({ user }: { user: VeeUser }) {
     <View style={{
       width: 48, height: 48, borderRadius: 24,
       backgroundColor: 'rgba(139,92,246,0.3)',
-      alignItems: 'center', justifyContent: 'center',
-    }}>
+      alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>{initials}</Text>
     </View>
   );
@@ -131,8 +126,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
   const updateAction = useCallback((uid: string, patch: Partial<UserActionState>) => {
     setUserActions((prev) => ({
       ...prev,
-      [uid]: { ...prev[uid], ...patch },
-    }));
+      [uid]: { ...prev[uid], ...patch } }));
   }, []);
 
   const search = useCallback(async (text: string) => {
@@ -280,8 +274,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
         {item.online && (
           <View style={{
             width: 8, height: 8, borderRadius: 4,
-            backgroundColor: C.online,
-          }} />
+            backgroundColor: C.online }} />
         )}
 
         {/* Follow button */}
@@ -297,11 +290,10 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
             borderColor: alreadyFollowing
               ? 'rgba(34,197,94,0.4)'
               : 'rgba(139,92,246,0.35)',
-            alignItems: 'center', justifyContent: 'center',
-          }}
+            alignItems: 'center', justifyContent: 'center' }}
         >
           {a.followLoading ? (
-            <ActivityIndicator size="small" color={C.glow} />
+            <PremiumLoader size="small" />
           ) : alreadyFollowing ? (
             <Feather name="user-check" size={15} color={C.green} />
           ) : (
@@ -323,11 +315,10 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
               borderColor: friendSent
                 ? 'rgba(124,58,237,0.5)'
                 : 'rgba(255,255,255,0.15)',
-              alignItems: 'center', justifyContent: 'center',
-            }}
+              alignItems: 'center', justifyContent: 'center' }}
           >
             {a.friendLoading ? (
-              <ActivityIndicator size="small" color={C.glow} />
+              <PremiumLoader size="small" />
             ) : friendSent ? (
               <Feather name="check" size={15} color={C.glow} />
             ) : (
@@ -340,8 +331,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
             width: 36, height: 36, borderRadius: 18,
             backgroundColor: 'rgba(34,197,94,0.18)',
             borderWidth: 1, borderColor: 'rgba(34,197,94,0.4)',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
+            alignItems: 'center', justifyContent: 'center' }}>
             <Feather name="users" size={15} color={C.green} />
           </View>
         )}
@@ -353,8 +343,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
             width: 36, height: 36, borderRadius: 18,
             backgroundColor: 'rgba(139,92,246,0.25)',
             borderWidth: 1, borderColor: 'rgba(139,92,246,0.5)',
-            alignItems: 'center', justifyContent: 'center',
-          }}
+            alignItems: 'center', justifyContent: 'center' }}
         >
           <Feather name="eye" size={15} color={C.glow} />
         </Pressable>
@@ -375,8 +364,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             paddingHorizontal: 20, paddingVertical: 16,
-            borderBottomWidth: 1, borderBottomColor: C.border,
-          }}>
+            borderBottomWidth: 1, borderBottomColor: C.border }}>
             <Pressable onPress={onClose} style={{ padding: 6, marginRight: 12 }}>
               <Feather name="x" size={22} color={C.muted} />
             </Pressable>
@@ -391,8 +379,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
             marginHorizontal: 20, marginTop: 16, marginBottom: 8,
             backgroundColor: C.inputBg,
             borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-            borderWidth: 1, borderColor: C.border,
-          }}>
+            borderWidth: 1, borderColor: C.border }}>
             <Feather name="search" size={18} color={C.muted} style={{ marginRight: 10 }} />
             <TextInput
               style={{ flex: 1, color: C.text, fontSize: 15 }}
@@ -415,8 +402,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
           {results.length > 0 && (
             <Text style={{
               color: C.dim, fontSize: 11, textAlign: 'center',
-              marginBottom: 4,
-            }}>
+              marginBottom: 4 }}>
               {t('userSearch.searchActionHint')}
             </Text>
           )}
@@ -424,7 +410,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
           {/* Results */}
           {loading ? (
             <View style={{ alignItems: 'center', paddingTop: 40 }}>
-              <ActivityIndicator color={C.glow} />
+              <PremiumLoader size="medium" />
             </View>
           ) : results.length > 0 ? (
             <FlatList
@@ -435,8 +421,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',
                   paddingVertical: 10, borderBottomWidth: 1,
-                  borderBottomColor: C.border,
-                }}>
+                  borderBottomColor: C.border }}>
                   {/* Avatar + Info — tap to visit profile */}
                   <Pressable
                     onPress={() => handleVisitProfile(item)}
