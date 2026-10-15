@@ -608,6 +608,13 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   async setMuted(muted: boolean): Promise<boolean> {
     this.muted = muted;
     await this.applyTrackMute(muted);
+    if (muted) {
+      // 2026-10-15 (Sumon): ROOT CAUSE — muting mid-speech never fires
+      // IsSpeakingChanged(false) (muted track yields no audio frames for the
+      // voice-activity detector), so localSpeaking stayed true forever and the
+      // ripple kept animating while muted. Clear it authoritatively here.
+      this.localSpeaking = false;
+    }
     this.emitLocal();
     return this.muted;
   }
