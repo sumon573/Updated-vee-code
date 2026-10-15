@@ -4,10 +4,8 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  View, Text, TextInput, ScrollView, Alert,
-  ActivityIndicator, Image, Platform, KeyboardAvoidingView, Pressable,
-} from 'react-native';
+import { View, Text, TextInput, ScrollView, Alert, Image, Platform, KeyboardAvoidingView, Pressable } from 'react-native';
+import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -33,12 +31,10 @@ const C = {
   border: '#E5E5EA',
   surface: '#F2F2F7',
   error: '#EF4444',
-  success: '#22C55E',
-} as const;
+  success: '#22C55E' } as const;
 
 function InputField({
-  label, value, onChangeText, placeholder, multiline, maxLength,
-}: {
+  label, value, onChangeText, placeholder, multiline, maxLength }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
@@ -68,8 +64,7 @@ function InputField({
           borderWidth: 1,
           borderColor: C.border,
           minHeight: multiline ? 90 : undefined,
-          textAlignVertical: multiline ? 'top' : 'auto',
-        }}
+          textAlignVertical: multiline ? 'top' : 'auto' }}
       />
       {maxLength && (
         <Text style={{ color: C.mutedDim, fontSize: 11, textAlign: 'right', marginTop: 4 }}>
@@ -136,8 +131,7 @@ export default function EditProfileScreen() {
       setPhotoURI(result.url);
       await updateUser(user.uid, {
         photoURL: result.url,
-        ...(result.publicId ? { photoPublicId: result.publicId } : {}),
-      });
+        ...(result.publicId ? { photoPublicId: result.publicId } : {}) });
     } catch (err) {
       Alert.alert(t('editProfile.error'), err instanceof Error ? err.message : t('editProfile.uploadFailedMsg'));
     } finally {
@@ -171,8 +165,7 @@ export default function EditProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
-      quality: 0.8,
-    });
+      quality: 0.8 });
     if (!result.canceled && result.assets[0]) {
       await uploadCover(result.assets[0].uri);
     }
@@ -193,8 +186,7 @@ export default function EditProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
-    });
+      quality: 0.85 });
 
     if (!result.canceled && result.assets[0]) {
       await uploadPhoto(result.assets[0].uri);
@@ -215,8 +207,7 @@ export default function EditProfileScreen() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
-    });
+      quality: 0.85 });
 
     if (!result.canceled && result.assets[0]) {
       await uploadPhoto(result.assets[0].uri);
@@ -250,8 +241,7 @@ export default function EditProfileScreen() {
       const result = await withTimeout(
         updateUser(user.uid, {
           name: trimmedName,
-          bio: bio.trim(),
-        }),
+          bio: bio.trim() }),
         SAVE_TIMEOUT_MS,
       );
       if (result.timedOut) {
@@ -286,14 +276,12 @@ export default function EditProfileScreen() {
             {/* Header */}
             <View style={{
               flexDirection: 'row', alignItems: 'center',
-              paddingHorizontal: 18, marginBottom: 32,
-            }}>
+              paddingHorizontal: 18, marginBottom: 32 }}>
               <ScalePress onPress={() => router.back()}>
                 <View style={{
                   width: 38, height: 38, borderRadius: 19,
                   backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
-                  alignItems: 'center', justifyContent: 'center', marginRight: 14,
-                }}>
+                  alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
                   <Feather name="arrow-left" size={18} color={C.text} />
                 </View>
               </ScalePress>
@@ -305,10 +293,9 @@ export default function EditProfileScreen() {
                   backgroundColor: C.primary, borderRadius: 22,
                   paddingHorizontal: 20, paddingVertical: 10,
                   opacity: saving ? 0.6 : 1,
-                  shadowColor: C.glow, shadowOpacity: 0.4, shadowRadius: 12,
-                }}>
+                  shadowColor: C.glow, shadowOpacity: 0.4, shadowRadius: 12 }}>
                   {saving
-                    ? <ActivityIndicator size="small" color="#fff" />
+                    ? <PremiumLoader size="small" />
                     : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>{t('editProfile.save')}</Text>}
                 </View>
               </ScalePress>
@@ -322,7 +309,7 @@ export default function EditProfileScreen() {
               <Pressable onPress={pickCover} style={{ borderRadius: 16, overflow: 'hidden' }}>
                 <View style={{ height: 140, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
                   {uploadingCover ? (
-                    <ActivityIndicator color={C.glow} size="large" />
+                    <PremiumLoader size="large" />
                   ) : coverURI ? (
                     <Image source={{ uri: coverURI }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   ) : (
@@ -346,10 +333,9 @@ export default function EditProfileScreen() {
                     shadowColor: C.glow, shadowOpacity: 0.45, shadowRadius: 22,
                     overflow: 'hidden',
                     backgroundColor: 'rgba(139,92,246,0.2)',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
+                    alignItems: 'center', justifyContent: 'center' }}>
                     {uploadingPhoto ? (
-                      <ActivityIndicator color={C.glow} size="large" />
+                      <PremiumLoader size="large" />
                     ) : photoURI ? (
                       <Image source={{ uri: photoURI }} style={{ width: 110, height: 110 }} />
                     ) : (
@@ -363,8 +349,7 @@ export default function EditProfileScreen() {
                     width: 34, height: 34, borderRadius: 17,
                     backgroundColor: C.primary,
                     borderWidth: 2.5, borderColor: C.bg,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
+                    alignItems: 'center', justifyContent: 'center' }}>
                     <Feather name="camera" size={15} color="#fff" />
                   </View>
                 </View>
@@ -402,8 +387,7 @@ export default function EditProfileScreen() {
                   backgroundColor: C.surface,
                   borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                   borderWidth: 1, borderColor: C.border,
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
-                }}>
+                  flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={{ color: C.mutedDim, fontSize: 15 }}>
                     {profile?.vId ?? '...'}
                   </Text>
@@ -420,8 +404,7 @@ export default function EditProfileScreen() {
                   backgroundColor: C.surface,
                   borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                   borderWidth: 1, borderColor: C.border,
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
-                }}>
+                  flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Feather name="mail" size={15} color={C.mutedDim} />
                   <Text style={{ color: C.mutedDim, fontSize: 15 }}>
                     {user?.email ?? '...'}
