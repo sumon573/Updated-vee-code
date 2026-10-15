@@ -961,7 +961,8 @@ export default function VoiceRoomScreen() {
       fresh.name !== activeMember.name ||
       fresh.photoURL !== activeMember.photoURL ||
       fresh.role !== activeMember.role ||
-      fresh.muted !== activeMember.muted;
+      fresh.muted !== activeMember.muted ||
+      fresh.speaking !== activeMember.speaking;
     if (changed) setActiveMember(fresh);
   }, [seats, audience, activeMember]);
   const [exitModalOpen,   setExitModalOpen]   = useState(false);
@@ -1365,7 +1366,13 @@ export default function VoiceRoomScreen() {
 
   /* ── LiveKit speaking detection → seats speaking state ── */
   useEffect(() => {
-    if (!speakingUsers || Object.keys(speakingUsers).length === 0) return;
+    // 2026-10-15 (Sumon, re-audit): NO early-return on empty map. When the
+    // last speaker stops, speakingUsers becomes {} — the old
+    // `Object.keys().length === 0 → return` skipped the clear, leaving that
+    // seat's speaking=true (stuck ripple) until some unrelated Firebase
+    // update rebuilt the seats. Now {} correctly clears every seat; the inner
+    // `isSpeaking !== s.speaking` guard still prevents no-op re-renders.
+    if (!speakingUsers) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
       if (!s || s.id === myUid) return s;
       // 2026-10-15 (Sumon): muted seat NEVER ripples — guards stale speaking
