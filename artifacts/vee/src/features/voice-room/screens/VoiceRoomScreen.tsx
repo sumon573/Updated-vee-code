@@ -2051,6 +2051,11 @@ export default function VoiceRoomScreen() {
       ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
       // 2026-10-13 (Sumon): Include active frame so seats show it.
       ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
+      // 2026-10-15 (Sumon): Include equipped ripple + entry effect + nameplate
+      // so seats show the user's chosen designs (fallback to rank theme).
+      ...((myProfile as any)?.activeRipple ? { activeRipple: (myProfile as any).activeRipple } : {}),
+      ...((myProfile as any)?.activeEntryEffect ? { activeEntryEffect: (myProfile as any).activeEntryEffect } : {}),
+      ...((myProfile as any)?.activeNameplate ? { activeNameplate: (myProfile as any).activeNameplate } : {}),
       // 2026-10-13 (Sumon): Verified badge next to name in seats.
       ...(myVerified ? { verified: true } : {}),
       // CRITICAL-4 fix: preserve current mute state when moving between seats;
