@@ -15,6 +15,8 @@ import { useAuth } from '@/src/context/AuthContext';
 import {
   NOBLE_RANKS, nobleThemeFor, subscribeNoble,
 } from '@/src/services/nobleService';
+import { rewardsForRank, rewardIcon } from '@/src/services/nobleRewardsCatalog';
+import { Image } from 'react-native';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -136,6 +138,17 @@ export default function NobleLevelUpCelebration() {
   const rank = NOBLE_RANKS[celebration.rankIndex];
   if (!theme || !rank) return null;
 
+  /* 2026-10-15 (Sumon): Show the actual rewards granted — from the catalog */
+  const catalog = rewardsForRank(celebration.rankIndex);
+  const rewardItems: { label: string; icon: string; isImage: boolean }[] = [];
+  if (catalog) {
+    rewardItems.push({ label: 'Nameplate', icon: rewardIcon(catalog.nameplate), isImage: !!catalog.nameplate.designUrl });
+    if (catalog.badge) rewardItems.push({ label: 'Badge', icon: rewardIcon(catalog.badge), isImage: !!catalog.badge.designUrl });
+    if (catalog.frame) rewardItems.push({ label: 'Frame', icon: rewardIcon(catalog.frame), isImage: !!catalog.frame.designUrl });
+    if (catalog.entryEffect) rewardItems.push({ label: 'Entry FX', icon: rewardIcon(catalog.entryEffect), isImage: !!catalog.entryEffect.designUrl });
+    if (catalog.ripple) rewardItems.push({ label: 'Ripple', icon: rewardIcon(catalog.ripple), isImage: !!catalog.ripple.designUrl });
+  }
+
   return (
     <Modal transparent visible animationType="none">
       <Animated.View
@@ -165,7 +178,25 @@ export default function NobleLevelUpCelebration() {
               {rank.name}
             </Text>
             <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '600', marginTop: 6 }}>
-              Your entry effect & ripple are now {rank.name}-themed
+              🎉 Congratulations! You've earned:
+            </Text>
+            {/* 2026-10-15 (Sumon): Display the actual rewards */}
+            <View style={{ flexDirection: 'row', marginTop: 16, gap: 12 }}>
+              {rewardItems.map((r, i) => (
+                <View key={i} style={{ alignItems: 'center', width: 64 }}>
+                  {r.isImage ? (
+                    <Image source={{ uri: r.icon }} style={{ width: 48, height: 48, borderRadius: 24 }} resizeMode="cover" />
+                  ) : (
+                    <Text style={{ fontSize: 40 }}>{r.icon}</Text>
+                  )}
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', marginTop: 4, textAlign: 'center' }}>
+                    {r.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 12 }}>
+              Find them in Decoration → equip to use!
             </Text>
           </LinearGradient>
         </Animated.View>
