@@ -446,6 +446,23 @@ export function recordUserRoomVisit(
 }
 
 /**
+ * 2026-10-16 (Sumon): REAL LEAVE — completely remove user from room.
+ * Removes from roomMembers, userRooms, audience, and seats.
+ * After this, the room vanishes from user's lists everywhere.
+ */
+export async function leaveRoomCompletely(
+  roomId: string,
+  uid: string,
+): Promise<void> {
+  const { remove } = await import('firebase/database');
+  await Promise.all([
+    remove(ref(database, `roomMembers/${roomId}/${uid}`)).catch(() => {}),
+    remove(ref(database, `userRooms/${uid}/${roomId}`)).catch(() => {}),
+    remove(ref(database, `rooms/${roomId}/audience/${uid}`)).catch(() => {}),
+  ]);
+}
+
+/**
  * Subscribe to rooms created by the given user (My Rooms).
  * Uses orderByChild + equalTo for efficiency.
  */
@@ -675,6 +692,10 @@ export async function leaveAudience(
   // Cancel any pending onDisconnect before removing manually
   onDisconnect(audienceRef).cancel().catch(() => {/* non-critical */});
   await remove(audienceRef);
+  // 2026-10-16 (Sumon): REAL LEAVE — also remove from roomMembers and
+  // userRooms so the user vanishes from member lists and My Room everywhere.
+  remove(ref(database, `roomMembers/${roomId}/${userId}`)).catch(() => {});
+  remove(ref(database, `userRooms/${userId}/${roomId}`)).catch(() => {});
   // 2026-10-11 Issue #1: refresh cached counts so room cards/filters
   // never show stale audience numbers after someone leaves.
   _updateCounts(roomId).catch(() => {});
