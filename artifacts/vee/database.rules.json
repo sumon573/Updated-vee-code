@@ -555,6 +555,17 @@
             ".write": "auth != null",
             ".validate": "!newData.exists() || (newData.child('fromUid').val() === auth.uid && newData.child('giftId').isString() && newData.child('ts').isNumber())"
           }
+        },
+        // ── IMO Store room items (2026-10-16): room owner (or platform admin)
+        // can set the room background and mic decor bought from the Store.
+        "storeBackground": {
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
+        },
+        "micDecors": {
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
+        },
+        "activeMicDecor": {
+          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
         }
       }
     },
@@ -816,6 +827,13 @@
     // honors_catalog — badge/frame/nameplate definitions (admin-managed)
     // ─────────────────────────────────────────────────────────────────────
     "honors_catalog": {
+      ".read": "auth != null",
+      ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    // store_catalog — IMO Store item definitions (admin-managed, 2026-10-16)
+    // ─────────────────────────────────────────────────────────────────────
+    "store_catalog": {
       ".read": "auth != null",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
     },
