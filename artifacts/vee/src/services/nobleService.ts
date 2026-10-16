@@ -509,6 +509,14 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
       // Non-critical — items will be cleaned on next heal.
     }
   }
+  // 2026-10-16 (Sumon): Rank MAINTAINED — renew reward validity to new deadline.
+  if (next && nextRank === prevRank && next.maintenanceDeadline > Date.now()) {
+    try {
+      await renewNobleRankValidity(uid, nextRank, next.maintenanceDeadline);
+    } catch {
+      // Non-critical
+    }
+  }
 }
 
 /* ── 2026-10-16 (Sumon): Maintenance check on read ──
@@ -542,6 +550,12 @@ export async function checkNobleMaintenance(uid: string): Promise<number> {
       for (let r = prevRank; r > nextRank; r--) {
         await revokeNobleRankItems(uid, r);
       }
+    } catch {}
+  }
+  // 2026-10-16 (Sumon): Rank maintained — renew validity.
+  if (next && nextRank === prevRank && next.maintenanceDeadline > Date.now()) {
+    try {
+      await renewNobleRankValidity(uid, nextRank, next.maintenanceDeadline);
     } catch {}
   }
   return nextRank;
