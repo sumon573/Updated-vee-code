@@ -10,7 +10,9 @@
 import { ref, onValue, off, get } from 'firebase/database';
 import { rtdb } from '@/src/services/firebase';
 
-export type GiftCategory = 'classic' | 'premium' | 'luxury';
+export type GiftCategory = string;
+// Known categories (server can add more without code change)
+// 'classic' | 'premium' | 'luxury'
 
 export interface CatalogGift {
   id: string;
@@ -19,9 +21,10 @@ export interface CatalogGift {
   category: GiftCategory;
   thumbnailUrl: string;
   animationUrl?: string;
-  animationType?: 'video' | 'image' | 'none';
+  animationType?: string; // 'video' | 'image' | 'none' (server can add more)
   sortOrder: number;
   active: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 const CATALOG_PATH = 'gift_catalog';
@@ -35,9 +38,15 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
   // Skip inactive gifts
   if (data.active === false) return null;
 
-  const category = (data.category || 'classic') as GiftCategory;
-  const validCategories: GiftCategory[] = ['classic', 'premium', 'luxury'];
-  const safeCategory = validCategories.includes(category) ? category : 'classic';
+  const rawCategory = String(data.category || 'classic').trim();
+  const safeCategory = rawCategory || 'classic';
+
+  const knownKeys = new Set(['name', 'price', 'category', 'thumbnailUrl', 'animationUrl',
+    'animationType', 'sortOrder', 'active']);
+  const metadata: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (!knownKeys.has(k)) metadata[k] = v;
+  }
 
   return {
     id,
@@ -46,18 +55,22 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
     category: safeCategory,
     thumbnailUrl: String(data.thumbnailUrl || ''),
     animationUrl: data.animationUrl ? String(data.animationUrl) : undefined,
-    animationType: data.animationType || 'none',
+    animationType: data.animationType ? String(data.animationType) : 'none',
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
 
 function sortGifts(gifts: CatalogGift[]): CatalogGift[] {
   return [...gifts].sort((a, b) => {
-    // First by category order, then by sortOrder, then by price
-    const catOrder: Record<GiftCategory, number> = { classic: 0, premium: 1, luxury: 2 };
-    if (catOrder[a.category] !== catOrder[b.category]) {
-      return catOrder[a.category] - catOrder[b.category];
+    // First by category (known categories first, then alphabetical), then sortOrder, then price
+    const knownOrder: Record<string, number> = { classic: 0, premium: 1, luxury: 2 };
+    const aOrder = knownOrder[a.category] ?? 100;
+    const bOrder = knownOrder[b.category] ?? 100;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    if (aOrder === 100 && bOrder === 100 && a.category !== b.category) {
+      return a.category.localeCompare(b.category);
     }
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.price - b.price;
