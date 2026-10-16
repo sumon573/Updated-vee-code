@@ -709,7 +709,8 @@ export async function sendGift({
       // The fallback path is mutually exclusive, so this runs exactly once
       // per gift. Self-gifts excluded (anti-farming), mirroring the fallback.
       const serverFromUid = auth.currentUser?.uid;
-      const serverPrice = GIFT_PRICES[giftId];
+      // 2026-10-16 (Sumon): PERMANENT — use actual price (server-driven) for XP, not hardcoded map
+      const serverPrice = price ?? GIFT_PRICES[giftId];
       if (serverFromUid && serverPrice && toUid !== serverFromUid) {
         try {
           const { recordNobleXP } = await import('@/src/services/nobleService');
