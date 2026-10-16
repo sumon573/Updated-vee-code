@@ -411,19 +411,30 @@ export default function DecorationScreen() {
         </View>
       )}
 
-      {/* Store button — bottom */}
+      {/* Store button — bottom (2026-10-16, Sumon): polished white button,
+          blue circle bag icon + "Store" — per his reference screenshot. */}
       {isMe && tab !== 'nobel' && (
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: C.border }}>
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/store' as any); }}
             style={{
-              backgroundColor: C.blue, borderRadius: 16, paddingVertical: 16,
-              alignItems: 'center',
-              shadowColor: C.blue, shadowOpacity: 0.3, shadowRadius: 12,
-              shadowOffset: { width: 0, height: 6 }, elevation: 6 }}
+              backgroundColor: '#FFFFFF', borderRadius: 18, paddingVertical: 13,
+              paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1, borderColor: '#EDEDED',
+              shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 14,
+              shadowOffset: { width: 0, height: 4 }, elevation: 4 }}
           >
-            <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>
-              🛍️ Store
+            <View style={{
+              width: 38, height: 38, borderRadius: 19, backgroundColor: C.blue,
+              alignItems: 'center', justifyContent: 'center', marginRight: 10,
+              shadowColor: C.blue, shadowOpacity: 0.35, shadowRadius: 8,
+              shadowOffset: { width: 0, height: 3 },
+            }}>
+              <Feather name="shopping-bag" size={19} color="#fff" />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>
+              Store
             </Text>
           </Pressable>
         </View>
