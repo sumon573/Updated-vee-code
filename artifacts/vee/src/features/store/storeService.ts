@@ -233,8 +233,8 @@ export async function purchaseStoreItem(
     // SECURITY: use the SERVER price, never the client-provided one.
     const serverItem = await getServerCatalogItem(item.id);
     if (!serverItem) return { success: false, error: 'Item not available' };
-    if (serverItem.type && serverItem.type !== item.type) {
-      return { success: false, error: 'Item type mismatch' };
+    if (!serverItem.type || serverItem.type !== item.type) {
+      return { success: false, error: 'Item not available' };
     }
     const price = serverItem.price;
     // Idempotent: already owned and not expired → success.
