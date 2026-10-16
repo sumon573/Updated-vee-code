@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useActiveProfileSkin } from '@/src/hooks/useStoreItems';
+import { subscribeLevel } from '@/src/services/levelService';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -815,18 +816,10 @@ export default function ProfileScreen({
   const [serverLevelXp, setServerLevelXp] = useState(0);
   useEffect(() => {
     if (!displayUid) { setServerLevelXp(0); return; }
-    let cancelled = false;
-    let unsub: (() => void) | null = null;
-    import('@/src/services/levelService').then(({ subscribeLevel }) => {
-      if (cancelled) return;
-      unsub = subscribeLevel(displayUid, (lv) => {
-        if (!cancelled) setServerLevelXp(lv.totalLevel);
-      });
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-      if (unsub) unsub();
-    };
+    const unsub = subscribeLevel(displayUid, (lv) => {
+      setServerLevelXp(lv.totalLevel);
+    });
+    return () => unsub();
   }, [displayUid]);
   const userLevel = Math.max(1, serverLevelXp);
 
