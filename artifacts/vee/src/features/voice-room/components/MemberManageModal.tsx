@@ -9,6 +9,10 @@ import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { truncateTo12 } from '@/src/utils/truncateName';
+import MistNameplate from '@/src/components/MistNameplate';
+import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { ref, get } from 'firebase/database';
+import { database } from '@/src/config/firebase';
 
 /* ─────────────────────────── Member Manage Modal ─────────────────────────── */
 export function MemberManageModal({
@@ -52,6 +56,33 @@ export function MemberManageModal({
   useEffect(() => {
     getOfficialBadgeIconUrl().then(setBadgeIconUrl).catch(() => setBadgeIconUrl(null));
   }, []);
+
+  // 2026-10-16 (Sumon): Nobel nameplate next to the role badge — 100x20,
+  // same perfect size as the profile screen. Animated (mist) type for Viscount+.
+  const [nameplate, setNameplate] = useState<{ icon: string; mistColor: string | null } | null>(null);
+  useEffect(() => {
+    const plateId = (member as any)?.activeNameplate;
+    if (!plateId || typeof plateId !== 'string') {
+      setNameplate(null);
+      return;
+    }
+    const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === plateId);
+    const mistColor = entry?.nameplate.mistColor || null;
+    const designUrl = entry?.nameplate.designUrl;
+    if (designUrl && /^https?:\/\//i.test(designUrl)) {
+      setNameplate({ icon: designUrl, mistColor });
+    } else {
+      // Fallback: fetch the granted record for a custom icon
+      get(ref(database, `users/${member?.id}/nameplates/${plateId}`)).then((snap) => {
+        const icon = snap.val()?.icon;
+        if (icon && /^https?:\/\//i.test(icon)) {
+          setNameplate({ icon, mistColor });
+        } else {
+          setNameplate(null);
+        }
+      }).catch(() => setNameplate(null));
+    }
+  }, [member?.id, (member as any)?.activeNameplate]);
 
   if (!member) return null;
   const isOwnerMe = myRole === 'host';
@@ -106,9 +137,29 @@ export function MemberManageModal({
               />
             )}
           </View>
-          <View style={{ backgroundColor: C.primary + '33', borderRadius: 20,
-            paddingHorizontal: 12, paddingVertical: 4, marginTop: 6 }}>
-            <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>{roleLabel}</Text>
+          {/* 2026-10-16 (Sumon): Role + Nobel nameplate side by side.
+              Nameplate is 100x20 — the exact profile-screen size. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
+            <View style={{ backgroundColor: C.primary + '33', borderRadius: 20,
+              paddingHorizontal: 12, paddingVertical: 4, marginRight: nameplate ? 8 : 0 }}>
+              <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>{roleLabel}</Text>
+            </View>
+            {nameplate && (
+              nameplate.mistColor ? (
+                <MistNameplate
+                  imageUrl={nameplate.icon}
+                  mistColor={nameplate.mistColor}
+                  width={100}
+                  height={20}
+                />
+              ) : (
+                <Image
+                  source={{ uri: nameplate.icon }}
+                  style={{ width: 100, height: 20 }}
+                  resizeMode="contain"
+                />
+              )
+            )}
           </View>
         </View>
 
