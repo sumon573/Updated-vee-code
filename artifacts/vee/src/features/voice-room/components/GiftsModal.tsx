@@ -12,6 +12,7 @@ import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
 import { sendGift, getBalance, getWalletBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { fetchGiftCatalog, subscribeGiftCatalog, CatalogGift, GiftCategory as CatalogGiftCategory } from '../services/giftCatalogService';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -33,6 +34,21 @@ interface GiftItem {
   nameKey: string;
   coins: number;
   category: GiftCategory;
+  thumbnailUrl?: string;
+  animationUrl?: string;
+}
+
+// Convert server CatalogGift to local GiftItem
+function catalogToGiftItem(cg: CatalogGift): GiftItem {
+  return {
+    id: cg.id,
+    emoji: '', // Server gifts use thumbnails, not emoji
+    nameKey: cg.name, // Server gifts use direct names, not translation keys
+    coins: cg.price,
+    category: cg.category,
+    thumbnailUrl: cg.thumbnailUrl,
+    animationUrl: cg.animationUrl,
+  };
 }
 
 // 2026-10-16 (Sumon): Categorized gifts — Classic, Premium, Luxury.
@@ -43,29 +59,8 @@ const GIFT_CATEGORIES: { id: GiftCategory; label: string }[] = [
   { id: 'luxury', label: '💎 Luxury' },
 ];
 
-const GIFTS: readonly GiftItem[] = [
-  // Classic (1-8)
-  { id: '1', emoji: '💝', nameKey: 'voiceRoom.gifts.giftHeart',    coins: 10,   category: 'classic' },
-  { id: '2', emoji: '🌹', nameKey: 'voiceRoom.gifts.giftRose',     coins: 25,   category: 'classic' },
-  { id: '3', emoji: '🎁', nameKey: 'voiceRoom.gifts.giftGift',     coins: 50,   category: 'classic' },
-  { id: '4', emoji: '💎', nameKey: 'voiceRoom.gifts.giftDiamond',  coins: 100,  category: 'classic' },
-  { id: '5', emoji: '🏆', nameKey: 'voiceRoom.gifts.giftTrophy',   coins: 200,  category: 'classic' },
-  { id: '6', emoji: '🚀', nameKey: 'voiceRoom.gifts.giftRocket',   coins: 500,  category: 'classic' },
-  { id: '7', emoji: '👑', nameKey: 'voiceRoom.gifts.giftCrown',    coins: 1000, category: 'classic' },
-  { id: '8', emoji: '🎆', nameKey: 'voiceRoom.gifts.giftFirework', coins: 2000, category: 'classic' },
-  // Premium (9-14)
-  { id: '9',  emoji: '💍', nameKey: 'Diamond Ring',  coins: 5000,  category: 'premium' },
-  { id: '10', emoji: '🏎️', nameKey: 'Sports Car',   coins: 10000, category: 'premium' },
-  { id: '11', emoji: '🛩️', nameKey: 'Private Jet',  coins: 25000, category: 'premium' },
-  { id: '12', emoji: '🛥️', nameKey: 'Yacht',        coins: 50000, category: 'premium' },
-  { id: '13', emoji: '🌟', nameKey: 'Superstar',    coins: 75000, category: 'premium' },
-  { id: '14', emoji: '💫', nameKey: 'Galaxy',       coins: 100000, category: 'premium' },
-  // Luxury (15-18)
-  { id: '15', emoji: '🏰', nameKey: 'Castle',       coins: 200000, category: 'luxury' },
-  { id: '16', emoji: '👑', nameKey: 'Royal Crown',  coins: 500000, category: 'luxury' },
-  { id: '17', emoji: '💠', nameKey: 'Eternal Diamond', coins: 1000000, category: 'luxury' },
-  { id: '18', emoji: '🌌', nameKey: 'Universe',     coins: 2000000, category: 'luxury' },
-];
+// 2026-10-16 (Sumon): Server-driven gifts — GIFTS now comes from RTDB `gift_catalog`.
+// No hardcoded gifts. Server is the single source of truth.
 
 export function GiftsModal({
   visible, onClose, onGiftSent, members, initialRecipient,
@@ -93,6 +88,9 @@ export function GiftsModal({
   const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
   // 2026-10-16 (Sumon): Category tabs — horizontal scroll, gifts vertical scroll
   const [activeCategory, setActiveCategory] = useState<GiftCategory>('classic');
+  // 2026-10-16 (Sumon): Server-driven gifts from RTDB gift_catalog
+  const [serverGifts, setServerGifts] = useState<GiftItem[]>([]);
+  const [giftsLoading, setGiftsLoading] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -103,6 +101,37 @@ export function GiftsModal({
       else { setSelected([]); setStep('pick-person'); }
     }
   }, [visible, initialRecipient?.id]);
+
+  // 2026-10-16 (Sumon): Fetch server gift catalog
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+    const load = async () => {
+      setGiftsLoading(true);
+      try {
+        const catalog = await fetchGiftCatalog();
+        // Only show gifts with thumbnails (no broken/demo visuals)
+        const items = catalog
+          .filter(cg => cg.thumbnailUrl)
+          .map(catalogToGiftItem);
+        setServerGifts(items);
+      } catch (e) {
+        console.warn('[GiftsModal] catalog fetch failed:', e);
+        setServerGifts([]);
+      } finally {
+        setGiftsLoading(false);
+      }
+    };
+    load();
+    // Real-time updates
+    unsub = subscribeGiftCatalog((catalog) => {
+      const items = catalog
+        .filter(cg => cg.thumbnailUrl)
+        .map(catalogToGiftItem);
+      setServerGifts(items);
+      setGiftsLoading(false);
+    });
+    return () => { if (unsub) unsub(); };
+  }, []);
 
   const toggleSelect = (id: string) => {
     setSelected((prev: string[]) => {
@@ -123,8 +152,8 @@ export function GiftsModal({
     Alert.alert(
       t('voiceRoom.gifts.confirmTitle'),
       t('voiceRoom.gifts.confirmMsg', {
-        emoji: g.emoji,
-        name: t(g.nameKey),
+        emoji: '',
+        name: g.nameKey,
         total: totalCost,
         names: selectedMembers.map(m => m.name).join(', ') }),
       [
@@ -264,7 +293,7 @@ export function GiftsModal({
             toUid: r.id,
             toName: r.name,
             giftId: g.id,
-            emoji: g.emoji,
+            thumbnailUrl: g.thumbnailUrl,
             coins: g.coins,
             ts: serverTimestamp() };
           if (senderAvatar) entry.fromAvatar = senderAvatar;
@@ -300,11 +329,11 @@ export function GiftsModal({
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setSent(g.emoji);
+      setSent(g.thumbnailUrl || g.nameKey);
       didSucceed = true; // C2: keep sending=true until modal closes
       onGiftSent({
         giftId: g.id,
-        emoji: g.emoji,
+        emoji: g.thumbnailUrl || '',
         coins: g.coins,
         senderUid: myUid,
         senderName: myName,
@@ -418,7 +447,11 @@ export function GiftsModal({
             {sent && (
               <View style={{ position: 'absolute', top: 60, left: 0, right: 0,
                 alignItems: 'center', zIndex: 10 }}>
-                <Text style={{ fontSize: 72 }}>{sent}</Text>
+                {sent.startsWith('http') ? (
+                  <Image source={{ uri: sent }} style={{ width: 72, height: 72, borderRadius: 12 }} />
+                ) : (
+                  <Text style={{ fontSize: 72 }}>{sent}</Text>
+                )}
               </View>
             )}
             {sending && (
@@ -461,11 +494,25 @@ export function GiftsModal({
                 })}
               </View>
             </ScrollView>
-            {/* Gifts grid — vertical scroll per category */}
+            {/* Gifts grid — vertical scroll per category (server-driven) */}
             <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {giftsLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <PremiumLoader size="large" />
+                <Text style={{ color: C.muted, fontSize: 12, marginTop: 12 }}>
+                  {t('voiceRoom.gifts.loading')}
+                </Text>
+              </View>
+            ) : serverGifts.filter(g => g.category === activeCategory).length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ color: C.muted, fontSize: 13 }}>
+                  {t('voiceRoom.gifts.emptyCategory')}
+                </Text>
+              </View>
+            ) : (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between',
               opacity: sending ? 0.4 : 1 }}>
-              {GIFTS.filter(g => g.category === activeCategory).map(g => {
+              {serverGifts.filter(g => g.category === activeCategory).map(g => {
                 const isSelected = selectedGift?.id === g.id;
                 return (
                   <Pressable key={g.id}
@@ -478,9 +525,17 @@ export function GiftsModal({
                       borderRadius: 14, padding: 10, alignItems: 'center',
                       borderWidth: isSelected ? 2 : 1,
                       borderColor: isSelected ? C.gold : C.borderFaint }}>
-                    <Text style={{ fontSize: 26 }}>{g.emoji}</Text>
-                    <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', marginTop: 4 }}>
-                      {t(g.nameKey)}
+                    {g.thumbnailUrl ? (
+                      <Image source={{ uri: g.thumbnailUrl }} style={{ width: 48, height: 48, borderRadius: 8 }}
+                        resizeMode="cover" />
+                    ) : (
+                      <View style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: C.borderFaint,
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        <Feather name="gift" size={24} color={C.muted} />
+                      </View>
+                    )}
+                    <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', marginTop: 4 }} numberOfLines={1}>
+                      {g.nameKey}
                     </Text>
                     <Text style={{ color: C.gold, fontSize: 10, marginTop: 2 }}>
                       💎 {selectedMembers.length > 1 ? `${g.coins}×${selectedMembers.length}` : g.coins}
@@ -489,6 +544,7 @@ export function GiftsModal({
                 );
               })}
             </View>
+            )}
             </ScrollView>
             {/* Send button — appears after selecting a gift (no one-click send) */}
             {selectedGift && !sending && (
@@ -498,7 +554,7 @@ export function GiftsModal({
                   shadowColor: C.gold, shadowOpacity: 0.4, shadowRadius: 8,
                   shadowOffset: { width: 0, height: 2 } }}>
                 <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>
-                  {t('voiceRoom.gifts.send')} {selectedGift.emoji} · 💎 {selectedGift.coins * selectedMembers.length}
+                  {t('voiceRoom.gifts.send')} {selectedGift.nameKey} · 💎 {selectedGift.coins * selectedMembers.length}
                 </Text>
               </Pressable>
             )}
