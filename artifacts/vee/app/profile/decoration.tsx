@@ -351,8 +351,8 @@ export default function DecorationScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
-        style={{ marginBottom: 8 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, alignItems: 'center' }}
+        style={{ marginBottom: 8, flexGrow: 0 }}
       >
         {visibleTabs.map((t) => {
           const isActive = tab === t.key;
@@ -369,8 +369,8 @@ export default function DecorationScreen() {
                 onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTab(t.key); }}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
-                  paddingHorizontal: 14, paddingVertical: 7, marginRight: 8,
-                  borderRadius: 20,
+                  paddingHorizontal: 14, marginRight: 8,
+                  height: 48, borderRadius: 24,
                   backgroundColor: '#FFFFFF',
                   borderWidth: isActive ? 2 : 1,
                   borderColor: isActive ? C.gold : C.border,
@@ -404,8 +404,8 @@ export default function DecorationScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTab(t.key); }}
               style={{
                 flexDirection: 'row', alignItems: 'center',
-                paddingHorizontal: 16, paddingVertical: 10, marginRight: 8,
-                borderRadius: 20,
+                paddingHorizontal: 16, marginRight: 8,
+                height: 48, borderRadius: 24,
                 backgroundColor: isActive ? C.gold : C.card,
                 borderWidth: isActive ? 0 : 1,
                 borderColor: C.border,
