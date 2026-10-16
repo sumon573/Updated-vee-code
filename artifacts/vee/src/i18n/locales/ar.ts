@@ -389,6 +389,7 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
       // TODO i18n: English fallbacks — need proper Arabic translations
       partialSendTitle: 'Some gifts not sent',
       partialSendMsg: 'Not delivered to: {{names}}. The gifts that were sent are kept.',
+      emptyCategory: 'لا توجد هدايا في هذه الفئة بعد',
       cantGiftSelf: 'You cannot send a gift to yourself.',
       giftHeart: 'قلب',
       giftRose: 'وردة',
