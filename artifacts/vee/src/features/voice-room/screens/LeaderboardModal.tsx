@@ -63,10 +63,11 @@ function fmtCompact(n: number): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const MEDAL = ['🥇', '🥈', '🥉'] as const;
 const TINT_BG = [C.goldBg, C.silverBg, C.bronzeBg] as const;
 const TINT_BD = [C.goldBd, '#E2E8F0', '#FDBA74'] as const;
 const TINT_TX = [C.gold, C.silver, C.bronze] as const;
+/* 2026-10-16 (Sumon): NO demo medal emojis — real metallic rank badges. */
+const RANK_SOLID = ['#F59E0B', '#94A3B8', '#B45309'] as const;
 
 function RankBadge({ rank }: { rank: number }) {
   const top3 = rank <= 3;
@@ -74,11 +75,13 @@ function RankBadge({ rank }: { rank: number }) {
     <View style={{
       width: top3 ? 40 : 34, height: top3 ? 40 : 34, borderRadius: top3 ? 20 : 17,
       alignItems: 'center', justifyContent: 'center',
-      backgroundColor: top3 ? TINT_BG[rank - 1] : C.surface,
+      backgroundColor: top3 ? RANK_SOLID[rank - 1] : C.surface,
       borderWidth: top3 ? 1.5 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
-      marginRight: 12 }}>
+      marginRight: 12,
+      shadowColor: top3 ? RANK_SOLID[rank - 1] : 'transparent',
+      shadowOpacity: top3 ? 0.35 : 0, shadowRadius: top3 ? 6 : 0, elevation: top3 ? 3 : 0 }}>
       {top3
-        ? <Text style={{ fontSize: 20 }}>{MEDAL[rank - 1]}</Text>
+        ? <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '900' }}>{rank}</Text>
         : <Text style={{ color: C.muted, fontSize: 13, fontWeight: '800' }}>{rank}</Text>
       }
     </View>
@@ -147,14 +150,58 @@ export function LeaderboardModal({
     if (!visible) return;
     setRoomsLoading(true);
     const unsub = subscribeActiveRooms((allRooms) => {
-      const sorted = [...allRooms]
-        .sort((a, b) => b.memberCount - a.memberCount)
-        .slice(0, 30);
-      setRooms(sorted);
+      setRooms(allRooms);
       setRoomsLoading(false);
     });
     return unsub;
   }, [visible]);
+
+  /* 2026-10-16 (Sumon): REAL live counts — ground truth read straight from
+     rooms/{id}/seats + rooms/{id}/audience. Stored info.memberCount can go
+     stale, so the leaderboard never trusts it for ranking or display. */
+  const [liveCounts, setLiveCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!visible || rooms.length === 0) return;
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    const counts: Record<string, number> = {};
+    const push = () => { if (!cancelled) setLiveCounts({ ...counts }); };
+    // Seed from stored values so the list never flashes empty/wrong.
+    const seeded = [...rooms]
+      .sort((a, b) => (b.liveCount ?? b.memberCount ?? 0) - (a.liveCount ?? a.memberCount ?? 0))
+      .slice(0, 40);
+    seeded.forEach((r) => { counts[r.id] = r.liveCount ?? r.memberCount ?? 0; });
+    push();
+    seeded.forEach((room) => {
+      let seatsSnap: any = null;
+      let audSnap: any = null;
+      const recompute = () => {
+        const seen = new Set<string>();
+        let seated = 0;
+        seatsSnap.forEach((ch: any) => {
+          const uid = ch.val()?.userId as string | undefined;
+          if (uid && !seen.has(uid)) { seen.add(uid); seated++; }
+        });
+        const aud = audSnap.exists() ? audSnap.numChildren() : 0;
+        counts[room.id] = seated + aud;
+        push();
+      };
+      const tryCompute = () => { if (seatsSnap && audSnap) recompute(); };
+      unsubs.push(onValue(ref(database, `rooms/${room.id}/seats`), (s) => { seatsSnap = s; tryCompute(); }));
+      unsubs.push(onValue(ref(database, `rooms/${room.id}/audience`), (s) => { audSnap = s; tryCompute(); }));
+    });
+    return () => { cancelled = true; unsubs.forEach((u) => u()); };
+  }, [visible, rooms]);
+
+  /* Rooms ranked by REAL live count. Top Live = genuinely occupied rooms only,
+     so the LIVE badge never shows on an empty room (Sumon 2026-10-16). */
+  const rankedRooms = useMemo(() => {
+    return rooms
+      .map((r) => ({ ...r, realCount: liveCounts[r.id] ?? r.liveCount ?? r.memberCount ?? 0 }))
+      .sort((a, b) => b.realCount - a.realCount)
+      .slice(0, 30);
+  }, [rooms, liveCounts]);
+  const liveRankedRooms = useMemo(() => rankedRooms.filter((r) => r.realCount > 0), [rankedRooms]);
 
   // ── Top Senders — REAL weekly data ─────────────────────────────────────────
   const [senders, setSenders] = useState<LeaderboardEntry[]>([]);
@@ -245,7 +292,7 @@ export function LeaderboardModal({
     return () => { cancelled = true; };
   }, [visible, myUid, weekId]);
 
-  const liveRooms = rooms.filter(r => r.isLive);
+  const liveRooms = liveRankedRooms;
 
   // ── My rank per tab ────────────────────────────────────────────────────────
   const mySenderRank = useMemo(() => {
@@ -262,15 +309,15 @@ export function LeaderboardModal({
 
   const myRoomRank = useMemo(() => {
     if (!myUid) return 0;
-    const i = rooms.findIndex(r => r.ownerId === myUid);
+    const i = rankedRooms.findIndex(r => r.ownerId === myUid);
     return i >= 0 ? i + 1 : 0;
-  }, [rooms, myUid]);
+  }, [rankedRooms, myUid]);
 
   const myLiveRank = useMemo(() => {
     if (!myUid) return 0;
-    const i = liveRooms.findIndex(r => r.ownerId === myUid);
+    const i = liveRankedRooms.findIndex(r => r.ownerId === myUid);
     return i >= 0 ? i + 1 : 0;
-  }, [liveRooms, myUid]);
+  }, [liveRankedRooms, myUid]);
 
   const myName = auth.currentUser?.displayName || 'Vee User';
   const myPhoto = auth.currentUser?.photoURL ?? undefined;
@@ -301,7 +348,7 @@ export function LeaderboardModal({
         <DPAvatar name={item.name} photoURL={item.photoURL} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700' }} numberOfLines={1}>
+            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700', flexShrink: 1 }} numberOfLines={1}>
               {item.name}
             </Text>
             {isMe && (
@@ -314,7 +361,7 @@ export function LeaderboardModal({
           </View>
           <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{statLabel}</Text>
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ alignItems: 'flex-end', marginLeft: 10, flexShrink: 0 }}>
           <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 17, fontWeight: '800' }}>
             💎{fmtCompact(stat)}
           </Text>
@@ -323,7 +370,7 @@ export function LeaderboardModal({
     );
   };
 
-  const renderRoomRow = (item: RoomInfo, index: number, showLive: boolean) => {
+  const renderRoomRow = (item: RoomInfo & { realCount?: number }, index: number, showLive: boolean) => {
     const rank = index + 1;
     const top3 = rank <= 3;
     const isMine = item.ownerId === myUid;
@@ -337,9 +384,11 @@ export function LeaderboardModal({
         borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
         marginBottom: top3 ? 8 : 0 }}>
         <RankBadge rank={rank} />
+        {/* 2026-10-16 (Sumon): room profile DP — real cover image. */}
+        <DPAvatar name={item.name} photoURL={item.coverImageUrl} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700' }} numberOfLines={1}>
+            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700', flexShrink: 1 }} numberOfLines={1}>
               {item.name}
             </Text>
             {showLive && (
@@ -359,9 +408,9 @@ export function LeaderboardModal({
             {item.ownerName ?? ''}
           </Text>
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ alignItems: 'flex-end', marginLeft: 10, flexShrink: 0 }}>
           <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 18, fontWeight: '800' }}>
-            {item.memberCount}
+            {(item.realCount ?? item.memberCount ?? 0)}
           </Text>
           <Text style={{ color: C.muted, fontSize: 11 }}>
             {t('leaderboard.members', { defaultValue: 'members' })}
@@ -441,7 +490,7 @@ export function LeaderboardModal({
             width: 44, height: 44, borderRadius: 22, backgroundColor: C.goldBg,
             alignItems: 'center', justifyContent: 'center', marginRight: 12,
             borderWidth: 1.5, borderColor: C.goldBd }}>
-            <Text style={{ fontSize: 22 }}>🏆</Text>
+            <Feather name="award" size={22} color={C.gold} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.3 }}>
@@ -497,7 +546,7 @@ export function LeaderboardModal({
           roomsLoading
             ? loading
             : <FlatList
-                data={rooms}
+                data={rankedRooms}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
@@ -517,7 +566,7 @@ export function LeaderboardModal({
           roomsLoading
             ? loading
             : <FlatList
-                data={liveRooms}
+                data={liveRankedRooms}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
