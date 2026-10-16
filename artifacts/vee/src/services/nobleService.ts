@@ -259,7 +259,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
     name: `${rank.name} Nameplate`,
     icon: catalog ? rewardIcon(catalog.nameplate) : '🎖️',
     obtainedAt: now,
-    validity: 'permanent',
+    validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
     source: 'official',
     description: desc,
     grantedBy: 'noble-system',
@@ -270,7 +270,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       name: `${rank.name} Noble`,
       icon: rewardIcon(catalog.badge),
       obtainedAt: now,
-      validity: 'permanent',
+      validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'official',
       description: desc,
       howToGet: 'Send diamonds as gifts in voice rooms to earn Noble XP.',
@@ -283,7 +283,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       name: `${rank.name} Frame`,
       icon: rewardIcon(catalog.frame),
       obtainedAt: now,
-      validity: 'permanent',
+      validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'official',
       description: desc,
       grantedBy: 'noble-system',
@@ -296,7 +296,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       icon: rewardIcon(catalog.ripple),
       colors: catalog.ripple.config?.colors as string[] | undefined,
       obtainedAt: now,
-      validity: 'permanent',
+      validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'noble',
       description: desc,
       grantedBy: 'noble-system',
@@ -308,12 +308,71 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       name: `${rank.name} Entry`,
       icon: rewardIcon(catalog.entryEffect),
       obtainedAt: now,
-      validity: 'permanent',
+      validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'noble',
       description: desc,
       grantedBy: 'noble-system',
     });
   }
+}
+
+/* ── 2026-10-16 (Sumon): Revoke rank items when rank drops ──
+ * Nobel ranks have 30-day maintenance. When a user drops a rank,
+ * the higher rank's rewards (frame, badge, nameplate, ripple, entry)
+ * are REMOVED — rewards expire with the rank, not permanent. */
+async function revokeNobleRankItems(uid: string, rankIndex: number): Promise<void> {
+  const rank = NOBLE_RANKS[rankIndex];
+  if (!rank || !uid) return;
+  const key = rank.key;
+  const removals: Promise<void>[] = [
+    remove(ref(database, `users/${uid}/frames/noble-frame-${key}`)),
+    remove(ref(database, `users/${uid}/badges/noble-badge-${key}`)),
+    remove(ref(database, `users/${uid}/nameplates/noble-plate-${key}`)),
+    remove(ref(database, `users/${uid}/ripples/noble-ripple-${key}`)),
+    remove(ref(database, `users/${uid}/entryEffects/noble-effect-${key}`)),
+  ];
+  await Promise.all(removals.map(p => p.catch(() => {})));
+  try {
+    const [frameSnap, plateSnap, rippleSnap, effectSnap] = await Promise.all([
+      get(ref(database, `users/${uid}/activeFrame`)),
+      get(ref(database, `users/${uid}/activeNameplate`)),
+      get(ref(database, `users/${uid}/activeRipple`)),
+      get(ref(database, `users/${uid}/activeEntryEffect`)),
+    ]);
+    const clears: Promise<void>[] = [];
+    if (frameSnap.val() === `noble-frame-${key}`) clears.push(remove(ref(database, `users/${uid}/activeFrame`)).catch(() => {}));
+    const plateVal = plateSnap.val();
+    const plateId = typeof plateVal === 'string' ? plateVal : plateVal?.id;
+    if (plateId === `noble-plate-${key}`) clears.push(remove(ref(database, `users/${uid}/activeNameplate`)).catch(() => {}));
+    const rippleVal = rippleSnap.val();
+    const rippleId = typeof rippleVal === 'string' ? rippleVal : rippleVal?.id;
+    if (rippleId === `noble-ripple-${key}`) clears.push(remove(ref(database, `users/${uid}/activeRipple`)).catch(() => {}));
+    const effectVal = effectSnap.val();
+    const effectId = typeof effectVal === 'string' ? effectVal : effectVal?.id;
+    if (effectId === `noble-effect-${key}`) clears.push(remove(ref(database, `users/${uid}/activeEntryEffect`)).catch(() => {}));
+    try {
+      const badgeSnap = await get(ref(database, `users/${uid}/officialBadge`));
+      const badgeVal = badgeSnap.val();
+      const badgeId = typeof badgeVal === 'string' ? badgeVal : badgeVal?.id;
+      if (badgeId === `noble-badge-${key}`) clears.push(remove(ref(database, `users/${uid}/officialBadge`)).catch(() => {}));
+    } catch {}
+    await Promise.all(clears);
+  } catch {}
+}
+
+/* ── 2026-10-16 (Sumon): Renew reward validity on successful maintenance ── */
+async function renewNobleRankValidity(uid: string, rankIndex: number, newDeadline: number): Promise<void> {
+  const rank = NOBLE_RANKS[rankIndex];
+  if (!rank || !uid) return;
+  const key = rank.key;
+  const paths = [
+    `users/${uid}/frames/noble-frame-${key}/validity`,
+    `users/${uid}/badges/noble-badge-${key}/validity`,
+    `users/${uid}/nameplates/noble-plate-${key}/validity`,
+    `users/${uid}/ripples/noble-ripple-${key}/validity`,
+    `users/${uid}/entryEffects/noble-effect-${key}/validity`,
+  ];
+  await Promise.all(paths.map(p => set(ref(database, p), newDeadline).catch(() => {})));
 }
 
 /* ── 2026-10-15 (Sumon): Self-healing — grant missing rank items ──
