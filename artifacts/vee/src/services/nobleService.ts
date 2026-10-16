@@ -104,14 +104,26 @@ export interface NobleVisualTheme {
   rippleWave: string;
   rippleMist: string[];
   rippleParticles: string[];
+  // 2026-10-16 (Sumon): Per-rank distinct effect — each rank has its own
+  // premium/gorgeous effect type. Higher rank = more spectacular.
+  rippleEffect: 'leaves' | 'droplets' | 'snow' | 'stars' | 'petals' | 'flames' | 'coins' | 'crowns' | 'sparks' | 'diamonds';
+  rippleWaveCount: number;  // Distinct wave count per rank
 }
-function themeFor(color: string, entryIcon: string, particles: string[]): NobleVisualTheme {
+function themeFor(
+  color: string,
+  entryIcon: string,
+  particles: string[],
+  effect: NobleVisualTheme['rippleEffect'],
+  waveCount: number,
+): NobleVisualTheme {
   return {
     entryGradient: [color, lightenHex(color, 60)],
     entryIcon,
     rippleWave: color,
     rippleMist: [color, lightenHex(color, 40), lightenHex(color, 80)],
     rippleParticles: particles,
+    rippleEffect: effect,
+    rippleWaveCount: waveCount,
   };
 }
 function lightenHex(hex: string, amt: number): string {
@@ -125,16 +137,17 @@ function lightenHex(hex: string, amt: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
 export const NOBLE_THEMES: NobleVisualTheme[] = [
-  themeFor('#8BC34A', '\uD83D\uDEE1\uFE0F', ['\uD83C\uDF43', '\uD83C\uDF3F', '☘️']),
-  themeFor('#26A69A', '⚔️', ['\uD83D\uDCA7', '\uD83D\uDCA6', '\uD83C\uDF0A']),
-  themeFor('#42A5F5', '\uD83D\uDD37', ['✨', '\uD83D\uDCAB', '❄️']),
-  themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C']),
-  themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69']),
-  themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡']),
-  themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F']),
-  themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B']),
-  themeFor('#E65100', '\uD83D\uDCA5', ['\uD83D\uDCA5', '\uD83D\uDD25', '⚡']),
-  themeFor('#BF360C', '\uD83D\uDC8E', ['\uD83D\uDC8E', '\uD83D\uDC51', '✨']),
+  // 2026-10-16 (Sumon): Each rank = distinct premium effect. Higher = more gorgeous.
+  themeFor('#8BC34A', '\uD83D\uDEE1\uFE0F', ['\uD83C\uDF43', '\uD83C\uDF3F', '☘️'], 'leaves', 2),
+  themeFor('#26A69A', '⚔️', ['\uD83D\uDCA7', '\uD83D\uDCA6', '\uD83C\uDF0A'], 'droplets', 2),
+  themeFor('#42A5F5', '\uD83D\uDD37', ['✨', '\uD83D\uDCAB', '❄️'], 'snow', 3),
+  themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C'], 'stars', 3),
+  themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
+  themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
+  themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F'], 'coins', 4),
+  themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B'], 'crowns', 4),
+  themeFor('#E65100', '\uD83D\uDCA5', ['\uD83D\uDCA5', '\uD83D\uDD25', '⚡'], 'sparks', 5),
+  themeFor('#BF360C', '\uD83D\uDC8E', ['\uD83D\uDC8E', '\uD83D\uDC51', '✨'], 'diamonds', 5),
 ];
 export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
   if (rankIndex < 0 || rankIndex >= NOBLE_THEMES.length) return null;
