@@ -460,13 +460,17 @@ export function GiftsModal({
                 <PremiumLoader size="large" />
               </View>
             )}
-            {/* 2026-10-16 (Sumon): Category tabs — horizontal scroll */}
+            {/* 2026-10-16 (Sumon): Category tabs — premium polished */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: 12, maxHeight: 36 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              style={{ marginBottom: 14, maxHeight: 40 }}>
+              <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 2, paddingVertical: 2 }}>
                 {GIFT_CATEGORIES.map(cat => {
                   const isActive = activeCategory === cat.id;
-                  const isPremium = cat.id !== 'classic';
+                  const isPremium = cat.id === 'premium';
+                  const isLuxury = cat.id === 'luxury';
+                  // Premium color scheme per category
+                  const activeBg = isLuxury ? '#9D4EDD' : isPremium ? C.gold : C.primary;
+                  const activeBorder = isLuxury ? '#C77DFF' : isPremium ? '#FFD700' : C.primary;
                   return (
                     <Pressable key={cat.id} onPress={() => {
                       setActiveCategory(cat.id);
@@ -474,18 +478,20 @@ export function GiftsModal({
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
                       style={{
-                        paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18,
-                        backgroundColor: isActive
-                          ? (isPremium ? C.gold : C.primary)
-                          : C.card,
-                        borderWidth: 1,
-                        borderColor: isActive
-                          ? (isPremium ? C.gold : C.primary)
-                          : C.borderFaint,
+                        paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20,
+                        backgroundColor: isActive ? activeBg : C.card,
+                        borderWidth: isActive ? 1.5 : 1,
+                        borderColor: isActive ? activeBorder : C.borderFaint,
+                        shadowColor: isActive ? activeBg : 'transparent',
+                        shadowOpacity: isActive ? 0.35 : 0,
+                        shadowRadius: isActive ? 8 : 0,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: isActive ? 4 : 0,
                       }}>
                       <Text style={{
                         color: isActive ? '#fff' : C.sub,
                         fontSize: 13, fontWeight: isActive ? '800' : '600',
+                        letterSpacing: 0.3,
                       }}>
                         {cat.label}
                       </Text>
