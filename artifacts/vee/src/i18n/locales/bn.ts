@@ -451,6 +451,7 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
       // TODO i18n: English fallbacks — need proper Bengali translations
       partialSendTitle: 'Some gifts not sent',
       partialSendMsg: 'Not delivered to: {{names}}. The gifts that were sent are kept.',
+      emptyCategory: 'এই ক্যাটাগরিতে এখনো কোনো গিফট নেই',
       cantGiftSelf: 'You cannot send a gift to yourself.',
       giftHeart: 'হৃদয়',
       giftRose: 'গোলাপ',
