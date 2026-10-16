@@ -206,9 +206,9 @@ function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
   const day = now.getDate();
   // Re-render is driven by todayKey; values below always reflect "now".
   void todayKey;
+  // 2026-10-16 (Sumon): height 44 -> 56 so the day number is fully
+  // visible (was clipped). Design unchanged — Royal Gold calendar.
   return (
-    {/* 2026-10-16 (Sumon): height 44 -> 56 so the day number is fully
-        visible (was clipped). Design unchanged — Royal Gold calendar. */}
     <View style={{
       width: 40, height: 56, borderRadius: 10,
       backgroundColor: '#FFFFFF', overflow: 'hidden', alignItems: 'center',
