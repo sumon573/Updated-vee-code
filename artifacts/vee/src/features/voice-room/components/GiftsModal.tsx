@@ -292,7 +292,7 @@ export function GiftsModal({
         // safe because the server dedupes on the key.
         for (let attempt = 0; attempt < 2 && !charged; attempt++) {
           try {
-              await sendGift({ toUid: r.id, giftId: g.id, idempotencyKey: key, toName: r.name, toPhotoURL: r.photoURL });
+              await sendGift({ toUid: r.id, giftId: g.id, idempotencyKey: key, toName: r.name, toPhotoURL: r.photoURL, price: g.coins });
               charged = true;
             } catch (e) {
               lastErr = e;
