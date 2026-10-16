@@ -397,14 +397,14 @@ export default function DecorationScreen() {
                   elevation: isActive ? 4 : 2 }}
               >
                 <View style={{
-                  width: 34, height: 34, borderRadius: 17, backgroundColor: '#FF9800',
-                  alignItems: 'center', justifyContent: 'center', marginRight: 9,
+                  width: 28, height: 28, borderRadius: 14, backgroundColor: '#FF9800',
+                  alignItems: 'center', justifyContent: 'center', marginRight: 8,
                   shadowColor: '#FF9800', shadowOpacity: 0.4, shadowRadius: 6,
                   shadowOffset: { width: 0, height: 2 },
                 }}>
-                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', lineHeight: 18 }}>♛</Text>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 15 }}>♛</Text>
                   <View style={{
-                    width: 9, height: 9, backgroundColor: '#fff',
+                    width: 7, height: 7, backgroundColor: '#fff',
                     transform: [{ rotate: '45deg' }], marginTop: 1,
                   }} />
                 </View>
