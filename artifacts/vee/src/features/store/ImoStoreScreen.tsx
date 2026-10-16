@@ -509,7 +509,7 @@ function PreviewSheet({
         onPress={onClose}
       >
         <Pressable
-          onPress={(e) => e.stopPropagation()}
+          onPress={() => {}}
           style={{
             backgroundColor: C.cream, borderTopLeftRadius: 24, borderTopRightRadius: 24,
             paddingHorizontal: 24, paddingTop: 18,
