@@ -52,6 +52,10 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
+  const w4 = useRef(new Animated.Value(0)).current;
+  const w5 = useRef(new Animated.Value(0)).current;
+  // 2026-10-16 (Sumon): Per-rank wave count — higher rank = more waves
+  const themeWaveCount = theme?.rippleWaveCount ?? 2;
   // 2026-10-16 (Sumon): SIMPLE ripple for normal users — waves only.
   // Fancy particles/flowers ONLY for Nobel/equipped ripple users.
   const isFancy = !!(theme || activeRipple);
@@ -94,7 +98,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const flowers = flowersRef.current;
 
   useEffect(() => {
-    const all: Animated.Value[] = [w1, w2, w3,
+    const all: Animated.Value[] = [w1, w2, w3, w4, w5,
       ...(particles ? particles.map((p) => p.anim) : []),
       ...(flowers ? flowers.map((f) => f.anim) : [])];
     if (!visible) { all.forEach((a) => a.setValue(0)); return; }
@@ -108,6 +112,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       ]));
     const loops: Animated.CompositeAnimation[] = [
       wave(w1, 0, 900 / speedBoost), wave(w2, 300 / speedBoost, 900 / speedBoost), wave(w3, 600 / speedBoost, 900 / speedBoost),
+      ...(themeWaveCount >= 4 ? [wave(w4, 900 / speedBoost, 900 / speedBoost)] : []),
+      ...(themeWaveCount >= 5 ? [wave(w5, 1200 / speedBoost, 900 / speedBoost)] : []),
       ...(particles ? particles.map((p) => wave(p.anim, p.delay, p.dur)) : []),
       ...(flowers ? flowers.map((f) => wave(f.anim, f.delay, f.dur)) : []),
     ];
@@ -199,6 +205,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       {renderWave(w1, 'w1')}
       {renderWave(w2, 'w2')}
       {renderWave(w3, 'w3')}
+      {themeWaveCount >= 4 && renderWave(w4, 'w4')}
+      {themeWaveCount >= 5 && renderWave(w5, 'w5')}
       {particles && particles.map((p, i) => renderMist(p, `m${i}`))}
       {flowers && flowers.map((f, i) => renderFlower(f, `f${i}`))}
     </View>
