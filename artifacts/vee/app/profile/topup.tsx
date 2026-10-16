@@ -23,7 +23,6 @@ import { useAuth } from '@/src/context/AuthContext';
 import { auth } from '@/src/config/firebase';
 import { getApiBase } from '@/src/utils/platform';
 import { useTranslation } from 'react-i18next';
-import { StoreScreen } from '@/src/features/store/StoreScreen';
 
 const C = {
   bg: '#FFFFFF',
@@ -71,8 +70,8 @@ export default function TopUpScreen() {
   const { t } = useTranslation();
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
-  // Store tab (2026-10-09): Recharge | Store
-  const [mainTab, setMainTab] = useState<'recharge' | 'store'>('recharge');
+  // 2026-10-16 (Sumon): Store tab REMOVED from Top Up — the Store is now a
+  // standalone IMO-style screen at /store (opened from Decoration).
 
   const [config, setConfig] = useState<TopupConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,30 +170,7 @@ export default function TopUpScreen() {
             </Text>
           </View>
 
-          {/* Recharge | Store tabs (2026-10-09) */}
-          <View style={{
-            flexDirection: 'row', backgroundColor: C.surface,
-            borderRadius: 14, padding: 4, marginBottom: 16 }}>
-            {(['recharge', 'store'] as const).map((tb) => (
-              <Pressable
-                key={tb}
-                onPress={() => setMainTab(tb)}
-                style={{
-                  flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
-                  backgroundColor: mainTab === tb ? C.primaryBg : 'transparent' }}
-              >
-                <Text style={{
-                  color: mainTab === tb ? '#fff' : C.muted,
-                  fontWeight: '800', fontSize: 14 }}>
-                  {tb === 'recharge' ? `➕ ${t('topup.rechargeTab')}` : `🏪 ${t('topup.storeTab')}`}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {mainTab === 'store' ? (
-            <StoreScreen />
-          ) : !user ? (
+          {!user ? (
             <View style={styles.card}>
               <Text style={{ color: C.muted, textAlign: 'center' }}>{t('topup.signInFirst')}</Text>
             </View>
