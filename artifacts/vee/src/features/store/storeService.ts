@@ -328,6 +328,19 @@ export async function purchaseRoomStoreItem(
   if (!(await assertOwnsRoom(uid, roomId))) {
     return { success: false, error: 'You can only buy this for your own room' };
   }
+  // 2026-10-16 verification fix: IDEMPOTENT — already using this exact item
+  // (and not expired) → success without charging again. Prevents double-charge
+  // on re-tap.
+  try {
+    const activeNode = item.type === 'roomBackground' ? 'storeBackground' : 'activeMicDecor';
+    const curSnap = await get(ref(database, `rooms/${roomId}/${activeNode}`));
+    const cur = curSnap.val();
+    if (cur && cur.itemId === item.id && !isExpired(cur)) {
+      return { success: true };
+    }
+  } catch {
+    // non-critical — fall through to purchase
+  }
   try {
     try {
       await debitOwnWallet(uid, item.price);
@@ -372,6 +385,29 @@ export async function purchaseRoomStoreItem(
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };
   }
+}
+
+/**
+ * Current store decor state of a room (for Using-state display).
+ * Returns the active background / mic decor itemIds (null when none/expired).
+ */
+export async function getRoomStoreDecorState(
+  roomId: string,
+): Promise<{ backgroundItemId: string | null; micDecorItemId: string | null }> {
+  const out = { backgroundItemId: null as string | null, micDecorItemId: null as string | null };
+  try {
+    const [bgSnap, micSnap] = await Promise.all([
+      get(ref(database, `rooms/${roomId}/storeBackground`)),
+      get(ref(database, `rooms/${roomId}/activeMicDecor`)),
+    ]);
+    const bg = bgSnap.val();
+    if (bg && typeof bg.itemId === 'string' && !isExpired(bg)) out.backgroundItemId = bg.itemId;
+    const mic = micSnap.val();
+    if (mic && typeof mic.itemId === 'string' && !isExpired(mic)) out.micDecorItemId = mic.itemId;
+  } catch {
+    // non-critical
+  }
+  return out;
 }
 
 /** Remove a room's background (owner only). */
