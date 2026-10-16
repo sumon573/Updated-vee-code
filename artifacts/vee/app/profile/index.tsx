@@ -156,6 +156,7 @@ function LevelBadge({ level }: { level: number }) {
   // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
   // "Bronze Lv 17" format. Premium gradient kept, mist particles removed
   // for the compact size.
+  // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
   return (
     <View style={{ marginRight: 6, marginBottom: 6 }}>
       <LinearGradient
@@ -163,14 +164,11 @@ function LevelBadge({ level }: { level: number }) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          borderRadius: 12,
-          paddingHorizontal: 10,
-          paddingVertical: 5,
-          flexDirection: 'row',
-          alignItems: 'center',
+          width: 100, height: 20, borderRadius: 10,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden' }}
       >
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
           {style.label} Lv {level}
         </Text>
       </LinearGradient>
@@ -213,9 +211,18 @@ function lightenHex(hex: string, amt: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
 
+// 2026-10-16 (Sumon): compact count so the fixed 100px pill never overflows.
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
+  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
+  if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`;
+  return `${n}`;
+}
+
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
 function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
+  // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
   return (
     <View style={{ marginRight: 6, marginBottom: 6 }}>
       <LinearGradient
@@ -223,14 +230,11 @@ function PremiumPill({ label, icon, colors }: { label: string; icon?: string; co
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          borderRadius: 12,
-          paddingHorizontal: 10,
-          paddingVertical: 5,
-          flexDirection: 'row',
-          alignItems: 'center' }}
+          width: 100, height: 20, borderRadius: 10,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
       >
-        {icon && <Text style={{ fontSize: 12, marginRight: 4 }}>{icon}</Text>}
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{label}</Text>
+        {icon && <Text style={{ fontSize: 10, marginRight: 3 }}>{icon}</Text>}
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{label}</Text>
       </LinearGradient>
     </View>
   );
@@ -867,7 +871,7 @@ export default function ProfileScreen({
           <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
             {/* Follower: ocean blue gradient (premium) */}
             <PremiumPill
-              label={`${followCounts.followers} Follower`}
+              label={`${fmtCompact(followCounts.followers)} Follower`}
               icon="⭐"
               colors={['#0EA5E9', '#38BDF8']}
             />
