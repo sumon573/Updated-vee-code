@@ -53,7 +53,7 @@ const C = {
 type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx' | 'nobel';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'nobel', label: 'Nobel', icon: '👑' },
+  { key: 'nobel', label: 'Noble', icon: '♛' }, // 2026-10-16: custom orange button (special-cased below)
   { key: 'frames', label: 'Frames', icon: '🖼️' },
   { key: 'nameplates', label: 'Nameplates', icon: '📛' },
   { key: 'ripples', label: 'Ripples', icon: '🌊' },
@@ -184,7 +184,7 @@ export default function DecorationScreen() {
   const [entryEffects, setEntryEffects] = useState<GrantedEntryEffect[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>('frames');
+  const [tab, setTab] = useState<TabKey>('nobel'); // 2026-10-16 (Sumon): Nobel is first tab → default
 
   useEffect(() => {
     if (!targetUid) { setLoading(false); return; }
@@ -386,8 +386,11 @@ export default function DecorationScreen() {
                   shadowColor: '#FF9800', shadowOpacity: 0.4, shadowRadius: 6,
                   shadowOffset: { width: 0, height: 2 },
                 }}>
-                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', marginTop: -2 }}>♛</Text>
-                  <Text style={{ color: '#fff', fontSize: 8, marginTop: -4 }}>◆</Text>
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', lineHeight: 18 }}>♛</Text>
+                  <View style={{
+                    width: 9, height: 9, backgroundColor: '#fff',
+                    transform: [{ rotate: '45deg' }], marginTop: 1,
+                  }} />
                 </View>
                 <Text style={{ fontSize: 15, fontWeight: '800', color: '#111111' }}>
                   Noble
