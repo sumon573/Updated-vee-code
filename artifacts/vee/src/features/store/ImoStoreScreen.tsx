@@ -175,7 +175,26 @@ function ShortIdCard({
       }}
     >
       {id === '🎲' ? (
-        <Text style={{ fontSize: 40 }}>🎲</Text>
+        <View style={{
+          width: 64, height: 64, borderRadius: 32,
+          backgroundColor: '#7E57C2', alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#7E57C2', shadowOpacity: 0.4, shadowRadius: 8,
+          shadowOffset: { width: 0, height: 3 },
+        }}>
+          <Text style={{ color: '#fff', fontSize: 28, fontWeight: '900' }}>?</Text>
+          <View style={{
+            position: 'absolute', top: 6, right: 10,
+            width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', opacity: 0.9,
+          }} />
+          <View style={{
+            position: 'absolute', bottom: 8, left: 10,
+            width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', opacity: 0.7,
+          }} />
+          <Text style={{
+            position: 'absolute', bottom: -2, right: 4,
+            color: '#fff', fontSize: 10, opacity: 0.9,
+          }}>✦</Text>
+        </View>
       ) : (
         <View style={{
           backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 14,
