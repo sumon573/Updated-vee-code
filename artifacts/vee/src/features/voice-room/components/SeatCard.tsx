@@ -8,6 +8,7 @@ import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
+import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
 
 // 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
@@ -38,7 +39,7 @@ function useServerBadgeIcon() {
    - Locked seat: gold styling (unchanged)
    Memoized so a single chat message doesn't re-render all 10 seats. */
 export const SeatCard = memo(function SeatCard({
-  seatIndex, member, onPress, reaction, isLocked, accentColor,
+  seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
 }: {
   seatIndex: number;
   member: Participant | null | undefined;
@@ -47,6 +48,8 @@ export const SeatCard = memo(function SeatCard({
   isLocked?: boolean;
   accentColor: string;
   myId?: string;
+  /** 2026-10-16 (Sumon): Store-bought room mic decor — shown on the mic dot. */
+  micDecorUrl?: string | null;
 }) {
   const { t } = useTranslation();
   const seatNum = seatIndex + 1;
@@ -63,6 +66,8 @@ export const SeatCard = memo(function SeatCard({
   // in real-time. No stale seat copies, no mapping bugs. Admin changes reflect LIVE.
   // Any future frame automatically works. This is the permanent fix.
   const liveFrameId = useActiveFrame(member?.id);
+  // 2026-10-16 (Sumon): Store mic sticker — equipped sticker badge on the seat.
+  const micSticker = useActiveMicSticker(member?.id);
   const isAdmin = member?.role === 'admin';
 
   return (
@@ -131,7 +136,19 @@ export const SeatCard = memo(function SeatCard({
               nobleRankIndex={member.nobleRankIndex}
               activeRipple={(member as any).activeRipple}
             />
-            {/* Mic status dot */}
+            {/* 2026-10-16 (Sumon): Store mic sticker badge — top-right */}
+            {micSticker && (
+              <Image
+                source={{ uri: micSticker.imageUrl }}
+                style={{
+                  position: 'absolute', top: -4, right: -4, width: 24, height: 24,
+                  borderRadius: 12, borderWidth: 1.5, borderColor: '#fff',
+                  zIndex: 15,
+                }}
+                resizeMode="cover"
+              />
+            )}
+            {/* Mic status dot (+ 2026-10-16 Store mic decor overlay) */}
             <View style={{
               position: 'absolute', bottom: 0, left: 0,
               width: 16, height: 16, borderRadius: 8,
@@ -143,6 +160,16 @@ export const SeatCard = memo(function SeatCard({
             }}>
               <Feather name={member.muted ? 'mic-off' : 'mic'} size={8} color="#fff" />
             </View>
+            {micDecorUrl && (
+              <Image
+                source={{ uri: micDecorUrl }}
+                style={{
+                  position: 'absolute', bottom: -3, left: -3, width: 22, height: 22,
+                  zIndex: 16,
+                }}
+                resizeMode="contain"
+              />
+            )}
           </View>
 
           {/* Name — 2026-10-13 (Sumon): verified badge next to name */}
