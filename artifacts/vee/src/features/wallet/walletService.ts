@@ -283,9 +283,14 @@ export function subscribeWalletBalance(
 /** Gift catalog prices (diamonds). Module-level so both the Firebase
  * fallback and the server-ok path in sendGift() can resolve the price
  * (P1-1, 2026-10-12: Noble XP must accrue on the server gift path too). */
+// 2026-10-16 (Sumon): Premium + Luxury gifts added
 const GIFT_PRICES: Record<string, number> = {
   '1': 10, '2': 25, '3': 50, '4': 100,
   '5': 200, '6': 500, '7': 1000, '8': 2000,
+  // Premium
+  '9': 5000, '10': 10000, '11': 25000, '12': 50000, '13': 75000, '14': 100000,
+  // Luxury
+  '15': 200000, '16': 500000, '17': 1000000, '18': 2000000,
 };
 
 /**
