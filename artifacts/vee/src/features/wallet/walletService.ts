@@ -387,10 +387,11 @@ export async function healGiftCounts(uid: string): Promise<void> {
   if (!uid) return;
   try {
     const { get } = await import('firebase/database');
-    // 2026-10-16 (Sumon): Check per-gift — don't skip if SOME counts exist.
-    // A user might have counts for Gift A but missing Gift B.
+    // Check if counts already exist — if yes, nothing to heal
     const countsSnap = await get(ref(database, `wallets/${uid}/giftCounts`));
-    const existing: Record<string, number> = countsSnap.exists() ? (countsSnap.val() || {}) : {};
+    if (countsSnap.exists() && Object.keys(countsSnap.val() || {}).length > 0) {
+      return; // Already have server counts
+    }
     // Backfill from transaction history
     const txSnap = await get(ref(database, `wallets/${uid}/transactions`));
     if (!txSnap.exists()) return;
@@ -402,11 +403,9 @@ export async function healGiftCounts(uid: string): Promise<void> {
       }
     });
     if (Object.keys(counts).length === 0) return;
-    // Write to server — only for gifts MISSING from server (never overwrite)
+    // Write to server (only if not already present — never overwrite)
     const { runTransaction } = await import('firebase/database');
     for (const [giftId, count] of Object.entries(counts)) {
-      // Skip if server already has a count for this gift
-      if (typeof existing[giftId] === 'number' && existing[giftId] > 0) continue;
       const countRef = ref(database, `wallets/${uid}/giftCounts/${giftId}`);
       await runTransaction(countRef, (cur) => {
         // Only set if not exists — never overwrite existing counts
@@ -584,6 +583,14 @@ async function sendGiftViaFirebase(
     } catch {
       // XP write failed — gift stands; noble progress for this gift is lost.
     }
+    // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
+    // 1 XP per diamond sent. Very slow progression; Gold slowest.
+    try {
+      const { recordLevelXP } = await import('@/src/services/levelService');
+      await recordLevelXP(fromUid, price);
+    } catch {
+      // Level XP failed — non-critical.
+    }
   }
 
   // Step 4: Write transaction history (best effort, non-blocking)
@@ -694,6 +701,13 @@ export async function sendGift({
           await recordNobleXP(serverFromUid, serverPrice);
         } catch {
           // XP write failed — gift stands; noble progress for this gift is lost.
+        }
+        // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
+        try {
+          const { recordLevelXP } = await import('@/src/services/levelService');
+          await recordLevelXP(serverFromUid, serverPrice);
+        } catch {
+          // Level XP failed — non-critical.
         }
         // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
         recordGiftReceivedCount(toUid, giftId).catch(() => {});
