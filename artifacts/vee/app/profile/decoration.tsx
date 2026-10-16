@@ -65,6 +65,8 @@ import MistNameplate from '@/src/components/MistNameplate';
 import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
 
 function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
+  // 2026-10-16: Hooks must be at top level — before any early returns
+  const [imgError, setImgError] = useState(false);
   const isOfficial = (frameId || '').toLowerCase().includes('official') ||
     (frameName || '').toLowerCase().includes('official');
   if (isOfficial) {
@@ -100,7 +102,6 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
     const isFrame = itemId?.includes('frame-');
     // 2026-10-16 (Sumon): Only show fallback emoji if image FAILS to load.
     // Frames have transparent centers — emoji would show through!
-    const [imgError, setImgError] = useState(false);
     // 2026-10-15 (Sumon): Frames show as SQUARE (not circle) — full design visible
     return (
       <View style={{
