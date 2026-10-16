@@ -87,6 +87,15 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   // useRef's argument would otherwise re-run Array.from + 14 Animated.Value allocs
   // on every render)
   const particlesRef = useRef<MistParticle[] | null>(null);
+  const flowersRef = useRef<FlowerParticle[] | null>(null);
+  const effectKeyRef = useRef<string | null>(null);
+  // 2026-10-16: Reset particles when rank/effect changes (rank-up updates effect)
+  const effectKey = `${effectType}-${particleCount}`;
+  if (effectKeyRef.current !== effectKey) {
+    effectKeyRef.current = effectKey;
+    particlesRef.current = null;
+    flowersRef.current = null;
+  }
   if (particlesRef.current === null && isFancy) {
     particlesRef.current = Array.from({ length: particleCount }, (_, i) => ({
       anim: new Animated.Value(0),
@@ -100,7 +109,6 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   }
   const particles = particlesRef.current;
   // 7 tiny flowers mixed in (same lazy init)
-  const flowersRef = useRef<FlowerParticle[] | null>(null);
   if (flowersRef.current === null && isFancy) {
     flowersRef.current = Array.from({ length: flowerCount }, (_, i) => ({
       anim: new Animated.Value(0),
