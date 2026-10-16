@@ -14,7 +14,7 @@
  * empty — categories show a "Coming soon" placeholder until designs land.
  */
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, Pressable, Image, Modal,
   ActivityIndicator, Alert, Dimensions,
@@ -271,6 +271,10 @@ function PreviewSheet({
 }) {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
+  // 2026-10-16 (Sumon): Synchronous guard — React state updates are async,
+  // so two rapid taps can both see busy=false. The ref closes that window
+  // and prevents double-charge.
+  const busyRef = useRef(false);
   const [idKind, setIdKind] = useState<'account' | 'room'>('account');
   const [roomId, setRoomId] = useState<string>('');
   const [myRooms, setMyRooms] = useState<OwnedRoom[]>([]);
@@ -366,7 +370,8 @@ function PreviewSheet({
   if (!preview) return null;
 
   const doBuyCatalog = async () => {
-    if (!item || busy) return;
+    if (!item || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       const res = isRoomItem
@@ -381,12 +386,14 @@ function PreviewSheet({
       onClose();
       Alert.alert('Store', 'Purchase successful!');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const doEquipToggle = async () => {
-    if (!item || !owned || busy) return;
+    if (!item || !owned || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       if (equipped) {
@@ -401,12 +408,14 @@ function PreviewSheet({
       onChanged();
       onClose();
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const doBuyShortId = async (specific: ShortIdItem | null) => {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     const kind: ShortIdKind = idKind === 'account' ? 'users' : 'rooms';
     if (kind === 'rooms' && !roomId) {
       Alert.alert('Store', 'Select a room first');
@@ -431,6 +440,7 @@ function PreviewSheet({
       onClose();
       Alert.alert('Store', specific ? `ID ${specific.id} is yours!` : 'Random ID claimed!');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -516,7 +526,8 @@ function PreviewSheet({
           </View>
           <Pressable
             onPress={async () => {
-              if (busy) return;
+              if (busyRef.current) return;
+              busyRef.current = true;
               setBusy(true);
               try {
                 if (item.type === 'roomBackground') await removeRoomBackground(uid, roomId);
@@ -524,6 +535,7 @@ function PreviewSheet({
                 setRoomUsing(false);
                 onChanged();
               } finally {
+                busyRef.current = false;
                 setBusy(false);
               }
             }}
