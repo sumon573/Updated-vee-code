@@ -2391,7 +2391,11 @@ export default function VoiceRoomScreen() {
       // ALWAYS navigate away — even if everything above threw.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       setExitModalOpen(false);
-      router.back();
+      // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack —
+      // router.back() would silently do nothing and strand the user on the
+      // exited room screen. Fall back to home.
+      if (router.canGoBack()) router.back();
+      else router.replace('/home');
     }
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
 
@@ -2414,7 +2418,11 @@ export default function VoiceRoomScreen() {
       role:     myRole,
       ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}) });
     setExitModalOpen(false);
-    router.back();
+    // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack —
+    // router.back() would silently do nothing, leaving the minimize bar
+    // floating over the room screen with no way out. Fall back to home.
+    if (router.canGoBack()) router.back();
+    else router.replace('/home');
   }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, myRole, roomImageUri]);
 
   // BACK BUTTON → MINIMIZE (2026-10-10, Sumon's order): pressing the phone's
