@@ -25,22 +25,46 @@ type GiftNameKey =
   | 'voiceRoom.gifts.giftCrown'
   | 'voiceRoom.gifts.giftFirework';
 
+type GiftCategory = 'classic' | 'premium' | 'luxury';
+
 interface GiftItem {
   id: string;
   emoji: string;
-  nameKey: GiftNameKey;
+  nameKey: string;
   coins: number;
+  category: GiftCategory;
 }
 
+// 2026-10-16 (Sumon): Categorized gifts — Classic, Premium, Luxury.
+// Tabs scroll horizontally, gifts scroll vertically per category.
+const GIFT_CATEGORIES: { id: GiftCategory; label: string }[] = [
+  { id: 'classic', label: 'Classic' },
+  { id: 'premium', label: '👑 Premium' },
+  { id: 'luxury', label: '💎 Luxury' },
+];
+
 const GIFTS: readonly GiftItem[] = [
-  { id: '1', emoji: '💝', nameKey: 'voiceRoom.gifts.giftHeart',    coins: 10   },
-  { id: '2', emoji: '🌹', nameKey: 'voiceRoom.gifts.giftRose',     coins: 25   },
-  { id: '3', emoji: '🎁', nameKey: 'voiceRoom.gifts.giftGift',     coins: 50   },
-  { id: '4', emoji: '💎', nameKey: 'voiceRoom.gifts.giftDiamond',  coins: 100  },
-  { id: '5', emoji: '🏆', nameKey: 'voiceRoom.gifts.giftTrophy',   coins: 200  },
-  { id: '6', emoji: '🚀', nameKey: 'voiceRoom.gifts.giftRocket',   coins: 500  },
-  { id: '7', emoji: '👑', nameKey: 'voiceRoom.gifts.giftCrown',    coins: 1000 },
-  { id: '8', emoji: '🎆', nameKey: 'voiceRoom.gifts.giftFirework', coins: 2000 },
+  // Classic (1-8)
+  { id: '1', emoji: '💝', nameKey: 'voiceRoom.gifts.giftHeart',    coins: 10,   category: 'classic' },
+  { id: '2', emoji: '🌹', nameKey: 'voiceRoom.gifts.giftRose',     coins: 25,   category: 'classic' },
+  { id: '3', emoji: '🎁', nameKey: 'voiceRoom.gifts.giftGift',     coins: 50,   category: 'classic' },
+  { id: '4', emoji: '💎', nameKey: 'voiceRoom.gifts.giftDiamond',  coins: 100,  category: 'classic' },
+  { id: '5', emoji: '🏆', nameKey: 'voiceRoom.gifts.giftTrophy',   coins: 200,  category: 'classic' },
+  { id: '6', emoji: '🚀', nameKey: 'voiceRoom.gifts.giftRocket',   coins: 500,  category: 'classic' },
+  { id: '7', emoji: '👑', nameKey: 'voiceRoom.gifts.giftCrown',    coins: 1000, category: 'classic' },
+  { id: '8', emoji: '🎆', nameKey: 'voiceRoom.gifts.giftFirework', coins: 2000, category: 'classic' },
+  // Premium (9-14)
+  { id: '9',  emoji: '💍', nameKey: 'Diamond Ring',  coins: 5000,  category: 'premium' },
+  { id: '10', emoji: '🏎️', nameKey: 'Sports Car',   coins: 10000, category: 'premium' },
+  { id: '11', emoji: '🛩️', nameKey: 'Private Jet',  coins: 25000, category: 'premium' },
+  { id: '12', emoji: '🛥️', nameKey: 'Yacht',        coins: 50000, category: 'premium' },
+  { id: '13', emoji: '🌟', nameKey: 'Superstar',    coins: 75000, category: 'premium' },
+  { id: '14', emoji: '💫', nameKey: 'Galaxy',       coins: 100000, category: 'premium' },
+  // Luxury (15-18)
+  { id: '15', emoji: '🏰', nameKey: 'Castle',       coins: 200000, category: 'luxury' },
+  { id: '16', emoji: '👑', nameKey: 'Royal Crown',  coins: 500000, category: 'luxury' },
+  { id: '17', emoji: '💠', nameKey: 'Eternal Diamond', coins: 1000000, category: 'luxury' },
+  { id: '18', emoji: '🌌', nameKey: 'Universe',     coins: 2000000, category: 'luxury' },
 ];
 
 export function GiftsModal({
@@ -67,6 +91,8 @@ export function GiftsModal({
   /** 2-step send: user taps a gift to SELECT it (no auto-send), then taps
    *  the Send button and confirms. Prevents accidental wallet deductions. */
   const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
+  // 2026-10-16 (Sumon): Category tabs — horizontal scroll, gifts vertical scroll
+  const [activeCategory, setActiveCategory] = useState<GiftCategory>('classic');
 
   useEffect(() => {
     if (visible) {
@@ -401,9 +427,45 @@ export function GiftsModal({
                 <PremiumLoader size="large" />
               </View>
             )}
+            {/* 2026-10-16 (Sumon): Category tabs — horizontal scroll */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 12, maxHeight: 36 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {GIFT_CATEGORIES.map(cat => {
+                  const isActive = activeCategory === cat.id;
+                  const isPremium = cat.id !== 'classic';
+                  return (
+                    <Pressable key={cat.id} onPress={() => {
+                      setActiveCategory(cat.id);
+                      setSelectedGift(null);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                      style={{
+                        paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18,
+                        backgroundColor: isActive
+                          ? (isPremium ? C.gold : C.primary)
+                          : C.card,
+                        borderWidth: 1,
+                        borderColor: isActive
+                          ? (isPremium ? C.gold : C.primary)
+                          : C.borderFaint,
+                      }}>
+                      <Text style={{
+                        color: isActive ? '#fff' : C.sub,
+                        fontSize: 13, fontWeight: isActive ? '800' : '600',
+                      }}>
+                        {cat.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            {/* Gifts grid — vertical scroll per category */}
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between',
               opacity: sending ? 0.4 : 1 }}>
-              {GIFTS.map(g => {
+              {GIFTS.filter(g => g.category === activeCategory).map(g => {
                 const isSelected = selectedGift?.id === g.id;
                 return (
                   <Pressable key={g.id}
@@ -427,6 +489,7 @@ export function GiftsModal({
                 );
               })}
             </View>
+            </ScrollView>
             {/* Send button — appears after selecting a gift (no one-click send) */}
             {selectedGift && !sending && (
               <Pressable onPress={confirmSend}
