@@ -377,6 +377,47 @@ export function subscribeGiftCounts(
   });
 }
 
+/* ── 2026-10-16 (Sumon): Heal gift counts from transaction history ──
+ * Ensures wallets/{uid}/giftCounts is the PERMANENT server source of truth.
+ * Backfills from transaction history for users whose counts were never
+ * recorded (e.g., gifts received before the counter existed). Runs once —
+ * counts only grow via recordGiftReceivedCount, never overwritten.
+ * This guarantees app updates never lose gift counts (server-sourced). */
+export async function healGiftCounts(uid: string): Promise<void> {
+  if (!uid) return;
+  try {
+    const { get } = await import('firebase/database');
+    // Check if counts already exist — if yes, nothing to heal
+    const countsSnap = await get(ref(database, `wallets/${uid}/giftCounts`));
+    if (countsSnap.exists() && Object.keys(countsSnap.val() || {}).length > 0) {
+      return; // Already have server counts
+    }
+    // Backfill from transaction history
+    const txSnap = await get(ref(database, `wallets/${uid}/transactions`));
+    if (!txSnap.exists()) return;
+    const counts: Record<string, number> = {};
+    txSnap.forEach((child) => {
+      const tx = child.val();
+      if (tx && tx.type === 'gift_received' && typeof tx.giftId === 'string' && tx.giftId.length > 0) {
+        counts[tx.giftId] = (counts[tx.giftId] ?? 0) + 1;
+      }
+    });
+    if (Object.keys(counts).length === 0) return;
+    // Write to server (only if not already present — never overwrite)
+    const { runTransaction } = await import('firebase/database');
+    for (const [giftId, count] of Object.entries(counts)) {
+      const countRef = ref(database, `wallets/${uid}/giftCounts/${giftId}`);
+      await runTransaction(countRef, (cur) => {
+        // Only set if not exists — never overwrite existing counts
+        if (typeof cur === 'number' && cur > 0) return cur;
+        return count;
+      }).catch(() => {});
+    }
+  } catch {
+    // Non-critical — counts will heal on next gift
+  }
+}
+
 async function sendGiftViaFirebase(
   toUid: string,
   giftId: string,
