@@ -114,6 +114,11 @@ export function ErrorFallback({ error, componentStack, resetError }: ErrorFallba
           Don't worry — tap below to recover.
         </Text>
 
+        {/* 2026-10-16 (Sumon): ALWAYS show error cause — no more blind debugging */}
+        <Text style={{ color: '#FF6B6B', fontSize: 12, marginTop: 12, paddingHorizontal: 20, textAlign: 'center' }}>
+          Error: {error.message || 'Unknown'}
+        </Text>
+
         {/* BUG 18 fix: Offer a soft reset (try again) first, then a full restart.
             The soft reset via resetError() works for transient errors and
             doesn't require a full app reload, so more state is preserved. */}
