@@ -430,6 +430,7 @@ async function sendGiftViaFirebase(
   idempotencyKey: string,
   toName?: string,
   toPhotoURL?: string,
+  priceOverride?: number,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
   const { ref, runTransaction, push, set, serverTimestamp, get, increment } = await import('firebase/database');
@@ -438,7 +439,10 @@ async function sendGiftViaFirebase(
   const fromUid = auth.currentUser?.uid;
   if (!fromUid) throw new GiftError('Not authenticated');
 
-  const price = GIFT_PRICES[giftId];
+  // 2026-10-16 (Sumon): PERMANENT — use server-provided price for server-driven gifts.
+  // Falls back to hardcoded GIFT_PRICES for legacy gifts. This enables unlimited
+  // server-driven gifts without app builds.
+  const price = priceOverride ?? GIFT_PRICES[giftId];
   if (!price) throw new GiftError('Invalid gift');
 
   // PLATFORM COMMISSION (2026-10-12): 30% platform fee on gifts.
@@ -757,7 +761,7 @@ export async function sendGift({
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {
-    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL);
+    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price);
     if (fbResult.ok) return fbResult;
   } catch (e) {
     // Firebase fallback also failed — surface the meaningful error.
