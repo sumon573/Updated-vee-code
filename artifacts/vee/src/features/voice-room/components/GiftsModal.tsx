@@ -37,6 +37,7 @@ interface GiftItem {
   category: GiftCategory;
   thumbnailUrl?: string;
   animationUrl?: string;
+  animationType?: string;
 }
 
 // Convert server CatalogGift to local GiftItem
@@ -48,6 +49,8 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
     coins: cg.price,
     category: cg.category,
     thumbnailUrl: cg.thumbnailUrl,
+    animationUrl: cg.animationUrl,
+    animationType: cg.animationType,
     animationUrl: cg.animationUrl,
   };
 }
@@ -366,7 +369,9 @@ export function GiftsModal({
         senderUid: myUid,
         senderName: myName,
         senderAvatar,
-        recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })) });
+        recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
+        animationUrl: g.animationUrl,
+        animationType: g.animationType });
       setTimeout(() => { setSent(null); setSending(false); onClose(); }, 1600);
     } finally {
       // A throw anywhere above (e.g. inside the loop) must never leave the
