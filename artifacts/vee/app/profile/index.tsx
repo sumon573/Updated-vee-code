@@ -217,7 +217,8 @@ function LevelBadge({ level }: { level: number }) {
   // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
   // "Bronze Lv 17" format. Premium gradient kept.
   // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
-  // 2026-10-16 FIX: animations removed (were crashing profile) — static badge.
+  // 2026-10-16 (Sumon): Tier animations — Bronze static, Silver shimmer,
+  // Gold sparkle, Max PREMIUM dazzling. All inside the box only.
   return (
     <View style={{ marginRight: 6, marginBottom: 6 }}>
       <LinearGradient
@@ -229,6 +230,25 @@ function LevelBadge({ level }: { level: number }) {
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden' }}
       >
+        {tier === 'silver' && <ShimmerOverlay speed={2500} opacity={0.4} />}
+        {tier === 'gold' && (
+          <>
+            <ShimmerOverlay speed={1500} opacity={0.6} />
+            <Sparkle delay={0} left={20} top={4} size={3} />
+            <Sparkle delay={500} left={70} top={12} size={4} />
+            <Sparkle delay={900} left={45} top={6} size={3} />
+          </>
+        )}
+        {tier === 'max' && (
+          <>
+            <ShimmerOverlay speed={900} opacity={0.8} />
+            <Sparkle delay={0} left={15} top={3} size={5} color="#FFD700" />
+            <Sparkle delay={300} left={55} top={12} size={4} color="#FFFFFF" />
+            <Sparkle delay={600} left={80} top={5} size={5} color="#FFD700" />
+            <Sparkle delay={200} left={35} top={10} size={3} color="#FFE873" />
+            <Sparkle delay={700} left={65} top={4} size={4} color="#FFD700" />
+          </>
+        )}
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF', zIndex: 1 }} numberOfLines={1}>
           {tier === 'max' ? 'Max' : `${style.label} Lv ${levelInTier}`}
         </Text>
