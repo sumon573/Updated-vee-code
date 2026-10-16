@@ -2533,7 +2533,7 @@ export default function VoiceRoomScreen() {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
-      text: t('voiceRoom.screen.sentGift', { emoji: info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
+      text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
       ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral gift chat message */});
 
     const fly = (toUid: string, toName: string, toAvatar: string | undefined, target: { x: number; y: number } | null) => {
@@ -2544,7 +2544,9 @@ export default function VoiceRoomScreen() {
         giftId: info.giftId,
         emoji: info.emoji,
         coins: info.coins,
-        target });
+        target,
+      animationUrl: info.animationUrl,
+      animationType: info.animationType});
     };
     for (const r of info.recipients) {
       // Broadcast gift event so ALL participants see the animation (2026-10-10)
@@ -2557,7 +2559,9 @@ export default function VoiceRoomScreen() {
         fromAvatar: info.senderAvatar || null,
         toUid: r.uid,
         toName: r.name,
-        toAvatar: r.photoURL || null }).catch(() => {/* non-critical */});
+        toAvatar: r.photoURL || null,
+      animationUrl: info.animationUrl || null,
+      animationType: info.animationType || null }).catch(() => {/* non-critical */});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
