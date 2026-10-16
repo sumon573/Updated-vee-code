@@ -88,11 +88,21 @@ function SectionHeader({ title, count, onPress }: { title: string; count?: numbe
 
 export type LevelTier = 'bronze' | 'silver' | 'gold' | 'max';
 
+// 2026-10-16 (Sumon): PERMANENT — Bronze 1-16 → Silver 1-16 → Gold 1-16 → Max.
+// Level stored on SERVER (users/{uid}/level/xp), never resets on app update.
 export function getLevelTier(level: number): LevelTier {
-  if (level >= 100) return 'max';
-  if (level >= 61) return 'gold';
-  if (level >= 31) return 'silver';
+  if (level >= 49) return 'max';
+  if (level >= 33) return 'gold';
+  if (level >= 17) return 'silver';
   return 'bronze';
+}
+
+/** Get level within tier (1-16) from total level */
+export function getLevelInTier(totalLevel: number): number {
+  if (totalLevel >= 49) return 0; // Max
+  if (totalLevel >= 33) return totalLevel - 32;
+  if (totalLevel >= 17) return totalLevel - 16;
+  return totalLevel;
 }
 
 const TIER_STYLE: Record<LevelTier, { colors: [string, string, string]; label: string; glow: string }> = {
@@ -152,6 +162,7 @@ function MistParticle({ delay, size, left, duration }: { delay: number; size: nu
 
 function LevelBadge({ level }: { level: number }) {
   const tier = getLevelTier(level);
+  const levelInTier = getLevelInTier(level);
   const style = TIER_STYLE[tier];
   // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
   // "Bronze Lv 17" format. Premium gradient kept, mist particles removed
@@ -169,7 +180,7 @@ function LevelBadge({ level }: { level: number }) {
           overflow: 'hidden' }}
       >
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
-          {style.label} Lv {level}
+          {tier === 'max' ? 'Max' : `${style.label} Lv ${levelInTier}`}
         </Text>
       </LinearGradient>
     </View>
@@ -728,16 +739,26 @@ export default function ProfileScreen({
   // ─── Premium Level System (2026-10-12, Sumon concept) ───
   // VERY SLOW progression (Sumon 2026-10-12: "একদম স্লো").
   // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
-  // Level curve (quadratic — each level needs progressively more):
-  //   cumulative XP for level N = 50 * (N-1)^2  (Lv.30 ≈ 42,050 XP, Lv.60 ≈ 174,050, Lv.100 = 490,050)
-  // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
-  const calculateLevel = (): number => {
-    const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);
-    // Invert: N = sqrt(xp / 50), floor, min 1, max 100. 10x slower than before.
-    const level = Math.floor(Math.sqrt(xp / 50)) + 1;
-    return Math.min(100, Math.max(1, level));
-  };
-  const userLevel = calculateLevel();
+  // 2026-10-16 (Sumon): PERMANENT server-stored level.
+  // XP lives at users/{uid}/level/xp — survives app updates, never resets.
+  // Tiers: Bronze 1-16 → Silver 1-16 → Gold 1-16 → Max. Very slow; Gold slowest.
+  const [serverLevelXp, setServerLevelXp] = useState(0);
+  useEffect(() => {
+    if (!displayUid) { setServerLevelXp(0); return; }
+    let cancelled = false;
+    let unsub: (() => void) | null = null;
+    import('@/src/services/levelService').then(({ subscribeLevel }) => {
+      if (cancelled) return;
+      unsub = subscribeLevel(displayUid, (lv) => {
+        if (!cancelled) setServerLevelXp(lv.totalLevel);
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      if (unsub) unsub();
+    };
+  }, [displayUid]);
+  const userLevel = Math.max(1, serverLevelXp);
 
   // NOTE 7 (2026-10-11): demo badges removed — grantedBadges comes from the
   // Firebase subscription above (official/event grants only).
