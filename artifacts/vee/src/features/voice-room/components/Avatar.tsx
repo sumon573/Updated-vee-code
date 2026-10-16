@@ -52,11 +52,14 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
+  // 2026-10-16 (Sumon): SIMPLE ripple for normal users — waves only.
+  // Fancy particles/flowers ONLY for Nobel/equipped ripple users.
+  const isFancy = !!(theme || activeRipple);
   // 14 tiny mist dots — random outward trajectories, fixed per mount (lazy init:
   // useRef's argument would otherwise re-run Array.from + 14 Animated.Value allocs
   // on every render)
   const particlesRef = useRef<MistParticle[] | null>(null);
-  if (particlesRef.current === null) {
+  if (particlesRef.current === null && isFancy) {
     particlesRef.current = Array.from({ length: 14 }, (_, i) => ({
       anim: new Animated.Value(0),
       angle: (i / 14) * Math.PI * 2 + Math.random() * 0.5,
@@ -70,7 +73,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const particles = particlesRef.current;
   // 7 tiny flowers mixed in (same lazy init)
   const flowersRef = useRef<FlowerParticle[] | null>(null);
-  if (flowersRef.current === null) {
+  if (flowersRef.current === null && isFancy) {
     flowersRef.current = Array.from({ length: 7 }, (_, i) => ({
       anim: new Animated.Value(0),
       angle: (i / 7) * Math.PI * 2 + Math.random() * 0.6,
@@ -86,7 +89,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
 
   useEffect(() => {
     const all: Animated.Value[] = [w1, w2, w3,
-      ...particles.map((p) => p.anim), ...flowers.map((f) => f.anim)];
+      ...(particles ? particles.map((p) => p.anim) : []),
+      ...(flowers ? flowers.map((f) => f.anim) : [])];
     if (!visible) { all.forEach((a) => a.setValue(0)); return; }
     const wave = (anim: Animated.Value, delay: number, dur: number) =>
       Animated.loop(Animated.sequence([
@@ -98,8 +102,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       ]));
     const loops: Animated.CompositeAnimation[] = [
       wave(w1, 0, 900), wave(w2, 300, 900), wave(w3, 600, 900),
-      ...particles.map((p) => wave(p.anim, p.delay, p.dur)),
-      ...flowers.map((f) => wave(f.anim, f.delay, f.dur)),
+      ...(particles ? particles.map((p) => wave(p.anim, p.delay, p.dur)) : []),
+      ...(flowers ? flowers.map((f) => wave(f.anim, f.delay, f.dur)) : []),
     ];
     loops.forEach((l) => l.start());
     return () => { loops.forEach((l) => l.stop()); };
@@ -189,8 +193,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       {renderWave(w1, 'w1')}
       {renderWave(w2, 'w2')}
       {renderWave(w3, 'w3')}
-      {particles.map((p, i) => renderMist(p, `m${i}`))}
-      {flowers.map((f, i) => renderFlower(f, `f${i}`))}
+      {particles && particles.map((p, i) => renderMist(p, `m${i}`))}
+      {flowers && flowers.map((f, i) => renderFlower(f, `f${i}`))}
     </View>
   );
 }
