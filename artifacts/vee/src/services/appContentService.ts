@@ -27,7 +27,7 @@
  */
 
 import { ref, onValue, off, get } from 'firebase/database';
-import { rtdb } from '@/src/services/firebase';
+import { database } from '@/src/config/firebase';
 
 export interface AppContent {
   id: string;
@@ -153,7 +153,7 @@ export function contentTargetsUser(content: AppContent, uid: string, userLevel?:
  */
 export async function fetchAppContent(): Promise<AppContent[]> {
   try {
-    const snap = await get(ref(rtdb, CONTENT_PATH));
+    const snap = await get(ref(database, CONTENT_PATH));
     if (!snap.exists()) {
       cachedContent = [];
       return [];
@@ -199,7 +199,7 @@ export function subscribeAppContent(callback: (content: AppContent[]) => void): 
     callback(cachedContent);
   }
 
-  const contentRef = ref(rtdb, CONTENT_PATH);
+  const contentRef = ref(database, CONTENT_PATH);
   const handler = (snap: any) => {
     const items: AppContent[] = [];
     if (snap.exists()) {
