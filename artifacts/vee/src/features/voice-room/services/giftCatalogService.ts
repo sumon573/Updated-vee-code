@@ -1,0 +1,150 @@
+/**
+ * 2026-10-16 (Sumon): Server-driven gift catalog.
+ * Gifts come from RTDB `gift_catalog/{giftId}` — no app build needed to add/update gifts.
+ * Structure per gift:
+ *   id, name, price, category (classic|premium|luxury), thumbnailUrl,
+ *   animationUrl (optional video), animationType (video|image|none),
+ *   sortOrder, active
+ */
+
+import { ref, onValue, off, get } from 'firebase/database';
+import { rtdb } from '@/src/services/firebase';
+
+export type GiftCategory = 'classic' | 'premium' | 'luxury';
+
+export interface CatalogGift {
+  id: string;
+  name: string;
+  price: number;
+  category: GiftCategory;
+  thumbnailUrl: string;
+  animationUrl?: string;
+  animationType?: 'video' | 'image' | 'none';
+  sortOrder: number;
+  active: boolean;
+}
+
+const CATALOG_PATH = 'gift_catalog';
+
+// In-memory cache
+let cachedGifts: CatalogGift[] | null = null;
+let listeners: Array<(gifts: CatalogGift[]) => void> = [];
+
+function normalizeGift(id: string, data: any): CatalogGift | null {
+  if (!data || typeof data !== 'object') return null;
+  // Skip inactive gifts
+  if (data.active === false) return null;
+
+  const category = (data.category || 'classic') as GiftCategory;
+  const validCategories: GiftCategory[] = ['classic', 'premium', 'luxury'];
+  const safeCategory = validCategories.includes(category) ? category : 'classic';
+
+  return {
+    id,
+    name: String(data.name || id),
+    price: Number(data.price) || 0,
+    category: safeCategory,
+    thumbnailUrl: String(data.thumbnailUrl || ''),
+    animationUrl: data.animationUrl ? String(data.animationUrl) : undefined,
+    animationType: data.animationType || 'none',
+    sortOrder: Number(data.sortOrder) || 0,
+    active: true,
+  };
+}
+
+function sortGifts(gifts: CatalogGift[]): CatalogGift[] {
+  return [...gifts].sort((a, b) => {
+    // First by category order, then by sortOrder, then by price
+    const catOrder: Record<GiftCategory, number> = { classic: 0, premium: 1, luxury: 2 };
+    if (catOrder[a.category] !== catOrder[b.category]) {
+      return catOrder[a.category] - catOrder[b.category];
+    }
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.price - b.price;
+  });
+}
+
+/**
+ * Fetch gift catalog once from server.
+ */
+export async function fetchGiftCatalog(): Promise<CatalogGift[]> {
+  try {
+    const snap = await get(ref(rtdb, CATALOG_PATH));
+    if (!snap.exists()) {
+      cachedGifts = [];
+      return [];
+    }
+    const data = snap.val();
+    const gifts: CatalogGift[] = [];
+    for (const [id, giftData] of Object.entries(data)) {
+      const gift = normalizeGift(id, giftData);
+      if (gift) gifts.push(gift);
+    }
+    cachedGifts = sortGifts(gifts);
+    return cachedGifts;
+  } catch (e) {
+    console.warn('[giftCatalog] fetch failed:', e);
+    return cachedGifts || [];
+  }
+}
+
+/**
+ * Subscribe to gift catalog changes (real-time).
+ * Returns unsubscribe function.
+ */
+export function subscribeGiftCatalog(callback: (gifts: CatalogGift[]) => void): () => void {
+  listeners.push(callback);
+
+  // Send cached immediately if available
+  if (cachedGifts) {
+    callback(cachedGifts);
+  }
+
+  const catalogRef = ref(rtdb, CATALOG_PATH);
+  const handler = (snap: any) => {
+    const gifts: CatalogGift[] = [];
+    if (snap.exists()) {
+      const data = snap.val();
+      for (const [id, giftData] of Object.entries(data)) {
+        const gift = normalizeGift(id, giftData);
+        if (gift) gifts.push(gift);
+      }
+    }
+    cachedGifts = sortGifts(gifts);
+    listeners.forEach(l => {
+      try { l(cachedGifts!); } catch (e) { console.warn('[giftCatalog] listener error:', e); }
+    });
+  };
+
+  onValue(catalogRef, handler);
+
+  return () => {
+    off(catalogRef, 'value', handler);
+    listeners = listeners.filter(l => l !== callback);
+  };
+}
+
+/**
+ * Get gifts by category from cache (or fetch if needed).
+ */
+export async function getGiftsByCategory(category: GiftCategory): Promise<CatalogGift[]> {
+  const gifts = cachedGifts || await fetchGiftCatalog();
+  return gifts.filter(g => g.category === category);
+}
+
+/**
+ * Get price for a gift ID (for wallet transactions).
+ * Falls back to server catalog; returns 0 if not found.
+ */
+export async function getGiftPrice(giftId: string): Promise<number> {
+  const gifts = cachedGifts || await fetchGiftCatalog();
+  const gift = gifts.find(g => g.id === giftId);
+  return gift ? gift.price : 0;
+}
+
+/**
+ * Clear cache (for testing).
+ */
+export function clearGiftCatalogCache(): void {
+  cachedGifts = null;
+}
