@@ -387,11 +387,9 @@ export async function healGiftCounts(uid: string): Promise<void> {
   if (!uid) return;
   try {
     const { get } = await import('firebase/database');
-    // Check if counts already exist — if yes, nothing to heal
+    // 2026-10-16 (Sumon): Check per-gift — don't skip if SOME counts exist.
     const countsSnap = await get(ref(database, `wallets/${uid}/giftCounts`));
-    if (countsSnap.exists() && Object.keys(countsSnap.val() || {}).length > 0) {
-      return; // Already have server counts
-    }
+    const existing: Record<string, number> = countsSnap.exists() ? (countsSnap.val() || {}) : {};
     // Backfill from transaction history
     const txSnap = await get(ref(database, `wallets/${uid}/transactions`));
     if (!txSnap.exists()) return;
@@ -403,9 +401,10 @@ export async function healGiftCounts(uid: string): Promise<void> {
       }
     });
     if (Object.keys(counts).length === 0) return;
-    // Write to server (only if not already present — never overwrite)
+    // Write to server — only for gifts MISSING from server (never overwrite)
     const { runTransaction } = await import('firebase/database');
     for (const [giftId, count] of Object.entries(counts)) {
+      if (typeof existing[giftId] === 'number' && existing[giftId] > 0) continue;
       const countRef = ref(database, `wallets/${uid}/giftCounts/${giftId}`);
       await runTransaction(countRef, (cur) => {
         // Only set if not exists — never overwrite existing counts
