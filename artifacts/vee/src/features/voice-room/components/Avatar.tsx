@@ -61,6 +61,24 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const isFancy = !!(theme || activeRipple);
   // 2026-10-16 (Sumon): Per-rank progression — higher rank = more beautiful, more shimmery.
   const rankIdx = nobleRankIndex ?? 0;
+  // 2026-10-16 (Sumon): DISTINCT effect behavior per rank — each type moves differently.
+  const effectType = theme?.rippleEffect ?? null;
+  const getEffectConfig = () => {
+    switch (effectType) {
+      case 'leaves': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 1.0, durMul: 1.2 }; // drift outward
+      case 'droplets': return { angleBase: -Math.PI / 2, angleVar: 0.6, distMul: 0.9, durMul: 0.9 }; // rise up
+      case 'snow': return { angleBase: Math.PI / 2, angleVar: 0.4, distMul: 0.7, durMul: 1.4 }; // fall down gently
+      case 'stars': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 0.3, durMul: 0.7 }; // twinkle in place
+      case 'petals': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 0.8, durMul: 1.1 }; // float
+      case 'flames': return { angleBase: -Math.PI / 2, angleVar: 0.5, distMul: 1.1, durMul: 0.7 }; // rise fast
+      case 'coins': return { angleBase: -Math.PI / 2, angleVar: 0.8, distMul: 1.0, durMul: 1.0 }; // spin up
+      case 'crowns': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 0.4, durMul: 0.8 }; // glow pulse
+      case 'sparks': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 1.3, durMul: 0.5 }; // explode fast
+      case 'diamonds': return { angleBase: 0, angleVar: Math.PI * 2, distMul: 0.5, durMul: 0.6 }; // shine
+      default: return { angleBase: 0, angleVar: Math.PI * 2, distMul: 1.0, durMul: 1.0 };
+    }
+  };
+  const effectCfg = getEffectConfig();
   const particleCount = isFancy ? 10 + rankIdx : 0;  // Knight=10, SSKing=19
   const flowerCount = isFancy ? 5 + Math.floor(rankIdx / 2) : 0;  // Knight=5, SSKing=9
   const waveCount = isFancy ? 2 + Math.floor(rankIdx / 3) : 2;  // Knight=2, King+=4
@@ -72,9 +90,9 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   if (particlesRef.current === null && isFancy) {
     particlesRef.current = Array.from({ length: particleCount }, (_, i) => ({
       anim: new Animated.Value(0),
-      angle: (i / 14) * Math.PI * 2 + Math.random() * 0.5,
-      dist: size * (0.62 + Math.random() * 0.72),
-      dur: (650 + Math.random() * 450) / speedBoost,
+      angle: effectCfg.angleBase + (i / particleCount) * effectCfg.angleVar + Math.random() * 0.3,
+      dist: size * (0.62 + Math.random() * 0.72) * effectCfg.distMul,
+      dur: ((650 + Math.random() * 450) / speedBoost) * effectCfg.durMul,
       delay: (i / 14) * 700,
       dotSize: 4 + Math.random() * 5,
       color: mistColors[i % mistColors.length],
