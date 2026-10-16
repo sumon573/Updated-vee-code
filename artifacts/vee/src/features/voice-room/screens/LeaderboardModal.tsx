@@ -196,8 +196,12 @@ export function LeaderboardModal({
   /* Rooms ranked by REAL live count. Top Live = genuinely occupied rooms only,
      so the LIVE badge never shows on an empty room (Sumon 2026-10-16). */
   const rankedRooms = useMemo(() => {
+    // 2026-10-16 (Sumon): Top Rooms = ONLY rooms with real members.
+    // Empty rooms (0 members) are not "top" — filter them out so the
+    // leaderboard is always REAL, never showing fake/empty rankings.
     return rooms
       .map((r) => ({ ...r, realCount: liveCounts[r.id] ?? r.liveCount ?? r.memberCount ?? 0 }))
+      .filter((r) => r.realCount > 0)
       .sort((a, b) => b.realCount - a.realCount)
       .slice(0, 30);
   }, [rooms, liveCounts]);
