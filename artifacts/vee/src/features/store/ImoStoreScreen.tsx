@@ -35,6 +35,7 @@ import {
   getOwnedItems, getEquippedItem, purchaseStoreItem,
   equipStoreItem, unequipStoreItem,
   purchaseRoomStoreItem, getMyOwnedRooms,
+  getRoomStoreDecorState, removeRoomBackground, removeRoomMicDecor,
   isExpired,
   type OwnedStoreItem, type EquippedItem, type OwnedRoom,
 } from './storeService';
@@ -173,16 +174,20 @@ function ShortIdCard({
         marginRight: 10, alignItems: 'center',
       }}
     >
-      <View style={{
-        backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 14,
-        paddingVertical: 9, borderWidth: 2, borderColor: C.gold,
-        shadowColor: C.gold, shadowOpacity: 0.4, shadowRadius: 6,
-        shadowOffset: { width: 0, height: 2 },
-      }}>
-        <Text style={{ color: C.gold, fontSize: 16, fontWeight: '900', letterSpacing: 1 }}>
-          ✨{id}✨
-        </Text>
-      </View>
+      {id === '🎲' ? (
+        <Text style={{ fontSize: 40 }}>🎲</Text>
+      ) : (
+        <View style={{
+          backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 14,
+          paddingVertical: 9, borderWidth: 2, borderColor: C.gold,
+          shadowColor: C.gold, shadowOpacity: 0.4, shadowRadius: 6,
+          shadowOffset: { width: 0, height: 2 },
+        }}>
+          <Text style={{ color: C.gold, fontSize: 16, fontWeight: '900', letterSpacing: 1 }}>
+            ✨{id}✨
+          </Text>
+        </View>
+      )}
       <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8 }} numberOfLines={1}>
         {label}
       </Text>
@@ -272,6 +277,8 @@ function PreviewSheet({
   const [owned, setOwned] = useState<OwnedStoreItem | null>(null);
   const [equipped, setEquipped] = useState<EquippedItem | null>(null);
   const [idTaken, setIdTaken] = useState<boolean | null>(null);
+  // 2026-10-16 verification fix: room-item Using state per selected room.
+  const [roomUsing, setRoomUsing] = useState(false);
 
   const item: StoreCatalogItem | null = preview?.kind === 'catalog' ? preview.item : null;
   const isRoomItem = !!item && (item.type === 'roomBackground' || item.type === 'micDecor');
@@ -319,6 +326,26 @@ function PreviewSheet({
     })();
     return () => { cancelled = true; };
   }, [preview, uid]);
+
+  // 2026-10-16 verification fix: refresh Using state when the picked room changes.
+  useEffect(() => {
+    if (!preview || preview.kind !== 'catalog' || !isRoomItem || !roomId) {
+      setRoomUsing(false);
+      return;
+    }
+    const it = (preview as { item: StoreCatalogItem }).item;
+    let cancelled = false;
+    (async () => {
+      const st = await getRoomStoreDecorState(roomId);
+      if (cancelled) return;
+      setRoomUsing(
+        it.type === 'roomBackground'
+          ? st.backgroundItemId === it.id
+          : st.micDecorItemId === it.id,
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [preview, roomId, isRoomItem]);
 
   if (!preview) return null;
 
@@ -452,8 +479,45 @@ function PreviewSheet({
         </Pressable>
       );
     }
-    // Room background owned state: node IS the equip — show Using/Remove
-    // (handled by parent refresh; buy button hidden when already set)
+    // 2026-10-16 verification fix: room item already active on the picked
+    // room → show Using + Remove instead of the buy button.
+    if (preview.kind === 'catalog' && item && isRoomItem && roomUsing) {
+      return (
+        <>
+          <RoomAndKindPicker
+            idKind="room"
+            setIdKind={setIdKind}
+            myRooms={myRooms}
+            roomId={roomId}
+            setRoomId={setRoomId}
+            showKindToggle={false}
+          />
+          <View style={{
+            backgroundColor: C.green, borderRadius: 16,
+            paddingVertical: 15, alignItems: 'center', marginTop: 14,
+          }}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>✓ Using</Text>
+          </View>
+          <Pressable
+            onPress={async () => {
+              if (busy) return;
+              setBusy(true);
+              try {
+                if (item.type === 'roomBackground') await removeRoomBackground(uid, roomId);
+                else await removeRoomMicDecor(uid, roomId);
+                setRoomUsing(false);
+                onChanged();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            style={{ paddingVertical: 12, alignItems: 'center', marginTop: 4 }}
+          >
+            <Text style={{ color: '#FF3B30', fontSize: 14, fontWeight: '700' }}>Remove</Text>
+          </Pressable>
+        </>
+      );
+    }
     const price = preview.kind === 'catalog' && item
       ? item.price
       : preview.kind === 'shortId'
