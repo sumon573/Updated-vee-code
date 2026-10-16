@@ -415,7 +415,26 @@ export default function DecorationScreen() {
                 shadowOffset: { width: 0, height: 4 },
                 elevation: isActive ? 3 : 0 }}
             >
-              <Text style={{ fontSize: 14, marginRight: 6 }}>{t.icon}</Text>
+              {t.key === 'frames' ? (
+                <View style={{
+                  width: 28, height: 28, borderRadius: 14, marginRight: 7,
+                  backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 1.5, borderColor: '#007AFF',
+                }}>
+                  <View style={{
+                    width: 16, height: 16, borderRadius: 3,
+                    borderWidth: 2, borderColor: '#007AFF',
+                    backgroundColor: '#FFFFFF',
+                  }}>
+                    <View style={{
+                      position: 'absolute', top: 2, left: 2, right: 2, bottom: 2,
+                      backgroundColor: '#E3F2FD', borderRadius: 1,
+                    }} />
+                  </View>
+                </View>
+              ) : (
+                <Text style={{ fontSize: 14, marginRight: 6 }}>{t.icon}</Text>
+              )}
               <Text style={{ fontSize: 14, fontWeight: isActive ? '800' : '600', color: isActive ? '#fff' : C.text }}>
                 {t.label}
               </Text>
