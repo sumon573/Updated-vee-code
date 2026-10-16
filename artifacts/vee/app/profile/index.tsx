@@ -826,15 +826,19 @@ export default function ProfileScreen({
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
                     // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
+                    // 2026-10-16 (Sumon): Nobel frames have rank name + crown ON TOP,
+                    // so the circle sits 120px below image center (1600px design).
+                    // Shift up 8.25px so the CIRCLE aligns with the DP.
                     const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                     const frameSize = isNobleFrame ? 110 : 92;
+                    const nobleOffsetY = isNobleFrame ? -8.25 : 0;
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
                         style={{
                           position: 'absolute',
                           width: frameSize, height: frameSize,
-                          top: (92 - frameSize) / 2,
+                          top: (92 - frameSize) / 2 + nobleOffsetY,
                           left: (92 - frameSize) / 2,
                         }}
                         resizeMode="contain"
