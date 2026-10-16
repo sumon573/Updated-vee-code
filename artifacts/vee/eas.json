@@ -11,7 +11,10 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug",
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
+        "abiFilters": [
+          "arm64-v8a"
+        ]
       },
       "ios": {
         "simulator": true
@@ -24,7 +27,10 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
+        "abiFilters": [
+          "arm64-v8a"
+        ]
       },
       "ios": {
         "simulator": false
@@ -38,7 +44,10 @@
       "distribution": "store",
       "android": {
         "buildType": "app-bundle",
-        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b",
+        "abiFilters": [
+          "arm64-v8a"
+        ]
       },
       "ios": {
         "simulator": false
