@@ -360,6 +360,41 @@ export default function DecorationScreen() {
             : t.key === 'nameplates' ? nameplates.length
             : t.key === 'ripples' ? ripples.length
             : t.key === 'entryfx' ? entryEffects.length : 0;
+          // 2026-10-16 (Sumon): Nobel tab — his reference design, polished:
+          // orange circle with white crown+diamond glyph + "Noble" on white.
+          if (t.key === 'nobel') {
+            return (
+              <Pressable
+                key={t.key}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTab(t.key); }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  paddingHorizontal: 14, paddingVertical: 7, marginRight: 8,
+                  borderRadius: 20,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: isActive ? 2 : 1,
+                  borderColor: isActive ? C.gold : C.border,
+                  shadowColor: isActive ? C.gold : '#000',
+                  shadowOpacity: isActive ? 0.35 : 0.06,
+                  shadowRadius: isActive ? 10 : 6,
+                  shadowOffset: { width: 0, height: isActive ? 4 : 2 },
+                  elevation: isActive ? 4 : 2 }}
+              >
+                <View style={{
+                  width: 34, height: 34, borderRadius: 17, backgroundColor: '#FF9800',
+                  alignItems: 'center', justifyContent: 'center', marginRight: 9,
+                  shadowColor: '#FF9800', shadowOpacity: 0.4, shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 2 },
+                }}>
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', marginTop: -2 }}>♛</Text>
+                  <Text style={{ color: '#fff', fontSize: 8, marginTop: -4 }}>◆</Text>
+                </View>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#111111' }}>
+                  Noble
+                </Text>
+              </Pressable>
+            );
+          }
           return (
             <Pressable
               key={t.key}
@@ -381,7 +416,7 @@ export default function DecorationScreen() {
               <Text style={{ fontSize: 14, fontWeight: isActive ? '800' : '600', color: isActive ? '#fff' : C.text }}>
                 {t.label}
               </Text>
-              {t.key !== 'nobel' && count > 0 && (
+              {count > 0 && (
                 <View style={{
                   marginLeft: 6, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2,
                   backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : C.goldBg }}>
