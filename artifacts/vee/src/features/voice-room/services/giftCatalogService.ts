@@ -8,7 +8,7 @@
  */
 
 import { ref, onValue, off, get } from 'firebase/database';
-import { rtdb } from '@/src/services/firebase';
+import { database } from '@/src/config/firebase';
 
 export type GiftCategory = string;
 // Known categories (server can add more without code change)
@@ -82,7 +82,7 @@ function sortGifts(gifts: CatalogGift[]): CatalogGift[] {
  */
 export async function fetchGiftCatalog(): Promise<CatalogGift[]> {
   try {
-    const snap = await get(ref(rtdb, CATALOG_PATH));
+    const snap = await get(ref(database, CATALOG_PATH));
     if (!snap.exists()) {
       cachedGifts = [];
       return [];
@@ -113,7 +113,7 @@ export function subscribeGiftCatalog(callback: (gifts: CatalogGift[]) => void): 
     callback(cachedGifts);
   }
 
-  const catalogRef = ref(rtdb, CATALOG_PATH);
+  const catalogRef = ref(database, CATALOG_PATH);
   const handler = (snap: any) => {
     const gifts: CatalogGift[] = [];
     if (snap.exists()) {
