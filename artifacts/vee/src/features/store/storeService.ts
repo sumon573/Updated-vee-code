@@ -25,7 +25,7 @@
  * on grant. Expired items cannot be equipped.
  */
 
-import { ref, get, set, remove } from 'firebase/database';
+import { ref, get, set, remove, runTransaction } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { debitOwnWallet, InsufficientFundsError } from '@/src/features/wallet/walletService';
 import type { StoreCatalogItem, StoreItemType } from './storeCatalog';
@@ -68,6 +68,22 @@ const ACTIVE_NODE: Record<string, string> = {
 
 /** Types whose active node stores a plain string id (existing systems). */
 const STRING_ACTIVE_TYPES = new Set(['avatarFrame', 'entryEffect', 'soundRipple']);
+
+/**
+ * Refund safety net (2026-10-16 deep verification): if a grant write fails
+ * AFTER a successful debit, credit the diamonds back so the user is never
+ * charged without receiving the item. Best-effort — never throws.
+ */
+async function refundOnGrantFailure(uid: string, amount: number): Promise<void> {
+  try {
+    await runTransaction(ref(database, `wallets/${uid}/balance`), (cur: any) => {
+      const n = typeof cur === 'number' ? cur : 0;
+      return n + amount;
+    });
+  } catch {
+    // best-effort only
+  }
+}
 
 export function isExpired(item: { expiresAt?: number } | null | undefined): boolean {
   if (!item || !item.expiresAt) return false;
@@ -198,7 +214,12 @@ export async function purchaseStoreItem(
       }
       return { success: false, error: 'Payment failed. Try again.' };
     }
-    await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord(item));
+    try {
+      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord(item));
+    } catch {
+      await refundOnGrantFailure(uid, item.price);
+      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
+    }
     return { success: true };
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };
@@ -352,34 +373,40 @@ export async function purchaseRoomStoreItem(
     }
     const expiresAt = item.validityDays > 0 ? Date.now() + item.validityDays * 86400_000 : undefined;
     const validity: 'permanent' | number = item.validityDays > 0 ? item.validityDays : 'permanent';
-    if (item.type === 'roomBackground') {
-      await set(ref(database, `rooms/${roomId}/storeBackground`), {
-        itemId: item.id,
-        name: item.name,
-        imageUrl: item.imageUrl,
-        purchasedAt: Date.now(),
-        validity,
-        ...(expiresAt ? { expiresAt } : {}),
-      });
-    } else if (item.type === 'micDecor') {
-      const record = {
-        id: item.id,
-        name: item.name,
-        icon: item.imageUrl,
-        obtainedAt: Date.now(),
-        validity,
-        source: 'store',
-        ...(expiresAt ? { expiresAt } : {}),
-      };
-      await set(ref(database, `rooms/${roomId}/micDecors/${item.id}`), record);
-      await set(ref(database, `rooms/${roomId}/activeMicDecor`), {
-        itemId: item.id,
-        imageUrl: item.imageUrl,
-        name: item.name,
-        ...(expiresAt ? { expiresAt } : {}),
-      });
-    } else {
-      return { success: false, error: 'Unknown room item type' };
+    try {
+      if (item.type === 'roomBackground') {
+        await set(ref(database, `rooms/${roomId}/storeBackground`), {
+          itemId: item.id,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          purchasedAt: Date.now(),
+          validity,
+          ...(expiresAt ? { expiresAt } : {}),
+        });
+      } else if (item.type === 'micDecor') {
+        const record = {
+          id: item.id,
+          name: item.name,
+          icon: item.imageUrl,
+          obtainedAt: Date.now(),
+          validity,
+          source: 'store',
+          ...(expiresAt ? { expiresAt } : {}),
+        };
+        await set(ref(database, `rooms/${roomId}/micDecors/${item.id}`), record);
+        await set(ref(database, `rooms/${roomId}/activeMicDecor`), {
+          itemId: item.id,
+          imageUrl: item.imageUrl,
+          name: item.name,
+          ...(expiresAt ? { expiresAt } : {}),
+        });
+      } else {
+        return { success: false, error: 'Unknown room item type' };
+      }
+    } catch {
+      // Charged but grant failed → refund so the user never loses diamonds.
+      await refundOnGrantFailure(uid, item.price);
+      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
     }
     return { success: true };
   } catch {
