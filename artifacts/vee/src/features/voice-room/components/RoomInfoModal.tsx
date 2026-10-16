@@ -345,7 +345,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               </View>
             </>
           )}
-          {isOwner && admins.length > 0 && (
+          {admins.length > 0 && (
             <>
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
                 marginBottom: 8, textTransform: 'uppercase' }}>
@@ -357,8 +357,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               </View>
             </>
           )}
-          {/* 2026-10-16 (Sumon): ONLY owner sees member list. Regular members/admins don't. */}
-          {isOwner && regular.length > 0 && (
+          {regular.length > 0 && (
             <>
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
                 marginBottom: 8, textTransform: 'uppercase' }}>
