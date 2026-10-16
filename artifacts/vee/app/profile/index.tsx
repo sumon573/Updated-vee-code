@@ -905,15 +905,18 @@ export default function ProfileScreen({
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
                     // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
+                    // 2026-10-16 (Sumon): Nobel frames have COUNT text + crown ON TOP.
+                    // Shift DOWN 4px so the text is fully visible (not cut by cover).
                     const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                     const frameSize = isNobleFrame ? 110 : 92;
+                    const nobleOffsetY = isNobleFrame ? 4 : 0;
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
                         style={{
                           position: 'absolute',
                           width: frameSize, height: frameSize,
-                          top: (92 - frameSize) / 2,
+                          top: (92 - frameSize) / 2 + nobleOffsetY,
                           left: (92 - frameSize) / 2,
                         }}
                         resizeMode="contain"
