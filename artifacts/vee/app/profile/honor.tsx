@@ -23,6 +23,7 @@
  * Light mode only. Errors show their actual cause.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { checkNobleMaintenance } from '@/src/services/nobleService';
 import { View, Text, ScrollView, Pressable, Modal, Image, Alert, Animated } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -57,6 +58,14 @@ export default function HonorScreen() {
   // Whose honor are we viewing? Defaults to own profile.
   const viewUid = typeof params.uid === 'string' && params.uid ? params.uid : user?.uid;
   const isOwn = !!user?.uid && viewUid === user.uid;
+
+  // 2026-10-16 (Sumon): Enforce 30-day Nobel maintenance on Honor load.
+  useEffect(() => {
+    if (!isOwn || !user?.uid) return;
+    void (async () => {
+      try { await checkNobleMaintenance(user.uid); } catch {}
+    })();
+  }, [isOwn, user?.uid]);
 
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [badges, setBadges] = useState<GrantedBadge[]>([]);
