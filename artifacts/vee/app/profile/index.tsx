@@ -176,7 +176,7 @@ function ShimmerOverlay({ speed = 2500, opacity = 0.6 }: { speed?: number; opaci
       style={{
         position: 'absolute', top: 0, bottom: 0, width: 40,
         backgroundColor: '#FFFFFF', opacity,
-        transform: [{ translateX: shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-60, 140] }) }),
+        transform: [{ translateX: shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-60, 140] }) },
           { skewX: '-20deg' }],
       }}
     />
