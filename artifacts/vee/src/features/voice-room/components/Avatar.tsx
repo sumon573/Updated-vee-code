@@ -61,8 +61,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       anim: new Animated.Value(0),
       angle: (i / 14) * Math.PI * 2 + Math.random() * 0.5,
       dist: size * (0.62 + Math.random() * 0.72),
-      dur: 1300 + Math.random() * 900,
-      delay: (i / 14) * 1400,
+      dur: 650 + Math.random() * 450,
+      delay: (i / 14) * 700,
       dotSize: 4 + Math.random() * 5,
       color: mistColors[i % mistColors.length],
     }));
@@ -75,8 +75,8 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
       anim: new Animated.Value(0),
       angle: (i / 7) * Math.PI * 2 + Math.random() * 0.6,
       dist: size * (0.66 + Math.random() * 0.78),
-      dur: 1500 + Math.random() * 1000,
-      delay: (i / 7) * 1600,
+      dur: 750 + Math.random() * 500,
+      delay: (i / 7) * 800,
       fSize: 10 + Math.random() * 5,
       char: particleChars[i % particleChars.length],
       spin: Math.random() > 0.5 ? 1 : -1,
@@ -97,7 +97,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
         Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
       ]));
     const loops: Animated.CompositeAnimation[] = [
-      wave(w1, 0, 1800), wave(w2, 600, 1800), wave(w3, 1200, 1800),
+      wave(w1, 0, 900), wave(w2, 300, 900), wave(w3, 600, 900),
       ...particles.map((p) => wave(p.anim, p.delay, p.dur)),
       ...flowers.map((f) => wave(f.anim, f.delay, f.dur)),
     ];
