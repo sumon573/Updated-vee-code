@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, View, Platform, Image } from 'react-native';
-import { router } from 'expo-router';
+import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,7 @@ import {
 } from '@/src/store/minimizedRoom';
 import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
 import { removeSeat, leaveAudience, refreshSeatHeartbeat } from '@/src/features/voice-room/services/firebaseRoomService';
+import { clearPersistedActiveRoom } from '@/src/store/activeRoom';
 
 const C = {
   bg: '#0F0A1E',
@@ -27,6 +28,10 @@ const C = {
 
 export default function MinimizedRoomBar() {
   const [room, setRoom] = useState<MinimizedRoom>(getMinimizedRoom());
+  // 2026-10-16 (Sumon): detect the stuck case — bar floating over the
+  // exited room screen after a cold-start auto-return (no back stack).
+  const pathname = usePathname();
+  const params = useGlobalSearchParams();
   const slideAnim = useRef(new Animated.Value(100)).current;
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -204,8 +209,18 @@ export default function MinimizedRoomBar() {
     } else {
       leaveAudience(room.id, room.myUid).catch(() => {});
     }
+    // 2026-10-16 (Sumon): explicit close — clear the persisted active room
+    // so a later cold start does NOT auto-return to a room the user exited.
+    clearPersistedActiveRoom().catch(() => {});
     // 3. Clear store
     setMinimizedRoom(null);
+    // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack, so the
+    // bar can end up floating OVER the exited room screen — X then hides the
+    // bar but strands the user staring at a dead room ("exit হয় না").
+    // In that stuck case, navigate home.
+    if (pathname === '/voice-room' && (params as any)?.roomId === room.id) {
+      router.replace('/home');
+    }
   };
 
   // Mic indicator color reflects the LIVE muted state (toggleable while minimized)
