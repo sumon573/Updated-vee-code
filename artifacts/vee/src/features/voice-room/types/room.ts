@@ -66,6 +66,9 @@ export type GiftSentInfo = {
   senderName: string;
   senderAvatar?: string;
   recipients: Array<{ uid: string; name: string; photoURL?: string }>;
+  // 2026-10-16 (Sumon): PERMANENT — server-driven gift animations (video/GIF)
+  animationUrl?: string;
+  animationType?: string;
 };
 
 export type BlockRecord = {
