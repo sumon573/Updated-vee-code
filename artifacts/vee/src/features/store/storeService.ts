@@ -75,7 +75,9 @@ const STRING_ACTIVE_TYPES = new Set(['avatarFrame', 'entryEffect', 'soundRipple'
  * the item from the server catalog and use the SERVER price. Returns null
  * if the item doesn't exist or is inactive.
  */
-async function getServerCatalogItem(itemId: string): Promise<{ price: number; validityDays: number; type: string } | null> {
+async function getServerCatalogItem(itemId: string): Promise<{
+  price: number; validityDays: number; type: string; name: string; imageUrl: string;
+} | null> {
   try {
     const snap = await get(ref(database, `store_catalog/${itemId}`));
     if (!snap.exists()) return null;
@@ -87,6 +89,10 @@ async function getServerCatalogItem(itemId: string): Promise<{ price: number; va
       price,
       validityDays: typeof v.validityDays === 'number' ? v.validityDays : 0,
       type: typeof v.type === 'string' ? v.type : '',
+      // SECURITY: name/imageUrl also come from the server — a hacked client
+      // could otherwise grant itself an arbitrary image.
+      name: typeof v.name === 'string' ? v.name : '',
+      imageUrl: typeof v.imageUrl === 'string' ? v.imageUrl : '',
     };
   } catch {
     return null;
@@ -246,7 +252,13 @@ export async function purchaseStoreItem(
       return { success: false, error: 'Payment failed. Try again.' };
     }
     try {
-      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord({ ...item, price, validityDays: serverItem.validityDays }));
+      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord({
+        ...item,
+        price,
+        validityDays: serverItem.validityDays,
+        name: serverItem.name || item.name,
+        imageUrl: serverItem.imageUrl || item.imageUrl,
+      }));
     } catch {
       await refundOnGrantFailure(uid, price);
       return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
@@ -398,6 +410,8 @@ export async function purchaseRoomStoreItem(
   if (!serverItem) return { success: false, error: 'Item not available' };
   const price = serverItem.price;
   const validityDays = serverItem.validityDays;
+  const srvName = serverItem.name || item.name;
+  const srvImageUrl = serverItem.imageUrl || item.imageUrl;
   try {
     try {
       await debitOwnWallet(uid, price);
@@ -413,8 +427,8 @@ export async function purchaseRoomStoreItem(
       if (item.type === 'roomBackground') {
         await set(ref(database, `rooms/${roomId}/storeBackground`), {
           itemId: item.id,
-          name: item.name,
-          imageUrl: item.imageUrl,
+          name: srvName,
+          imageUrl: srvImageUrl,
           purchasedAt: Date.now(),
           validity,
           ...(expiresAt ? { expiresAt } : {}),
@@ -422,8 +436,8 @@ export async function purchaseRoomStoreItem(
       } else if (item.type === 'micDecor') {
         const record = {
           id: item.id,
-          name: item.name,
-          icon: item.imageUrl,
+          name: srvName,
+          icon: srvImageUrl,
           obtainedAt: Date.now(),
           validity,
           source: 'store',
@@ -432,8 +446,8 @@ export async function purchaseRoomStoreItem(
         await set(ref(database, `rooms/${roomId}/micDecors/${item.id}`), record);
         await set(ref(database, `rooms/${roomId}/activeMicDecor`), {
           itemId: item.id,
-          imageUrl: item.imageUrl,
-          name: item.name,
+          imageUrl: srvImageUrl,
+          name: srvName,
           ...(expiresAt ? { expiresAt } : {}),
         });
       } else {
