@@ -9,13 +9,9 @@
 import { ref, onValue, off, get } from 'firebase/database';
 import { rtdb } from '@/src/services/firebase';
 
-export type DecorationCategory =
-  | 'badge'
-  | 'frame'
-  | 'nameplate'
-  | 'ripple'
-  | 'entry_effect'
-  | 'profile_skin';
+export type DecorationCategory = string;
+// Known categories (server can add more without code change)
+// 'badge' | 'frame' | 'nameplate' | 'ripple' | 'entry_effect' | 'profile_skin'
 
 export interface CatalogDecoration {
   id: string;
@@ -32,6 +28,8 @@ export interface CatalogDecoration {
   // Category-specific
   nobleRank?: string;         // For noble rewards
   validityDays?: number;      // Expiry
+  // Future-proof: preserve any unknown fields from server
+  metadata?: Record<string, unknown>;
 }
 
 const CATALOG_PATH = 'decoration_catalog';
@@ -48,6 +46,14 @@ function normalizeDecoration(
   if (!data || typeof data !== 'object') return null;
   if (data.active === false) return null;
 
+  // Preserve unknown future fields
+  const knownKeys = new Set(['name', 'description', 'imageUrl', 'animationUrl', 'animationType',
+    'price', 'currency', 'sortOrder', 'active', 'nobleRank', 'validityDays', 'category']);
+  const metadata: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (!knownKeys.has(k)) metadata[k] = v;
+  }
+
   return {
     id,
     category,
@@ -55,13 +61,14 @@ function normalizeDecoration(
     description: data.description ? String(data.description) : undefined,
     imageUrl: String(data.imageUrl || ''),
     animationUrl: data.animationUrl ? String(data.animationUrl) : undefined,
-    animationType: data.animationType || 'none',
+    animationType: data.animationType ? String(data.animationType) : 'none',
     price: Number(data.price) || 0,
     currency: data.currency || 'diamond',
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
     nobleRank: data.nobleRank ? String(data.nobleRank) : undefined,
     validityDays: data.validityDays ? Number(data.validityDays) : undefined,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
 
@@ -140,15 +147,23 @@ export function subscribeDecorations(
 /**
  * Fetch all categories at once.
  */
-export async function fetchAllDecorations(): Promise<Record<DecorationCategory, CatalogDecoration[]>> {
-  const categories: DecorationCategory[] = ['badge', 'frame', 'nameplate', 'ripple', 'entry_effect', 'profile_skin'];
-  const result = {} as Record<DecorationCategory, CatalogDecoration[]>;
-  await Promise.all(
-    categories.map(async (cat) => {
-      result[cat] = await fetchDecorations(cat);
-    })
-  );
-  return result;
+export async function fetchAllDecorations(): Promise<Record<string, CatalogDecoration[]>> {
+  // Discover categories dynamically from server
+  try {
+    const snap = await get(ref(rtdb, CATALOG_PATH));
+    if (!snap.exists()) return {};
+    const categories = Object.keys(snap.val());
+    const result: Record<string, CatalogDecoration[]> = {};
+    await Promise.all(
+      categories.map(async (cat) => {
+        result[cat] = await fetchDecorations(cat);
+      })
+    );
+    return result;
+  } catch (e) {
+    console.warn('[decorationCatalog] fetchAll failed:', e);
+    return {};
+  }
 }
 
 /**
