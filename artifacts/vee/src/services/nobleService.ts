@@ -29,7 +29,7 @@
  * Ripple, Seat Priority) are flagged enforced:false and the UI shows
  * them honestly as locked — never as unlocked-but-dead.
  */
-import { ref, onValue, get, set, runTransaction } from 'firebase/database';
+import { ref, onValue, get, set, runTransaction, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
 import { rewardsForRank, rewardIcon } from './nobleRewardsCatalog';
@@ -437,6 +437,17 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
       await grantNobleRankItems(uid, nextRank);
     } catch {
       // Non-critical — items will be granted on the next rank-up / gift.
+    }
+  }
+  // 2026-10-16 (Sumon): Rank DROPPED (30-day maintenance failed) —
+  // revoke the higher rank's rewards. Rewards expire with the rank.
+  if (next && nextRank < prevRank) {
+    try {
+      for (let r = prevRank; r > nextRank; r--) {
+        await revokeNobleRankItems(uid, r);
+      }
+    } catch {
+      // Non-critical — items will be cleaned on next heal.
     }
   }
 }
