@@ -4,6 +4,26 @@
     ".write": false,
 
     // ─────────────────────────────────────────────────────────────────────
+    // Server-driven catalogs — readable by any authenticated user.
+    // Sumon manages content via Firebase console / admin panel, no app build needed.
+    // ─────────────────────────────────────────────────────────────────────
+    "gift_catalog": {
+      ".read": "auth != null"
+    },
+    "decoration_catalog": {
+      ".read": "auth != null"
+    },
+    "task_events": {
+      ".read": "auth != null"
+    },
+    "app_content": {
+      ".read": "auth != null"
+    },
+    "store_catalog": {
+      ".read": "auth != null"
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
     // users — profile data, readable by any authenticated user so searches
     // and profile screens work; individual $uid nodes are only writable by
     // the owner, with sensitive admin-only sub-paths further restricted.
@@ -67,19 +87,6 @@
         "diamonds": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
           ".validate": "newData.isNumber() && newData.val() >= 0"
-        },
-        // SECURITY FIX (2026-10-13, Sumon): badges/frames/nameplates are
-        // ADMIN-ONLY writes. Previously they inherited the parent
-        // `auth.uid === $uid` rule, letting any user self-grant any badge
-        // (including Vee Official). Now only admins can grant via panel.
-        "badges": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
-        },
-        "frames": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
-        },
-        "nameplates": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
         },
         "role": {
           ".write": "auth.token.role === 'superAdmin'"
@@ -203,12 +210,10 @@
     // ─────────────────────────────────────────────────────────────────────
     "chats": {
       "$chatId": {
-        ".read": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))",
+        ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            // 2026-10-13 (Sumon): Allow if userChats entry exists OR user is participant (chatId contains UID).
-            // Fixes PERMISSION_DENIED for Google-login users and any user where userChats wasn't initialized.
-            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))",
+            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
             ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
@@ -219,7 +224,7 @@
         },
         "typing": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid && (root.child('userChats').child(auth.uid).child($chatId).exists() || $chatId.contains(auth.uid))"
+            ".write": "auth != null && auth.uid === $uid && root.child('userChats').child(auth.uid).child($chatId).exists()"
           }
         }
       }
@@ -555,17 +560,6 @@
             ".write": "auth != null",
             ".validate": "!newData.exists() || (newData.child('fromUid').val() === auth.uid && newData.child('giftId').isString() && newData.child('ts').isNumber())"
           }
-        },
-        // ── IMO Store room items (2026-10-16): room owner (or platform admin)
-        // can set the room background and mic decor bought from the Store.
-        "storeBackground": {
-          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
-        },
-        "micDecors": {
-          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
-        },
-        "activeMicDecor": {
-          ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')"
         }
       }
     },
@@ -643,7 +637,7 @@
           // 2026-10-12 audit fix (M2): allow owner to normalize a legacy
           // STRING balance to a number (one-way migration; otherwise string-
           // balance users have fully broken wallets — no writes work).
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.token.role === 'superAdmin' || auth.token.role === 'admin') || (auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && ((newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000) || (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400))))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)) || (auth.uid === $uid && data.exists() && data.isString()))"
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && ((newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000) || (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400))))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)) || (auth.uid === $uid && data.exists() && data.isString()))"
         },
         "weeklyEarned": {
           ".write": false
@@ -669,17 +663,7 @@
             // recharge = any positive amount (packages are server-configured).
             ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && ((newData.child('type').val() === 'gift_sent' && (newData.child('diamonds').val() == -10 || newData.child('diamonds').val() == -25 || newData.child('diamonds').val() == -50 || newData.child('diamonds').val() == -100 || newData.child('diamonds').val() == -200 || newData.child('diamonds').val() == -500 || newData.child('diamonds').val() == -1000 || newData.child('diamonds').val() == -2000)) || (newData.child('type').val() === 'gift_received' && (newData.child('diamonds').val() == 7 || newData.child('diamonds').val() == 17 || newData.child('diamonds').val() == 35 || newData.child('diamonds').val() == 70 || newData.child('diamonds').val() == 140 || newData.child('diamonds').val() == 350 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1400 || newData.child('diamonds').val() == 10 || newData.child('diamonds').val() == 25 || newData.child('diamonds').val() == 50 || newData.child('diamonds').val() == 100 || newData.child('diamonds').val() == 200 || newData.child('diamonds').val() == 500 || newData.child('diamonds').val() == 1000 || newData.child('diamonds').val() == 2000) && newData.child('fromUid').val() === auth.uid) || (newData.child('type').val() === 'recharge' && newData.child('diamonds').isNumber() && newData.child('diamonds').val() > 0))"
           }
-        },
-        "giftCounts": {
-          // 2026-10-15 (Sumon): PERMANENT lifetime gift counts — wallets/{uid}/giftCounts/{giftId}.
-          // Readable by any signed-in user (Gift Display screen). Write = increment
-          // by exactly 1 only (any sender increments the RECIPIENT's count when
-          // a gift is sent). No decrements, no arbitrary sets — counts only grow.
-          ".read": "auth != null",
-          "$giftId": {
-            ".write": "auth != null && newData.isNumber() && ((!data.exists() && newData.val() == 1) || (data.exists() && data.isNumber() && newData.val() == data.val() + 1))"
-          }
-        },
+        }
       }
     },
 
@@ -828,29 +812,6 @@
     // ─────────────────────────────────────────────────────────────────────
     "honors_catalog": {
       ".read": "auth != null",
-      ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
-    },
-    // ─────────────────────────────────────────────────────────────────────
-    // store_catalog — IMO Store item definitions (admin-managed, 2026-10-16)
-    // ─────────────────────────────────────────────────────────────────────
-    "store_catalog": {
-      ".read": "auth != null",
-      ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
-    },
-    // ─────────────────────────────────────────────────────────────────────
-    // notifications — user inboxes for grant alerts etc.
-    // ─────────────────────────────────────────────────────────────────────
-    "notifications": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && (auth.uid === $uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
-      }
-    },
-    // ─────────────────────────────────────────────────────────────────────
-    // admin_audit — append-only admin action log
-    // ─────────────────────────────────────────────────────────────────────
-    "admin_audit": {
-      ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
     },
     "moderationLog": {
