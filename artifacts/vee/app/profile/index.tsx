@@ -37,7 +37,7 @@ import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/fir
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
-import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
+import { subscribeNoble, NOBLE_RANKS, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import { useTranslation } from 'react-i18next';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
@@ -335,6 +335,19 @@ export default function ProfileScreen({
   // 2026-10-16 (Sumon): Store profile skin — equipped skin renders as the cover.
   const profileSkin = useActiveProfileSkin(displayUid);
   const isMe = !targetUid || targetUid === user?.uid;
+
+  // 2026-10-16 (Sumon): Enforce 30-day Nobel maintenance on profile load.
+  // Inactive users don't keep their rank forever — check on every visit.
+  useEffect(() => {
+    if (!isMe || !user?.uid) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await checkNobleMaintenance(user.uid);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [isMe, user?.uid]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
