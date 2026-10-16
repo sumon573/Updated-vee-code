@@ -70,6 +70,30 @@ const ACTIVE_NODE: Record<string, string> = {
 const STRING_ACTIVE_TYPES = new Set(['avatarFrame', 'entryEffect', 'soundRipple']);
 
 /**
+ * SECURITY (2026-10-16 deep audit): never trust the client-provided price.
+ * A hacked client could send price=1 for a 10,000💎 item. Always re-fetch
+ * the item from the server catalog and use the SERVER price. Returns null
+ * if the item doesn't exist or is inactive.
+ */
+async function getServerCatalogItem(itemId: string): Promise<{ price: number; validityDays: number; type: string } | null> {
+  try {
+    const snap = await get(ref(database, `store_catalog/${itemId}`));
+    if (!snap.exists()) return null;
+    const v = snap.val() as any;
+    if (v.active === false) return null;
+    const price = typeof v.price === 'number' ? v.price : -1;
+    if (price < 0) return null;
+    return {
+      price,
+      validityDays: typeof v.validityDays === 'number' ? v.validityDays : 0,
+      type: typeof v.type === 'string' ? v.type : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Refund safety net (2026-10-16 deep verification): if a grant write fails
  * AFTER a successful debit, credit the diamonds back so the user is never
  * charged without receiving the item. Best-effort — never throws.
@@ -200,6 +224,13 @@ export async function purchaseStoreItem(
   const node = INVENTORY_NODE[item.type];
   if (!node) return { success: false, error: 'Unknown item type' };
   try {
+    // SECURITY: use the SERVER price, never the client-provided one.
+    const serverItem = await getServerCatalogItem(item.id);
+    if (!serverItem) return { success: false, error: 'Item not available' };
+    if (serverItem.type && serverItem.type !== item.type) {
+      return { success: false, error: 'Item type mismatch' };
+    }
+    const price = serverItem.price;
     // Idempotent: already owned and not expired → success.
     const ownedSnap = await get(ref(database, `users/${uid}/${node}/${item.id}`));
     if (ownedSnap.exists()) {
@@ -207,7 +238,7 @@ export async function purchaseStoreItem(
       if (!isExpired(owned)) return { success: true };
     }
     try {
-      await debitOwnWallet(uid, item.price);
+      await debitOwnWallet(uid, price);
     } catch (e) {
       if (e instanceof InsufficientFundsError) {
         return { success: false, error: 'Not enough diamonds' };
@@ -215,9 +246,9 @@ export async function purchaseStoreItem(
       return { success: false, error: 'Payment failed. Try again.' };
     }
     try {
-      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord(item));
+      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord({ ...item, price, validityDays: serverItem.validityDays }));
     } catch {
-      await refundOnGrantFailure(uid, item.price);
+      await refundOnGrantFailure(uid, price);
       return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
     }
     return { success: true };
@@ -362,17 +393,22 @@ export async function purchaseRoomStoreItem(
   } catch {
     // non-critical — fall through to purchase
   }
+  // SECURITY: use the SERVER price, never the client-provided one.
+  const serverItem = await getServerCatalogItem(item.id);
+  if (!serverItem) return { success: false, error: 'Item not available' };
+  const price = serverItem.price;
+  const validityDays = serverItem.validityDays;
   try {
     try {
-      await debitOwnWallet(uid, item.price);
+      await debitOwnWallet(uid, price);
     } catch (e) {
       if (e instanceof InsufficientFundsError) {
         return { success: false, error: 'Not enough diamonds' };
       }
       return { success: false, error: 'Payment failed. Try again.' };
     }
-    const expiresAt = item.validityDays > 0 ? Date.now() + item.validityDays * 86400_000 : undefined;
-    const validity: 'permanent' | number = item.validityDays > 0 ? item.validityDays : 'permanent';
+    const expiresAt = validityDays > 0 ? Date.now() + validityDays * 86400_000 : undefined;
+    const validity: 'permanent' | number = validityDays > 0 ? validityDays : 'permanent';
     try {
       if (item.type === 'roomBackground') {
         await set(ref(database, `rooms/${roomId}/storeBackground`), {
@@ -405,7 +441,7 @@ export async function purchaseRoomStoreItem(
       }
     } catch {
       // Charged but grant failed → refund so the user never loses diamonds.
-      await refundOnGrantFailure(uid, item.price);
+      await refundOnGrantFailure(uid, price);
       return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
     }
     return { success: true };
