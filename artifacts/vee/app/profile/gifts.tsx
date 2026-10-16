@@ -113,7 +113,10 @@ export default function GiftDisplayScreen() {
     });
     // 2026-10-15 (Sumon): subscribe lifetime gift counts (permanent aggregate).
     let offCounts: (() => void) | undefined;
-    import('@/src/features/wallet/walletService').then(({ subscribeGiftCounts }) => {
+    import('@/src/features/wallet/walletService').then(({ subscribeGiftCounts, healGiftCounts }) => {
+      // 2026-10-16 (Sumon): Heal server counts from tx history on first load.
+      // Ensures gift counts are server-sourced and survive app updates.
+      healGiftCounts(uid).catch(() => {});
       offCounts = subscribeGiftCounts(uid, setLifetimeCounts);
     }).catch(() => {});
     return () => {
