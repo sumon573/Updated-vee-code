@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useActiveProfileSkin } from '@/src/hooks/useStoreItems';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -327,6 +328,8 @@ export default function ProfileScreen({
   const { t } = useTranslation();
   // The UID whose profile data we display (own or another user's)
   const displayUid = targetUid ?? user?.uid;
+  // 2026-10-16 (Sumon): Store profile skin — equipped skin renders as the cover.
+  const profileSkin = useActiveProfileSkin(displayUid);
   const isMe = !targetUid || targetUid === user?.uid;
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -752,7 +755,9 @@ export default function ProfileScreen({
         {/* ─── Cover (tappable to change via Edit — own profile only) ─── */}
         <Pressable onPress={() => { if (isMe) router.push('/profile/edit'); }}>
           <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
-            {profile?.coverImageUrl ? (
+            {profileSkin ? (
+              <Image source={{ uri: profileSkin.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            ) : profile?.coverImageUrl ? (
               <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
             ) : (
               <View style={{ flex: 1, backgroundColor: '#EFEFF4', alignItems: 'center', justifyContent: 'center' }}>
