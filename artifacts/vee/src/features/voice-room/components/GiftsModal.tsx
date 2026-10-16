@@ -365,6 +365,7 @@ export function GiftsModal({
       onGiftSent({
         giftId: g.id,
         emoji: g.thumbnailUrl || '',
+        giftName: g.nameKey,
         coins: g.coins,
         senderUid: myUid,
         senderName: myName,
