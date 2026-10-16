@@ -345,7 +345,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               </View>
             </>
           )}
-          {admins.length > 0 && (
+          {isOwner && admins.length > 0 && (
             <>
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
                 marginBottom: 8, textTransform: 'uppercase' }}>
@@ -357,7 +357,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               </View>
             </>
           )}
-          {regular.length > 0 && (
+          {/* 2026-10-16 (Sumon): ONLY owner sees member list. Regular members/admins don't. */}
+          {isOwner && regular.length > 0 && (
             <>
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
                 marginBottom: 8, textTransform: 'uppercase' }}>
@@ -399,7 +400,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
               style={{ backgroundColor: '#EF4444', borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
             >
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-                {t('voiceRoom.info.leaveRoom', { defaultValue: '🚪 Leave Room' })}
+                {t('voiceRoom.info.leaveRoom', { defaultValue: '✕ Leave Room' })}
               </Text>
             </Pressable>
           )}
