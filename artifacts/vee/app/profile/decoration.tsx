@@ -1,7 +1,7 @@
 /**
  * Profile — Decoration Screen (2026-10-15, Sumon).
  *
- * LUXURY unified collection: Nameplates | Frames | Ripples | Entry FX | Nobel
+ * LUXURY unified collection: Nobel | Frames | Nameplates | Ripples | Entry FX
  * - Shows ONLY owned items (no badges — badges live in Honor section)
  * - Tap to equip, "✓ USING" indicator on active item
  * - Nobel rewards auto-grant on rank-up (healMissingNobleItems)
@@ -53,11 +53,11 @@ const C = {
 type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx' | 'nobel';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'nobel', label: 'Nobel', icon: '👑' },
   { key: 'frames', label: 'Frames', icon: '🖼️' },
   { key: 'nameplates', label: 'Nameplates', icon: '📛' },
   { key: 'ripples', label: 'Ripples', icon: '🌊' },
   { key: 'entryfx', label: 'Entry FX', icon: '✨' },
-  { key: 'nobel', label: 'Nobel', icon: '👑' },
 ];
 
 import MistNameplate from '@/src/components/MistNameplate';
