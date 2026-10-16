@@ -4,8 +4,9 @@
  * Pure code animations — no designer needed, zero cost.
  */
 
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, Easing } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Animated, Easing, Image } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 
 // ── Classic: Light animations ──
 
@@ -399,11 +400,53 @@ const ANIMATIONS: Record<string, React.FC<{ emoji: string }>> = {
   '15': CastleGlow, '16': RoyalCrownFloat, '17': EternalDiamondRotate, '18': UniverseExplode,
 };
 
-export function AnimatedGift({ giftId, emoji, size = 26 }: {
+// 2026-10-16 (Sumon): PERMANENT — Video/GIF support for server-driven gifts.
+// Plays the gift's video exactly as-is (no changes, no substitutes).
+// Falls back gracefully if video fails to load — never crashes.
+function VideoGift({ animationUrl, size = 120 }: {
+  animationUrl: string;
+  size?: number;
+}) {
+  const [hasError, setHasError] = useState(false);
+  
+  let player;
+  try {
+    player = useVideoPlayer(animationUrl, (p) => {
+      p.loop = false;
+      p.play();
+    });
+  } catch {
+    setHasError(true);
+  }
+
+  if (hasError || !player) {
+    // Fallback: show nothing instead of crashing
+    return null;
+  }
+
+  return (
+    <VideoView
+      player={player}
+      style={{ width: size, height: size }}
+      contentFit="contain"
+      nativeControls={false}
+    />
+  );
+}
+
+export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType }: {
   giftId: string;
   emoji: string;
   size?: number;
+  animationUrl?: string;
+  animationType?: string;
 }) {
+  // 2026-10-16 (Sumon): PERMANENT — server-driven gifts with video play the video as-is
+  if (animationType === 'video' && animationUrl) {
+    return <VideoGift animationUrl={animationUrl} size={size * 4} />;
+  }
+  // GIFs play automatically via Image component (native support)
+  // For server gifts with thumbnailUrl, the thumbnail shows (GIF animates natively)
   const Animation = ANIMATIONS[giftId];
   if (!Animation) {
     return <Text style={{ fontSize: size }}>{emoji}</Text>;
