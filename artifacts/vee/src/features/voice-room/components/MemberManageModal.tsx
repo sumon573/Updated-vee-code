@@ -61,27 +61,40 @@ export function MemberManageModal({
   // same perfect size as the profile screen. Animated (mist) type for Viscount+.
   const [nameplate, setNameplate] = useState<{ icon: string; mistColor: string | null } | null>(null);
   useEffect(() => {
+    let cancelled = false;
+    const resolvePlate = (plateId: string) => {
+      const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === plateId);
+      const mistColor = entry?.nameplate.mistColor || null;
+      const designUrl = entry?.nameplate.designUrl;
+      if (designUrl && /^https?:\/\//i.test(designUrl)) {
+        if (!cancelled) setNameplate({ icon: designUrl, mistColor });
+      } else {
+        get(ref(database, `users/${member?.id}/nameplates/${plateId}`)).then((snap) => {
+          if (cancelled) return;
+          const icon = snap.val()?.icon;
+          if (icon && /^https?:\/\//i.test(icon)) {
+            setNameplate({ icon, mistColor });
+          } else {
+            setNameplate(null);
+          }
+        }).catch(() => { if (!cancelled) setNameplate(null); });
+      }
+    };
+    // 2026-10-16: activeNameplate may not be on seat data — fetch directly
     const plateId = (member as any)?.activeNameplate;
-    if (!plateId || typeof plateId !== 'string') {
-      setNameplate(null);
-      return;
-    }
-    const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === plateId);
-    const mistColor = entry?.nameplate.mistColor || null;
-    const designUrl = entry?.nameplate.designUrl;
-    if (designUrl && /^https?:\/\//i.test(designUrl)) {
-      setNameplate({ icon: designUrl, mistColor });
+    if (plateId && typeof plateId === 'string') {
+      resolvePlate(plateId);
+    } else if (member?.id) {
+      get(ref(database, `users/${member.id}/activeNameplate`)).then((snap) => {
+        if (cancelled) return;
+        const pid = snap.val();
+        if (pid && typeof pid === 'string') resolvePlate(pid);
+        else setNameplate(null);
+      }).catch(() => { if (!cancelled) setNameplate(null); });
     } else {
-      // Fallback: fetch the granted record for a custom icon
-      get(ref(database, `users/${member?.id}/nameplates/${plateId}`)).then((snap) => {
-        const icon = snap.val()?.icon;
-        if (icon && /^https?:\/\//i.test(icon)) {
-          setNameplate({ icon, mistColor });
-        } else {
-          setNameplate(null);
-        }
-      }).catch(() => setNameplate(null));
+      setNameplate(null);
     }
+    return () => { cancelled = true; };
   }, [member?.id, (member as any)?.activeNameplate]);
 
   if (!member) return null;
