@@ -12,6 +12,7 @@ import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { Participant, GiftSentInfo } from '../types/room';
 import { sendGift, getBalance, getWalletBalance, InsufficientFundsError, NetworkError } from '@/src/features/wallet/walletService';
+import { AnimatedGift } from './GiftAnimations';
 
 /* ─────────────────────────── Gifts Modal ─────────────────────────── */
 
@@ -478,7 +479,7 @@ export function GiftsModal({
                       borderRadius: 14, padding: 10, alignItems: 'center',
                       borderWidth: isSelected ? 2 : 1,
                       borderColor: isSelected ? C.gold : C.borderFaint }}>
-                    <Text style={{ fontSize: 26 }}>{g.emoji}</Text>
+                    <AnimatedGift giftId={g.id} emoji={g.emoji} size={26} />
                     <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', marginTop: 4 }}>
                       {t(g.nameKey)}
                     </Text>
