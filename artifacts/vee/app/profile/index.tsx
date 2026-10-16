@@ -16,7 +16,6 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useActiveProfileSkin } from '@/src/hooks/useStoreItems';
-import { subscribeLevel } from '@/src/services/levelService';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -89,8 +88,6 @@ function SectionHeader({ title, count, onPress }: { title: string; count?: numbe
 
 export type LevelTier = 'bronze' | 'silver' | 'gold' | 'max';
 
-// 2026-10-16 (Sumon): PERMANENT — Bronze 1-16 → Silver 1-16 → Gold 1-16 → Max.
-// Level stored on SERVER (users/{uid}/level/xp), never resets on app update.
 export function getLevelTier(level: number): LevelTier {
   if (level >= 49) return 'max';
   if (level >= 33) return 'gold';
@@ -810,18 +807,16 @@ export default function ProfileScreen({
   // ─── Premium Level System (2026-10-12, Sumon concept) ───
   // VERY SLOW progression (Sumon 2026-10-12: "একদম স্লো").
   // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
-  // 2026-10-16 (Sumon): PERMANENT server-stored level.
-  // XP lives at users/{uid}/level/xp — survives app updates, never resets.
-  // Tiers: Bronze 1-16 → Silver 1-16 → Gold 1-16 → Max. Very slow; Gold slowest.
-  const [serverLevelXp, setServerLevelXp] = useState(0);
-  useEffect(() => {
-    if (!displayUid) { setServerLevelXp(0); return; }
-    const unsub = subscribeLevel(displayUid, (lv) => {
-      setServerLevelXp(lv.totalLevel);
-    });
-    return () => unsub();
-  }, [displayUid]);
-  const userLevel = Math.max(1, serverLevelXp);
+  // Level curve (quadratic — each level needs progressively more):
+  //   cumulative XP for level N = 50 * (N-1)^2  (Lv.30 ≈ 42,050 XP, Lv.60 ≈ 174,050, Lv.100 = 490,050)
+  // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
+  const calculateLevel = (): number => {
+    const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);
+    // Invert: N = sqrt(xp / 50), floor, min 1, max 100. 10x slower than before.
+    const level = Math.floor(Math.sqrt(xp / 50)) + 1;
+    return Math.min(100, Math.max(1, level));
+  };
+  const userLevel = calculateLevel();
 
   // NOTE 7 (2026-10-11): demo badges removed — grantedBadges comes from the
   // Firebase subscription above (official/event grants only).
@@ -910,19 +905,15 @@ export default function ProfileScreen({
                   if (!activeFrameObj) return null;
                   if (/^https?:\/\//i.test(activeFrameObj.icon)) {
                     // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
-                    // 2026-10-16 (Sumon): Nobel frames have rank name + crown ON TOP,
-                    // so the circle sits 120px below image center (1600px design).
-                    // Shift up 8.25px so the CIRCLE aligns with the DP.
                     const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                     const frameSize = isNobleFrame ? 110 : 92;
-                    const nobleOffsetY = isNobleFrame ? -8.25 : 0;
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
                         style={{
                           position: 'absolute',
                           width: frameSize, height: frameSize,
-                          top: (92 - frameSize) / 2 + nobleOffsetY,
+                          top: (92 - frameSize) / 2,
                           left: (92 - frameSize) / 2,
                         }}
                         resizeMode="contain"
