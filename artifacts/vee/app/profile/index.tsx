@@ -803,7 +803,7 @@ export default function ProfileScreen({
                   // Official animated frame — pure RN AnimatedFrame (no native modules)
                   if (activeFrameId === 'official' || (typeof activeFrameId === 'string' && activeFrameId.toLowerCase().includes('official'))) {
                     return (
-                      <View style={{ position: 'absolute', width: 110, height: 110, alignItems: 'center', justifyContent: 'center' }}>
+                      <View style={{ position: 'absolute', width: 110, height: 110, top: -9, left: -9, alignItems: 'center', justifyContent: 'center' }}>
                         {/* 2026-10-14 (Sumon): frameId pass করতে হবে — না হলে server APNG load হয় না */}
                         <AnimatedFrame size={80} frameId={activeFrameId} />
                       </View>
@@ -818,7 +818,12 @@ export default function ProfileScreen({
                     return (
                       <Image
                         source={{ uri: activeFrameObj.icon }}
-                        style={{ position: 'absolute', width: frameSize, height: frameSize }}
+                        style={{
+                          position: 'absolute',
+                          width: frameSize, height: frameSize,
+                          top: (92 - frameSize) / 2,
+                          left: (92 - frameSize) / 2,
+                        }}
                         resizeMode="contain"
                       />
                     );
