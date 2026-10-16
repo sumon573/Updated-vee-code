@@ -151,6 +151,8 @@ export type SendGiftArgs = {
   toName?: string;
   /** Recipient's photo URL (for the weekly leaderboard; optional) */
   toPhotoURL?: string;
+  /** Price in diamonds (from server catalog) — server is source of truth */
+  price?: number;
 };
 
 export type SendGiftResult = {
@@ -660,6 +662,7 @@ export async function sendGift({
   idempotencyKey,
   toName,
   toPhotoURL,
+  price,
 }: SendGiftArgs): Promise<SendGiftResult> {
   // Self-gifting is ALLOWED (per product requirement): the server debits and
   // credits the same account (net-zero), so the gift animation and history
@@ -674,9 +677,13 @@ export async function sendGift({
   // server may still complete the charge and a fallback would double-debit.
   let res: Response | null = null;
   try {
+    const serverBody: Record<string, unknown> = { toUid, giftId, idempotencyKey: key };
+    // 2026-10-16 (Sumon): Server catalog is source of truth for price.
+    // Pass the server price so VPS charges exactly what user saw.
+    if (price !== undefined) serverBody.price = price;
     res = await authedFetch('/wallet/send-gift', {
       method: 'POST',
-      body: { toUid, giftId, idempotencyKey: key },
+      body: serverBody,
     });
   } catch {
     // Network failure — res stays null, fallback below takes over.
