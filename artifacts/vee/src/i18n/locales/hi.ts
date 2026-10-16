@@ -445,6 +445,7 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
       // TODO i18n: English fallbacks — need proper Hindi translations
       partialSendTitle: 'Some gifts not sent',
       partialSendMsg: 'Not delivered to: {{names}}. The gifts that were sent are kept.',
+      emptyCategory: 'इस श्रेणी में अभी कोई उपहार नहीं है',
       cantGiftSelf: 'You cannot send a gift to yourself.',
       giftHeart: 'दिल',
       giftRose: 'गुलाब',
