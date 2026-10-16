@@ -10,7 +10,6 @@
  * Light mode only. All data is real — no demo content.
  */
 import { useEffect, useState } from 'react';
-import { checkNobleMaintenance } from '@/src/services/nobleService';
 import { View, Text, ScrollView, Pressable, Image } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -98,6 +97,9 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
       fallbackEntry.frame?.fallbackIcon
     ) : '🎖️';
     const isFrame = itemId?.includes('frame-');
+    // 2026-10-16 (Sumon): Only show fallback emoji if image FAILS to load.
+    // Frames have transparent centers — emoji would show through!
+    const [imgError, setImgError] = useState(false);
     // 2026-10-15 (Sumon): Frames show as SQUARE (not circle) — full design visible
     return (
       <View style={{
@@ -106,12 +108,16 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
         backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden',
       }}>
-        <Image
-          source={{ uri: icon }}
-          style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, position: 'absolute' }}
-          resizeMode="contain"
-        />
-        <Text style={{ fontSize: 24 }}>{fallbackIcon}</Text>
+        {!imgError ? (
+          <Image
+            source={{ uri: icon }}
+            style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, position: 'absolute' }}
+            resizeMode="contain"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <Text style={{ fontSize: 24 }}>{fallbackIcon}</Text>
+        )}
       </View>
     );
   }
@@ -178,14 +184,6 @@ export default function DecorationScreen() {
   const { uid: paramUid } = useLocalSearchParams<{ uid?: string }>();
   const targetUid = paramUid ?? user?.uid;
   const isMe = !paramUid || paramUid === user?.uid;
-
-  // 2026-10-16 (Sumon): Enforce 30-day Nobel maintenance on Decoration load.
-  useEffect(() => {
-    if (!isMe || !user?.uid) return;
-    void (async () => {
-      try { await checkNobleMaintenance(user.uid); } catch {}
-    })();
-  }, [isMe, user?.uid]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [frames, setFrames] = useState<GrantedFrame[]>([]);
   const [nameplates, setNameplates] = useState<GrantedNameplate[]>([]);
