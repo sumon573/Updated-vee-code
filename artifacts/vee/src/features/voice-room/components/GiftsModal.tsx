@@ -102,18 +102,19 @@ export function GiftsModal({
    *  the Send button and confirms. Prevents accidental wallet deductions. */
   const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
   // 2026-10-16 (Sumon): Category tabs — horizontal scroll, gifts vertical scroll
-  const [activeCategory, setActiveCategory] = useState<string>('classic');
+  const [activeCategory, setActiveCategory] = useState<string>('');
   // Auto-select first available category when server data loads
   useEffect(() => {
     if (serverGifts.length > 0) {
       const cats = Array.from(new Set(serverGifts.map(g => g.category)));
-      if (!cats.includes(activeCategory) && cats.length > 0) {
-        const order: Record<string, number> = { classic: 0, premium: 1, luxury: 2 };
+      // Auto-select if current is empty or not in available categories
+      if (!activeCategory || !cats.includes(activeCategory)) {
+        const order: Record<string, number> = { classic: 0, premium: 1, luxury: 2, couple: 3 };
         cats.sort((a, b) => (order[a] ?? 100) - (order[b] ?? 100));
         setActiveCategory(cats[0]);
       }
     }
-  }, [serverGifts]);
+  }, [serverGifts, activeCategory]);
   // 2026-10-16 (Sumon): Server-driven gifts from RTDB gift_catalog
   const [serverGifts, setServerGifts] = useState<GiftItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
@@ -488,7 +489,7 @@ export function GiftsModal({
             )}
             {/* 2026-10-16 (Sumon): Category tabs — premium polished */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: 14, maxHeight: 40 }}>
+              style={{ marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 2, paddingVertical: 2 }}>
                 {Array.from(new Set(serverGifts.map(g => g.category))).sort((a, b) => {
                   const order: Record<string, number> = { classic: 0, premium: 1, luxury: 2 };
@@ -505,7 +506,8 @@ export function GiftsModal({
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
                       style={{
-                        paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20,
+                        paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20,
+                        justifyContent: 'center', alignItems: 'center', minHeight: 40,
                         backgroundColor: isActive ? activeBg : C.card,
                         borderWidth: isActive ? 1.5 : 1,
                         borderColor: isActive ? activeBorder : C.borderFaint,
