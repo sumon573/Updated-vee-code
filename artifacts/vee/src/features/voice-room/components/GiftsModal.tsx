@@ -142,7 +142,7 @@ export function GiftsModal({
         const catalog = await fetchGiftCatalog();
         // Only show gifts with thumbnails (no broken/demo visuals)
         const items = catalog
-          .filter(cg => cg.thumbnailUrl)
+          .filter(cg => cg.thumbnailUrl && cg.price > 0)
           .map(catalogToGiftItem);
         setServerGifts(items);
       } catch (e) {
@@ -156,7 +156,7 @@ export function GiftsModal({
     // Real-time updates
     unsub = subscribeGiftCatalog((catalog) => {
       const items = catalog
-        .filter(cg => cg.thumbnailUrl)
+        .filter(cg => cg.thumbnailUrl && cg.price > 0)
         .map(catalogToGiftItem);
       setServerGifts(items);
       setGiftsLoading(false);
