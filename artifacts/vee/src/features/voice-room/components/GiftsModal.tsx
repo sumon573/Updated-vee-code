@@ -53,11 +53,26 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
 
 // 2026-10-16 (Sumon): Categorized gifts — Classic, Premium, Luxury.
 // Tabs scroll horizontally, gifts scroll vertically per category.
-const GIFT_CATEGORIES: { id: GiftCategory; label: string }[] = [
-  { id: 'classic', label: 'Classic' },
-  { id: 'premium', label: '👑 Premium' },
-  { id: 'luxury', label: '💎 Luxury' },
-];
+// 2026-10-16 (Sumon): Categories generated dynamically from server.
+// Known categories with pretty labels; unknown server categories get auto-labels.
+const CATEGORY_LABELS: Record<string, string> = {
+  classic: 'Classic',
+  premium: '👑 Premium',
+  luxury: '💎 Luxury',
+};
+
+function getCategoryLabel(catId: string): string {
+  return CATEGORY_LABELS[catId] || catId.charAt(0).toUpperCase() + catId.slice(1);
+}
+
+function getCategoryColor(catId: string): { bg: string; border: string } {
+  // Known categories have brand colors; unknown get default
+  switch (catId) {
+    case 'premium': return { bg: '#FFD700', border: '#FFD700' };
+    case 'luxury': return { bg: '#9D4EDD', border: '#C77DFF' };
+    default: return { bg: '#007AFF', border: '#007AFF' };
+  }
+}
 
 // 2026-10-16 (Sumon): Server-driven gifts — GIFTS now comes from RTDB `gift_catalog`.
 // No hardcoded gifts. Server is the single source of truth.
@@ -87,7 +102,18 @@ export function GiftsModal({
    *  the Send button and confirms. Prevents accidental wallet deductions. */
   const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
   // 2026-10-16 (Sumon): Category tabs — horizontal scroll, gifts vertical scroll
-  const [activeCategory, setActiveCategory] = useState<GiftCategory>('classic');
+  const [activeCategory, setActiveCategory] = useState<string>('classic');
+  // Auto-select first available category when server data loads
+  useEffect(() => {
+    if (serverGifts.length > 0) {
+      const cats = Array.from(new Set(serverGifts.map(g => g.category)));
+      if (!cats.includes(activeCategory) && cats.length > 0) {
+        const order: Record<string, number> = { classic: 0, premium: 1, luxury: 2 };
+        cats.sort((a, b) => (order[a] ?? 100) - (order[b] ?? 100));
+        setActiveCategory(cats[0]);
+      }
+    }
+  }, [serverGifts]);
   // 2026-10-16 (Sumon): Server-driven gifts from RTDB gift_catalog
   const [serverGifts, setServerGifts] = useState<GiftItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
@@ -464,16 +490,17 @@ export function GiftsModal({
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               style={{ marginBottom: 14, maxHeight: 40 }}>
               <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 2, paddingVertical: 2 }}>
-                {GIFT_CATEGORIES.map(cat => {
-                  const isActive = activeCategory === cat.id;
-                  const isPremium = cat.id === 'premium';
-                  const isLuxury = cat.id === 'luxury';
-                  // Premium color scheme per category
-                  const activeBg = isLuxury ? '#9D4EDD' : isPremium ? C.gold : C.primary;
-                  const activeBorder = isLuxury ? '#C77DFF' : isPremium ? '#FFD700' : C.primary;
+                {Array.from(new Set(serverGifts.map(g => g.category))).sort((a, b) => {
+                  const order: Record<string, number> = { classic: 0, premium: 1, luxury: 2 };
+                  return (order[a] ?? 100) - (order[b] ?? 100);
+                }).map(catId => {
+                  const isActive = activeCategory === catId;
+                  const colors = getCategoryColor(catId);
+                  const activeBg = colors.bg;
+                  const activeBorder = colors.border;
                   return (
-                    <Pressable key={cat.id} onPress={() => {
-                      setActiveCategory(cat.id);
+                    <Pressable key={catId} onPress={() => {
+                      setActiveCategory(catId);
                       setSelectedGift(null);
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
@@ -493,7 +520,7 @@ export function GiftsModal({
                         fontSize: 13, fontWeight: isActive ? '800' : '600',
                         letterSpacing: 0.3,
                       }}>
-                        {cat.label}
+                        {getCategoryLabel(catId)}
                       </Text>
                     </Pressable>
                   );
