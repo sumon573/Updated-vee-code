@@ -314,8 +314,6 @@ function PreviewSheet({
           setMyRooms(rooms);
           setRoomId(rooms[0]?.id ?? '');
         }
-        const taken = await isShortIdAvailable('users', preview.item.id).then((a) => !a).catch(() => null);
-        if (!cancelled) setIdTaken(taken);
       } else if (preview.kind === 'randomId') {
         const rooms = await getMyOwnedRooms(uid);
         if (!cancelled) {
@@ -326,6 +324,24 @@ function PreviewSheet({
     })();
     return () => { cancelled = true; };
   }, [preview, uid]);
+
+  // 2026-10-16 verification fix: availability must follow the For Account /
+  // For Room toggle — a room ID can be taken while the user ID is free.
+  useEffect(() => {
+    if (!preview || preview.kind !== 'shortId') {
+      setIdTaken(null);
+      return;
+    }
+    const sid = (preview as { item: ShortIdItem }).item.id;
+    const kind: ShortIdKind = idKind === 'account' ? 'users' : 'rooms';
+    let cancelled = false;
+    setIdTaken(null);
+    (async () => {
+      const taken = await isShortIdAvailable(kind, sid).then((a) => !a).catch(() => null);
+      if (!cancelled) setIdTaken(taken);
+    })();
+    return () => { cancelled = true; };
+  }, [preview, idKind]);
 
   // 2026-10-16 verification fix: refresh Using state when the picked room changes.
   useEffect(() => {
