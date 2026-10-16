@@ -160,14 +160,65 @@ function MistParticle({ delay, size, left, duration }: { delay: number; size: nu
   );
 }
 
+// 2026-10-16 (Sumon): Animated level badges — Bronze static, Silver shimmer,
+// Gold sparkle, Max PREMIUM dazzling. Animation ONLY inside the 100x20 box.
+function ShimmerOverlay({ speed = 2500, opacity = 0.6 }: { speed?: number; opacity?: number }) {
+  const shimmer = useRef(new Animated.Value(-1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(shimmer, { toValue: 2, duration: speed, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [speed, shimmer]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute', top: 0, bottom: 0, width: 40,
+        backgroundColor: '#FFFFFF', opacity,
+        transform: [{ translateX: shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-60, 140] }) }),
+          { skewX: '-20deg' }],
+      }}
+    />
+  );
+}
+
+function Sparkle({ delay, left, top, size = 4, color = '#FFFFFF' }:
+  { delay: number; left: number; top: number; size?: number; color?: string }) {
+  const twinkle = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(twinkle, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(twinkle, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [delay, twinkle]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute', left, top, width: size, height: size,
+        borderRadius: size / 2, backgroundColor: color,
+        opacity: twinkle.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
+        transform: [{ scale: twinkle.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.3] }) }],
+        shadowColor: color, shadowOpacity: 0.8, shadowRadius: 4,
+      }}
+    />
+  );
+}
+
 function LevelBadge({ level }: { level: number }) {
   const tier = getLevelTier(level);
   const levelInTier = getLevelInTier(level);
   const style = TIER_STYLE[tier];
   // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
-  // "Bronze Lv 17" format. Premium gradient kept, mist particles removed
-  // for the compact size.
+  // "Bronze Lv 17" format. Premium gradient kept.
   // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
+  // 2026-10-16 (Sumon): Tier animations — Bronze static, Silver shimmer,
+  // Gold sparkle, Max PREMIUM dazzling. All inside the box only.
   return (
     <View style={{ marginRight: 6, marginBottom: 6 }}>
       <LinearGradient
@@ -179,7 +230,26 @@ function LevelBadge({ level }: { level: number }) {
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden' }}
       >
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
+        {tier === 'silver' && <ShimmerOverlay speed={2500} opacity={0.4} />}
+        {tier === 'gold' && (
+          <>
+            <ShimmerOverlay speed={1500} opacity={0.6} />
+            <Sparkle delay={0} left={20} top={4} size={3} />
+            <Sparkle delay={500} left={70} top={12} size={4} />
+            <Sparkle delay={900} left={45} top={6} size={3} />
+          </>
+        )}
+        {tier === 'max' && (
+          <>
+            <ShimmerOverlay speed={900} opacity={0.8} />
+            <Sparkle delay={0} left={15} top={3} size={5} color="#FFD700" />
+            <Sparkle delay={300} left={55} top={12} size={4} color="#FFFFFF" />
+            <Sparkle delay={600} left={80} top={5} size={5} color="#FFD700" />
+            <Sparkle delay={200} left={35} top={10} size={3} color="#FFE873" />
+            <Sparkle delay={700} left={65} top={4} size={4} color="#FFD700" />
+          </>
+        )}
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF', zIndex: 1 }} numberOfLines={1}>
           {tier === 'max' ? 'Max' : `${style.label} Lv ${levelInTier}`}
         </Text>
       </LinearGradient>
