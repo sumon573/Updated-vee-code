@@ -26,7 +26,8 @@ type GiftNameKey =
   | 'voiceRoom.gifts.giftCrown'
   | 'voiceRoom.gifts.giftFirework';
 
-type GiftCategory = 'classic' | 'premium' | 'luxury';
+// 2026-10-16 (Sumon): PERMANENT — categories are server-driven, any string allowed
+type GiftCategory = string;
 
 interface GiftItem {
   id: string;
