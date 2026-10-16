@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
+import { AnimatedGift } from './GiftAnimations';
 import { database } from '@/src/config/firebase';
 
 /* ═══════════════════════════════════════════
@@ -40,6 +41,8 @@ export type GiftFlyEvent = {
   emoji: string;
   coins: number;
   target?: { x: number; y: number } | null;
+  animationUrl?: string;
+  animationType?: string;
 };
 
 export type GiftFlyHandle = {
@@ -186,7 +189,7 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
             left: -tierStyle.emojiSize * 0.3, top: -tierStyle.emojiSize * 0.3,
           }} />
         )}
-        <Text style={{ fontSize: tierStyle.emojiSize }}>{event.emoji}</Text>
+        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={tierStyle.emojiSize} animationUrl={event.animationUrl} animationType={event.animationType} />
       </Animated.View>
       {/* follow-up banner: sender → gift → recipient */}
       <Animated.View style={{
@@ -197,7 +200,7 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
           <GiftAvatar photoURL={event.fromAvatar} name={event.fromName} size={30} />
           <Text style={styles.bannerName} numberOfLines={1}>{event.fromName}</Text>
           <Text style={styles.bannerArrow}>→</Text>
-          <Text style={{ fontSize: 30 }}>{event.emoji}</Text>
+          <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={30} animationUrl={event.animationUrl} animationType={event.animationType} />
           <Text style={styles.bannerArrow}>→</Text>
           <GiftAvatar photoURL={event.toAvatar} name={event.toName} size={30} />
           <Text style={styles.bannerName} numberOfLines={1}>@{event.toName}</Text>
