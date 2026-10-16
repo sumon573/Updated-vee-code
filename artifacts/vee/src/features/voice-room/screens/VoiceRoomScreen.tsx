@@ -25,6 +25,7 @@ import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo } from '../types/room';
 import { fmtDiamonds, getWeekStart } from '../utils/format';
 import { SeatCard } from '../components/SeatCard';
+import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
 import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
@@ -409,6 +410,8 @@ export default function VoiceRoomScreen() {
 
   // Fix 4: Remove hardcoded ROOM_META.id fallback — roomId must come from route param
   const roomId = paramRoomId ?? '';
+  // 2026-10-16 (Sumon): Store room decor — background + mic decor bought from the Store.
+  const { backgroundUrl: storeBgUrl, micDecorUrl } = useStoreRoomDecor(roomId || null);
   const myUid  = user?.uid ?? 'anonymous';
   const myUidRef = useRef(myUid);
   useEffect(() => { myUidRef.current = myUid; }, [myUid]);
@@ -2643,6 +2646,15 @@ export default function VoiceRoomScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
+      {/* 2026-10-16 (Sumon): Store-bought room background — full-bleed image
+          under the theme glow. Null-safe: renders nothing until a design is set. */}
+      {storeBgUrl && (
+        <Image
+          source={{ uri: storeBgUrl }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          resizeMode="cover"
+        />
+      )}
       {/* Animated theme background — breathing glow + floating particles.
           Theme is Firebase-synced so every user sees the same animation. */}
       <AnimatedThemeBackground accentColor={accentColor} />
@@ -2943,6 +2955,7 @@ export default function VoiceRoomScreen() {
                 isLocked={lockedSeats.has(idx)}
                 accentColor={accentColor}
                 myId={myUid}
+                micDecorUrl={micDecorUrl}
                 onPress={() => handleSeatPress(idx)}
                 reaction={member ? seatReactions[member.id] : undefined}
               />
