@@ -25,7 +25,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
-import { fmtDiamonds } from '@/src/utils/format';
+import { fmtDiamonds } from '@/src/features/voice-room/utils/format';
 import {
   fetchStoreCatalog, PERSONAL_CATEGORIES, ROOM_CATEGORIES,
   validityLabel,
