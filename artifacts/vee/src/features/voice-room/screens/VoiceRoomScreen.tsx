@@ -206,8 +206,10 @@ function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
   // Re-render is driven by todayKey; values below always reflect "now".
   void todayKey;
   return (
+    {/* 2026-10-16 (Sumon): height 44 -> 56 so the day number is fully
+        visible (was clipped). Design unchanged — Royal Gold calendar. */}
     <View style={{
-      width: 40, height: 44, borderRadius: 10,
+      width: 40, height: 56, borderRadius: 10,
       backgroundColor: '#FFFFFF', overflow: 'hidden', alignItems: 'center',
       borderWidth: 2, borderColor: '#D4AF37',
       shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
@@ -3149,11 +3151,13 @@ export default function VoiceRoomScreen() {
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option C Pulse Ring mic button.
                 Join Seat keeps user-plus; seated uses PulseMicButton. */}
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
             {mySeatIdx < 0 ? (
               <Feather name="user-plus" size={21} color={accentColor} />
             ) : (
               <PulseMicButton muted={muted} />
             )}
+            </View>
             <Text style={{
               color: mySeatIdx < 0 ? accentColor : muted ? C.red : '#007AFF',
               fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -3170,7 +3174,9 @@ export default function VoiceRoomScreen() {
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option E Liquid Gold speaker. */}
-            <LiquidGoldSpeaker speakerOn={speakerOn} />
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                        <LiquidGoldSpeaker speakerOn={speakerOn} />
+            </View>
             <Text style={{ color: speakerOn ? '#D4AF37' : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.speaker')}
             </Text>
@@ -3184,7 +3190,9 @@ export default function VoiceRoomScreen() {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-            <LiveDateIcon />
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                        <LiveDateIcon />
+            </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               Tasks
             </Text>
@@ -3197,7 +3205,9 @@ export default function VoiceRoomScreen() {
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
-            <ObsidianGiftButton />
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                        <ObsidianGiftButton />
+            </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.gift')}
             </Text>
@@ -3210,7 +3220,9 @@ export default function VoiceRoomScreen() {
         <ScalePress onPress={() => setInviteOpen(true)}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option B Sapphire Orbit invite button. */}
-            <SapphireInviteButton />
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                        <SapphireInviteButton />
+            </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.invite')}
             </Text>
@@ -3223,7 +3235,9 @@ export default function VoiceRoomScreen() {
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option B Obsidian Exit button. */}
-            <ObsidianExitButton />
+<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+                        <ObsidianExitButton />
+            </View>
             <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.exit')}
             </Text>
