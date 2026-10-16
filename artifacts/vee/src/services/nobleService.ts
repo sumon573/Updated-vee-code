@@ -452,6 +452,42 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
   }
 }
 
+/* ── 2026-10-16 (Sumon): Maintenance check on read ──
+ * The 30-day maintenance window must be enforced even when the user
+ * is NOT sending gifts. Call this when loading profile/Honor/Decoration
+ * so inactive users don't keep their rank forever.
+ * Returns the (possibly updated) rank index. */
+export async function checkNobleMaintenance(uid: string): Promise<number> {
+  if (!uid) return 0;
+  const nobleRef = ref(database, `users/${uid}/noble`);
+  let prevRank = 0;
+  try {
+    const snap = await get(nobleRef);
+    if (!snap.exists()) return 0;
+    prevRank = coerceState(snap.val())?.rankIndex ?? 0;
+  } catch {
+    return 0;
+  }
+  const now = Date.now();
+  const result = await runTransaction(nobleRef, (cur) => {
+    const s = coerceState(cur);
+    if (!s) return cur;
+    if (now <= s.maintenanceDeadline) return undefined; // No change needed - abort
+    return applyNobleGift(cur, 0, now);
+  });
+  if (!result.committed) return prevRank;
+  const next = coerceState(result.snapshot.val());
+  const nextRank = next?.rankIndex ?? 0;
+  if (nextRank < prevRank) {
+    try {
+      for (let r = prevRank; r > nextRank; r--) {
+        await revokeNobleRankItems(uid, r);
+      }
+    } catch {}
+  }
+  return nextRank;
+}
+
 /** One-shot read of a user's noble state (null when never earned XP). */
 export async function getNobleState(uid: string): Promise<NobleState | null> {
   const snap = await get(ref(database, `users/${uid}/noble`));
