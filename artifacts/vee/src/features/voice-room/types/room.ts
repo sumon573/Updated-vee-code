@@ -61,6 +61,8 @@ export type Participant = {
 export type GiftSentInfo = {
   giftId: string;
   emoji: string;
+  giftName?: string;
+  
   coins: number;
   senderUid: string;
   senderName: string;
