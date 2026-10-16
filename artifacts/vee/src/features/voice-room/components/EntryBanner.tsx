@@ -88,8 +88,10 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
           transform: [{ translateX: slideAnim }],
           opacity: opacityAnim,
           position: 'absolute',
-          top: 60,
-          right: 0,
+          // 2026-10-16 (Sumon): premium banner slides from the right to the
+          // EXACT MIDDLE of the display — not the top.
+          top: '42%',
+          alignSelf: 'center',
           zIndex: 100,
         }}
         pointerEvents="none"
@@ -114,31 +116,33 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
             shadowOpacity: 0.6,
             shadowRadius: 16,
             elevation: 8,
-            minWidth: 200,
+            minWidth: 240,
           }}
         >
-          {/* DP with crown frame */}
-          <View style={{ width: 52, height: 52, marginRight: 12 }}>
+          {/* DP with crown frame — 2026-10-16 (Sumon): frame FITS TIGHT on the DP.
+              Count frame opening = 51.2%, so 1.6x (64px for 40px DP) gives the
+              snug overlap — same ratio as Avatar.tsx NobelFrame. */}
+          <View style={{ width: 64, height: 64, marginRight: 12, alignItems: 'center', justifyContent: 'center' }}>
             {frameUrl && /^https?:\/\//i.test(frameUrl) ? (
               <Image
                 source={{ uri: frameUrl }}
-                style={{ position: 'absolute', width: 52, height: 52 }}
+                style={{ position: 'absolute', width: 64, height: 64 }}
                 resizeMode="contain"
               />
             ) : (
               <View style={{
-                position: 'absolute', width: 52, height: 52, borderRadius: 26,
+                position: 'absolute', width: 64, height: 64, borderRadius: 32,
                 borderWidth: 2.5, borderColor: rankColor,
               }} />
             )}
             {photoURL ? (
               <Image
                 source={{ uri: photoURL }}
-                style={{ width: 40, height: 40, borderRadius: 20, margin: 6 }}
+                style={{ width: 40, height: 40, borderRadius: 20 }}
               />
             ) : (
               <View style={{
-                width: 40, height: 40, borderRadius: 20, margin: 6,
+                width: 40, height: 40, borderRadius: 20,
                 backgroundColor: 'rgba(255,255,255,0.25)',
                 alignItems: 'center', justifyContent: 'center',
               }}>
@@ -147,7 +151,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
                 </Text>
               </View>
             )}
-            <Text style={{ position: 'absolute', top: -11, left: 16, fontSize: 18 }}>
+            <Text style={{ position: 'absolute', top: -8, fontSize: 18 }}>
               👑
             </Text>
           </View>
