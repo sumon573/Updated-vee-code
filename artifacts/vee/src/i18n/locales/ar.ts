@@ -223,6 +223,15 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
       // TODO i18n: English fallbacks — need proper Arabic translations
       retry: 'Retry',
     },
+    ban: {
+      title: 'غرف الصوت غير متاحة',
+      message: 'تم تقييد وصولك إلى غرف الصوت.',
+      reason: 'السبب',
+      until: 'ينتهي التقييد في',
+      permanent: 'دائم',
+      note: 'يمكنك استخدام باقي التطبيق. تواصل مع الدعم إذا كنت تعتقد أن هذا خطأ.',
+      back: 'رجوع',
+    },
     seatAction: {
       invite: 'دعوة',
       inviteSub: 'دعوة أحد المستمعين إلى هذا المقعد',
