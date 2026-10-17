@@ -1477,6 +1477,8 @@ export type RoomGiftEvent = {
   coins: number;
   animationUrl?: string | null;
   animationType?: string | null;
+  // 2026-10-17 (Sumon): Server-driven video size.
+  videoSize?: number | null;
   fromUid: string;
   fromName: string;
   fromAvatar?: string | null;
