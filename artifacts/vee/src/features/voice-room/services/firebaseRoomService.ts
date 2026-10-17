@@ -1472,8 +1472,11 @@ export function subscribeRoomEntryEvents(
 
 export type RoomGiftEvent = {
   giftId: string;
+  giftName?: string;
   emoji: string;
   coins: number;
+  animationUrl?: string | null;
+  animationType?: string | null;
   fromUid: string;
   fromName: string;
   fromAvatar?: string | null;
