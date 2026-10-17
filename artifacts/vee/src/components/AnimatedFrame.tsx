@@ -19,6 +19,15 @@ type Props = {
   compact?: boolean;
 };
 
+/**
+ * 2026-10-17 (Sumon): PERMANENT — Official frame size standard.
+ * ALL frames (current + all future) render at EXACTLY this scale relative to DP.
+ * Server controls WHICH frame shows (via honors_catalog), but SIZE is always
+ * the official standard — no per-frame size config, no fit issues, ever.
+ * Official frame = 1.15x DP size (tight snug fit, no white gap, never covers DP).
+ */
+export const OFFICIAL_FRAME_SCALE = 1.15;
+
 export default function AnimatedFrame({ size, frameId, compact }: Props) {
   const frameBreath = useRef(new Animated.Value(0)).current;
   const [serverUri, setServerUri] = useState<string | null>(null);
@@ -62,10 +71,10 @@ export default function AnimatedFrame({ size, frameId, compact }: Props) {
     return () => breathLoop.stop();
   }, [frameBreath, serverUri, serverFailed]);
 
-  // 2026-10-14 (Sumon): frame DP-র সাথে snug fit — 1.28x-এ ভিতরে সাদা gap দেখাতো,
-  // 1.15x-এ tight fit, DP ঢাকে না
-  // compact (voice room): 1.15x — নাম ঢেকে না যায়
-  const frameSize = size * 1.15;
+  // 2026-10-17 (Sumon): PERMANENT — All frames use official size standard.
+  // Server controls WHICH frame (honors_catalog), size is ALWAYS official.
+  // 1.15x = tight snug fit, no white gap at edges, never covers the DP.
+  const frameSize = size * OFFICIAL_FRAME_SCALE;
 
   const frameScale = frameBreath.interpolate({
     inputRange: [0, 1],
