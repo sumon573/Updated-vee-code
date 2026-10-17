@@ -220,8 +220,12 @@
         ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
-            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
+            // 2026-10-17 (Sumon): Vee Team system notices — senderId 'vee_team'
+            // may be written by (a) the chat participant (own welcome notice),
+            // or (b) an admin (notices/warnings to any user). Nobody else can
+            // forge system messages.
+            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || (newData.child('senderId').val() === 'vee_team' && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())))",
+            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid || newData.child('senderId').val() === 'vee_team'",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
             "content": {
