@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Animated, Easing, Image } from 'react-native';
+import { View, Text, Animated, Easing, Image, Dimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 // ── Classic: Light animations ──
@@ -403,9 +403,10 @@ const ANIMATIONS: Record<string, React.FC<{ emoji: string }>> = {
 // 2026-10-16 (Sumon): PERMANENT — Video/GIF support for server-driven gifts.
 // Plays the gift's video exactly as-is (no changes, no substitutes).
 // Falls back gracefully if video fails to load — never crashes.
-function VideoGift({ animationUrl, size = 120 }: {
+function VideoGift({ animationUrl, size = 120, fullscreen = false }: {
   animationUrl: string;
   size?: number;
+  fullscreen?: boolean;
 }) {
   const [hasError, setHasError] = useState(false);
   
@@ -424,28 +425,33 @@ function VideoGift({ animationUrl, size = 120 }: {
     return null;
   }
 
+  // 2026-10-17 (Sumon): Fullscreen mode — video fills 90% of screen, stable, no movement.
+  const { width: screenW, height: screenH } = Dimensions.get('window');
+  const videoSize = fullscreen ? Math.min(screenW * 0.9, screenH * 0.6) : size;
+
   return (
     <VideoView
       player={player}
-      style={{ width: size, height: size }}
+      style={{ width: videoSize, height: videoSize }}
       contentFit="contain"
       nativeControls={false}
     />
   );
 }
 
-export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize }: {
+export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize, videoFullscreen }: {
   giftId: string;
   emoji: string;
   size?: number;
   animationUrl?: string;
   animationType?: string;
   videoSize?: number;
+  videoFullscreen?: boolean;
 }) {
   // 2026-10-16 (Sumon): PERMANENT — server-driven gifts with video play the video as-is
-  // 2026-10-17 (Sumon): videoSize is server-driven via Firebase gift_catalog — no build needed to adjust.
+  // 2026-10-17 (Sumon): videoSize/videoFullscreen are server-driven via Firebase gift_catalog — no build needed to adjust. Video plays stable, no rotation/movement.
   if (animationType === 'video' && animationUrl) {
-    return <VideoGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} />;
+    return <VideoGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} />;
   }
   // GIFs play automatically via Image component (native support)
   // For server gifts with thumbnailUrl, the thumbnail shows (GIF animates natively)

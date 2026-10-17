@@ -39,6 +39,7 @@ interface GiftItem {
   animationUrl?: string;
   animationType?: string;
   videoSize?: number;
+  videoFullscreen?: boolean;
 }
 
 // Convert server CatalogGift to local GiftItem
@@ -53,6 +54,7 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
     animationUrl: cg.animationUrl,
     animationType: cg.animationType,
     videoSize: cg.videoSize,
+    videoFullscreen: cg.videoFullscreen,
   };
 }
 
@@ -374,7 +376,8 @@ export function GiftsModal({
         recipients: succeeded.map(r => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
         animationUrl: g.animationUrl,
         animationType: g.animationType,
-        videoSize: g.videoSize });
+        videoSize: g.videoSize,
+        videoFullscreen: g.videoFullscreen });
       setTimeout(() => { setSent(null); setSending(false); onClose(); }, 1600);
     } finally {
       // A throw anywhere above (e.g. inside the loop) must never leave the

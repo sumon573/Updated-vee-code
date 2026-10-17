@@ -44,6 +44,7 @@ export type GiftFlyEvent = {
   animationUrl?: string;
   animationType?: string;
   videoSize?: number;
+  videoFullscreen?: boolean;
 };
 
 export type GiftFlyHandle = {
@@ -193,7 +194,7 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
             left: -tierStyle.emojiSize * 0.3, top: -tierStyle.emojiSize * 0.3,
           }} />
         )}
-        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={tierStyle.emojiSize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={event.videoSize} />
+        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={tierStyle.emojiSize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={event.videoSize} videoFullscreen={event.videoFullscreen} />
       </Animated.View>
       {/* follow-up banner: sender → gift → recipient */}
       <Animated.View style={{
