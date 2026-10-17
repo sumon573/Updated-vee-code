@@ -2568,7 +2568,8 @@ export default function VoiceRoomScreen() {
         target,
       animationUrl: info.animationUrl,
       animationType: info.animationType,
-      videoSize: info.videoSize});
+      videoSize: info.videoSize,
+      videoFullscreen: info.videoFullscreen});
     };
     for (const r of info.recipients) {
       // Broadcast gift event so ALL participants see the animation (2026-10-10)
@@ -2584,7 +2585,8 @@ export default function VoiceRoomScreen() {
         toAvatar: r.photoURL || null,
       animationUrl: info.animationUrl || null,
       animationType: info.animationType || null,
-      videoSize: info.videoSize || null }).catch(() => {/* non-critical */});
+      videoSize: info.videoSize || null,
+      videoFullscreen: info.videoFullscreen || null }).catch(() => {/* non-critical */});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
