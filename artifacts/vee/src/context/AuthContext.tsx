@@ -89,6 +89,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe = onUserStateChanged((firebaseUser) => {
         setUser(firebaseUser);
 
+        // 2026-10-17 (Sumon): EXISTING USERS — ensure Vee Team system chat
+        // exists on every login/app-start (not just signup). Safe to call
+        // repeatedly — welcome message is deduped. Fire-and-forget.
+        if (firebaseUser && firebaseUser.uid) {
+          import('@/src/features/chat/services/veeTeamService').then(({ ensureVeeTeamChat }) => {
+            const name = firebaseUser.displayName || 'User';
+            ensureVeeTeamChat(firebaseUser.uid, name).catch(() => {});
+          }).catch(() => {});
+        }
+
         // BAN ENFORCEMENT: subscribe to banned flag. If admin bans this user,
         // kick them out immediately with a banned screen.
         // 2026-10-13: banned session-এ listener alive রাখি — unban detect করতে।
