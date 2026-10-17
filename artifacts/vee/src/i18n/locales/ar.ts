@@ -399,6 +399,7 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
       partialSendTitle: 'Some gifts not sent',
       partialSendMsg: 'Not delivered to: {{names}}. The gifts that were sent are kept.',
       emptyCategory: 'لا توجد هدايا في هذه الفئة بعد',
+      loading: 'جارٍ تحميل الهدايا...',
       cantGiftSelf: 'You cannot send a gift to yourself.',
       giftHeart: 'قلب',
       giftRose: 'وردة',
