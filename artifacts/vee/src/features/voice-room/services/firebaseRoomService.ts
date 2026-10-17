@@ -1479,6 +1479,7 @@ export type RoomGiftEvent = {
   animationType?: string | null;
   // 2026-10-17 (Sumon): Server-driven video size.
   videoSize?: number | null;
+  videoFullscreen?: boolean | null;
   fromUid: string;
   fromName: string;
   fromAvatar?: string | null;
