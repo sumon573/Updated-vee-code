@@ -24,6 +24,7 @@ import {
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
+import { GiftLuxuryEffect } from './GiftLuxuryEffects';
 import { database } from '@/src/config/firebase';
 
 /* ═══════════════════════════════════════════
@@ -182,6 +183,8 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
         alignItems: 'center',
         justifyContent: 'center',
       }}>
+        {/* 2026-10-17 (Sumon): Per-gift DISTINCT luxury effect */}
+        <GiftLuxuryEffect giftId={event.giftId} size={displaySize} />
         <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={displaySize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={displaySize} videoFullscreen={true} />
       </Animated.View>
 {/* follow-up banner: sender → gift → recipient */}
