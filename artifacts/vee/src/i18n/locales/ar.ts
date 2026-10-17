@@ -448,6 +448,7 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
     mediaStoryShare: 'مشاركة قصة',
     mediaSticker: 'ملصق',
     messagePlaceholder: 'اكتب رسالة...',
+      veeTeamNoReply: 'هذا حساب Vee Team الرسمي. الردود معطلة.',
     emptyMessages: 'لا توجد رسائل. أرسل أول رسالة! 👋',
     statusTyping: 'يكتب...',
     statusOnline: 'متصل',
