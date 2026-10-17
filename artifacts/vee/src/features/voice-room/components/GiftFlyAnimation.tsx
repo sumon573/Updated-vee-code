@@ -111,92 +111,80 @@ const TOTAL_MS_DEFAULT = 2600; // fallback whole showpiece per event
 
 function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => void }) {
   const { width: W, height: H } = Dimensions.get('window');
-  // Tier-based animation: small gifts fly fast & small, large gifts fly
-  // slow & big with a grander banner.
-  const tier = giftTier(event.coins);
-  const tierStyle = TIER_STYLE[tier];
-  const FLY_MS = tierStyle.flyMs;
-  const TOTAL_MS = tierStyle.flyMs + 1300;
-  const start = { x: W / 2, y: H - 170 };
-  const end = event.target ?? { x: W / 2, y: 110 }; // graceful top-center fallback
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
+  // 2026-10-17 (Sumon): Luxury centered animation — 4s fullscreen centered display
+  // with sparkling effect, then 2s fly to recipient's seat. Total 6s.
+  const DISPLAY_MS = 4000; // centered fullscreen display
+  const FLY_MS = 2000;     // fly to seat
+  const TOTAL_MS = DISPLAY_MS + FLY_MS;
+  // Fullscreen centered size: 90% width, 60% height (exact center)
+  const displaySize = Math.min(W * 0.9, H * 0.6);
+  const centerX = W / 2;
+  const centerY = H / 2;
+  const end = event.target ?? { x: W / 2, y: 110 }; // seat or top-center fallback
+  const dx = end.x - centerX;
+  const dy = end.y - centerY;
 
-  // One progress value drives the whole flight; intermediate keyframe
-  // overshoots upward so the path arcs instead of going straight.
-  const p = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.3)).current;
-  const emojiOp = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(0)).current;
+  const displayOp = useRef(new Animated.Value(0)).current;
+  const flyP = useRef(new Animated.Value(0)).current;
+  const flyScale = useRef(new Animated.Value(1)).current;
   const bannerOp = useRef(new Animated.Value(0)).current;
   const bannerY = useRef(new Animated.Value(26)).current;
 
-  const translateX = p.interpolate({ inputRange: [0, 1], outputRange: [0, dx] });
-  const translateY = p.interpolate({ inputRange: [0, 0.55, 1], outputRange: [0, dy * 1.22, dy] });
-  const rotate = p.interpolate({ inputRange: [0, 1], outputRange: ['-18deg', '26deg'] });
+  const flyX = flyP.interpolate({ inputRange: [0, 1], outputRange: [0, dx] });
+  const flyY = flyP.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, dy * 0.7, dy] });
 
   useEffect(() => {
-    const fly = Animated.timing(p, {
-      toValue: 1, duration: FLY_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
-    });
-    const pop = Animated.sequence([ // scale pop at launch
-      Animated.timing(scale, { toValue: 1.3, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    const entrance = Animated.parallel([
+      Animated.spring(scale, { toValue: 1, friction: 5, tension: 60, useNativeDriver: true }),
+      Animated.timing(displayOp, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]);
-    const land = Animated.sequence([ // shrink + fade as it lands on the seat
-      Animated.delay(FLY_MS - 220),
-      Animated.parallel([
-        Animated.timing(scale, { toValue: 0.35, duration: 220, useNativeDriver: true }),
-        Animated.timing(emojiOp, { toValue: 0, duration: 220, useNativeDriver: true }),
-      ]),
+    const hold = Animated.delay(DISPLAY_MS - 600);
+    const fly = Animated.parallel([
+      Animated.timing(flyP, { toValue: 1, duration: FLY_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(flyScale, { toValue: 0.25, duration: FLY_MS, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(displayOp, { toValue: 0, duration: 400, delay: FLY_MS - 400, useNativeDriver: true }),
     ]);
-    const banner = Animated.sequence([ // banner overlaps the flight
-      Animated.delay(650),
+    const banner = Animated.sequence([
+      Animated.delay(DISPLAY_MS + 300),
       Animated.parallel([
         Animated.timing(bannerOp, { toValue: 1, duration: 260, useNativeDriver: true }),
         Animated.timing(bannerY, { toValue: 0, duration: 320, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }),
       ]),
-      Animated.delay(1150),
+      Animated.delay(800),
       Animated.parallel([
         Animated.timing(bannerOp, { toValue: 0, duration: 320, useNativeDriver: true }),
         Animated.timing(bannerY, { toValue: -18, duration: 320, useNativeDriver: true }),
       ]),
     ]);
-    const anim = Animated.parallel([fly, pop, land, banner]);
-    anim.start();
+    const anim = Animated.sequence([entrance, hold, fly]);
+    Animated.parallel([anim, banner]).start();
     const timer = setTimeout(onDone, TOTAL_MS);
     return () => {
       clearTimeout(timer);
-      anim.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const combinedScale = Animated.multiply(scale, flyScale);
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* flying gift emoji — large tier gets a premium golden glow */}
-      {/* 2026-10-17 (Sumon): Video gifts don't rotate — rotation cuts off the video. */}
+      {/* 2026-10-17 (Sumon): Centered fullscreen gift — sparkling luxury display */}
       <Animated.View style={{
         position: 'absolute',
-        left: start.x - 40, top: start.y - 40,
-        opacity: emojiOp,
-        transform: event.animationType === 'video'
-          ? [{ translateX }, { translateY }, { scale }]
-          : [{ translateX }, { translateY }, { rotate }, { scale }],
+        left: centerX - displaySize / 2,
+        top: centerY - displaySize / 2,
+        width: displaySize,
+        height: displaySize,
+        opacity: displayOp,
+        transform: [{ translateX: flyX }, { translateY: flyY }, { scale: combinedScale }],
+        alignItems: 'center',
+        justifyContent: 'center',
       }}>
-        {tier === 'large' && (
-          <View style={{
-            position: 'absolute',
-            width: tierStyle.emojiSize * 1.6, height: tierStyle.emojiSize * 1.6,
-            borderRadius: tierStyle.emojiSize * 0.8,
-            backgroundColor: 'rgba(255,215,0,0.25)',
-            shadowColor: '#FFD700', shadowOpacity: 0.8, shadowRadius: 30,
-            shadowOffset: { width: 0, height: 0 },
-            left: -tierStyle.emojiSize * 0.3, top: -tierStyle.emojiSize * 0.3,
-          }} />
-        )}
-        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={tierStyle.emojiSize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={event.videoSize} videoFullscreen={event.videoFullscreen} />
+        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={displaySize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={displaySize} videoFullscreen={true} />
       </Animated.View>
-      {/* follow-up banner: sender → gift → recipient */}
+{/* follow-up banner: sender → gift → recipient */}
       <Animated.View style={{
         position: 'absolute', top: 96, alignSelf: 'center',
         opacity: bannerOp, transform: [{ translateY: bannerY }],
@@ -389,6 +377,7 @@ export function GiftReceiveBanners({ roomId }: { roomId: string }) {
 
   const advance = useCallback(() => {
     const next = queueRef.current.shift() ?? null;
+    idleRef.current = next === null;
     if (next) {
       showEntry(next);
     } else {
