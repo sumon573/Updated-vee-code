@@ -71,6 +71,8 @@ export type GiftSentInfo = {
   // 2026-10-16 (Sumon): PERMANENT — server-driven gift animations (video/GIF)
   animationUrl?: string;
   animationType?: string;
+  // 2026-10-17 (Sumon): Server-driven video size — adjust via Firebase without build.
+  videoSize?: number;
 };
 
 export type BlockRecord = {
