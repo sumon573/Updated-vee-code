@@ -276,6 +276,15 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
       // TODO i18n: English fallbacks — need proper Hindi translations
       retry: 'Retry',
     },
+    ban: {
+      title: 'वॉइस रूम उपलब्ध नहीं',
+      message: 'वॉइस रूम में आपकी पहुंच प्रतिबंधित कर दी गई है।',
+      reason: 'कारण',
+      until: 'प्रतिबंध समाप्त',
+      permanent: 'स्थायी',
+      note: 'आप ऐप की बाकी सभी सुविधाएं इस्तेमाल कर सकते हैं। गलती लगे तो सपोर्ट से संपर्क करें।',
+      back: 'वापस जाएं',
+    },
     seatAction: {
       invite: 'आमंत्रित करें',
       inviteSub: 'इस सीट पर किसी श्रोता को आमंत्रित करें',
