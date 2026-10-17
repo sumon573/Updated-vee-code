@@ -23,7 +23,7 @@ import {
 import {
   subscribeTransactionHistory,
   type WalletTransaction } from '@/src/features/wallet/walletService';
-import { ref, get } from 'firebase/database';
+import { ref, get, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
 // Light-mode colors (same tokens as profile/index.tsx)
@@ -132,22 +132,27 @@ export default function GiftDisplayScreen() {
 
   // 2026-10-17 (Sumon): Load server-driven gift catalog from Firebase.
   // New gifts (like Pink Love) appear in display instead of "inactive".
+  // 2026-10-17 (Sumon): realtime server gift catalog — new gifts appear instantly
   useEffect(() => {
-    get(ref(database, 'gift_catalog')).then((snap) => {
-      if (!snap.exists()) return;
+    const unsub = onValue(ref(database, 'gift_catalog'), (snap) => {
       const catalog: Record<string, { name: string; coins: number; thumbnailUrl?: string }> = {};
-      snap.forEach((child) => {
-        const v = child.val();
-        if (v && v.name && typeof v.price === 'number') {
-          catalog[child.key as string] = {
-            name: v.name,
-            coins: v.price,
-            thumbnailUrl: v.thumbnailUrl,
-          };
-        }
-      });
+      if (snap.exists()) {
+        snap.forEach((child) => {
+          const v = child.val();
+          // Accept price OR coins (both are written by admin)
+          const price = typeof v?.price === 'number' ? v.price : (typeof v?.coins === 'number' ? v.coins : null);
+          if (v && v.name && price !== null) {
+            catalog[child.key as string] = {
+              name: v.name,
+              coins: price,
+              thumbnailUrl: v.thumbnailUrl || v.animationUrl,
+            };
+          }
+        });
+      }
       setServerCatalog(catalog);
-    }).catch(() => {});
+    });
+    return () => unsub();
   }, []);
 
   // Merged catalog: server gifts + hardcoded (server takes precedence).
@@ -581,7 +586,11 @@ export default function GiftDisplayScreen() {
               alignItems: 'center' }}
           >
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 18 }} />
-            <Text style={{ fontSize: 96 }}>{previewInfo?.emoji ?? '🎁'}</Text>
+            {previewInfo?.thumbnailUrl ? (
+              <Image source={{ uri: previewInfo.thumbnailUrl }} style={{ width: 160, height: 160, borderRadius: 16 }} resizeMode="contain" />
+            ) : (
+              <Text style={{ fontSize: 96 }}>{previewInfo?.emoji ?? '🎁'}</Text>
+            )}
             <Text style={{ fontSize: 18, fontWeight: '700', color: C.text, marginTop: 12 }}>
               {previewInfo?.name ?? 'Inactive gift'}
             </Text>
