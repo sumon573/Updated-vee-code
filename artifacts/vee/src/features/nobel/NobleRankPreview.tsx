@@ -7,7 +7,7 @@
 import React from 'react';
 import { View, Text, Image, Modal, Pressable, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { NOBLE_REWARDS_CATALOG, rewardIcon } from '@/src/services/nobleRewardsCatalog';
+import { rewardsForRankKey, rewardIcon } from '@/src/services/nobleRewardsCatalog';
 import { NOBLE_RANKS, formatXP } from '@/src/services/nobleService';
 import MistNameplate from '@/src/components/MistNameplate';
 
@@ -24,7 +24,7 @@ export default function NobleRankPreview({
   visible, onClose, rankIndex, userName, userPhotoURL, userXP,
 }: Props) {
   const rank = NOBLE_RANKS[rankIndex];
-  const catalog = NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rank.key);
+  const catalog = rewardsForRankKey(rank.key);
   if (!rank || !catalog) return null;
 
   const nameplateUrl = catalog.nameplate?.designUrl;
