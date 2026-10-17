@@ -88,6 +88,10 @@ export async function createUser(user: VeeUser): Promise<void> {
     following: 0,
     roomsHosted: 0,
   });
+  // 2026-10-17 (Sumon): every new account gets the Vee Team system chat
+  // auto-added with a welcome notice. Fire-and-forget — never blocks signup.
+  const { ensureVeeTeamChat } = await import('@/src/features/chat/services/veeTeamService');
+  ensureVeeTeamChat(user.uid, safeName).catch(() => {});
 }
 
 /** Fetch a single user by uid */
