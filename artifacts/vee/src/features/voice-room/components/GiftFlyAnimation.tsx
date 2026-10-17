@@ -172,11 +172,14 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {/* flying gift emoji — large tier gets a premium golden glow */}
+      {/* 2026-10-17 (Sumon): Video gifts don't rotate — rotation cuts off the video. */}
       <Animated.View style={{
         position: 'absolute',
         left: start.x - 40, top: start.y - 40,
         opacity: emojiOp,
-        transform: [{ translateX }, { translateY }, { rotate }, { scale }],
+        transform: event.animationType === 'video'
+          ? [{ translateX }, { translateY }, { scale }]
+          : [{ translateX }, { translateY }, { rotate }, { scale }],
       }}>
         {tier === 'large' && (
           <View style={{

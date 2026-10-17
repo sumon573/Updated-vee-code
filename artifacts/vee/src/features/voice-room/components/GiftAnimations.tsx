@@ -442,8 +442,9 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   animationType?: string;
 }) {
   // 2026-10-16 (Sumon): PERMANENT — server-driven gifts with video play the video as-is
+  // 2026-10-17 (Sumon): Cap video size — size*4 overflowed the screen (520px on phones).
   if (animationType === 'video' && animationUrl) {
-    return <VideoGift animationUrl={animationUrl} size={size * 4} />;
+    return <VideoGift animationUrl={animationUrl} size={Math.min(size * 2.5, 280)} />;
   }
   // GIFs play automatically via Image component (native support)
   // For server gifts with thumbnailUrl, the thumbnail shows (GIF animates natively)
