@@ -177,10 +177,9 @@
     // ─────────────────────────────────────────────────────────────────────
     "userChats": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
+        ".read": "auth != null && auth.uid === $uid",
         "$chatId": {
-          // 2026-10-17 (Sumon): Admin can manage Vee Team chats for system notices.
-          ".write": "auth != null && (auth.uid === $uid || auth.token.admin === true || ($chatId.contains(auth.uid) && $chatId.contains($uid) && $chatId.length === auth.uid.length + $uid.length + 1))",
+          ".write": "auth != null && (auth.uid === $uid || ($chatId.contains(auth.uid) && $chatId.contains($uid) && $chatId.length === auth.uid.length + $uid.length + 1))",
           ".validate": "!newData.exists() || newData.child('id').isString()"
         }
       }
@@ -194,9 +193,8 @@
         ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            // 2026-10-17 (Sumon): Admin can send as Vee Team (senderId='vee_team') for system notices.
-            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || (auth.token.admin === true && $chatId.contains('vee_team')))",
-            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid || (auth.token.admin === true && newData.child('senderId').val() === 'vee_team')",
+            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
+            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
             "content": {
@@ -363,10 +361,9 @@
         // caller's read fail with permission-denied instead of null snapshot.
         // Call data is ephemeral (only during ringing), so open read is safe.
         ".read": "auth != null",
-        // 2026-10-17 (Sumon): Block ALL calls to Vee Team system account — no voice/video calls.
         // FIX (2026-10-10): Allow callee to UPDATE (e.g., status='accepted').
         // The old rule only allowed caller writes or callee deletes.
-        ".write": "auth != null && $calleeUid !== 'vee_team' && ((newData.exists() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid)) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
+        ".write": "auth != null && ((newData.exists() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid)) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
         ".validate": "!newData.exists() || (newData.child('callerId').isString() && newData.child('callerName').isString() && newData.child('roomId').isString() && newData.child('createdAt').isNumber() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid))"
       }
     },
@@ -852,6 +849,16 @@
         ".write": "auth != null && (root.child(\"rooms\").child($roomId).child(\"info\").child(\"ownerId\").val() === auth.uid || auth.token.role === \"superAdmin\" || auth.token.role === \"admin\")",
         ".validate": "!newData.exists() || (newData.child(\"hashedPin\").isString() && newData.child(\"updatedAt\").isNumber())"
       }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // gift_catalog — server-driven gift catalog (2026-10-17, Sumon).
+    // Readable by all authenticated users so gifts appear in the app.
+    // Writable only by platform admins.
+    // ─────────────────────────────────────────────────────────────────────
+    "gift_catalog": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
     }
   }
 }
