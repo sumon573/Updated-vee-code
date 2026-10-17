@@ -7,7 +7,7 @@
  */
 
 import { ref, onValue, off, get } from 'firebase/database';
-import { rtdb } from '@/src/services/firebase';
+import { database as rtdb } from '@/src/config/firebase';
 
 export type DecorationCategory = string;
 // Known categories (server can add more without code change)
