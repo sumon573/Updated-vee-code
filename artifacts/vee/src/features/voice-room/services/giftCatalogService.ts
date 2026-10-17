@@ -38,6 +38,10 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
   // Skip inactive gifts
   if (data.active === false) return null;
 
+  // 2026-10-17 (Sumon): Accept price/coins/diamonds — Firebase field name varies.
+  // Robust: check all possible price fields so gifts never silently disappear.
+  const rawPrice = data.price ?? data.coins ?? data.diamonds ?? 0;
+
   const rawCategory = String(data.category || 'classic').trim();
   const safeCategory = rawCategory || 'classic';
 
@@ -51,7 +55,7 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
   return {
     id,
     name: String(data.name || id),
-    price: Number(data.price) || 0,
+    price: Number(rawPrice) || 0,
     category: safeCategory,
     thumbnailUrl: String(data.thumbnailUrl || ''),
     animationUrl: data.animationUrl ? String(data.animationUrl) : undefined,
