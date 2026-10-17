@@ -276,6 +276,15 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
       // TODO i18n: English fallbacks — need proper Bengali translations
       retry: 'Retry',
     },
+    ban: {
+      title: 'ভয়েস রুম বন্ধ আছে',
+      message: 'ভয়েস রুমে আপনার প্রবেশ সীমিত করা হয়েছে।',
+      reason: 'কারণ',
+      until: 'নিষেধাজ্ঞা শেষ হবে',
+      permanent: 'স্থায়ী',
+      note: 'আপনি অ্যাপের বাকি সব ফিচার ব্যবহার করতে পারবেন। ভুল মনে হলে সাপোর্টে যোগাযোগ করুন।',
+      back: 'ফিরে যান',
+    },
     seatAction: {
       invite: 'আমন্ত্রণ',
       inviteSub: 'এই সিটে একজন শ্রোতাকে আমন্ত্রণ দিন',
