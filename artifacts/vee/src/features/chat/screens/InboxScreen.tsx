@@ -53,7 +53,7 @@ import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimiz
 // RC8-A: actual block user implementation
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 import { isVeeTeam } from '../services/veeTeamService';
-import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
+import { VerifiedName } from '@/src/components/VerifiedName';
 import { canViewOnlineStatus, canViewLastSeen } from '@/src/services/privacyService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
@@ -353,7 +353,6 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // 2026-10-17 (Sumon): Vee Team system account — no replies, verified badge.
   const isSystemChat = isVeeTeam(effectiveParticipantId);
-  const hasOfficialBadge = useVerifiedBadge(isSystemChat ? effectiveParticipantId : null);
 
   // ── Mark seen on open ──────────────────────────────────────────────────
   useEffect(() => {
@@ -830,15 +829,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* Name + status */}
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              {/* 2026-10-17 (Sumon): Vee Team — official verified badge via standard component */}
+              {isSystemChat ? (
+                <VerifiedName
+                  name={displayName}
+                  uid={effectiveParticipantId}
+                  nameStyle={{ color: '#000000', fontWeight: '800', fontSize: 15 }}
+                />
+              ) : (
                 <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
                   {displayName}
                 </Text>
-                {/* 2026-10-17 (Sumon): Vee Team verified badge next to the name */}
-                {isSystemChat && hasOfficialBadge && (
-                  <Feather name="check-circle" size={15} color="#007AFF" />
-                )}
-              </View>
+              )}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor }} />
                 <Text style={{ color: statusColor, fontSize: 11, fontWeight: '600' }}>
