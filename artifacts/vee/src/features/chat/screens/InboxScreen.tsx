@@ -851,6 +851,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* Actions — bigger touch targets for easy tapping */}
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              {/* 2026-10-17 (Sumon): Vee Team system account — no calls. */}
+              {!isSystemChat && (
               {/* RC6 fix Issue 8: navigate to real 1-to-1 audio call */}
               <Pressable hitSlop={12} onPress={handleVoiceCall}
                 style={{
@@ -860,6 +862,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   alignItems: 'center', justifyContent: 'center' }}>
                 <Feather name="phone" size={22} color={C.onlineGreen} />
               </Pressable>
+              )}
               {/* Video call hidden until implemented — the "coming soon" alert
                   failed the flawless bar. Re-enable when video calling ships. */}
               {/*
