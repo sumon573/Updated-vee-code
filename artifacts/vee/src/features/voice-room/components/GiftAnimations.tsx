@@ -195,7 +195,7 @@ function CarDrive({ emoji }: { emoji: string }) {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(x, { toValue: 4, duration: 800, useNativeDriver: true }),
-        Animated.timing(x, { toValue: -4, duration: 800, useNativeDriver: true }),
+        Animated.timing(x, { toValue: 0, duration: 800, useNativeDriver: true }),
       ])
     );
     loop.start();
@@ -409,7 +409,7 @@ function VideoGift({ animationUrl, size = 120, fullscreen = false }: {
   fullscreen?: boolean;
 }) {
   const [hasError, setHasError] = useState(false);
-  
+
   let player;
   try {
     player = useVideoPlayer(animationUrl, (p) => {
@@ -452,6 +452,17 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   // 2026-10-17 (Sumon): videoSize/videoFullscreen are server-driven via Firebase gift_catalog — no build needed to adjust. Video plays stable, no rotation/movement.
   if (animationType === 'video' && animationUrl) {
     return <VideoGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} />;
+  }
+  // 2026-10-17 (Sumon): CRITICAL FIX — server gifts with animationType='image'
+  // must render the CDN image, not fall through to emoji!
+  if (animationType === 'image' && animationUrl) {
+    return (
+      <Image
+        source={{ uri: animationUrl }}
+        style={{ width: size, height: size, borderRadius: size / 8 }}
+        resizeMode="contain"
+      />
+    );
   }
   // GIFs play automatically via Image component (native support)
   // For server gifts with thumbnailUrl, the thumbnail shows (GIF animates natively)
