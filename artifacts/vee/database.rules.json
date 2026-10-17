@@ -31,6 +31,11 @@
     "users": {
       ".read": "auth != null",
       ".indexOn": ["vId", "online"],
+      // 2026-10-17 (Sumon): Vee Team system account — admins may create/manage
+      // it via the admin panel. More specific than $uid, so it takes precedence.
+      "vee_team": {
+        ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
+      },
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
