@@ -439,6 +439,14 @@ async function sendGiftViaFirebase(
   const fromUid = auth.currentUser?.uid;
   if (!fromUid) throw new GiftError('Not authenticated');
 
+  // 2026-10-17 (Sumon): Force-refresh auth token before gift transaction.
+  // Expired tokens cause "Wallet access denied" — refresh proactively.
+  try {
+    await auth.currentUser?.getIdToken(true);
+  } catch {
+    // Non-critical: proceed with existing token, transaction will fail clearly if invalid
+  }
+
   // 2026-10-16 (Sumon): PERMANENT — use server-provided price for server-driven gifts.
   // Falls back to hardcoded GIFT_PRICES for legacy gifts. This enables unlimited
   // server-driven gifts without app builds.
