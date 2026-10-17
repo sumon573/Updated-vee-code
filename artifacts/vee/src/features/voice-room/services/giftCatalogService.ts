@@ -24,6 +24,8 @@ export interface CatalogGift {
   animationType?: string; // 'video' | 'image' | 'none' (server can add more)
   sortOrder: number;
   active: boolean;
+  videoSize?: number; // 2026-10-17 (Sumon): server-driven video size (px)
+  videoFullscreen?: boolean; // 2026-10-17 (Sumon): server-driven fullscreen flag
   metadata?: Record<string, unknown>;
 }
 
@@ -46,7 +48,7 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
   const safeCategory = rawCategory || 'classic';
 
   const knownKeys = new Set(['name', 'price', 'category', 'thumbnailUrl', 'animationUrl',
-    'animationType', 'sortOrder', 'active']);
+    'animationType', 'sortOrder', 'active', 'videoSize', 'videoFullscreen']);
   const metadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (!knownKeys.has(k)) metadata[k] = v;
@@ -62,6 +64,8 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
     animationType: data.animationType ? String(data.animationType) : 'none',
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
+    videoSize: data.videoSize ? Number(data.videoSize) : undefined,
+    videoFullscreen: data.videoFullscreen === true,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
