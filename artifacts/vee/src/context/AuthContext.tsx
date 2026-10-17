@@ -74,6 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const bannedUidRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // 2026-10-17 (Sumon): Load server-driven Nobel rewards at startup.
+    // Non-blocking — falls back to hardcoded if Firebase unreachable.
+    import('@/src/services/nobleRewardsCatalog').then(({ loadServerNobleRewards }) => {
+      loadServerNobleRewards().catch(() => {});
+    }).catch(() => {});
+
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
     // (offline start, corrupted token, etc.) force-unblock the loading screen
     // after AUTH_LOADING_TIMEOUT_MS so the app never stays permanently stuck.
