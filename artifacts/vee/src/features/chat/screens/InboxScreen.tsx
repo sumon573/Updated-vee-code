@@ -52,6 +52,8 @@ import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCall
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 // RC8-A: actual block user implementation
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
+import { isVeeTeam } from '../services/veeTeamService';
+import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { canViewOnlineStatus, canViewLastSeen } from '@/src/services/privacyService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
@@ -349,6 +351,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     ? _rawInboxName.trim()
     : 'Vee User';
 
+  // 2026-10-17 (Sumon): Vee Team system account — no replies, verified badge.
+  const isSystemChat = isVeeTeam(effectiveParticipantId);
+  const hasOfficialBadge = useVerifiedBadge(isSystemChat ? effectiveParticipantId : null);
+
   // ── Mark seen on open ──────────────────────────────────────────────────
   useEffect(() => {
     if (messages.length > 0) {
@@ -459,6 +465,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     // 2026-10-13 (Sumon): auth ছাড়া পাঠানো যাবে না — myUid 'unknown' হলে
     // Firebase rules reject করতো (senderId অবশ্যই auth.uid হতে হবে)।
     if (!user?.uid) return;
+    // 2026-10-17 (Sumon): Vee Team system account — replies disabled.
+    if (isVeeTeam(effectiveParticipantId)) return;
     const text = inputText.trim();
     if (!text) return;
     const now = Date.now();
@@ -530,6 +538,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const handleMedia = useCallback(async () => {
     if (uploadingMediaRef.current) return;
     if (!user?.uid) return; // 2026-10-13 (Sumon): auth ছাড়া media পাঠানো যাবে না
+    if (isVeeTeam(effectiveParticipantId)) return; // 2026-10-17 (Sumon): Vee Team — no replies
     const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       const title = t('chat.permissionRequired');
@@ -821,9 +830,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* Name + status */}
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
-                {displayName}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
+                  {displayName}
+                </Text>
+                {/* 2026-10-17 (Sumon): Vee Team verified badge next to the name */}
+                {isSystemChat && hasOfficialBadge && (
+                  <Feather name="check-circle" size={15} color="#007AFF" />
+                )}
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor }} />
                 <Text style={{ color: statusColor, fontSize: 11, fontWeight: '600' }}>
@@ -970,6 +985,19 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             )}
 
             {/* ── Input bar ──────────────────────────────────────────────── */}
+            {/* 2026-10-17 (Sumon): Vee Team system account — no reply input. */}
+            {isSystemChat ? (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                paddingHorizontal: 16, paddingVertical: 14,
+                borderTopWidth: 1, borderTopColor: C.border,
+                backgroundColor: C.headerBg, gap: 8 }}>
+                <Feather name="shield" size={15} color={C.muted} />
+                <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+                  {t('chat.veeTeamNoReply', { defaultValue: 'This is an official Vee Team account. Replies are disabled.' })}
+                </Text>
+              </View>
+            ) : (
             <View style={{
               flexDirection: 'row', alignItems: 'flex-end',
               paddingHorizontal: 12, paddingVertical: 10,
@@ -1021,6 +1049,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 </View>
               </Pressable>
             </View>
+            )}
           </KeyboardAvoidingView>
         </View>
       </SafeAreaView>
