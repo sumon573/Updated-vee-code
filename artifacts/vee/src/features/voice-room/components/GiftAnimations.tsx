@@ -434,17 +434,18 @@ function VideoGift({ animationUrl, size = 120 }: {
   );
 }
 
-export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType }: {
+export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize }: {
   giftId: string;
   emoji: string;
   size?: number;
   animationUrl?: string;
   animationType?: string;
+  videoSize?: number;
 }) {
   // 2026-10-16 (Sumon): PERMANENT — server-driven gifts with video play the video as-is
-  // 2026-10-17 (Sumon): Cap video size — size*4 overflowed the screen (520px on phones).
+  // 2026-10-17 (Sumon): videoSize is server-driven via Firebase gift_catalog — no build needed to adjust.
   if (animationType === 'video' && animationUrl) {
-    return <VideoGift animationUrl={animationUrl} size={Math.min(size * 2.5, 280)} />;
+    return <VideoGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} />;
   }
   // GIFs play automatically via Image component (native support)
   // For server gifts with thumbnailUrl, the thumbnail shows (GIF animates natively)
