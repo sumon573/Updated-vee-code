@@ -23,6 +23,8 @@ import {
 import {
   subscribeTransactionHistory,
   type WalletTransaction } from '@/src/features/wallet/walletService';
+import { ref, get } from 'firebase/database';
+import { database } from '@/src/config/firebase';
 
 // Light-mode colors (same tokens as profile/index.tsx)
 const C = {
@@ -86,6 +88,8 @@ export default function GiftDisplayScreen() {
   const [contributors, setContributors] = useState<Record<string, VeeUser | null>>({});
   // 2026-10-15 (Sumon): lifetime gift counts — permanent, not limited to 50 txs.
   const [lifetimeCounts, setLifetimeCounts] = useState<Record<string, number>>({});
+  // 2026-10-17 (Sumon): Server-driven gift catalog — new gifts from Firebase show in display.
+  const [serverCatalog, setServerCatalog] = useState<Record<string, { name: string; coins: number; thumbnailUrl?: string }>>({});
 
   // Open the sort dropdown anchored under the sort button (real position).
   const openSortMenu = useCallback(() => {
@@ -126,6 +130,38 @@ export default function GiftDisplayScreen() {
     };
   }, [uid]);
 
+  // 2026-10-17 (Sumon): Load server-driven gift catalog from Firebase.
+  // New gifts (like Pink Love) appear in display instead of "inactive".
+  useEffect(() => {
+    get(ref(database, 'gift_catalog')).then((snap) => {
+      if (!snap.exists()) return;
+      const catalog: Record<string, { name: string; coins: number; thumbnailUrl?: string }> = {};
+      snap.forEach((child) => {
+        const v = child.val();
+        if (v && v.name && typeof v.price === 'number') {
+          catalog[child.key as string] = {
+            name: v.name,
+            coins: v.price,
+            thumbnailUrl: v.thumbnailUrl,
+          };
+        }
+      });
+      setServerCatalog(catalog);
+    }).catch(() => {});
+  }, []);
+
+  // Merged catalog: server gifts + hardcoded (server takes precedence).
+  const mergedCatalog = useMemo(() => {
+    const merged: Record<string, { emoji?: string; coins: number; name: string; thumbnailUrl?: string }> = {};
+    for (const [id, g] of Object.entries(GIFT_CATALOG)) {
+      merged[id] = { emoji: g.emoji, coins: g.coins, name: g.name };
+    }
+    for (const [id, g] of Object.entries(serverCatalog)) {
+      merged[id] = { coins: g.coins, name: g.name, thumbnailUrl: g.thumbnailUrl };
+    }
+    return merged;
+  }, [serverCatalog]);
+
   // ── Aggregations (real data only) ───────────────────────────────────────
   const receivedTxs = useMemo(
     () => txs.filter((t) => t && t.type === 'gift_received' && typeof t.giftId === 'string' && t.giftId.length > 0),
@@ -146,22 +182,22 @@ export default function GiftDisplayScreen() {
   const catalogEntries = useMemo(
     () =>
       Object.entries(giftCounts)
-        .filter(([giftId]) => GIFT_CATALOG[giftId])
+        .filter(([giftId]) => mergedCatalog[giftId])
         .sort((a, b) => {
           if (sortMode === 'value') {
-            return GIFT_CATALOG[b[0]].coins * b[1] - GIFT_CATALOG[a[0]].coins * a[1];
+            return mergedCatalog[b[0]].coins * b[1] - mergedCatalog[a[0]].coins * a[1];
           }
           return b[1] - a[1]; // quantity desc
         }),
-    [giftCounts, sortMode],
+    [giftCounts, sortMode, mergedCatalog],
   );
 
   const inactiveEntries = useMemo(
     () =>
       Object.entries(giftCounts)
-        .filter(([giftId]) => !GIFT_CATALOG[giftId])
+        .filter(([giftId]) => !mergedCatalog[giftId])
         .sort((a, b) => b[1] - a[1]),
-    [giftCounts],
+    [giftCounts, mergedCatalog],
   );
 
   const totalGifts = useMemo(
@@ -172,7 +208,7 @@ export default function GiftDisplayScreen() {
   const totalCoins = useMemo(
     () =>
       Object.entries(giftCounts).reduce(
-        (s, [giftId, c]) => s + (GIFT_CATALOG[giftId] ? GIFT_CATALOG[giftId].coins * c : 0),
+        (s, [giftId, c]) => s + (mergedCatalog[giftId] ? mergedCatalog[giftId].coins * c : 0),
         0,
       ),
     [giftCounts],
@@ -233,7 +269,9 @@ export default function GiftDisplayScreen() {
   const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
 
   const renderGiftCell = useCallback(
-    ([giftId, count]: [string, number], dimmed: boolean) => (
+    ([giftId, count]: [string, number], dimmed: boolean) => {
+      const info = mergedCatalog[giftId];
+      return (
       <Pressable
         key={giftId}
         onPress={() => setPreviewGift({ giftId, count })}
@@ -248,15 +286,20 @@ export default function GiftDisplayScreen() {
             alignItems: 'center',
             justifyContent: 'center' }}
         >
-          <Text style={{ fontSize: 36 }}>{GIFT_CATALOG[giftId]?.emoji ?? '🎁'}</Text>
+          {info?.thumbnailUrl ? (
+            <Image source={{ uri: info.thumbnailUrl }} style={{ width: 48, height: 48, borderRadius: 8 }} resizeMode="contain" />
+          ) : (
+            <Text style={{ fontSize: 36 }}>{info?.emoji ?? '🎁'}</Text>
+          )}
         </View>
         <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
       </Pressable>
-    ),
-    [],
+      );
+    },
+    [mergedCatalog],
   );
 
-  const previewInfo = previewGift ? GIFT_CATALOG[previewGift.giftId] : undefined;
+  const previewInfo = previewGift ? mergedCatalog[previewGift.giftId] : undefined;
 
   if (!loaded) {
     return (
