@@ -510,6 +510,7 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     mediaStoryShare: 'স্টোরি শেয়ার',
     mediaSticker: 'স্টিকার',
     messagePlaceholder: 'মেসেজ লিখুন...',
+      veeTeamNoReply: 'এটি Vee Team-এর official account। Reply করা যাবে না।',
     emptyMessages: 'কোনো মেসেজ নেই। প্রথম মেসেজ পাঠান! 👋',
     statusTyping: 'লিখছেন...',
     statusOnline: 'অনলাইন',
