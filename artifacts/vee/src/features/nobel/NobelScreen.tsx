@@ -51,6 +51,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   // 2026-10-15 (Sumon): profile name from RTDB — Nobel tab must show the SAME
   // name as the profile screen (profile uses RTDB profile.name, not auth).
   const [profileName, setProfileName] = useState<string | null>(null);
+  // 2026-10-17 (Sumon): profile photo from RTDB — must show real DP realtime
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
@@ -59,14 +61,19 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     // 2026-10-15 (Sumon): lazy demotion — roll over expired windows on view.
     refreshNobleState(user.uid).catch(() => {});
     // 2026-10-15 (Sumon): fetch RTDB profile name — must match profile screen.
+    // 2026-10-17 (Sumon): also fetch RTDB photoURL realtime — real DP, not placeholder.
     (async () => {
       try {
-        const { ref, get } = await import('firebase/database');
+        const { ref, onValue } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
-        const snap = await get(ref(database, `users/${user.uid}/name`)).catch(() => null);
-        const n = snap?.val();
-        if (typeof n === 'string' && n.trim()) setProfileName(n.trim());
-      } catch { /* fall back to auth displayName */ }
+        onValue(ref(database, `users/${user.uid}`), (snap) => {
+          const v = snap.val();
+          if (v) {
+            if (typeof v.name === 'string' && v.name.trim()) setProfileName(v.name.trim());
+            if (typeof v.photoURL === 'string' && v.photoURL) setProfilePhoto(v.photoURL);
+          }
+        });
+      } catch { /* fall back to auth displayName/photoURL */ }
     })();
     const unsub = subscribeNoble(
       user.uid,
@@ -192,8 +199,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           <>
             {/* Profile */}
             <View style={{ alignItems: 'center', paddingTop: 8 }}>
-              {user?.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={{ width: 72, height: 72, borderRadius: 36 }} />
+              {(profilePhoto || user?.photoURL) ? (
+                <Image source={{ uri: profilePhoto || user?.photoURL }} style={{ width: 72, height: 72, borderRadius: 36 }} />
               ) : (
                 <View style={{
                   width: 72, height: 72, borderRadius: 36, backgroundColor: '#E0E0E0',
@@ -328,7 +335,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           onClose={() => setPreviewRankIdx(null)}
           rankIndex={previewRankIdx}
           userName={profileName || user?.displayName || 'Vee User'}
-          userPhotoURL={user?.photoURL}
+          userPhotoURL={profilePhoto || user?.photoURL}
           userXP={xp}
         />
       )}
