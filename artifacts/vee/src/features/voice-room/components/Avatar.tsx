@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Text, Animated, Easing, Image, View } from 'react-native';
 import AnimatedFrame from '../../../components/AnimatedFrame';
 import NobelFrame from '../../../components/NobelFrame';
-import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { C } from '../constants/theme';
 import { nobleThemeFor } from '@/src/services/nobleService';
 
@@ -277,7 +277,7 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
           {frameType.startsWith('noble-frame-') ? (
             (() => {
               const rankKey = frameType.replace('noble-frame-', '');
-              const catalog = NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rankKey);
+              const catalog = rewardsForRankKey(rankKey);
               const designUrl = catalog?.frame?.designUrl;
               if (designUrl && /^https?:\/\//i.test(designUrl)) {
                 // 2026-10-15: Frame inner opening is ~51% of image — 1.6x ensures DP fits

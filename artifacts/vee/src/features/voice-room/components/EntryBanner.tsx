@@ -17,7 +17,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
-import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 
 interface EntryBannerProps {
   /** The joiner's display name */
@@ -38,7 +38,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // 2026-10-15 (Sumon): Count+ (index >= 3) gets PREMIUM animated entry effect
   const isPremiumEntry = nobleRankIndex != null && nobleRankIndex >= 3;
   const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
-  const catalog = rankKey ? NOBLE_REWARDS_CATALOG.find(c => c.rankKey === rankKey) : null;
+  const catalog = rankKey ? rewardsForRankKey(rankKey) : null;
   const frameUrl = catalog?.frame?.designUrl;
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;

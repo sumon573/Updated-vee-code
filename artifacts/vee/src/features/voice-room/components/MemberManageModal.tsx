@@ -10,7 +10,7 @@ import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import MistNameplate from '@/src/components/MistNameplate';
-import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
@@ -63,7 +63,8 @@ export function MemberManageModal({
   useEffect(() => {
     let cancelled = false;
     const resolvePlate = (plateId: string) => {
-      const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === plateId);
+      const rankKey = plateId.replace('noble-plate-', '');
+      const entry = rewardsForRankKey(rankKey);
       const mistColor = entry?.nameplate.mistColor || null;
       const designUrl = entry?.nameplate.designUrl;
       if (designUrl && /^https?:\/\//i.test(designUrl)) {
