@@ -596,6 +596,11 @@ export default function VoiceRoomScreen() {
     setPinGate(nextGate);
     if (nextGate === 'passed') handleRoomInfoOk();
   }, [myUid, roomId, handleRoomInfoOk]);
+  // 2026-10-17 (Sumon): VOICE-ROOM BAN — a banned user can still use the app
+  // (login is untouched) but may not enter any voice room. Null-safe: no
+  // voiceBan record (old accounts) or any read failure → NOT banned.
+  const [voiceBan, setVoiceBan] = useState<VoiceBanInfo | null>(null);
+  const [banCheckDone, setBanCheckDone] = useState(false);
 
   /* ── LiveKit real audio ── */
   const {
@@ -930,11 +935,6 @@ export default function VoiceRoomScreen() {
   const [pinVerifying, setPinVerifying] = useState(false);
   const pinSubmittingRef = useRef(false); // double-tap submit guard
 
-  // 2026-10-17 (Sumon): VOICE-ROOM BAN — a banned user can still use the app
-  // (login is untouched) but may not enter any voice room. Null-safe: no
-  // voiceBan record (old accounts) or any read failure → NOT banned.
-  const [voiceBan, setVoiceBan] = useState<VoiceBanInfo | null>(null);
-  const [banCheckDone, setBanCheckDone] = useState(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') { setBanCheckDone(true); return; }
     let cancelled = false;
