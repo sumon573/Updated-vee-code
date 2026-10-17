@@ -21,6 +21,7 @@ import { get, ref, query, orderByChild, limitToLast, onValue } from 'firebase/da
 import { auth, database } from '@/src/config/firebase';
 import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
 import { getCurrentWeekId } from '@/src/utils/weekId';
+import { router } from 'expo-router';
 
 // ─── Light premium palette ───────────────────────────────────────────────────
 
@@ -210,6 +211,9 @@ export function LeaderboardModal({
   // ── Top Senders — REAL weekly data ─────────────────────────────────────────
   const [senders, setSenders] = useState<LeaderboardEntry[]>([]);
   const [sendersLoading, setSendersLoading] = useState(true);
+  // 2026-10-17 (Sumon): realtime user profiles for real DPs — leaderboard data
+  // can be stale, so enrich each entry with live users/{uid} profile.
+  const [userProfiles, setUserProfiles] = useState<Record<string, { name?: string; photoURL?: string }>>({});
 
   useEffect(() => {
     if (!visible || tab !== 'senders') return;
@@ -272,6 +276,33 @@ export function LeaderboardModal({
     });
     return unsub;
   }, [visible, tab, weekId]);
+
+  // 2026-10-17 (Sumon): realtime user profiles — fetch live name/photoURL for
+  // all visible leaderboard UIDs so DPs are always real and current.
+  useEffect(() => {
+    if (!visible) return;
+    const uids = new Set<string>();
+    for (const s of senders) uids.add(s.uid);
+    for (const r of receivers) uids.add(r.uid);
+    if (uids.size === 0) return;
+    const unsubs: (() => void)[] = [];
+    for (const uid of uids) {
+      const unsub = onValue(ref(database, `users/${uid}`), (snap) => {
+        const v = snap.val();
+        if (v) {
+          setUserProfiles((prev) => ({
+            ...prev,
+            [uid]: {
+              name: typeof v.name === 'string' && v.name.trim() ? v.name.trim() : undefined,
+              photoURL: typeof v.photoURL === 'string' && v.photoURL ? v.photoURL : undefined,
+            },
+          }));
+        }
+      });
+      unsubs.push(unsub);
+    }
+    return () => { for (const u of unsubs) u(); };
+  }, [visible, senders, receivers]);
 
   // ── My own weekly stats (for the pinned "Your Rank" bar) ───────────────────
   const [mySent, setMySent] = useState<number | null>(null);
@@ -339,8 +370,17 @@ export function LeaderboardModal({
     const rank = index + 1;
     const top3 = rank <= 3;
     const isMe = item.uid === myUid;
+    // 2026-10-17 (Sumon): realtime profile — live name/DP from users/{uid}
+    const liveProfile = userProfiles[item.uid];
+    const displayName = liveProfile?.name || item.name;
+    const displayPhoto = liveProfile?.photoURL || item.photoURL;
     return (
-      <View style={{
+      <Pressable
+        onPress={() => {
+          onClose();
+          router.push({ pathname: '/user-profile', params: { uid: item.uid, name: displayName } } as Parameters<typeof router.push>[0]);
+        }}
+        style={{
         flexDirection: 'row', alignItems: 'center',
         paddingVertical: top3 ? 14 : 11, paddingHorizontal: top3 ? 12 : 0,
         borderRadius: top3 ? 16 : 0,
@@ -349,11 +389,11 @@ export function LeaderboardModal({
         borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
         marginBottom: top3 ? 8 : 0 }}>
         <RankBadge rank={rank} />
-        <DPAvatar name={item.name} photoURL={item.photoURL} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
+        <DPAvatar name={displayName} photoURL={displayPhoto} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700', flexShrink: 1 }} numberOfLines={1}>
-              {item.name}
+              {displayName}
             </Text>
             {isMe && (
               <View style={{ backgroundColor: C.primary, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
@@ -370,7 +410,7 @@ export function LeaderboardModal({
             💎{fmtCompact(stat)}
           </Text>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -379,7 +419,12 @@ export function LeaderboardModal({
     const top3 = rank <= 3;
     const isMine = item.ownerId === myUid;
     return (
-      <View style={{
+      <Pressable
+        onPress={() => {
+          onClose();
+          router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never);
+        }}
+        style={{
         flexDirection: 'row', alignItems: 'center',
         paddingVertical: top3 ? 14 : 12, paddingHorizontal: top3 ? 12 : 0,
         borderRadius: top3 ? 16 : 0,
@@ -420,7 +465,7 @@ export function LeaderboardModal({
             {t('leaderboard.members', { defaultValue: 'members' })}
           </Text>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
