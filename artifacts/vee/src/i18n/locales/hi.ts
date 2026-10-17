@@ -504,6 +504,7 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
     mediaStoryShare: 'स्टोरी शेयर',
     mediaSticker: 'स्टिकर',
     messagePlaceholder: 'मैसेज लिखें...',
+      veeTeamNoReply: 'यह Vee Team का official account है। Reply नहीं किया जा सकता।',
     emptyMessages: 'कोई मैसेज नहीं। पहला मैसेज भेजें! 👋',
     statusTyping: 'टाइप कर रहे हैं...',
     statusOnline: 'ऑनलाइन',
