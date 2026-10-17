@@ -177,9 +177,10 @@
     // ─────────────────────────────────────────────────────────────────────
     "userChats": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
         "$chatId": {
-          ".write": "auth != null && (auth.uid === $uid || ($chatId.contains(auth.uid) && $chatId.contains($uid) && $chatId.length === auth.uid.length + $uid.length + 1))",
+          // 2026-10-17 (Sumon): Admin can manage Vee Team chats for system notices.
+          ".write": "auth != null && (auth.uid === $uid || auth.token.admin === true || ($chatId.contains(auth.uid) && $chatId.contains($uid) && $chatId.length === auth.uid.length + $uid.length + 1))",
           ".validate": "!newData.exists() || newData.child('id').isString()"
         }
       }
@@ -193,8 +194,9 @@
         ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
-            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
+            // 2026-10-17 (Sumon): Admin can send as Vee Team (senderId='vee_team') for system notices.
+            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || (auth.token.admin === true && $chatId.contains('vee_team')))",
+            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid || (auth.token.admin === true && newData.child('senderId').val() === 'vee_team')",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
             "content": {
