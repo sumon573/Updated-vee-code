@@ -73,6 +73,7 @@ export type GiftSentInfo = {
   animationType?: string;
   // 2026-10-17 (Sumon): Server-driven video size — adjust via Firebase without build.
   videoSize?: number;
+  videoFullscreen?: boolean;
 };
 
 export type BlockRecord = {
