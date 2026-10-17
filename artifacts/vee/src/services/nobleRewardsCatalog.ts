@@ -151,5 +151,64 @@ export function rewardIcon(design: RewardDesign): string {
  * Get rewards for a rank index (0-9). Returns null for invalid index.
  */
 export function rewardsForRank(rankIndex: number): RankRewards | null {
-  return NOBLE_REWARDS_CATALOG[rankIndex] ?? null;
+  return getActiveCatalog()[rankIndex] ?? null;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 2026-10-17 (Sumon): SERVER-DRIVEN Nobel rewards.
+ * Admin sets rewards in Firebase `nobel_rewards/{rankKey}` — designUrl,
+ * fallbackIcon, etc. App fetches once at startup, caches in memory.
+ * If server is unreachable, falls back to the hardcoded catalog above.
+ * After this, Sumon can add/change rank rewards via Firebase — no build needed.
+ * ───────────────────────────────────────────────────────────── */
+
+let serverCatalog: RankRewards[] | null = null;
+let serverLoadAttempted = false;
+
+/** Get the active catalog: server (if loaded) else hardcoded fallback. */
+export function getActiveCatalog(): RankRewards[] {
+  return serverCatalog ?? NOBLE_REWARDS_CATALOG;
+}
+
+/** Find rewards by rank key from the active catalog. */
+export function rewardsForRankKey(rankKey: string): RankRewards | null {
+  return getActiveCatalog().find((r) => r.rankKey === rankKey) ?? null;
+}
+
+/**
+ * Load server Nobel rewards from Firebase. Call once at app startup.
+ * Non-blocking — falls back to hardcoded if fetch fails.
+ */
+export async function loadServerNobleRewards(): Promise<void> {
+  if (serverLoadAttempted) return;
+  serverLoadAttempted = true;
+  try {
+    const { ref, get } = await import('firebase/database');
+    const { database } = await import('../config/firebase');
+    const snap = await get(ref(database, 'nobel_rewards'));
+    if (!snap.exists()) return;
+    const data = snap.val();
+    const catalog: RankRewards[] = [];
+    // Preserve rank order from hardcoded catalog
+    for (const base of NOBLE_REWARDS_CATALOG) {
+      const override = data[base.rankKey];
+      if (override) {
+        catalog.push({
+          rankKey: base.rankKey,
+          rankName: override.rankName || base.rankName,
+          rankColor: override.rankColor || base.rankColor,
+          nameplate: override.nameplate || base.nameplate,
+          badge: override.badge !== undefined ? override.badge : base.badge,
+          frame: override.frame !== undefined ? override.frame : base.frame,
+          ripple: override.ripple !== undefined ? override.ripple : base.ripple,
+          entryEffect: override.entryEffect !== undefined ? override.entryEffect : base.entryEffect,
+        });
+      } else {
+        catalog.push(base);
+      }
+    }
+    serverCatalog = catalog;
+  } catch {
+    // Fallback to hardcoded — non-critical
+  }
 }
