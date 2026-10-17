@@ -1091,6 +1091,10 @@ export default function VoiceRoomScreen() {
         emoji: event.emoji,
         coins: event.coins,
         target: null, // remote gifts use top-center fallback
+        animationUrl: event.animationUrl || undefined,
+        animationType: event.animationType || undefined,
+        videoSize: event.videoSize || undefined,
+        videoFullscreen: event.videoFullscreen || undefined,
       });
     });
   }, [roomId, myUid]);
