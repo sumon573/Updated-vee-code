@@ -1015,7 +1015,10 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     // Wait for myProfile to load (has real name + photoURL from RTDB)
     // before broadcasting — otherwise DP/name may be empty.
-    if (hasJoined && !hasShownSelfEntryRef.current && myUid && myProfile) {
+    // 2026-10-17 (Sumon): Entry effect on ROOM ENTRY, not just join.
+    // Anyone entering the room sees/shows the entry effect — hasJoined
+    // only controls the "Tap to join" banner, not the entry effect.
+    if (!hasShownSelfEntryRef.current && myUid && myProfile && roomId && pinGate === 'passed') {
       hasShownSelfEntryRef.current = true;
       // Use myName/myPhotoURL (from RTDB profile) — not auth which may be empty
       const displayName = myName || 'User';
@@ -1046,7 +1049,7 @@ export default function VoiceRoomScreen() {
           ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {/* non-critical */});
       })();
     }
-  }, [hasJoined, myUid, myProfile, myName, myPhotoURL, roomId]);
+  }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate]);
 
   // ENTRY BROADCAST SUBSCRIPTION (2026-10-10): Show entry banner when ANY
   // participant joins — so everyone sees everyone's entry effect.
@@ -2546,9 +2549,23 @@ export default function VoiceRoomScreen() {
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
 
   const handleJoinRoom = useCallback(() => {
+    // 2026-10-17 (Sumon): CRITICAL FIX — Join must write to Firebase, not just
+    // local state. Previously only setHasJoined(true) was called, so no
+    // userRooms/audience record was created. On re-enter, the rejoin check
+    // found nothing → "Tap to join" showed again every time.
     setHasJoined(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, []);
+    if (roomId && myUid) {
+      joinRoomAsAudience(roomId, {
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+      }).catch(() => {/* background: safe to swallow */});
+    }
+  }, [roomId, myUid, myName, myInitials, myColor, myPhotoURL]);
 
   /** Disband the room entirely (owner only) — removes all Firebase data then navigates away. */
   const handleDisband = useCallback(async () => {
