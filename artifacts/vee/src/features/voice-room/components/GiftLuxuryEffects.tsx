@@ -27,7 +27,9 @@ export type LuxuryEffectType =
   | 'romantic-hearts'  // wedding-kiss: hearts floating + romantic glow
   | 'musical-sparkle'  // first-dance: musical notes + elegant sparkles
   | 'mystery-glow'     // blind-love: mysterious dark sparkles + glow
-  | 'vee-majestic';    // vee-brand-castle: COMPLETELY DIFFERENT majestic brand effect
+  | 'vee-majestic'     // vee-brand-castle: COMPLETELY DIFFERENT majestic brand effect
+  | 'golden-sparkle'   // golden-crown: golden sparkles + royal shimmer
+  | 'minimal';         // kiss: MINIMAL effect — very subtle, few particles (Sumon 2026-10-17)
 
 const GIFT_EFFECT_MAP: Record<string, LuxuryEffectType> = {
   'pink-love': 'pink-hearts',
@@ -43,6 +45,13 @@ const GIFT_EFFECT_MAP: Record<string, LuxuryEffectType> = {
   'first-dance': 'musical-sparkle',
   'blind-love': 'mystery-glow',
   'vee-brand-castle': 'vee-majestic',
+  // 2026-10-17 (Sumon): New gifts
+  'vee-dream-castle': 'vee-majestic',
+  'rose-heart': 'petal-glow',
+  'pink-rose': 'petal-glow',
+  'golden-crown': 'golden-sparkle',
+  'heart': 'pink-hearts',
+  'kiss': 'minimal',
 };
 
 export function getLuxuryEffect(giftId: string): LuxuryEffectType {
@@ -150,7 +159,8 @@ export function GiftLuxuryEffect({ giftId, size }: { giftId: string; size: numbe
   // Generate particles based on effect type
   const renderParticles = () => {
     const particles = [];
-    const count = 12;
+    // 2026-10-17 (Sumon): minimal effect uses only 4 particles
+    const count = effect === 'minimal' ? 4 : 12;
 
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
@@ -217,6 +227,16 @@ export function GiftLuxuryEffect({ giftId, size }: { giftId: string; size: numbe
           emoji = ['👑', '✨', '💎', '🌟'][i % 4];
           pSize = 22 + (i % 3) * 6;
           break;
+        case 'golden-sparkle':
+          // Golden Crown: royal golden sparkles
+          emoji = ['✨', '👑', '💛', '⭐'][i % 4];
+          pSize = 20 + (i % 3) * 5;
+          break;
+        case 'minimal':
+          // Kiss: MINIMAL — very few, subtle sparkles only (Sumon 2026-10-17)
+          emoji = ['✨', '💋'][i % 2];
+          pSize = 14 + (i % 2) * 3;
+          break;
       }
 
       particles.push(
@@ -252,6 +272,8 @@ export function GiftLuxuryEffect({ giftId, size }: { giftId: string; size: numbe
       case 'musical-sparkle': return 'rgba(135, 206, 250, 0.3)';
       case 'mystery-glow': return 'rgba(75, 0, 130, 0.35)';
       case 'vee-majestic': return 'rgba(255, 215, 0, 0.4)'; // Gold for Vee Brand
+      case 'golden-sparkle': return 'rgba(255, 215, 0, 0.35)'; // Royal gold
+      case 'minimal': return 'rgba(255, 182, 193, 0.15)'; // Very subtle pink
       default: return 'rgba(255, 215, 0, 0.3)';
     }
   };
