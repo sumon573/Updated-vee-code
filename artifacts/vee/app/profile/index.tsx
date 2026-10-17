@@ -432,6 +432,8 @@ export default function ProfileScreen({
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  // 2026-10-17 (Sumon): server gift catalog for real gift images in preview
+  const [giftCatalog, setGiftCatalog] = useState<Record<string, { name: string; thumbnailUrl?: string }>>({});
   // 2026-10-12 (Sumon): diamonds sent — primary XP driver for the slow,
   // premium level system (1 XP per diamond sent as gift).
   const [diamondsSent, setDiamondsSent] = useState(0);
@@ -563,6 +565,36 @@ export default function ProfileScreen({
       setReceivedGifts(counts);
     });
   }, [displayUid]);
+
+  // 2026-10-17 (Sumon): load server gift catalog for real gift images (realtime)
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        return onValue(ref(database, 'gift_catalog'), (snap) => {
+          if (cancelled) return;
+          const catalog: Record<string, { name: string; thumbnailUrl?: string }> = {};
+          if (snap.exists()) {
+            snap.forEach((child) => {
+              const v = child.val() as any;
+              if (v && v.active !== false) {
+                catalog[child.key as string] = {
+                  name: v.name || child.key,
+                  thumbnailUrl: v.thumbnailUrl || v.animationUrl,
+                };
+              }
+            });
+          }
+          setGiftCatalog(catalog);
+        });
+      } catch {
+        // non-critical: emoji fallback remains
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
@@ -1013,8 +1045,12 @@ export default function ProfileScreen({
                   .slice(0, 4)
                   .map(([giftId, count]) => (
                   <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
+                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {giftCatalog[giftId]?.thumbnailUrl ? (
+                        <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
+                      ) : (
+                        <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
+                      )}
                     </View>
                     <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
                   </View>
