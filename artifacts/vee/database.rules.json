@@ -4,26 +4,6 @@
     ".write": false,
 
     // ─────────────────────────────────────────────────────────────────────
-    // Server-driven catalogs — readable by any authenticated user.
-    // Sumon manages content via Firebase console / admin panel, no app build needed.
-    // ─────────────────────────────────────────────────────────────────────
-    "gift_catalog": {
-      ".read": "auth != null"
-    },
-    "decoration_catalog": {
-      ".read": "auth != null"
-    },
-    "task_events": {
-      ".read": "auth != null"
-    },
-    "app_content": {
-      ".read": "auth != null"
-    },
-    "store_catalog": {
-      ".read": "auth != null"
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
     // users — profile data, readable by any authenticated user so searches
     // and profile screens work; individual $uid nodes are only writable by
     // the owner, with sensitive admin-only sub-paths further restricted.
@@ -31,11 +11,6 @@
     "users": {
       ".read": "auth != null",
       ".indexOn": ["vId", "online"],
-      // 2026-10-17 (Sumon): Vee Team system account — admins may create/manage
-      // it via the admin panel. More specific than $uid, so it takes precedence.
-      "vee_team": {
-        ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())"
-      },
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
@@ -51,7 +26,7 @@
         // can only equip a frame they OWN (exists in their frames collection)
         // or unequip (null). Setting an arbitrary frameId is rejected.
         // Admins bypass via the role check at the start.
-        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('voiceBan').val() === data.child('voiceBan').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val() && (newData.child('activeFrame').val() === data.child('activeFrame').val() || newData.child('activeFrame').val() === null || root.child('users').child($uid).child('frames').child(newData.child('activeFrame').val()).exists()))",
+        ".validate": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists() || (newData.child('banned').val() === data.child('banned').val() && newData.child('banReason').val() === data.child('banReason').val() && newData.child('bannedAt').val() === data.child('bannedAt').val() && newData.child('bannedBy').val() === data.child('bannedBy').val() && newData.child('diamonds').val() === data.child('diamonds').val() && newData.child('role').val() === data.child('role').val() && newData.child('officialBadge/grantedBy').val() === data.child('officialBadge/grantedBy').val() && newData.child('officialBadge/grantedAt').val() === data.child('officialBadge/grantedAt').val() && (newData.child('activeFrame').val() === data.child('activeFrame').val() || newData.child('activeFrame').val() === null || root.child('users').child($uid).child('frames').child(newData.child('activeFrame').val()).exists()))",
         // PERMANENT FIX (2026-10-08): Validate data types to prevent corrupted
         // records that crash the app. These rules reject malformed writes at
         // the database level, so bad data can never be stored.
@@ -88,13 +63,6 @@
         },
         "bannedBy": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'"
-        },
-        "voiceBan": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()",
-          ".validate": "newData.hasChildren(['banned', 'reason', 'bannedAt']) && newData.child('banned').isBoolean()"
-        },
-        "banHistory": {
-          ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()"
         },
         "diamonds": {
           ".write": "auth.token.role === 'superAdmin' || auth.token.role === 'admin'",
@@ -225,12 +193,8 @@
         ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            // 2026-10-17 (Sumon): Vee Team system notices — senderId 'vee_team'
-            // may be written by (a) the chat participant (own welcome notice),
-            // or (b) an admin (notices/warnings to any user). Nobody else can
-            // forge system messages.
-            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || (newData.child('senderId').val() === 'vee_team' && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())))",
-            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid || newData.child('senderId').val() === 'vee_team'",
+            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
+            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
             "content": {
@@ -397,9 +361,10 @@
         // caller's read fail with permission-denied instead of null snapshot.
         // Call data is ephemeral (only during ringing), so open read is safe.
         ".read": "auth != null",
+        // 2026-10-17 (Sumon): Block ALL calls to Vee Team system account — no voice/video calls.
         // FIX (2026-10-10): Allow callee to UPDATE (e.g., status='accepted').
         // The old rule only allowed caller writes or callee deletes.
-        ".write": "auth != null && ((newData.exists() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid)) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
+        ".write": "auth != null && $calleeUid !== 'vee_team' && ((newData.exists() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid)) || (!newData.exists() && (auth.uid === $calleeUid || (data.exists() && data.child('callerId').val() === auth.uid))))",
         ".validate": "!newData.exists() || (newData.child('callerId').isString() && newData.child('callerName').isString() && newData.child('roomId').isString() && newData.child('createdAt').isNumber() && (newData.child('callerId').val() === auth.uid || auth.uid === $calleeUid))"
       }
     },
