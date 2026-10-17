@@ -2567,7 +2567,8 @@ export default function VoiceRoomScreen() {
         coins: info.coins,
         target,
       animationUrl: info.animationUrl,
-      animationType: info.animationType});
+      animationType: info.animationType,
+      videoSize: info.videoSize});
     };
     for (const r of info.recipients) {
       // Broadcast gift event so ALL participants see the animation (2026-10-10)
@@ -2582,7 +2583,8 @@ export default function VoiceRoomScreen() {
         toName: r.name,
         toAvatar: r.photoURL || null,
       animationUrl: info.animationUrl || null,
-      animationType: info.animationType || null }).catch(() => {/* non-critical */});
+      animationType: info.animationType || null,
+      videoSize: info.videoSize || null }).catch(() => {/* non-critical */});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
