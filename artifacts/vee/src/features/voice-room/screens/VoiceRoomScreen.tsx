@@ -944,6 +944,23 @@ export default function VoiceRoomScreen() {
     return () => { cancelled = true; };
   }, [myUid]);
 
+  // 2026-10-17 (Sumon): PROFESSIONAL ban exit — hardware back on ban screen
+  // goes home safely, never crashes. Placed with other hooks (before conditional return).
+  useEffect(() => {
+    if (!banCheckDone || !voiceBan) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      try {
+        clearCurrentRoom();
+        if (router.canGoBack()) router.back();
+        else router.replace('/home');
+      } catch {
+        try { router.replace('/home'); } catch {}
+      }
+      return true; // handled
+    });
+    return () => sub.remove();
+  }, [banCheckDone, voiceBan]);
+
   /**
    * P0 security (2026-10-12): verify the in-screen PIN gate.
    * Double-tap guarded; network/transport failures surface their real cause
@@ -2666,7 +2683,18 @@ export default function VoiceRoomScreen() {
   // 2026-10-17 (Sumon): VOICE-ROOM BAN — banned users see this screen only.
   // Login/app is untouched; they just cannot enter voice rooms. Placed AFTER
   // all hooks (Rules of Hooks) and BEFORE the room render.
+  // 2026-10-17 (Sumon): PROFESSIONAL ban exit — safe back navigation, clear
+  // minimized state, hardware back handled. No crashes, no "something went wrong".
   if (banCheckDone && voiceBan) {
+    const handleBanBack = () => {
+      try {
+        clearCurrentRoom();
+        if (router.canGoBack()) router.back();
+        else router.replace('/home');
+      } catch {
+        try { router.replace('/home'); } catch {}
+      }
+    };
     const untilText = voiceBan.bannedUntil
       ? new Date(voiceBan.bannedUntil).toLocaleDateString()
       : t('voiceRoom.ban.permanent', { defaultValue: 'Permanent' });
@@ -2705,7 +2733,7 @@ export default function VoiceRoomScreen() {
           {t('voiceRoom.ban.note', { defaultValue: 'You can still use the rest of the app. Contact support if you believe this is a mistake.' })}
         </Text>
         <Pressable
-          onPress={() => router.back()}
+          onPress={handleBanBack}
           style={{ backgroundColor: '#E3F2FD', borderRadius: 14, paddingHorizontal: 32, paddingVertical: 12 }}
         >
           <Text style={{ color: '#007AFF', fontSize: 15, fontWeight: '800' }}>
