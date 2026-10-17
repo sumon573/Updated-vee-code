@@ -852,8 +852,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             {/* Actions — bigger touch targets for easy tapping */}
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               {/* 2026-10-17 (Sumon): Vee Team system account — no calls. */}
-              {!isSystemChat && (
               {/* RC6 fix Issue 8: navigate to real 1-to-1 audio call */}
+              {!isSystemChat && (
               <Pressable hitSlop={12} onPress={handleVoiceCall}
                 style={{
                   width: 44, height: 44, borderRadius: 22,
