@@ -78,31 +78,6 @@
         // when claiming (must match the shortIds/users registry); admins
         // can set any custom ID.
         "shortId": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
-          ".validate": "newData.isString() && newData.val().matches(/^[0-9]+$/)"
-        },
-        // Official verified badge (2026-10-09): ONLY admins can grant/revoke.
-        // Displayed next to the profile name.
-        "officialBadge": {
-          ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
-          ".validate": "newData.hasChildren(['grantedBy', 'grantedAt'])"
-        },
-        // Noble state (2026-10-11, NOTE 10): written ONLY by the owner via
-        // the atomic recordNobleXP transaction (XP from real gifts sent;
-        // self-gifts excluded). Type validation prevents corrupted records
-        // that could crash the app (2026-10-08 lesson).
-        "noble": {
-          // 2026-10-12 audit fix (HIGH): Noble XP was self-writable — any user
-          // could set arbitrary XP/rank. Now: XP can only INCREASE by at most
-          // the max gift price (2000) per write, and rankIndex must be
-          // consistent with the XP. Grinding via many small writes is still
-          // possible client-side; full server-authority is the complete fix.
-          ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
-          ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
-        }
-      }
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // vids — VId reservation registry; a VId can only be claimed once and
     // must point to the claiming user's UID.
@@ -193,8 +168,8 @@
         ".read": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
         "messages": {
           "$msgId": {
-            ".write": "auth != null && (root.child('userChats').child(auth.uid).child($chatId).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists())",
-            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid || (newData.child('senderId').val() === 'vee_team' && (auth.token.role === 'superAdmin' || auth.token.role === 'admin' || root.child('admins').child(auth.uid).exists()))",
+            ".write": "auth != null && root.child('userChats').child(auth.uid).child($chatId).exists()",
+            ".validate": "data.exists() || newData.child('senderId').val() === auth.uid",
             // RC8-B1 Security Fix: enforce maximum message content length to prevent
             // storage abuse via arbitrarily large payloads.
             "content": {
@@ -239,26 +214,6 @@
           // App increments viewCount only when this write succeeds.
           "viewers": {
             "$viewerUid": {
-              ".write": "auth != null && auth.uid === $viewerUid && !data.exists()",
-              ".validate": "newData.val() === true"
-            }
-          },
-          "reactions": {
-            "$reactorUid": {
-              ".write": "auth != null && auth.uid === $reactorUid",
-              ".validate": "!newData.exists() || newData.isString()"
-            }
-          },
-          "comments": {
-            "$commentId": {
-              ".write": "auth != null && (!newData.exists() || newData.child('userId').val() === auth.uid)",
-              ".validate": "!newData.exists() || (newData.child('userId').isString() && newData.child('userName').isString() && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('ts').isNumber() && (!newData.child('replyTo').exists() || newData.child('replyTo').isString()) && (!newData.child('replyToName').exists() || newData.child('replyToName').isString()))"
-            }
-          }
-        }
-      }
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // contactStories — server-side enforced contacts-only stories.
     //
@@ -370,36 +325,6 @@
 
     // ─────────────────────────────────────────────────────────────────────
     // webrtc — 1-to-1 audio call signaling (WebRTC, zero-cost).
-    //
-    // DB structure: webrtc/ac_{uidA}_{uidB}/ → { offer, answer, ice/{pusherUid}/ }
-    //   roomId = "ac_" + the two parties' UIDs sorted and joined with "_"
-    //   (see buildCallRoomId in firebaseCallService.ts).
-    //
-    // Access: only the two call parties may read/write — their UIDs are
-    // embedded in the roomId. Firebase Auth UIDs are 28-char opaque strings,
-    // so substring collision is not a practical attack vector.
-    // The whole node is removed by the client when the call ends/hangups.
-    // ─────────────────────────────────────────────────────────────────────
-    "webrtc": {
-      "$roomId": {
-        ".read": "auth != null && $roomId.beginsWith('ac_') && $roomId.contains(auth.uid)",
-        ".write": "auth != null && $roomId.beginsWith('ac_') && $roomId.contains(auth.uid)",
-        "offer": {
-          ".validate": "!newData.exists() || (newData.child('sdp').isString() && newData.child('sdp').val().length <= 10000 && newData.child('type').val() === 'offer')"
-        },
-        "answer": {
-          ".validate": "!newData.exists() || (newData.child('sdp').isString() && newData.child('sdp').val().length <= 10000 && newData.child('type').val() === 'answer')"
-        },
-        "ice": {
-          "$pusherUid": {
-            "$candidateId": {
-              ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('candidate').val().length <= 2000)"
-            }
-          }
-        }
-      }
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // rooms — voice rooms; all active rooms are publicly readable by
     // authenticated users so the room list and join flows work.
@@ -560,38 +485,6 @@
         ".read": "auth != null",
         "$reqId": {
           // SECURITY HARDENING (2026-10-06):
-          // - CREATE: only the requester can create (userId must match auth.uid)
-          // - UPDATE (approve/reject): only room owner, room admins (via the
-          //   rooms/$roomId/admins registry, 2026-10-12), or platform admins.
-          //   Previously ANY authenticated user could approve/reject requests!
-          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')))",
-          // RC8-B1 Security Fix: userId must match auth.uid on CREATE so that a user
-          // cannot impersonate another user in a seat request. On UPDATE (owner
-          // approving/rejecting), the userId field must remain unchanged from its
-          // original value — only the status may change.
-          ".validate": "!newData.exists() || (newData.child('userId').isString() && newData.child('status').isString() && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected') && newData.child('ts').isNumber() && (!data.exists() ? newData.child('userId').val() === auth.uid : newData.child('userId').val() === data.child('userId').val()))"
-        }
-      }
-    },
-    "roomInvites": {
-      "$inviteeUid": {
-        ".read": "auth != null && auth.uid === $inviteeUid",
-        "$roomId": {
-          ".write": "auth != null && (!newData.exists() || newData.child('inviterUid').val() === auth.uid || auth.uid === $inviteeUid)",
-          ".validate": "!newData.exists() || (newData.child('roomId').isString() && newData.child('inviterUid').val() === auth.uid && newData.child('ts').isNumber())"
-        }
-      }
-    },
-    "seatInvites": {
-      "$inviteeUid": {
-        ".read": "auth != null && auth.uid === $inviteeUid",
-        "$inviteId": {
-          ".write": "auth != null && (auth.uid === $inviteeUid || (newData.exists() && newData.child('inviterUid').val() === auth.uid) || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
-          ".validate": "!newData.exists() || (newData.child('roomId').isString() && newData.child('inviterUid').val() === auth.uid && newData.child('seatIdx').isNumber() && newData.child('ts').isNumber())"
-        }
-      }
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // wallets — all financial writes are server-only (write: false).
     // ─────────────────────────────────────────────────────────────────────
@@ -602,6 +495,11 @@
           // GIFT FIX (2026-10-10): Allow client-side gift transactions as fallback
           // when the VPS api-server is unreachable/outdated. The sender can only
           // DECREASE their own balance by a valid gift price.
+          // 2026-10-18: price set extended to the live gift_catalog (19 gifts).
+          // Debit deltas now: 1,10,25,50,100,200,500,600,700,1000,1200,1500,2000,2500,3000,4000,5000.
+          // Credit (70%) deltas now add: 420,490,840,1050,1750,2100,2800,3500.
+          // NOTE: 1-diamond gifts credit 0 (floor(1*0.7)) — client must skip zero-amount
+          // credits (build-needed); the VPS primary path handles them today.
           // SECURITY FIX (2026-10-12): the increase branch previously allowed
           // ANY authenticated user to mint FULL gift prices (10..2000) into ANY
           // balance. Now: recipient credits use the 70% commission amounts
@@ -617,7 +515,7 @@
           // 2026-10-12 audit fix (M2): allow owner to normalize a legacy
           // STRING balance to a number (one-way migration; otherwise string-
           // balance users have fully broken wallets — no writes work).
-          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400)) || (auth.uid === $uid && ((newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000) || (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400))))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400)) || (auth.uid === $uid && data.exists() && data.isString()))"
+          ".write": "auth != null && newData.isNumber() && newData.val() >= 0 && ((auth.uid === $uid && data.exists() && data.isNumber() && newData.val() < data.val() && (data.val() - newData.val() == 10 || data.val() - newData.val() == 25 || data.val() - newData.val() == 50 || data.val() - newData.val() == 100 || data.val() - newData.val() == 200 || data.val() - newData.val() == 500 || data.val() - newData.val() == 1000 || data.val() - newData.val() == 2000 || data.val() - newData.val() == 1 || data.val() - newData.val() == 600 || data.val() - newData.val() == 700 || data.val() - newData.val() == 1200 || data.val() - newData.val() == 1500 || data.val() - newData.val() == 2500 || data.val() - newData.val() == 3000 || data.val() - newData.val() == 4000 || data.val() - newData.val() == 5000)) || (data.exists() && data.isNumber() && newData.val() > data.val() && ((auth.uid !== $uid && (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400 || newData.val() - data.val() == 420 || newData.val() - data.val() == 490 || newData.val() - data.val() == 840 || newData.val() - data.val() == 1050 || newData.val() - data.val() == 1750 || newData.val() - data.val() == 2100 || newData.val() - data.val() == 2800 || newData.val() - data.val() == 3500)) || (auth.uid === $uid && ((newData.val() - data.val() == 10 || newData.val() - data.val() == 25 || newData.val() - data.val() == 50 || newData.val() - data.val() == 100 || newData.val() - data.val() == 200 || newData.val() - data.val() == 500 || newData.val() - data.val() == 1000 || newData.val() - data.val() == 2000) || (newData.val() - data.val() == 7 || newData.val() - data.val() == 17 || newData.val() - data.val() == 35 || newData.val() - data.val() == 70 || newData.val() - data.val() == 140 || newData.val() - data.val() == 350 || newData.val() - data.val() == 700 || newData.val() - data.val() == 1400 || newData.val() - data.val() == 420 || newData.val() - data.val() == 490 || newData.val() - data.val() == 840 || newData.val() - data.val() == 1050 || newData.val() - data.val() == 1750 || newData.val() - data.val() == 2100 || newData.val() - data.val() == 2800 || newData.val() - data.val() == 3500))))) || (!data.exists() && auth.uid !== $uid && (newData.val() == 7 || newData.val() == 17 || newData.val() == 35 || newData.val() == 70 || newData.val() == 140 || newData.val() == 350 || newData.val() == 700 || newData.val() == 1400 || newData.val() == 420 || newData.val() == 490 || newData.val() == 840 || newData.val() == 1050 || newData.val() == 1750 || newData.val() == 2100 || newData.val() == 2800 || newData.val() == 3500)) || (auth.uid === $uid && data.exists() && data.isString()))"
         },
         "weeklyEarned": {
           ".write": false
@@ -626,27 +524,6 @@
           ".write": false
         },
         "transactions": {
-          // GIFT FIX (2026-10-10): Allow gift history writes from client fallback.
-          // Sender writes to both own and recipient's history.
-          // FIX (2026-10-12, P0-1): .read for any signed-in user — RTDB reads
-          // are OR'd down the path, so this grants other users' Gifts sections
-          // even though wallets/$uid/.read stays owner-only. Without this the
-          // Gifts section and Gift Board were always empty (silent deny).
-          ".read": "auth != null",
-          ".write": "auth != null",
-          "$txId": {
-            // P1-9 (2026-10-12): per-type validation so forged history can't
-            // be written. gift_sent = negative full gift price (sender debit
-            // record, written by the sender). gift_received = 70% commission
-            // amounts (or legacy full prices) AND fromUid must be the writer
-            // (only the sender writes the recipient's received record).
-            // recharge = any positive amount (packages are server-configured).
-            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && ((newData.child('type').val() === 'gift_sent' && (newData.child('diamonds').val() == -10 || newData.child('diamonds').val() == -25 || newData.child('diamonds').val() == -50 || newData.child('diamonds').val() == -100 || newData.child('diamonds').val() == -200 || newData.child('diamonds').val() == -500 || newData.child('diamonds').val() == -1000 || newData.child('diamonds').val() == -2000)) || (newData.child('type').val() === 'gift_received' && (newData.child('diamonds').val() == 7 || newData.child('diamonds').val() == 17 || newData.child('diamonds').val() == 35 || newData.child('diamonds').val() == 70 || newData.child('diamonds').val() == 140 || newData.child('diamonds').val() == 350 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1400 || newData.child('diamonds').val() == 10 || newData.child('diamonds').val() == 25 || newData.child('diamonds').val() == 50 || newData.child('diamonds').val() == 100 || newData.child('diamonds').val() == 200 || newData.child('diamonds').val() == 500 || newData.child('diamonds').val() == 1000 || newData.child('diamonds').val() == 2000) && newData.child('fromUid').val() === auth.uid) || (newData.child('type').val() === 'recharge' && newData.child('diamonds').isNumber() && newData.child('diamonds').val() > 0))"
-          }
-        }
-      }
-    },
-
     // ─────────────────────────────────────────────────────────────────────
     // giftFallbackTx — idempotency records for the client-side gift fallback
     // (2026-10-10). The client writes one record per idempotency key BEFORE
@@ -797,7 +674,8 @@
     "moderationLog": {
       ".read": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
       ".write": "auth != null && (auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
-      "$logId": {        ".validate": "newData.hasChildren(['moderatorUid','moderatorName','action','targetUid','targetName','timestamp'])"
+      "$logId": {
+        ".validate": "newData.hasChildren(['moderatorUid','moderatorName','action','targetUid','targetName','timestamp'])"
       }
     },
 
@@ -849,6 +727,144 @@
         ".write": "auth != null && (root.child(\"rooms\").child($roomId).child(\"info\").child(\"ownerId\").val() === auth.uid || auth.token.role === \"superAdmin\" || auth.token.role === \"admin\")",
         ".validate": "!newData.exists() || (newData.child(\"hashedPin\").isString() && newData.child(\"updatedAt\").isNumber())"
       }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // gift_catalog — server-driven gift catalog (2026-10-17, Sumon).
+    // Readable by all authenticated users so gifts appear in the app.
+    // Writable only by platform admins.
+    // ─────────────────────────────────────────────────────────────────────
+    "gift_catalog": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
     }
   }
 }
+
+          // GIFT FIX (2026-10-10): Allow gift history writes from client fallback.
+          // Sender writes to both own and recipient's history.
+          // FIX (2026-10-12, P0-1): .read for any signed-in user — RTDB reads
+          // are OR'd down the path, so this grants other users' Gifts sections
+          // even though wallets/$uid/.read stays owner-only. Without this the
+          // Gifts section and Gift Board were always empty (silent deny).
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "$txId": {
+            // P1-9 (2026-10-12): per-type validation so forged history can't
+            // be written. gift_sent = negative full gift price (sender debit
+            // record, written by the sender). gift_received = 70% commission
+            // amounts (or legacy full prices) AND fromUid must be the writer
+            // (only the sender writes the recipient's received record).
+            // recharge = any positive amount (packages are server-configured).
+            ".validate": "newData.hasChildren(['type', 'diamonds', 'timestamp']) && ((newData.child('type').val() === 'gift_sent' && (newData.child('diamonds').val() == -10 || newData.child('diamonds').val() == -25 || newData.child('diamonds').val() == -50 || newData.child('diamonds').val() == -100 || newData.child('diamonds').val() == -200 || newData.child('diamonds').val() == -500 || newData.child('diamonds').val() == -1000 || newData.child('diamonds').val() == -2000 || newData.child('diamonds').val() == -1 || newData.child('diamonds').val() == -600 || newData.child('diamonds').val() == -700 || newData.child('diamonds').val() == -1200 || newData.child('diamonds').val() == -1500 || newData.child('diamonds').val() == -2500 || newData.child('diamonds').val() == -3000 || newData.child('diamonds').val() == -4000 || newData.child('diamonds').val() == -5000)) || (newData.child('type').val() === 'gift_received' && (newData.child('diamonds').val() == 7 || newData.child('diamonds').val() == 17 || newData.child('diamonds').val() == 35 || newData.child('diamonds').val() == 70 || newData.child('diamonds').val() == 140 || newData.child('diamonds').val() == 350 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1400 || newData.child('diamonds').val() == 10 || newData.child('diamonds').val() == 25 || newData.child('diamonds').val() == 50 || newData.child('diamonds').val() == 100 || newData.child('diamonds').val() == 200 || newData.child('diamonds').val() == 500 || newData.child('diamonds').val() == 1000 || newData.child('diamonds').val() == 2000 || newData.child('diamonds').val() == 420 || newData.child('diamonds').val() == 490 || newData.child('diamonds').val() == 840 || newData.child('diamonds').val() == 1050 || newData.child('diamonds').val() == 1750 || newData.child('diamonds').val() == 2100 || newData.child('diamonds').val() == 2800 || newData.child('diamonds').val() == 3500 || newData.child('diamonds').val() == 1 || newData.child('diamonds').val() == 600 || newData.child('diamonds').val() == 700 || newData.child('diamonds').val() == 1200 || newData.child('diamonds').val() == 1500 || newData.child('diamonds').val() == 2500 || newData.child('diamonds').val() == 3000 || newData.child('diamonds').val() == 4000 || newData.child('diamonds').val() == 5000) && newData.child('fromUid').val() === auth.uid) || (newData.child('type').val() === 'recharge' && newData.child('diamonds').isNumber() && newData.child('diamonds').val() > 0))"
+          }
+        }
+      }
+    },
+
+          // - CREATE: only the requester can create (userId must match auth.uid)
+          // - UPDATE (approve/reject): only room owner, room admins (via the
+          //   rooms/$roomId/admins registry, 2026-10-12), or platform admins.
+          //   Previously ANY authenticated user could approve/reject requests!
+          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')))",
+          // RC8-B1 Security Fix: userId must match auth.uid on CREATE so that a user
+          // cannot impersonate another user in a seat request. On UPDATE (owner
+          // approving/rejecting), the userId field must remain unchanged from its
+          // original value — only the status may change.
+          ".validate": "!newData.exists() || (newData.child('userId').isString() && newData.child('status').isString() && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected') && newData.child('ts').isNumber() && (!data.exists() ? newData.child('userId').val() === auth.uid : newData.child('userId').val() === data.child('userId').val()))"
+        }
+      }
+    },
+    "roomInvites": {
+      "$inviteeUid": {
+        ".read": "auth != null && auth.uid === $inviteeUid",
+        "$roomId": {
+          ".write": "auth != null && (!newData.exists() || newData.child('inviterUid').val() === auth.uid || auth.uid === $inviteeUid)",
+          ".validate": "!newData.exists() || (newData.child('roomId').isString() && newData.child('inviterUid').val() === auth.uid && newData.child('ts').isNumber())"
+        }
+      }
+    },
+    "seatInvites": {
+      "$inviteeUid": {
+        ".read": "auth != null && auth.uid === $inviteeUid",
+        "$inviteId": {
+          ".write": "auth != null && (auth.uid === $inviteeUid || (newData.exists() && newData.child('inviterUid').val() === auth.uid) || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+          ".validate": "!newData.exists() || (newData.child('roomId').isString() && newData.child('inviterUid').val() === auth.uid && newData.child('seatIdx').isNumber() && newData.child('ts').isNumber())"
+        }
+      }
+    },
+
+    //
+    // DB structure: webrtc/ac_{uidA}_{uidB}/ → { offer, answer, ice/{pusherUid}/ }
+    //   roomId = "ac_" + the two parties' UIDs sorted and joined with "_"
+    //   (see buildCallRoomId in firebaseCallService.ts).
+    //
+    // Access: only the two call parties may read/write — their UIDs are
+    // embedded in the roomId. Firebase Auth UIDs are 28-char opaque strings,
+    // so substring collision is not a practical attack vector.
+    // The whole node is removed by the client when the call ends/hangups.
+    // ─────────────────────────────────────────────────────────────────────
+    "webrtc": {
+      "$roomId": {
+        ".read": "auth != null && $roomId.beginsWith('ac_') && $roomId.contains(auth.uid)",
+        ".write": "auth != null && $roomId.beginsWith('ac_') && $roomId.contains(auth.uid)",
+        "offer": {
+          ".validate": "!newData.exists() || (newData.child('sdp').isString() && newData.child('sdp').val().length <= 10000 && newData.child('type').val() === 'offer')"
+        },
+        "answer": {
+          ".validate": "!newData.exists() || (newData.child('sdp').isString() && newData.child('sdp').val().length <= 10000 && newData.child('type').val() === 'answer')"
+        },
+        "ice": {
+          "$pusherUid": {
+            "$candidateId": {
+              ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('candidate').val().length <= 2000)"
+            }
+          }
+        }
+      }
+    },
+
+              ".write": "auth != null && auth.uid === $viewerUid && !data.exists()",
+              ".validate": "newData.val() === true"
+            }
+          },
+          "reactions": {
+            "$reactorUid": {
+              ".write": "auth != null && auth.uid === $reactorUid",
+              ".validate": "!newData.exists() || newData.isString()"
+            }
+          },
+          "comments": {
+            "$commentId": {
+              ".write": "auth != null && (!newData.exists() || newData.child('userId').val() === auth.uid)",
+              ".validate": "!newData.exists() || (newData.child('userId').isString() && newData.child('userName').isString() && newData.child('text').isString() && newData.child('text').val().length <= 500 && newData.child('ts').isNumber() && (!newData.child('replyTo').exists() || newData.child('replyTo').isString()) && (!newData.child('replyToName').exists() || newData.child('replyToName').isString()))"
+            }
+          }
+        }
+      }
+    },
+
+          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]+$/)"
+        },
+        // Official verified badge (2026-10-09): ONLY admins can grant/revoke.
+        // Displayed next to the profile name.
+        "officialBadge": {
+          ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+          ".validate": "newData.hasChildren(['grantedBy', 'grantedAt'])"
+        },
+        // Noble state (2026-10-11, NOTE 10): written ONLY by the owner via
+        // the atomic recordNobleXP transaction (XP from real gifts sent;
+        // self-gifts excluded). Type validation prevents corrupted records
+        // that could crash the app (2026-10-08 lesson).
+        "noble": {
+          // 2026-10-12 audit fix (HIGH): Noble XP was self-writable — any user
+          // could set arbitrary XP/rank. Now: XP can only INCREASE by at most
+          // the max gift price (2000) per write, and rankIndex must be
+          // consistent with the XP. Grinding via many small writes is still
+          // possible client-side; full server-authority is the complete fix.
+          ".write": "auth != null && auth.uid === $uid && (!data.exists() || (newData.child('xp').val() >= data.child('xp').val() && newData.child('xp').val() <= data.child('xp').val() + 2000))",
+          ".validate": "newData.hasChildren(['xp', 'rankIndex', 'maintenanceDeadline']) && newData.child('xp').isNumber() && newData.child('rankIndex').isNumber() && newData.child('maintenanceXP').isNumber()"
+        }
+      }
+    },
