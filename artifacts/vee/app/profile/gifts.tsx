@@ -53,6 +53,28 @@ const GIFT_CATALOG: Record<string, { emoji: string; coins: number; name: string 
   '7': { emoji: '👑', coins: 1000, name: 'Crown' },
   '8': { emoji: '🎆', coins: 2000, name: 'Firework' } };
 
+/**
+ * 2026-10-18 (Sumon): PERMANENT legacy gift ID mapping.
+ * Old numeric gift IDs (1-8) automatically resolve to new string IDs.
+ * Works for ALL users (current + future) — no data migration ever needed.
+ * Legacy counts merge into canonical IDs so display stays clean.
+ */
+const LEGACY_GIFT_ID_MAP: Record<string, string> = {
+  '1': 'heart',       // Heart 10💎
+  '2': 'pink-rose',   // Rose 25💎
+  '3': 'pink-rose',   // Gift Box 50💎 (rose image)
+  '4': 'winter-dream', // Diamond 100💎
+  '5': 'golden-crown', // Trophy 200💎
+  '6': 'blossom-dream', // Rocket 500💎
+  '7': 'golden-crown', // Crown 1000💎
+  '8': 'dream-rider',  // Firework 2000💎
+};
+
+/** Resolve a gift ID through the legacy map to its canonical string ID. */
+function resolveGiftId(giftId: string): string {
+  return LEGACY_GIFT_ID_MAP[giftId] || giftId;
+}
+
 type SortMode = 'quantity' | 'value';
 type Tab = 'display' | 'board';
 
@@ -176,12 +198,23 @@ export default function GiftDisplayScreen() {
   const giftCounts = useMemo(() => {
     // 2026-10-15 (Sumon): prefer lifetime aggregate (accurate forever).
     // Fall back to tx counting for users with no aggregate yet (legacy).
-    if (Object.keys(lifetimeCounts).length > 0) return lifetimeCounts;
-    const counts: Record<string, number> = {};
-    for (const t of receivedTxs) {
-      counts[t.giftId] = (counts[t.giftId] ?? 0) + 1;
+    let raw: Record<string, number>;
+    if (Object.keys(lifetimeCounts).length > 0) {
+      raw = lifetimeCounts;
+    } else {
+      raw = {};
+      for (const t of receivedTxs) {
+        raw[t.giftId] = (raw[t.giftId] ?? 0) + 1;
+      }
     }
-    return counts;
+    // 2026-10-18 (Sumon): PERMANENT — merge legacy numeric IDs into canonical
+    // string IDs. A user with {1: 2, heart: 1} shows as {heart: 3}.
+    const merged: Record<string, number> = {};
+    for (const [id, count] of Object.entries(raw)) {
+      const canonical = resolveGiftId(id);
+      merged[canonical] = (merged[canonical] ?? 0) + count;
+    }
+    return merged;
   }, [receivedTxs, lifetimeCounts]);
 
   const catalogEntries = useMemo(
