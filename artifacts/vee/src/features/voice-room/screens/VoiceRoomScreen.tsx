@@ -885,6 +885,9 @@ export default function VoiceRoomScreen() {
 
   /* ── Join state ── */
   const [hasJoined, setHasJoined] = useState(false);
+  // 2026-10-18 (Sumon): Track if user is a MEMBER (tapped "Tap to join") via
+  // Firebase roomMembers — persists across re-entries, unlike local hasJoined.
+  const [isRoomMember, setIsRoomMember] = useState(false);
 
   // 2026-10-13: প্রোফাইল লোড/বদলালে নিজের সিট/অডিয়েন্স রেকর্ডে নাম+ছবি সিঙ্ক
   // করো। আগে প্রোফাইল লোডের আগেই audience join হয়ে গেলে খালি/পুরনো নাম
@@ -1433,6 +1436,25 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId]);
 
+  // 2026-10-18 (Sumon): Subscribe to my membership record — "Tap to join"
+  // writes to roomMembers, and the banner must stay hidden on re-entry.
+  // Local hasJoined resets on every mount, so Firebase is the source of truth.
+  useEffect(() => {
+    if (!roomId || !myUid) {
+      setIsRoomMember(false);
+      return;
+    }
+    const memberRef = ref(database, `roomMembers/${roomId}/${myUid}`);
+    const unsub = onValue(memberRef, (snap) => {
+      setIsRoomMember(snap.exists());
+      // Sync local hasJoined so legacy gates stay consistent
+      if (snap.exists()) setHasJoined(true);
+    }, () => {
+      setIsRoomMember(false);
+    });
+    return () => unsub();
+  }, [roomId, myUid]);
+
   // Subscribe to room chat — Fix 11: track oldest key for pagination
   // 2026-10-11: history auto-clean — hide messages older than the cutoff.
   useEffect(() => {
@@ -1671,8 +1693,12 @@ export default function VoiceRoomScreen() {
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   /* ── Join room: add to Firebase audience ── */
+  // 2026-10-18 (Sumon): FIX — audience write must happen on ROOM ENTRY, not
+  // on "Tap to join". Per Sumon's concept: entering = immediately in Live
+  // Audience (no Join tap needed). The old `if (!hasJoined) return` gate meant
+  // the count stayed 0 until the user tapped Join.
   useEffect(() => {
-    if (!hasJoined) return;
+    if (!roomId || !myUid || pinGate !== 'passed') return;
     hasLeftRef.current = false;
     let cancelled = false;
 
@@ -1806,7 +1832,7 @@ export default function VoiceRoomScreen() {
       clearPersistedActiveRoom().catch(() => {});
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasJoined]);
+  }, [roomId, myUid, pinGate]);
 
   /* ── 2026-10-15 (Sumon): re-register presence on Firebase reconnect.
      Long background can drop the socket → onDisconnect wipes our
@@ -1911,7 +1937,10 @@ export default function VoiceRoomScreen() {
 
   // "Tap to join" must only ever be shown to audience who have not joined
   // yet — never to the owner/admin/member who are already inside the room.
-  const showJoinBanner = !hasJoined && !isOwnerOrAdmin && mySeatIdx < 0;
+  // 2026-10-18 (Sumon): Use isRoomMember (Firebase roomMembers, persists across
+  // re-entries) instead of local hasJoined (resets on every mount → banner
+  // incorrectly reappeared on re-entry).
+  const showJoinBanner = !isRoomMember && !hasJoined && !isOwnerOrAdmin && mySeatIdx < 0;
 
   const seatActionMember = seatActionIdx >= 0 ? seats[seatActionIdx] ?? null : null;
 
@@ -2553,9 +2582,27 @@ export default function VoiceRoomScreen() {
     // local state. Previously only setHasJoined(true) was called, so no
     // userRooms/audience record was created. On re-enter, the rejoin check
     // found nothing → "Tap to join" showed again every time.
+    // 2026-10-18 (Sumon): "Tap to join" = become a MEMBER. Write to roomMembers
+    // (shows in Room Info member list, persists across re-entries). The audience
+    // presence is now handled by the entry effect (runs on room entry).
     setHasJoined(true);
+    setIsRoomMember(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (roomId && myUid) {
+      // Member record — visible in Room Info, survives re-entry
+      const memberRef = ref(database, `roomMembers/${roomId}/${myUid}`);
+      set(memberRef, {
+        role: 'member',
+        joinedAt: Date.now(),
+        name: myName,
+      }).catch(() => {/* background: safe to swallow — member record */});
+      // Also ensure userRooms index (for "My Room" / rejoin checks)
+      const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
+      set(userRoomRef, {
+        joinedAt: Date.now(),
+        role: 'member',
+      }).catch(() => {/* background: safe to swallow — userRooms index */});
+      // Ensure audience presence (in case entry effect hasn't run yet)
       joinRoomAsAudience(roomId, {
         userId: myUid,
         userName: myName,
