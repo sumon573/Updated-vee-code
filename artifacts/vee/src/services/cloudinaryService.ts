@@ -1,12 +1,17 @@
 /**
- * Cloudinary Service — Production
- * Unsigned upload (no backend required).
+ * Media Service — Telegram-backed permanent storage (2026-10-18, Sumon)
+ *
+ * ALL app media uploads go through this file. Previously Cloudinary;
+ * now posts to the Vee media server (https://vee-club.duckdns.org)
+ * which stores permanently on Telegram (free, unlimited).
+ *
+ * The exported interface is UNCHANGED — zero caller changes needed.
  * Supports: profile photos, story images/videos/audio, room covers.
  */
 
-import { CLOUDINARY_CONFIG, isCloudinaryConfigured } from '../config/cloudinary';
 import { auth } from '../config/firebase';
-import { getApiBase } from '../utils/platform';
+
+const MEDIA_BASE = 'https://vee-club.duckdns.org';
 
 export type CloudinaryUploadResult = {
   url: string;
@@ -17,253 +22,219 @@ export type CloudinaryUploadResult = {
 };
 
 type UploadOptions = {
-  folder?: string;       // e.g. 'vee/avatars', 'vee/stories'
-  transformation?: string; // e.g. 'c_fill,w_400,h_400,q_auto'
+  folder?: string;       // e.g. 'vee/avatars', 'vee/stories' — mapped to Telegram type
+  transformation?: string; // ignored (Telegram serves originals; kept for interface compat)
 };
 
 /**
- * Upload any image to Cloudinary.
+ * Map Cloudinary folder → Telegram media type.
+ */
+function folderToType(folder?: string): string {
+  if (!folder) return 'chat';
+  if (folder.includes('avatar')) return 'avatar';
+  if (folder.includes('stories')) return 'story';
+  if (folder.includes('dm')) return 'chat';
+  if (folder.includes('rooms') || folder.includes('covers')) return 'avatar';
+  return 'chat';
+}
+
+/**
+ * Guess MIME type from URI extension.
+ */
+function guessMime(uri: string, fallback: string): string {
+  const lower = uri.toLowerCase().split('?')[0];
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.mp4')) return 'video/mp4';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  if (lower.endsWith('.mp3')) return 'audio/mpeg';
+  if (lower.endsWith('.m4a')) return 'audio/mp4';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  return fallback;
+}
+
+/**
+ * Upload any file to the Vee media server (Telegram-backed).
  * @param localUri  - expo-image-picker result URI
- * @param options   - optional folder + transformation
+ * @param options   - optional folder (mapped to Telegram type)
  */
 export async function uploadImage(
   localUri: string,
   options: UploadOptions = {},
 ): Promise<CloudinaryUploadResult> {
-  if (!isCloudinaryConfigured()) {
-    // Cloudinary not configured — return local URI as a dev fallback
-    return {
-      url: localUri,
-      publicId: `local_${Date.now()}`,
-      width: 400,
-      height: 400,
-      format: 'jpeg',
-    };
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error('Not authenticated — cannot upload media');
   }
 
-  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+  const type = folderToType(options.folder);
+  const mime = guessMime(localUri, 'image/jpeg');
 
   const formData = new FormData();
   formData.append('file', {
     uri: localUri,
-    type: 'image/jpeg',
-    name: `upload_${Date.now()}.jpg`,
+    type: mime,
+    name: `upload_${Date.now()}.${mime.split('/')[1] || 'jpg'}`,
   } as unknown as Blob);
-  formData.append('upload_preset', uploadPreset);
+  formData.append('type', type);
 
-  if (options.folder) {
-    formData.append('folder', options.folder);
-  }
-  // NOTE: Cloudinary rejects a `transformation` form field on unsigned
-  // uploads ("Transformation parameter is not allowed when using unsigned
-  // upload."). Do NOT send it in the upload request — instead apply the
-  // transformation afterwards by inserting it into the returned secure_url.
-
-  const response = await fetch(uploadUrl, {
+  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
     method: 'POST',
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
     body: formData,
   });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message ?? `Cloudinary upload failed (${response.status})`);
+    throw new Error(err?.error ?? `Media upload failed (${response.status})`);
   }
 
   const data = await response.json();
-  const rawUrl = data.secure_url as string;
+  const url = data.url as string;
+  const mediaId = data.mediaId as string;
+  if (!url || !mediaId) {
+    throw new Error('Media upload returned no URL');
+  }
 
   return {
-    url: options.transformation ? applyTransformation(rawUrl, options.transformation) : rawUrl,
-    publicId: data.public_id as string,
-    width: data.width as number,
-    height: data.height as number,
-    format: data.format as string,
+    url,
+    publicId: mediaId,
+    width: 0,
+    height: 0,
+    format: mime.split('/')[1] || 'jpeg',
   };
 }
 
 /**
- * Insert a Cloudinary transformation string into a delivery URL, e.g.
- *   https://res.cloudinary.com/<cloud>/image/upload/v123/vee/avatars/foo.jpg
- *   → https://res.cloudinary.com/<cloud>/image/upload/c_fill,w_400,h_400/v123/vee/avatars/foo.jpg
- * This is the supported way to apply transformations to unsigned uploads
- * (which cannot carry a `transformation` param in the upload request itself).
- */
-function applyTransformation(url: string, transformation: string): string {
-  const marker = '/upload/';
-  const idx = url.indexOf(marker);
-  if (idx === -1) return url;
-  const insertAt = idx + marker.length;
-  return `${url.slice(0, insertAt)}${transformation}/${url.slice(insertAt)}`;
-}
-
-/**
- * Profile photo upload — 400×400 crop, auto quality.
+ * Profile photo upload.
  */
 export async function uploadProfilePhoto(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, {
-    folder: 'vee/avatars',
-    transformation: 'c_fill,w_400,h_400,q_auto,f_auto',
-  });
+  return uploadImage(localUri, { folder: 'vee/avatars' });
 }
 
 /**
- * Story image upload — full quality, stories folder.
+ * Story image upload.
  */
 export async function uploadStoryImage(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, {
-    folder: 'vee/stories',
-    transformation: 'q_auto,f_auto',
-  });
+  return uploadImage(localUri, { folder: 'vee/stories' });
 }
 
 /**
- * Story video upload — Cloudinary video endpoint.
- * Used for real video stories (Note 2). Throws with the actual cause on failure.
+ * Story video upload.
+ * Throws with the actual cause on failure.
  */
 export async function uploadStoryVideo(localUri: string): Promise<CloudinaryUploadResult> {
-  if (!isCloudinaryConfigured()) {
-    throw new Error('Cloudinary is not configured — cannot upload video story');
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error('Not authenticated — cannot upload video story');
   }
 
-  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
-
+  const mime = guessMime(localUri, 'video/mp4');
   const formData = new FormData();
   formData.append('file', {
     uri: localUri,
-    type: 'video/mp4',
+    type: mime,
     name: `story_${Date.now()}.mp4`,
   } as unknown as Blob);
-  formData.append('upload_preset', uploadPreset);
-  formData.append('folder', 'vee/stories');
+  formData.append('type', 'story');
 
-  const response = await fetch(uploadUrl, {
+  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}` },
     body: formData,
   });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message ?? `Cloudinary video upload failed (${response.status})`);
+    throw new Error(err?.error ?? `Video upload failed (${response.status})`);
   }
 
   const data = await response.json();
+  const url = data.url as string;
+  if (!url) throw new Error('Video upload returned no URL');
   return {
-    url: data.secure_url as string,
-    publicId: data.public_id as string,
-    width: data.width as number,
-    height: data.height as number,
-    format: data.format as string,
+    url,
+    publicId: data.mediaId as string,
+    width: 0,
+    height: 0,
+    format: mime.split('/')[1] || 'mp4',
   };
 }
 
 /**
- * Story audio upload — Cloudinary video endpoint (Cloudinary stores audio
- * under the video resource type). Used for real audio/music stories (Note 2):
- * the selected file is actually uploaded and the returned URL is stored on
- * the story so it can be played back. Throws with the actual cause on failure.
+ * Story audio upload.
+ * Throws with the actual cause on failure.
  */
 export async function uploadStoryAudio(
   localUri: string,
   fileName?: string,
   mimeType?: string,
 ): Promise<CloudinaryUploadResult> {
-  if (!isCloudinaryConfigured()) {
-    throw new Error('Cloudinary is not configured — cannot upload audio story');
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error('Not authenticated — cannot upload audio story');
   }
 
-  const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
-
+  const mime = mimeType || guessMime(localUri, 'audio/mpeg');
   const safeName = (fileName || `story_audio_${Date.now()}.mp3`).replace(/[^\w.\-]/g, '_');
+
   const formData = new FormData();
   formData.append('file', {
     uri: localUri,
-    type: mimeType || 'audio/mpeg',
+    type: mime,
     name: safeName,
   } as unknown as Blob);
-  formData.append('upload_preset', uploadPreset);
-  formData.append('folder', 'vee/stories/audio');
-  formData.append('resource_type', 'video');
+  formData.append('type', 'story');
 
-  const response = await fetch(uploadUrl, {
+  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}` },
     body: formData,
   });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message ?? `Cloudinary audio upload failed (${response.status})`);
+    throw new Error(err?.error ?? `Audio upload failed (${response.status})`);
   }
 
   const data = await response.json();
-  const url = data.secure_url as string;
-  if (!url) {
-    throw new Error('Cloudinary audio upload returned no URL');
-  }
+  const url = data.url as string;
+  if (!url) throw new Error('Audio upload returned no URL');
   return {
     url,
-    publicId: data.public_id as string,
+    publicId: data.mediaId as string,
     width: 0,
     height: 0,
-    format: data.format as string,
+    format: mime.split('/')[1] || 'mp3',
   };
 }
 
 /**
- * Room cover upload — 800×450 landscape crop.
+ * Room cover upload.
  */
 export async function uploadRoomCover(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, {
-    folder: 'vee/rooms',
-    transformation: 'c_fill,w_800,h_450,q_auto,f_auto',
-  });
+  return uploadImage(localUri, { folder: 'vee/rooms' });
 }
 
 /**
- * Profile cover photo upload — 1080×480 wide banner crop.
+ * Profile cover photo upload.
  */
 export async function uploadCoverPhoto(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, {
-    folder: 'vee/covers',
-    transformation: 'c_fill,w_1080,h_480,q_auto,f_auto',
-  });
+  return uploadImage(localUri, { folder: 'vee/covers' });
 }
 
 /**
- * Delete a Cloudinary asset via the authenticated backend endpoint.
- * Uses the production API server at https://vee-api.onrender.com.
- * CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are configured on the server.
+ * Delete a media asset.
  *
- * RC8-B1 Security Fix: request now includes the caller's Firebase ID token in
- * the Authorization header. The server verifies the token with Firebase Admin
- * SDK before performing the deletion — unauthenticated callers receive 401.
+ * Telegram-backed storage is permanent — there is nothing to delete.
+ * This is kept as a no-op for interface compatibility with existing callers
+ * (app/profile/edit.tsx, app/profile/index.tsx).
  */
 export async function deleteCloudinaryAsset(publicId: string): Promise<void> {
-  if (!publicId || publicId.startsWith('local_')) return;
-
-  try {
-    // Obtain the caller's Firebase ID token for server-side verification.
-    const idToken = (await auth.currentUser?.getIdToken()) ?? null;
-    if (!idToken) {
-      // User is not authenticated — skip deletion silently (non-critical).
-      return;
-    }
-
-    const res = await fetch(`${getApiBase()}/api/cloudinary/delete`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ publicId }),
-    });
-    if (!res.ok) {
-      // Non-critical: asset deletion failure does not affect the user experience.
-      // Errors are swallowed intentionally — stale assets are cleaned up by server-side jobs.
-    }
-  } catch {
-    // Network errors are non-critical and intentionally swallowed.
-  }
+  // No-op: Telegram storage has no delete; old assets simply remain.
+  return;
 }
