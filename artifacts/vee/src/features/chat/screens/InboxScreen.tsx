@@ -210,6 +210,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [mediaViewerUri, setMediaViewerUri] = useState<string | null>(null);
   const [mediaViewerType, setMediaViewerType] = useState<'image' | 'video'>('image');
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  // 2026-10-18 (Sumon): media send confirmation — select → preview + OK → send.
+  // Multi-select supported. Pending assets shown in confirmation modal.
+  const [pendingMedia, setPendingMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
   // RC6 fix Issue 5: live participant photo from RTDB (stale auth photo replaced)
   const [participantPhotoURL, setParticipantPhotoURL] = useState<string | null>(null);
 
@@ -546,28 +549,48 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       else Alert.alert(title, msg);
       return;
     }
+    // 2026-10-18 (Sumon): multi-select images+videos; confirmation modal
+    // (preview + OK) before send — no immediate send on select.
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.8,
-      allowsEditing: false });
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
+      allowsEditing: false,
+      allowsMultipleSelection: true,
+      selectionLimit: 10 });
+    if (result.canceled || !result.assets?.length) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setPendingMedia(result.assets);
+  }, [effectiveParticipantId, t, user]);
+
+  // 2026-10-18 (Sumon): confirmed send — uploads each selected asset then
+  // sends as individual messages, in order. Superfast: uploads run sequentially
+  // but the modal closes immediately for instant feel.
+  const confirmAndSendMedia = useCallback(async () => {
+    const assets = pendingMedia;
+    if (!assets.length || uploadingMediaRef.current) return;
+    setPendingMedia([]);
     uploadingMediaRef.current = true;
     setUploadingMedia(true);
     shouldScrollRef.current = true;
-
     try {
-      const uploaded = await uploadImage(asset.uri, { folder: 'vee/dm' });
-      await sendMessage(chatId, myUid, effectiveParticipantId, uploaded.url, 'image', undefined, uploaded.publicId, myRealName || user?.displayName || undefined);
+      for (const asset of assets) {
+        const isVideo = asset.type === 'video';
+        const uploaded = await uploadImage(asset.uri, {
+          folder: 'vee/dm',
+          mimeHint: isVideo ? 'video/mp4' : undefined,
+        });
+        await sendMessage(
+          chatId, myUid, effectiveParticipantId, uploaded.url,
+          isVideo ? 'video' : 'image', undefined, uploaded.publicId,
+          myRealName || user?.displayName || undefined);
+      }
     } catch (err) {
       Alert.alert(t('chat.uploadFailed'), err instanceof Error ? err.message : t('chat.photoSendFailed'));
     } finally {
       uploadingMediaRef.current = false;
       setUploadingMedia(false);
     }
-  }, [chatId, myUid, effectiveParticipantId, t, user]);
+  }, [pendingMedia, chatId, myUid, effectiveParticipantId, t, user, myRealName]);
 
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
@@ -1210,6 +1233,70 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             )}
           </View>
         )}
+      </Modal>
+
+      {/* ── Media send confirmation (2026-10-18 Sumon) ───────────────────────
+          Select → preview + OK → send. Multi-select supported (max 10).
+          Nothing sends before OK. */}
+      <Modal
+        visible={pendingMedia.length > 0}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPendingMedia([])}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
+          onPress={() => setPendingMedia([])}
+        >
+          <Pressable
+            style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingBottom: 28, maxHeight: height * 0.7 }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={{ fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 12, color: '#000' }}>
+              {pendingMedia.length} {t('chat.selected') || 'selected'}
+            </Text>
+            <FlatList
+              data={pendingMedia}
+              horizontal
+              keyExtractor={(item) => item.assetId || item.uri}
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+              renderItem={({ item }) => (
+                <View style={{ position: 'relative' }}>
+                  <Image
+                    source={{ uri: item.uri }}
+                    style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: '#F0F0F0' }}
+                    resizeMode="cover"
+                  />
+                  {item.type === 'video' && (
+                    <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, padding: 4 }}>
+                      <Feather name="play" size={14} color="#fff" />
+                    </View>
+                  )}
+                  <Pressable
+                    style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#FF3B30', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
+                    onPress={() => setPendingMedia((prev) => prev.filter((p) => p.uri !== item.uri))}
+                  >
+                    <Feather name="x" size={14} color="#fff" />
+                  </Pressable>
+                </View>
+              )}
+            />
+            <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginTop: 16, gap: 12 }}>
+              <Pressable
+                onPress={() => setPendingMedia([])}
+                style={{ flex: 1, backgroundColor: '#F0F0F0', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#000' }}>{t('chat.cancel')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmAndSendMedia}
+                style={{ flex: 1, backgroundColor: '#E3F2FD', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#007AFF' }}>OK</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );

@@ -24,6 +24,7 @@ export type CloudinaryUploadResult = {
 type UploadOptions = {
   folder?: string;       // e.g. 'vee/avatars', 'vee/stories' — mapped to Telegram type
   transformation?: string; // ignored (Telegram serves originals; kept for interface compat)
+  mimeHint?: string;     // 2026-10-18: explicit MIME (e.g. 'video/mp4') when URI has no extension
 };
 
 /**
@@ -70,7 +71,9 @@ export async function uploadImage(
   }
 
   const type = folderToType(options.folder);
-  const mime = guessMime(localUri, 'image/jpeg');
+  // 2026-10-18: mimeHint (from picker asset.type) wins — gallery URIs often
+  // lack extensions, and defaulting a video to image/jpeg breaks playback.
+  const mime = options.mimeHint || guessMime(localUri, 'image/jpeg');
 
   const formData = new FormData();
   formData.append('file', {

@@ -83,9 +83,22 @@ export async function saveRemoteMediaToGallery(
     }
     let localUri = uri;
     if (/^https?:\/\//i.test(uri)) {
-      // Cloudinary/signed URLs may carry query params — strip them for the extension.
-      const rawExt = (uri.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
-      const ext = rawExt.replace(/[^a-z0-9]/g, '').slice(0, 4) || 'jpg';
+      // FIX (2026-10-18): robust extension detection. The old logic
+      // (uri.split('.').pop()) broke on extension-less URLs like
+      // https://vee-club.duckdns.org/m/<hex> — it extracted "orgm" from
+      // "duckdns.org/m/..." and Android rejected the save with
+      // "MIME type application/octet-stream". Now: only accept a real
+      // media extension from the last path segment; otherwise default
+      // to jpg for our media server (image) URLs.
+      const urlPath = uri.split('?')[0];
+      const lastSegment = urlPath.split('/').pop() || '';
+      let ext = 'jpg';
+      const dotIdx = lastSegment.lastIndexOf('.');
+      if (dotIdx > 0 && dotIdx < lastSegment.length - 1) {
+        const candidate = lastSegment.slice(dotIdx + 1).toLowerCase().replace(/[^a-z0-9]/g, '');
+        const valid = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'm4a', 'mp3', 'wav', 'ogg', 'webm'];
+        if (valid.includes(candidate)) ext = candidate === 'jpeg' ? 'jpg' : candidate;
+      }
       const dest = new File(Paths.cache, `vee_dl_${Date.now()}.${ext}`);
       // Rejects with UnableToDownload (incl. HTTP status) on non-2xx.
       const downloaded = await File.downloadFileAsync(uri, dest);
