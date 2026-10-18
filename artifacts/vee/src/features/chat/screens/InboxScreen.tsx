@@ -1253,7 +1253,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             onPress={(e) => e.stopPropagation()}
           >
             <Text style={{ fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 12, color: '#000' }}>
-              {pendingMedia.length} {t('chat.selected') || 'selected'}
+              {pendingMedia.length} selected
             </Text>
             <FlatList
               data={pendingMedia}
