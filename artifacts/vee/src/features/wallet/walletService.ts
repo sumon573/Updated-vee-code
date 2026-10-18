@@ -35,15 +35,32 @@ async function authedFetch(
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new GiftError('Not signed in');
-  const idToken = await user.getIdToken();
-  return fetch(`${getApiBase()}/api${path}`, {
-    method: opts?.method ?? 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  // 2026-10-18 (Sumon): FIX first-attempt "Wallet access denied".
+  // getIdToken() returns the CACHED token which may be expired — the VPS
+  // rejects it (401), the user sees an error, and only the SECOND attempt
+  // (after the SDK auto-refreshes) succeeds. Retry once with a forced
+  // refresh on 401/403 so the FIRST attempt works.
+  const doFetch = async (forceRefresh: boolean): Promise<Response> => {
+    const idToken = await user.getIdToken(forceRefresh);
+    return fetch(`${getApiBase()}/api${path}`, {
+      method: opts?.method ?? 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`,
+      },
+      body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  };
+  let res = await doFetch(false);
+  if (res.status === 401 || res.status === 403) {
+    // Token was stale — force refresh and retry once
+    try {
+      res = await doFetch(true);
+    } catch {
+      // Retry failed — return the original 401/403 response
+    }
+  }
+  return res;
 }
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
