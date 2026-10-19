@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, Image, Dimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { Image as ExpoImage } from 'expo-image';
 
 // ── Classic: Light animations ──
 
@@ -439,6 +440,27 @@ function VideoGift({ animationUrl, size = 120, fullscreen = false }: {
   );
 }
 
+// 2026-10-19: IMO gifts — fullscreen animated WebP playback (expo-image plays
+// animated WebP natively, no new native module needed). Used for IMO's blast
+// gifts which are designed for fullscreen dramatic effects.
+function WebpGift({ animationUrl, size = 120, fullscreen = false }: {
+  animationUrl: string;
+  size?: number;
+  fullscreen?: boolean;
+}) {
+  const { width: screenW, height: screenH } = Dimensions.get('window');
+  const giftSize = fullscreen ? Math.min(screenW * 0.92, screenH * 0.62) : size;
+
+  return (
+    <ExpoImage
+      source={{ uri: animationUrl }}
+      style={{ width: giftSize, height: giftSize }}
+      contentFit="contain"
+      // Animated WebP loops natively via expo-image
+    />
+  );
+}
+
 export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize, videoFullscreen }: {
   giftId: string;
   emoji: string;
@@ -452,6 +474,11 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   // 2026-10-17 (Sumon): videoSize/videoFullscreen are server-driven via Firebase gift_catalog — no build needed to adjust. Video plays stable, no rotation/movement.
   if (animationType === 'video' && animationUrl) {
     return <VideoGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} />;
+  }
+  // 2026-10-19: IMO gifts — animationType='webp' plays animated WebP fullscreen
+  // via expo-image (native animated WebP support, no new native module).
+  if (animationType === 'webp' && animationUrl) {
+    return <WebpGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} />;
   }
   // 2026-10-17 (Sumon): CRITICAL FIX — server gifts with animationType='image'
   // must render the CDN image, not fall through to emoji!
