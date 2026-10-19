@@ -33,39 +33,36 @@ import {
   subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
 import NobleRankPreview from './NobleRankPreview';
 
-import {
-  ART_PRIV_NAMEPLATE, ART_PRIV_BADGE, ART_PRIV_GIFT, ART_PRIV_FRAME,
-  ART_PRIV_ENTRY, ART_PRIV_SEAT, ART_PRIV_BANNER, ART_PRIV_RIPPLE,
-  ART_PRIV_SKIN, ART_CROWN_KING, ART_CROWN_SKING, ART_CROWN_SSKING,
-  ART_RANK_BADGE_BARON,
-} from './nobelArt';
-
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
 
-// IMO reward artwork — bundled as data URIs (nobelArt.ts).
-// Extracted from IMO's APK CDN (ImageUrlConst) + reference screenshot crops.
+// IMO reward artwork — hosted on Vee's VPS (same pattern as IMO gifts):
+// https://vee-club.duckdns.org/nobel-art/<file>  (files: C:\nobel-art\ on VPS)
+// Extracted from IMO's APK CDN (ImageUrlConst) + boss's reference screenshot.
+const NOBEL_ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
+const artUri = (f: string) => ({ uri: `${NOBEL_ART_BASE}/${f}` });
+
 const PRIV_ART: Record<string, any> = {
-  nameplate: { uri: ART_PRIV_NAMEPLATE },
-  badge: { uri: ART_PRIV_BADGE },
-  gift: { uri: ART_PRIV_GIFT },
-  avatarFrame: { uri: ART_PRIV_FRAME },
-  entryEffects: { uri: ART_PRIV_ENTRY },
-  seatPriority: { uri: ART_PRIV_SEAT },
-  upgradeBanner: { uri: ART_PRIV_BANNER },
-  micRipple: { uri: ART_PRIV_RIPPLE },
-  homepageSkin: { uri: ART_PRIV_SKIN },
+  nameplate: artUri('priv-nameplate.png'),
+  badge: artUri('priv-badge.png'),
+  gift: artUri('priv-gift.png'),
+  avatarFrame: artUri('priv-frame.png'),
+  entryEffects: artUri('priv-entry.png'),
+  seatPriority: artUri('priv-seat.png'),
+  upgradeBanner: artUri('priv-banner.png'),
+  micRipple: artUri('priv-ripple.png'),
+  homepageSkin: artUri('priv-skin.png'),
 };
 
 // Rank tab crown art (IMO). Ranks without a dedicated crown reuse the badge art.
 const RANK_CROWN: Record<string, any> = {
-  king: { uri: ART_CROWN_KING },
-  sking: { uri: ART_CROWN_SKING },
-  ssking: { uri: ART_CROWN_SSKING },
+  king: artUri('crown-king.png'),
+  sking: artUri('crown-sking.png'),
+  ssking: artUri('crown-ssking.png'),
 };
-const RANK_CROWN_FALLBACK = { uri: ART_PRIV_BADGE };
+const RANK_CROWN_FALLBACK = artUri('priv-badge.png');
 // IMO's own "Baron I" badge art (reference screenshot)
-const RANK_BADGE_BARON = { uri: ART_RANK_BADGE_BARON };
+const RANK_BADGE_BARON = artUri('rank-badge-baron.png');
 
 const IMO_TEAL = '#1FB5A6';
 const IMO_ORANGE = '#FF9800';

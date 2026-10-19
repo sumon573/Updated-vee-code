@@ -25,9 +25,7 @@ import {
   SvipState, hasSvipPrivilege } from '@/src/features/svip/svipService';
 import { SVIP_TIERS, SVIP_PRIVILEGES } from '@/src/features/svip/svipConfig';
 
-import { ART_CROWN_SSKING } from '@/src/features/nobel/nobelArt';
-
-const SVIP_CROWN = { uri: ART_CROWN_SSKING };
+const SVIP_CROWN = { uri: 'https://vee-club.duckdns.org/nobel-art/crown-ssking.png' };
 
 function formatExpiry(ts: number): string {
   const d = new Date(ts);
