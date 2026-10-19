@@ -10,7 +10,17 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import { installGlobalCrashHandler, CrashOverlay } from '@/src/utils/crashReporter';
 import { HonorCelebration } from '@/src/components/HonorCelebration';
 import NobleLevelUpCelebration from '@/src/features/nobel/NobleLevelUpCelebration';
-installGlobalCrashHandler();
+// 2026-10-19 import-order fix (CRASH-RISK: import-time throws) — fail-soft
+// module init: a throw here must never kill the root layout. The reporter
+// also self-installs at its own module scope (see crashReporter.tsx), which
+// runs before every import below — so this explicit call is normally a no-op
+// via the idempotency flag, and this try/catch only guards the pathological
+// case. Import bindings themselves are unchanged when they succeed.
+try {
+  installGlobalCrashHandler();
+} catch {
+  /* crash overlay stays uninstalled — the app still boots */
+}
 
 /**
  * PERMANENT GUARD (2026-10-09): RTL layout is disabled for the entire app.

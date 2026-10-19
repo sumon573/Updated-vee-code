@@ -21,6 +21,9 @@ interface CrashInfo {
 
 let crashListeners: Array<(crash: CrashInfo) => void> = [];
 let lastCrash: CrashInfo | null = null;
+// 2026-10-19 import-order fix: idempotent — dev Fast Refresh re-evaluates
+// this module; never stack duplicate global handlers.
+let crashHandlerInstalled = false;
 // 2026-10-19 stability fix: rate-limit server reports — a crash loop must
 // never spam Firebase (or itself, if the report write throws).
 let lastServerReportAt = 0;
@@ -92,9 +95,11 @@ function reportCrashToServer(crash: CrashInfo): void {
 
 /**
  * Install the global JS error handler. Call once at app startup,
- * before any other imports that might throw.
+ * before any other imports that might throw. Idempotent.
  */
 export function installGlobalCrashHandler(): void {
+  // Never stack handlers (dev Fast Refresh re-runs module init).
+  if (crashHandlerInstalled) return;
   const ErrorUtilsGlobal = (global as any).ErrorUtils;
   if (!ErrorUtilsGlobal?.setGlobalHandler) {
     return;
@@ -153,6 +158,10 @@ export function installGlobalCrashHandler(): void {
   } catch {
     /* ignore */
   }
+
+  // Marked only after the handler is truly installed — a later explicit
+  // call (e.g. from _layout.tsx) then becomes a safe no-op.
+  crashHandlerInstalled = true;
 }
 
 /**
@@ -244,3 +253,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+// ─── 2026-10-19 import-order fix (CRASH-RISK: import-time throws) ────────────
+//
+// Self-install the global crash handler at module scope. ES static imports
+// evaluate in order, BEFORE any module body — and this module is imported
+// FIRST in app/_layout.tsx, ahead of the side-effectful i18n / OneSignal /
+// firebase-config imports. So the handler is live before any risky import's
+// side effects execute: a throw during a later import now reaches the global
+// handler (real cause surfaced) instead of killing the app with no handler
+// and no ErrorBoundary mounted. Never throws; the explicit call in
+// _layout.tsx remains as the documented install point (it becomes a no-op
+// via the idempotency flag).
+try {
+  installGlobalCrashHandler();
+} catch {
+  // The explicit installGlobalCrashHandler() call in _layout.tsx retries.
+}
