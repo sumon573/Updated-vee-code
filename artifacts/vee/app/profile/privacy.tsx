@@ -1,5 +1,8 @@
 /**
  * Privacy Settings Screen — Firebase-backed
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar, ~56dp menu rows with 30dp icon tiles). All logic
+ * unchanged — every toggle still persists to users/{uid}/privacy.
  */
 
 import { useEffect, useState } from 'react';
@@ -19,15 +22,25 @@ import { withTimeout } from '@/src/utils/withTimeout';
 /** Max ms to wait for an RTDB write ack before treating the save as queued. */
 const SAVE_TIMEOUT_MS = 12_000;
 
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  surface: '#F2F2F7' } as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  goldText: '#B8860B' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
 
 type PrivacySettings = {
   showOnlineStatus: boolean;
@@ -44,39 +57,63 @@ const DEFAULTS: PrivacySettings = {
   showProfileToAll: true,
   allowRoomInvites: true };
 
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      {right ?? <View style={{ width: 40 }} />}
+    </View>
+  );
+}
+
+// Section caption above a card group
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text style={{ fontSize: 13, color: C.muted, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 6 }}>
+      {children}
+    </Text>
+  );
+}
+
+// IMO menu row with trailing Switch — ~56dp, 30dp icon tile,
+// 0.5dp divider inset 57dp from left
 function SettingRow({
-  icon, label, subtitle, value, onChange }: {
+  icon, iconBg, iconColor, label, subtitle, value, onChange, last }: {
   icon: React.ComponentProps<typeof Feather>['name'];
+  iconBg: string;
+  iconColor: string;
   label: string;
   subtitle?: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  last?: boolean;
 }) {
   return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: C.surface, borderRadius: 16,
-      padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: C.border }}>
-      <View style={{
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: 'rgba(139,92,246,0.14)',
-        alignItems: 'center', justifyContent: 'center',
-        marginRight: 14 }}>
-        <Feather name={icon} size={18} color={C.glow} />
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon} size={16} color={iconColor} />
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ color: C.text, fontSize: 16 }} numberOfLines={1}>{label}</Text>
+          {subtitle ? (
+            <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{subtitle}</Text>
+          ) : null}
+        </View>
+        <Switch
+          value={value}
+          onValueChange={onChange}
+          trackColor={{ false: C.mutedLight, true: C.blue }}
+          thumbColor="#fff"
+        />
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
-        {subtitle ? (
-          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{subtitle}</Text>
-        ) : null}
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: C.mutedDim, true: C.primary }}
-        thumbColor="#fff"
-      />
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
     </View>
   );
 }
@@ -166,150 +203,133 @@ export default function PrivacyScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
         <PremiumLoader size="large" />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        >
-          {/* Back header */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20 }}>
-            <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
-              <Feather name="arrow-left" size={24} color={C.text} />
-            </Pressable>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', flex: 1 }}>
-              {t('privacy.title')}
-            </Text>
-            {saving && <PremiumLoader size="small" />}
-          </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <View style={{ paddingTop: topPad }}>
+        <TitleBar
+          title={t('privacy.title')}
+          right={saving ? (
+            <View style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}>
+              <PremiumLoader size="small" />
+            </View>
+          ) : undefined}
+        />
+      </View>
 
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10 }}>
-            {t('privacy.sectionProfileStatus')}
-          </Text>
-
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        <SectionLabel>{t('privacy.sectionProfileStatus')}</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           <SettingRow
-            icon="eye"
+            icon="eye" iconBg={C.blueLight} iconColor={C.blue}
             label={t('privacy.showOnlineStatus')}
             subtitle={t('privacy.showOnlineStatusSub')}
             value={settings.showOnlineStatus}
             onChange={() => handleToggle('showOnlineStatus')}
           />
           <SettingRow
-            icon="clock"
+            icon="clock" iconBg={C.tile} iconColor={C.muted}
             label={t('privacy.showLastSeen')}
             subtitle={t('privacy.showLastSeenSub')}
             value={settings.showLastSeen}
             onChange={() => handleToggle('showLastSeen')}
           />
           <SettingRow
-            icon="globe"
+            icon="globe" iconBg={C.blueLight} iconColor={C.blue}
             label={t('privacy.publicProfile')}
             subtitle={t('privacy.publicProfileSub')}
             value={settings.showProfileToAll}
             onChange={() => handleToggle('showProfileToAll')}
+            last
           />
+        </View>
 
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
-            {t('privacy.sectionMessagesRooms')}
-          </Text>
-
+        <SectionLabel>{t('privacy.sectionMessagesRooms')}</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           <SettingRow
-            icon="message-circle"
+            icon="message-circle" iconBg="#E8F5E9" iconColor={C.green}
             label={t('privacy.allowMessageFromAll')}
             subtitle={t('privacy.allowMessageFromAllSub')}
             value={settings.allowMessageFromAll}
             onChange={() => handleToggle('allowMessageFromAll')}
           />
           <SettingRow
-            icon="mic"
+            icon="mic" iconBg={C.blueLight} iconColor={C.blue}
             label={t('privacy.allowRoomInvites')}
             subtitle={t('privacy.allowRoomInvitesSub')}
             value={settings.allowRoomInvites}
             onChange={() => handleToggle('allowRoomInvites')}
+            last
           />
+        </View>
 
-          {/* ── Blocked Users ── */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 24, marginBottom: 10 }}>
-            BLOCKED USERS
-          </Text>
-
+        {/* ── Blocked Users ── */}
+        <SectionLabel>BLOCKED USERS</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           {blockedUsers.length === 0 ? (
-            <View style={{
-              backgroundColor: C.surface, borderRadius: 16, padding: 20,
-              borderWidth: 1, borderColor: C.border,
-              alignItems: 'center' }}>
-              <Feather name="slash" size={24} color={C.mutedDim} />
-              <Text style={{ color: C.mutedDim, fontSize: 13, marginTop: 10 }}>
+            <View style={{ alignItems: 'center', paddingVertical: 22 }}>
+              <Feather name="slash" size={24} color={C.mutedLight} />
+              <Text style={{ color: C.muted, fontSize: 13, marginTop: 10 }}>
                 No blocked users
               </Text>
             </View>
           ) : (
-            blockedUsers.map((b) => (
-              <View
-                key={b.targetUid}
-                style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: C.surface, borderRadius: 16,
-                  padding: 14, marginBottom: 10,
-                  borderWidth: 1, borderColor: C.border }}
-              >
-                {b.targetAvatar ? (
-                  <Image
-                    source={{ uri: b.targetAvatar }}
-                    style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }}
-                  />
-                ) : (
-                  <View style={{
-                    width: 44, height: 44, borderRadius: 22, marginRight: 12,
-                    backgroundColor: 'rgba(239,68,68,0.15)',
-                    alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="user" size={20} color="#EF4444" />
-                  </View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                    {b.targetName}
-                  </Text>
-                  <Text style={{ color: C.mutedDim, fontSize: 11, marginTop: 2 }}>
-                    Blocked
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => handleUnblock(b.targetUid, b.targetName)}
-                  disabled={unblockingUid === b.targetUid}
-                  style={{
-                    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-                    backgroundColor: 'rgba(139,92,246,0.14)',
-                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.35)' }}
-                >
-                  {unblockingUid === b.targetUid ? (
-                    <PremiumLoader size="small" />
+            blockedUsers.map((b, i) => (
+              <View key={b.targetUid}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 15 }}>
+                  {b.targetAvatar ? (
+                    <Image
+                      source={{ uri: b.targetAvatar }}
+                      style={{ width: 44, height: 44, borderRadius: 22 }}
+                    />
                   ) : (
-                    <Text style={{ color: C.glow, fontSize: 12, fontWeight: '700' }}>
-                      Unblock
-                    </Text>
+                    <View style={{
+                      width: 44, height: 44, borderRadius: 22,
+                      backgroundColor: '#FDECEA',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Feather name="user" size={20} color="#EF4444" />
+                    </View>
                   )}
-                </Pressable>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ color: C.text, fontSize: 16, fontWeight: '500' }} numberOfLines={1}>
+                      {b.targetName}
+                    </Text>
+                    <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                      Blocked
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => handleUnblock(b.targetUid, b.targetName)}
+                    disabled={unblockingUid === b.targetUid}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                      backgroundColor: C.blueLight }}
+                  >
+                    {unblockingUid === b.targetUid ? (
+                      <PremiumLoader size="small" />
+                    ) : (
+                      <Text style={{ color: C.blue, fontSize: 13, fontWeight: '700' }}>
+                        Unblock
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+                {i < blockedUsers.length - 1 && (
+                  <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />
+                )}
               </View>
             ))
           )}
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

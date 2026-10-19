@@ -1,6 +1,9 @@
 /**
  * Edit Profile Screen — ধাপ ২
  * নাম, bio পরিবর্তন + Cloudinary photo upload
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar, white input boxes). Save persists via existing
+ * updateUser service calls — logic unchanged.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -10,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import ScalePress from '@/components/ScalePress';
 import { useAuth } from '@/src/context/AuthContext';
 import { updateUser, VeeUser, subscribeUser } from '@/src/services/userService';
 import { uploadProfilePhoto, uploadCoverPhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
@@ -21,17 +23,40 @@ import { withTimeout } from '@/src/utils/withTimeout';
 /** Max ms to wait for an RTDB write ack before treating the save as queued. */
 const SAVE_TIMEOUT_MS = 12_000;
 
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  surface: '#F2F2F7',
-  error: '#EF4444',
-  success: '#22C55E' } as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  goldText: '#B8860B' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      {right ?? <View style={{ width: 40 }} />}
+    </View>
+  );
+}
 
 function InputField({
   label, value, onChangeText, placeholder, multiline, maxLength }: {
@@ -44,30 +69,30 @@ function InputField({
 }) {
   return (
     <View style={{ marginBottom: 18 }}>
-      <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', marginBottom: 8, letterSpacing: 0.5 }}>
+      <Text style={{ color: C.muted, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
         {label}
       </Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={C.mutedDim}
+        placeholderTextColor={C.mutedLight}
         multiline={multiline}
         maxLength={maxLength}
         style={{
-          backgroundColor: C.surface,
-          borderRadius: 14,
+          backgroundColor: C.card,
+          borderRadius: 12,
           paddingHorizontal: 16,
           paddingVertical: 14,
           color: C.text,
           fontSize: 15,
-          borderWidth: 1,
+          borderWidth: 0.5,
           borderColor: C.border,
           minHeight: multiline ? 90 : undefined,
           textAlignVertical: multiline ? 'top' : 'auto' }}
       />
       {maxLength && (
-        <Text style={{ color: C.mutedDim, fontSize: 11, textAlign: 'right', marginTop: 4 }}>
+        <Text style={{ color: C.mutedLight, fontSize: 11, textAlign: 'right', marginTop: 4 }}>
           {value.length}/{maxLength}
         </Text>
       )}
@@ -268,159 +293,143 @@ export default function EditProfileScreen() {
     : '?';
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 60, paddingTop: topPad + 12 }}
-          >
-            {/* Header */}
-            <View style={{
-              flexDirection: 'row', alignItems: 'center',
-              paddingHorizontal: 18, marginBottom: 32 }}>
-              <ScalePress onPress={() => router.back()}>
-                <View style={{
-                  width: 38, height: 38, borderRadius: 19,
-                  backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
-                  alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-                  <Feather name="arrow-left" size={18} color={C.text} />
-                </View>
-              </ScalePress>
-              <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', flex: 1 }}>
-                {t('editProfile.title')}
-              </Text>
-              <ScalePress onPress={handleSave} disabled={saving || uploadingPhoto}>
-                <View style={{
-                  backgroundColor: C.primary, borderRadius: 22,
-                  paddingHorizontal: 20, paddingVertical: 10,
-                  opacity: saving ? 0.6 : 1,
-                  shadowColor: C.glow, shadowOpacity: 0.4, shadowRadius: 12 }}>
-                  {saving
-                    ? <PremiumLoader size="small" />
-                    : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>{t('editProfile.save')}</Text>}
-                </View>
-              </ScalePress>
-            </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <View style={{ paddingTop: topPad }}>
+        <TitleBar
+          title={t('editProfile.title')}
+          right={
+            <Pressable
+              onPress={handleSave}
+              disabled={saving || uploadingPhoto}
+              style={{ minWidth: 40, height: 40, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 12, opacity: saving ? 0.6 : 1 }}
+              hitSlop={8}
+            >
+              {saving
+                ? <PremiumLoader size="small" />
+                : <Text style={{ color: C.blue, fontSize: 16, fontWeight: '600' }}>{t('editProfile.save')}</Text>}
+            </Pressable>
+          }
+        />
+      </View>
 
-            {/* Cover picker */}
-            <View style={{ marginBottom: 24 }}>
-              <Text style={{ color: C.muted, fontSize: 14, fontWeight: '600', marginBottom: 10 }}>
-                Cover Photo
-              </Text>
-              <Pressable onPress={pickCover} style={{ borderRadius: 16, overflow: 'hidden' }}>
-                <View style={{ height: 140, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
-                  {uploadingCover ? (
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          {/* Cover picker */}
+          <View style={[cardStyle, { padding: 12 }]}>
+            <Pressable onPress={pickCover} style={{ borderRadius: 12, overflow: 'hidden' }}>
+              <View style={{ height: 140, backgroundColor: C.tile, alignItems: 'center', justifyContent: 'center' }}>
+                {uploadingCover ? (
+                  <PremiumLoader size="large" />
+                ) : coverURI ? (
+                  <Image source={{ uri: coverURI }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                ) : (
+                  <View style={{ alignItems: 'center' }}>
+                    <Feather name="image" size={32} color={C.mutedLight} />
+                    <Text style={{ color: C.muted, fontSize: 13, marginTop: 8 }}>Tap to add cover</Text>
+                  </View>
+                )}
+              </View>
+            </Pressable>
+          </View>
+
+          {/* Avatar picker */}
+          <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
+            <Pressable onPress={handlePhotoPress} hitSlop={8}>
+              <View style={{ position: 'relative' }}>
+                {/* Avatar */}
+                <View style={{
+                  width: 110, height: 110, borderRadius: 55,
+                  borderWidth: 3, borderColor: C.blueLight,
+                  overflow: 'hidden',
+                  backgroundColor: C.blueLight,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  {uploadingPhoto ? (
                     <PremiumLoader size="large" />
-                  ) : coverURI ? (
-                    <Image source={{ uri: coverURI }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : photoURI ? (
+                    <Image source={{ uri: photoURI }} style={{ width: 110, height: 110 }} />
                   ) : (
-                    <View style={{ alignItems: 'center' }}>
-                      <Feather name="image" size={32} color={C.muted} />
-                      <Text style={{ color: C.muted, fontSize: 13, marginTop: 8 }}>Tap to add cover</Text>
-                    </View>
+                    <Text style={{ color: C.blue, fontSize: 36, fontWeight: '800' }}>{initials}</Text>
                   )}
                 </View>
-              </Pressable>
-            </View>
 
-            {/* Avatar picker */}
-            <View style={{ alignItems: 'center', marginBottom: 36 }}>
-              <ScalePress onPress={handlePhotoPress}>
-                <View style={{ position: 'relative' }}>
-                  {/* Avatar */}
-                  <View style={{
-                    width: 110, height: 110, borderRadius: 55,
-                    borderWidth: 3, borderColor: C.glow,
-                    shadowColor: C.glow, shadowOpacity: 0.45, shadowRadius: 22,
-                    overflow: 'hidden',
-                    backgroundColor: 'rgba(139,92,246,0.2)',
-                    alignItems: 'center', justifyContent: 'center' }}>
-                    {uploadingPhoto ? (
-                      <PremiumLoader size="large" />
-                    ) : photoURI ? (
-                      <Image source={{ uri: photoURI }} style={{ width: 110, height: 110 }} />
-                    ) : (
-                      <Text style={{ color: C.glow, fontSize: 36, fontWeight: '900' }}>{initials}</Text>
-                    )}
-                  </View>
-
-                  {/* Camera badge */}
-                  <View style={{
-                    position: 'absolute', bottom: 2, right: 2,
-                    width: 34, height: 34, borderRadius: 17,
-                    backgroundColor: C.primary,
-                    borderWidth: 2.5, borderColor: C.bg,
-                    alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="camera" size={15} color="#fff" />
-                  </View>
+                {/* Camera badge */}
+                <View style={{
+                  position: 'absolute', bottom: 2, right: 2,
+                  width: 34, height: 34, borderRadius: 17,
+                  backgroundColor: C.blue,
+                  borderWidth: 2.5, borderColor: C.bg,
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="camera" size={15} color="#fff" />
                 </View>
-              </ScalePress>
+              </View>
+            </Pressable>
 
-              <Text style={{ color: C.muted, fontSize: 13, marginTop: 12 }}>
-                {t('editProfile.photoTapHint')}
+            <Text style={{ color: C.muted, fontSize: 13, marginTop: 12 }}>
+              {t('editProfile.photoTapHint')}
+            </Text>
+          </View>
+
+          {/* Form — name + bio */}
+          <View style={[cardStyle, { padding: 15 }]}>
+            <InputField
+              label={t('editProfile.fieldName')}
+              value={name}
+              onChangeText={setName}
+              placeholder={t('editProfile.namePlaceholder')}
+              maxLength={40}
+            />
+            <InputField
+              label={t('editProfile.fieldBio')}
+              value={bio}
+              onChangeText={setBio}
+              placeholder={t('editProfile.bioPlaceholder')}
+              multiline
+              maxLength={150}
+            />
+
+            {/* Vee ID (read-only) — NO # prefix (sacred) */}
+            <View style={{ marginBottom: 18 }}>
+              <Text style={{ color: C.muted, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
+                {t('editProfile.fieldVeeId')}
               </Text>
-            </View>
-
-            {/* Form */}
-            <View style={{ paddingHorizontal: 22 }}>
-              <InputField
-                label={t('editProfile.fieldName')}
-                value={name}
-                onChangeText={setName}
-                placeholder={t('editProfile.namePlaceholder')}
-                maxLength={40}
-              />
-              <InputField
-                label={t('editProfile.fieldBio')}
-                value={bio}
-                onChangeText={setBio}
-                placeholder={t('editProfile.bioPlaceholder')}
-                multiline
-                maxLength={150}
-              />
-
-              {/* Vee ID (read-only) */}
-              <View style={{ marginBottom: 18 }}>
-                <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', marginBottom: 8, letterSpacing: 0.5 }}>
-                  {t('editProfile.fieldVeeId')}
+              <View style={{
+                backgroundColor: C.tile,
+                borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+                borderWidth: 0.5, borderColor: C.border,
+                flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: C.muted, fontSize: 15 }}>
+                  {profile?.vId ?? '...'}
                 </Text>
-                <View style={{
-                  backgroundColor: C.surface,
-                  borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                  borderWidth: 1, borderColor: C.border,
-                  flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ color: C.mutedDim, fontSize: 15 }}>
-                    {profile?.vId ?? '...'}
-                  </Text>
-                  <Feather name="lock" size={13} color={C.mutedDim} style={{ marginLeft: 'auto' }} />
-                </View>
-              </View>
-
-              {/* Email (read-only) */}
-              <View style={{ marginBottom: 18 }}>
-                <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', marginBottom: 8, letterSpacing: 0.5 }}>
-                  {t('editProfile.fieldEmail')}
-                </Text>
-                <View style={{
-                  backgroundColor: C.surface,
-                  borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-                  borderWidth: 1, borderColor: C.border,
-                  flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Feather name="mail" size={15} color={C.mutedDim} />
-                  <Text style={{ color: C.mutedDim, fontSize: 15 }}>
-                    {user?.email ?? '...'}
-                  </Text>
-                  <Feather name="lock" size={13} color={C.mutedDim} style={{ marginLeft: 'auto' }} />
-                </View>
+                <Feather name="lock" size={13} color={C.mutedLight} style={{ marginLeft: 'auto' }} />
               </View>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+
+            {/* Email (read-only) */}
+            <View>
+              <Text style={{ color: C.muted, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
+                {t('editProfile.fieldEmail')}
+              </Text>
+              <View style={{
+                backgroundColor: C.tile,
+                borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+                borderWidth: 0.5, borderColor: C.border,
+                flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="mail" size={15} color={C.mutedLight} />
+                <Text style={{ color: C.muted, fontSize: 15 }} numberOfLines={1}>
+                  {user?.email ?? '...'}
+                </Text>
+                <Feather name="lock" size={13} color={C.mutedLight} style={{ marginLeft: 'auto' }} />
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

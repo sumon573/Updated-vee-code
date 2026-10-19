@@ -8,6 +8,11 @@
  * - Store button at bottom for discovering/buying new items
  *
  * Light mode only. All data is real — no demo content.
+ *
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar). The orange Nobel tab button (his reference design)
+ * and the gold luxury identity are kept verbatim; item rows are now white
+ * cards with gold accents. All equip/remove/store logic unchanged.
  */
 import { useEffect, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
@@ -34,14 +39,18 @@ import * as Haptics from 'expo-haptics';
 import NobelScreen from '@/src/features/nobel/NobelScreen';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  card: '#F2F2F7',
-  text: '#000000',
-  muted: '#8E8E93',
-  border: '#E5E5EA',
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
   blue: '#007AFF',
-  blueLight: '#E3F2FF',
+  blueLight: '#E3F2FD',
   gold: '#D4AF37',
   goldDark: '#B8860B',
   goldBg: '#FFF8E6',
@@ -50,6 +59,21 @@ const C = {
   errorText: '#B3261E',
   success: '#4CAF50',
   successBg: '#E8F5E9' } as const;
+
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title }: { title: string }) {
+  return (
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      <View style={{ width: 40 }} />
+    </View>
+  );
+}
 
 type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx' | 'nobel';
 
@@ -107,7 +131,7 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
       <View style={{
         width: isFrame ? 52 : 44, height: isFrame ? 52 : 44,
         borderRadius: isFrame ? 8 : 22,
-        backgroundColor: C.card, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: C.tile, alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden',
       }}>
         {!imgError ? (
@@ -262,9 +286,10 @@ export default function DecorationScreen() {
       key={item.id}
       style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: C.goldBg, borderRadius: 16, padding: 16, marginBottom: 12,
-        borderWidth: isActive ? 2 : 1,
-        borderColor: isActive ? C.gold : C.goldBorder,
+        backgroundColor: C.card, borderRadius: 12, padding: 14, marginBottom: 10,
+        marginHorizontal: 15,
+        borderWidth: isActive ? 2 : 0.5,
+        borderColor: isActive ? C.gold : C.border,
         shadowColor: isActive ? C.gold : 'transparent',
         shadowOpacity: isActive ? 0.25 : 0,
         shadowRadius: isActive ? 12 : 0,
@@ -274,7 +299,7 @@ export default function DecorationScreen() {
       <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} itemId={item.id} />
       <View style={{ flex: 1, marginLeft: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }}>{item.name}</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }} numberOfLines={1}>{item.name}</Text>
           {item.source === 'noble' && (
             <View style={{ marginLeft: 8, backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
               <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>NOBEL</Text>
@@ -285,7 +310,7 @@ export default function DecorationScreen() {
           Obtained {formatObtainedDate(item.obtainedAt)} · {sourceLabel}
         </Text>
         {isMe && (
-          <Text style={{ fontSize: 11, color: '#8A6D00', marginTop: 2, fontWeight: '700' }}>
+          <Text style={{ fontSize: 11, color: C.goldDark, marginTop: 2, fontWeight: '700' }}>
             {formatValidity(item.validity)}
           </Text>
         )}
@@ -342,7 +367,7 @@ export default function DecorationScreen() {
     return (
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}
       >
         {data.items.map((item: any) =>
           renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
@@ -355,14 +380,7 @@ export default function DecorationScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
-        <Pressable onPress={() => router.back()} style={{ padding: 8 }} hitSlop={12}>
-          <Feather name="arrow-left" size={24} color={C.text} />
-        </Pressable>
-        <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, marginLeft: 4 }}>
-          Decoration
-        </Text>
-      </View>
+      <TitleBar title="Decoration" />
 
       {/* Luxury category tabs — scrollable */}
       <ScrollView
@@ -424,7 +442,7 @@ export default function DecorationScreen() {
                 paddingHorizontal: 16, marginRight: 8,
                 height: 48, borderRadius: 24,
                 backgroundColor: isActive ? C.gold : C.card,
-                borderWidth: isActive ? 0 : 1,
+                borderWidth: isActive ? 0 : 0.5,
                 borderColor: C.border,
                 shadowColor: isActive ? C.gold : 'transparent',
                 shadowOpacity: isActive ? 0.3 : 0,
@@ -488,14 +506,14 @@ export default function DecorationScreen() {
       {/* Store button — bottom (2026-10-16, Sumon): polished white button,
           blue circle bag icon + "Store" — per his reference screenshot. */}
       {isMe && tab !== 'nobel' && (
-        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: C.border }}>
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/store' as any); }}
             style={{
               backgroundColor: '#FFFFFF', borderRadius: 18, paddingVertical: 13,
               paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 1, borderColor: '#EDEDED',
+              borderWidth: 0.5, borderColor: C.border,
               shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 14,
               shadowOffset: { width: 0, height: 4 }, elevation: 4 }}
           >

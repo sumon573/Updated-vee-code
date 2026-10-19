@@ -1,6 +1,8 @@
 /**
  * App Settings Screen — real Firebase-backed functionality
- *
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar, ~56dp menu rows with 30dp icon tiles). All logic
+ * unchanged:
  * Change Password   → sendPasswordResetEmail to current user's email
  * Download My Data  → fetch profile + wallet summary, share as text
  * Delete Account    → reauthenticate with password, deleteUser, remove DB node
@@ -13,7 +15,6 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import ScalePress from '@/components/ScalePress';
 import { useTranslation } from 'react-i18next';
 import { ref, get, update, remove } from 'firebase/database';
 import {
@@ -26,16 +27,27 @@ import { useAuth } from '@/src/context/AuthContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  surface: '#F2F2F7',
-  red: '#EF4444' } as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  goldText: '#B8860B',
+  red: '#EF4444',
+  redBg: '#FDECEA' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
 
 type AppSettings = {
   autoPlayMedia: boolean;
@@ -48,159 +60,173 @@ const DEFAULTS: AppSettings = {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function SettingToggle({
-  icon, label, subtitle, value, onChange }: {
-  icon: React.ComponentProps<typeof Feather>['name'];
-  label: string;
-  subtitle?: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title }: { title: string }) {
   return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: C.surface, borderRadius: 16,
-      padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA' }}>
-      <View style={{
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: 'rgba(139,92,246,0.14)',
-        alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-        <Feather name={icon} size={18} color={C.glow} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
-        {subtitle ? (
-          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{subtitle}</Text>
-        ) : null}
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: C.mutedDim, true: C.primary }}
-        thumbColor="#fff"
-      />
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      <View style={{ width: 40 }} />
     </View>
   );
 }
 
-function SettingButton({
-  icon, label, onPress, danger }: {
-  icon: React.ComponentProps<typeof Feather>['name'];
-  label: string;
-  onPress: () => void;
-  danger?: boolean;
-}) {
+// Section caption above a card group
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <ScalePress onPress={onPress}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: C.surface, borderRadius: 16,
-        padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: '#E5E5EA' }}>
-        <View style={{
-          width: 40, height: 40, borderRadius: 12,
-          backgroundColor: danger ? 'rgba(239,68,68,0.12)' : 'rgba(139,92,246,0.14)',
-          alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-          <Feather name={icon} size={18} color={danger ? C.red : C.glow} />
-        </View>
-        <Text style={{ flex: 1, color: danger ? C.red : C.text, fontSize: 15, fontWeight: '700' }}>
-          {label}
-        </Text>
-        <Feather name="chevron-right" size={18} color={C.mutedDim} />
-      </View>
-    </ScalePress>
+    <Text style={{ fontSize: 13, color: C.muted, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 6 }}>
+      {children}
+    </Text>
   );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
-
-function SettingInfo({
-  icon, label, subtitle }: {
+// IMO menu row with trailing Switch — ~56dp, 30dp icon tile,
+// 0.5dp divider inset 57dp from left
+function SettingToggle({
+  icon, iconBg, iconColor, label, subtitle, value, onChange, last }: {
   icon: React.ComponentProps<typeof Feather>['name'];
+  iconBg: string;
+  iconColor: string;
   label: string;
   subtitle?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  last?: boolean;
 }) {
   return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: C.surface, borderRadius: 16,
-      padding: 16, marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA' }}>
-      <View style={{
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: 'rgba(139,92,246,0.14)',
-        alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-        <Feather name={icon} size={18} color={C.glow} />
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon} size={16} color={iconColor} />
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ color: C.text, fontSize: 16 }} numberOfLines={1}>{label}</Text>
+          {subtitle ? (
+            <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{subtitle}</Text>
+          ) : null}
+        </View>
+        <Switch
+          value={value}
+          onValueChange={onChange}
+          trackColor={{ false: C.mutedLight, true: C.blue }}
+          thumbColor="#fff"
+        />
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
-        {subtitle ? (
-          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{subtitle}</Text>
-        ) : null}
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
+    </View>
+  );
+}
+
+// IMO menu row (BIUIItemView): ~56dp, 30dp rounded icon, 16sp label, chevron
+function SettingButton({
+  icon, iconBg, iconColor, label, onPress, danger, last }: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <View>
+      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon} size={16} color={iconColor} />
+        </View>
+        <Text style={{ flex: 1, fontSize: 16, color: danger ? C.red : C.text, marginLeft: 12 }} numberOfLines={1}>{label}</Text>
+        <Feather name="chevron-right" size={18} color={C.mutedLight} />
+      </Pressable>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
+    </View>
+  );
+}
+
+// Informational row — IMO menu row without a chevron (nothing fake to toggle)
+function SettingInfo({
+  icon, iconBg, iconColor, label, subtitle, last }: {
+  icon: React.ComponentProps<typeof Feather>['name'];
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  subtitle?: string;
+  last?: boolean;
+}) {
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon} size={16} color={iconColor} />
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ color: C.text, fontSize: 16 }} numberOfLines={1}>{label}</Text>
+          {subtitle ? (
+            <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{subtitle}</Text>
+          ) : null}
+        </View>
       </View>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
     </View>
   );
 }
 
 // ─── Language selector — fully functional via LanguageContext ────────────────
 
-function LanguageSelector() {
+function LanguageSelector({ last }: { last?: boolean }) {
   const { language, changeLanguage } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const active = SUPPORTED_LANGUAGES.find((l) => l.code === language);
 
   return (
-    <View style={{
-      backgroundColor: C.surface, borderRadius: 16,
-      marginBottom: 10,
-      borderWidth: 1, borderColor: '#E5E5EA' }}>
-      <ScalePress onPress={() => setExpanded((v) => !v)}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
-          <View style={{
-            width: 40, height: 40, borderRadius: 12,
-            backgroundColor: 'rgba(139,92,246,0.14)',
-            alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-            <Feather name="globe" size={18} color={C.glow} />
-          </View>
-          <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }}>
-            Language
-          </Text>
-          {active && (
-            <Text style={{ color: C.muted, fontSize: 14, marginRight: 8 }}>
-              {active.flag} {active.nativeName}
-            </Text>
-          )}
-          <Feather name={expanded ? 'chevron-down' : 'chevron-right'} size={18} color={C.mutedDim} />
+    <View>
+      <Pressable onPress={() => setExpanded((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: C.blueLight, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name="globe" size={16} color={C.blue} />
         </View>
-      </ScalePress>
+        <Text style={{ flex: 1, color: C.text, fontSize: 16, marginLeft: 12 }} numberOfLines={1}>
+          Language
+        </Text>
+        {active && (
+          <Text style={{ color: C.muted, fontSize: 14, marginRight: 8 }}>
+            {active.flag} {active.nativeName}
+          </Text>
+        )}
+        <Feather name={expanded ? 'chevron-down' : 'chevron-right'} size={18} color={C.mutedLight} />
+      </Pressable>
       {expanded && (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <View style={{ paddingLeft: 57, paddingRight: 15, paddingBottom: 8 }}>
           {SUPPORTED_LANGUAGES.map((opt) => {
             const selected = opt.code === language;
             return (
-              <ScalePress key={opt.code} onPress={() => changeLanguage(opt.code)}>
+              <Pressable key={opt.code} onPress={() => changeLanguage(opt.code)}>
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',
                   paddingVertical: 12,
-                  borderTopWidth: 1, borderTopColor: C.border }}>
+                  borderTopWidth: 0.5, borderTopColor: C.border }}>
                   <Text style={{ fontSize: 18, marginRight: 12 }}>{opt.flag}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: C.text, fontSize: 15, fontWeight: selected ? '800' : '500' }}>
+                    <Text style={{ color: C.text, fontSize: 15, fontWeight: selected ? '700' : '400' }}>
                       {opt.nativeName}
                     </Text>
                     <Text style={{ color: C.muted, fontSize: 12 }}>{opt.name}</Text>
                   </View>
-                  {selected && <Feather name="check" size={18} color={C.primary} />}
+                  {selected && <Feather name="check" size={18} color={C.blue} />}
                 </View>
-              </ScalePress>
+              </Pressable>
             );
           })}
         </View>
       )}
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
     </View>
   );
 }
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -386,116 +412,101 @@ export default function SettingsScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        >
-          {/* Back header */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20 }}>
-            <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
-              <Feather name="arrow-left" size={24} color={C.text} />
-            </Pressable>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>
-              {t('settings.title')}
-            </Text>
-          </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <View style={{ paddingTop: topPad }}>
+        <TitleBar title={t('settings.title')} />
+      </View>
 
-          {/* Appearance */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10 }}>
-            {t('settings.sectionAppearance')}
-          </Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Appearance */}
+        <SectionLabel>{t('settings.sectionAppearance')}</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           {/* The whole app ships in light mode — informational row, no fake toggle. */}
           <SettingInfo
-            icon="sun"
+            icon="sun" iconBg={C.goldBg} iconColor={C.goldText}
             label="Light Mode"
             subtitle="Light mode is active across the app"
+            last
           />
+        </View>
 
-          {/* Preferences */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
-            PREFERENCES
-          </Text>
+        {/* Preferences */}
+        <SectionLabel>PREFERENCES</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           <SettingButton
-            icon="bell"
+            icon="bell" iconBg="#EDE9FE" iconColor="#8B5CF6"
             label="Notifications"
             onPress={() => router.push('/profile/notifications')}
           />
           <SettingButton
-            icon="shield"
+            icon="shield" iconBg={C.tile} iconColor={C.muted}
             label="Privacy"
             onPress={() => router.push('/profile/privacy')}
           />
-          <LanguageSelector />
+          <LanguageSelector last />
+        </View>
 
-          {/* Media */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
-            {t('settings.sectionMedia')}
-          </Text>
+        {/* Media */}
+        <SectionLabel>{t('settings.sectionMedia')}</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           <SettingToggle
-            icon="play-circle"
+            icon="play-circle" iconBg={C.blueLight} iconColor={C.blue}
             label={t('settings.autoPlayMedia')}
             subtitle={t('settings.autoPlayMediaSub')}
             value={appSettings.autoPlayMedia}
             onChange={() => toggleSetting('autoPlayMedia')}
           />
           <SettingToggle
-            icon="wifi-off"
+            icon="wifi-off" iconBg={C.tile} iconColor={C.muted}
             label={t('settings.dataSaver')}
             subtitle={t('settings.dataSaverSub')}
             value={appSettings.dataSaver}
             onChange={() => toggleSetting('dataSaver')}
+            last
           />
+        </View>
 
-          {/* Account */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginTop: 16, marginBottom: 10 }}>
-            {t('settings.sectionAccount')}
-          </Text>
+        {/* Account */}
+        <SectionLabel>{t('settings.sectionAccount')}</SectionLabel>
+        <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
           <SettingButton
-            icon="credit-card"
+            icon="credit-card" iconBg={C.goldBg} iconColor={C.goldText}
             label="Wallet"
             onPress={() => router.push('/profile/wallet')}
           />
           <SettingButton
-            icon="lock"
+            icon="lock" iconBg={C.tile} iconColor={C.muted}
             label={t('settings.changePassword')}
             onPress={handleChangePassword}
           />
           <SettingButton
-            icon="download"
+            icon="download" iconBg="#E8F5E9" iconColor={C.green}
             label={t('settings.downloadData')}
             onPress={handleDownloadData}
           />
           <SettingButton
-            icon="help-circle"
+            icon="help-circle" iconBg="#E8F5E9" iconColor={C.green}
             label="Help"
             onPress={() => router.push('/profile/help')}
           />
           <SettingButton
-            icon="info"
+            icon="info" iconBg={C.tile} iconColor={C.muted}
             label="About"
             onPress={() => router.push('/profile/about')}
           />
           <SettingButton
-            icon="log-out"
+            icon="log-out" iconBg={C.redBg} iconColor={C.red}
             label={t('settings.logout')}
             onPress={handleLogout}
           />
           <SettingButton
-            icon="trash-2"
+            icon="trash-2" iconBg={C.redBg} iconColor={C.red}
             label={t('settings.deleteAccount')}
             danger
+            last
             onPress={() => {
               setDeletePassword('');
               Alert.alert(
@@ -511,16 +522,16 @@ export default function SettingsScreen() {
               );
             }}
           />
+        </View>
 
-          <Text style={{
-            color: C.mutedDim, fontSize: 11,
-            textAlign: 'center', marginTop: 24 }}>
-            {t('settings.version')}
-          </Text>
-        </ScrollView>
-      </SafeAreaView>
+        <Text style={{
+          color: C.mutedLight, fontSize: 11,
+          textAlign: 'center', marginTop: 24 }}>
+          {t('settings.version')}
+        </Text>
+      </ScrollView>
 
-      {/* ── Delete Account Password Modal ─────────────────────────────────── */}
+      {/* ── Delete Account Confirm Modal ──────────────────────────────────── */}
       <Modal
         visible={deleteModalVisible}
         transparent
@@ -528,15 +539,22 @@ export default function SettingsScreen() {
         onRequestClose={() => setDeleteModalVisible(false)}
       >
         <View style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+          flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
           alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <View style={{
-            width: '100%', backgroundColor: '#FFFFFF',
-            borderRadius: 20, padding: 24,
-            borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
-            <Text style={{ color: C.red, fontSize: 18, fontWeight: '900', marginBottom: 8 }}>
-              ⚠️ Delete Account
-            </Text>
+            width: '100%', backgroundColor: C.card,
+            borderRadius: 12, padding: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <View style={{
+                width: 30, height: 30, borderRadius: 8,
+                backgroundColor: C.redBg,
+                alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                <Feather name="alert-triangle" size={16} color={C.red} />
+              </View>
+              <Text style={{ color: C.red, fontSize: 17, fontWeight: '600' }}>
+                Delete Account
+              </Text>
+            </View>
             <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20, marginBottom: 20 }}>
               This action is permanent and cannot be undone. All your data will be deleted.{'\n\n'}
               {deleteIsGoogleOnly
@@ -546,12 +564,11 @@ export default function SettingsScreen() {
 
             {deleteIsGoogleOnly ? (
               <View style={{
-                backgroundColor: '#F2F2F7',
+                backgroundColor: C.tile,
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-                borderWidth: 1, borderColor: '#E5E5EA',
                 marginBottom: 20,
                 flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Feather name="shield" size={18} color={C.glow} />
+                <Feather name="shield" size={18} color={C.blue} />
                 <Text style={{ color: C.text, fontSize: 14, flex: 1, lineHeight: 20 }}>
                   You'll sign in with Google again to confirm it's you.
                 </Text>
@@ -561,14 +578,14 @@ export default function SettingsScreen() {
                 value={deletePassword}
                 onChangeText={setDeletePassword}
                 placeholder="Enter your password"
-                placeholderTextColor={C.mutedDim}
+                placeholderTextColor={C.mutedLight}
                 secureTextEntry
                 autoCapitalize="none"
                 style={{
-                  backgroundColor: '#F2F2F7',
+                  backgroundColor: C.tile,
                   borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
                   color: C.text, fontSize: 15,
-                  borderWidth: 1, borderColor: '#E5E5EA',
+                  borderWidth: 0.5, borderColor: C.border,
                   marginBottom: 20 }}
               />
             )}
@@ -578,11 +595,10 @@ export default function SettingsScreen() {
                 onPress={() => { setDeleteModalVisible(false); setDeletePassword(''); }}
                 style={{
                   flex: 1, paddingVertical: 14, borderRadius: 12,
-                  backgroundColor: '#E5E5EA',
-                  alignItems: 'center',
-                  borderWidth: 1, borderColor: '#E5E5EA' }}
+                  backgroundColor: C.tile,
+                  alignItems: 'center' }}
               >
-                <Text style={{ color: C.muted, fontWeight: '700' }}>Cancel</Text>
+                <Text style={{ color: C.muted, fontWeight: '600' }}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -590,13 +606,12 @@ export default function SettingsScreen() {
                 disabled={deleteLoading}
                 style={{
                   flex: 1, paddingVertical: 14, borderRadius: 12,
-                  backgroundColor: 'rgba(239,68,68,0.18)',
-                  alignItems: 'center',
-                  borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}
+                  backgroundColor: C.redBg,
+                  alignItems: 'center' }}
               >
                 {deleteLoading
                   ? <PremiumLoader size="small" />
-                  : <Text style={{ color: C.red, fontWeight: '900' }}>
+                  : <Text style={{ color: C.red, fontWeight: '700' }}>
                       {deleteIsGoogleOnly ? 'Confirm with Google' : 'Delete Forever'}
                     </Text>}
               </Pressable>
@@ -604,6 +619,6 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }

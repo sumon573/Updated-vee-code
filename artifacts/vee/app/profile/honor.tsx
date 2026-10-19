@@ -2,8 +2,8 @@
  * Profile — Honor Detail Screen (NOTE 8, 2026-10-11, IMO exact).
  *
  * IMO layout:
- *  - Header: back + "Honor" + ? icon
- *  - Profile row: DP + name + active nameplate
+ *  - Header: 56dp title bar, back ‹ + centered "Honor" + ? icon
+ *  - Profile row: DP + name + active nameplate (white card)
  *  - Tabs: "Nameplate N" | "Badge N" (IMO order), real counts
  *  - Badge tab: "Verification" section (officially granted) + "Achievement"
  *    section (event-claimed). Badge grid, tap → detail modal.
@@ -21,6 +21,10 @@
  *
  * Supports viewing another user's honor via ?uid= — validity is hidden then.
  * Light mode only. Errors show their actual cause.
+ *
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar). Badge grid keeps its gold honor identity; the
+ * badge detail modal is unchanged (IMO exact). All logic unchanged.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
@@ -40,17 +44,40 @@ import {
 import type { GrantedBadge } from '@/src/data/honor';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  card: '#F2F2F7',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  gold: '#F5A623',
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759',
   goldBg: '#FFF8E6',
   goldBorder: '#F5D67B',
-  blue: '#007AFF' } as const;
+  goldText: '#B8860B' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      {right ?? <View style={{ width: 40 }} />}
+    </View>
+  );
+}
 
 export default function HonorScreen() {
   const { user } = useAuth();
@@ -187,23 +214,14 @@ export default function HonorScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      {/* Header */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 12, paddingVertical: 10,
-        borderBottomWidth: 1, borderBottomColor: C.border }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Pressable onPress={() => router.back()} style={{ padding: 8 }} hitSlop={8}>
-            <Feather name="chevron-left" size={24} color={C.text} />
+      <TitleBar
+        title="Honor"
+        right={
+          <Pressable onPress={showAbout} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Feather name="help-circle" size={22} color={C.text} />
           </Pressable>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, marginLeft: 4 }}>
-            Honor
-          </Text>
-        </View>
-        <Pressable onPress={showAbout} style={{ padding: 8 }} hitSlop={8}>
-          <Feather name="help-circle" size={22} color={C.text} />
-        </Pressable>
-      </View>
+        }
+      />
 
       {error && (
         <View style={{ backgroundColor: '#FDECEA', paddingHorizontal: 16, paddingVertical: 10 }}>
@@ -211,13 +229,13 @@ export default function HonorScreen() {
         </View>
       )}
 
-      {/* Profile row (IMO style) */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 }}>
+      {/* Profile row (IMO style) — white card */}
+      <View style={[cardStyle, { flexDirection: 'row', alignItems: 'center', padding: 15 }]}>
         {photoURL ? (
           <Image source={{ uri: photoURL }} style={{ width: 52, height: 52, borderRadius: 26 }} />
         ) : (
           <View style={{
-            width: 52, height: 52, borderRadius: 26, backgroundColor: C.card,
+            width: 52, height: 52, borderRadius: 26, backgroundColor: C.tile,
             alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 20, fontWeight: '800', color: C.muted }}>
               {displayName[0]?.toUpperCase()}
@@ -225,7 +243,7 @@ export default function HonorScreen() {
           </View>
         )}
         <View style={{ marginLeft: 12, flex: 1 }}>
-          <Text style={{ fontSize: 17, fontWeight: '800', color: C.text }}>{displayName}</Text>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>{displayName}</Text>
           {activePlate ? (
             <View style={{
               marginTop: 5, alignSelf: 'flex-start',
@@ -241,7 +259,7 @@ export default function HonorScreen() {
               ) : (
                 <Text style={{ fontSize: 12, marginRight: 4 }}>{activePlate.icon}</Text>
               )}
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#8A6D00' }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: C.goldText }}>
                 {activePlate.name}
               </Text>
             </View>
@@ -250,7 +268,7 @@ export default function HonorScreen() {
       </View>
 
       {/* Tabs (IMO order: Nameplate N | Badge N) */}
-      <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border }}>
+      <View style={{ flexDirection: 'row', backgroundColor: C.card, marginTop: 12 }}>
         {(['nameplate', 'badge'] as const).map((t) => {
           const active = tab === t;
           const label = t === 'badge' ? `Badge ${badges.length}` : `Nameplate ${nameplates.length}`;
@@ -261,7 +279,7 @@ export default function HonorScreen() {
               style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}
             >
               <Text style={{
-                fontSize: 15, fontWeight: active ? '800' : '500',
+                fontSize: 15, fontWeight: active ? '700' : '500',
                 color: active ? C.blue : C.muted }}>
                 {label}
               </Text>
@@ -278,7 +296,7 @@ export default function HonorScreen() {
           <BadgeSection title="Verification" badges={official} onOpen={setSelected} />
           <BadgeSection title="Achievement" badges={eventBadges} onOpen={setSelected} />
           {badges.length === 0 && (
-            <View style={{ alignItems: 'center', paddingTop: 48, paddingHorizontal: 48 }}>
+            <View style={[cardStyle, { alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
               <Text style={{ fontSize: 44, marginBottom: 12 }}>🏅</Text>
               <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
                 No badges yet
@@ -294,11 +312,11 @@ export default function HonorScreen() {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <Text style={{
             fontSize: 13, fontWeight: '700', color: C.muted,
-            paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
+            paddingHorizontal: 15, paddingTop: 14, paddingBottom: 6 }}>
             Nameplate
           </Text>
           {nameplates.length > 0 ? (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 10 }}>
+            <View style={{ paddingHorizontal: 15, paddingBottom: 24, gap: 10 }}>
               {nameplates.map((n) => {
                 const isActive = (profile as any)?.activeNameplate === n.id;
                 return (
@@ -308,11 +326,13 @@ export default function HonorScreen() {
                     disabled={!isOwn}
                     style={{
                       flexDirection: 'row', alignItems: 'center',
-                      backgroundColor: C.goldBg,
-                      borderWidth: 1, borderColor: isActive ? C.blue : C.goldBorder,
-                      borderRadius: 14, padding: 12 }}
+                      backgroundColor: C.card,
+                      borderWidth: 1, borderColor: isActive ? C.blue : C.border,
+                      borderRadius: 12, padding: 12 }}
                   >
-                    <View style={{ width: 80, alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{
+                      width: 80, height: 44, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 8 }}>
                       {/^https?:\/\//i.test(n.icon || '') ? (
                         <Image
                           source={{ uri: n.icon }}
@@ -324,7 +344,7 @@ export default function HonorScreen() {
                       )}
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
                         {n.name}
                       </Text>
                       {/* Obtained date — visible to everyone */}
@@ -333,7 +353,7 @@ export default function HonorScreen() {
                       </Text>
                       {/* Validity — owner only */}
                       {isOwn && (
-                        <Text style={{ fontSize: 11, color: '#8A6D00', marginTop: 2, fontWeight: '700' }}>
+                        <Text style={{ fontSize: 11, color: C.goldText, marginTop: 2, fontWeight: '700' }}>
                           {formatValidity(n.validity)}
                         </Text>
                       )}
@@ -344,7 +364,7 @@ export default function HonorScreen() {
               })}
             </View>
           ) : (
-            <View style={{ alignItems: 'center', paddingTop: 48, paddingHorizontal: 48 }}>
+            <View style={[cardStyle, { marginTop: 0, alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
               <Text style={{ fontSize: 44, marginBottom: 12 }}>🎖️</Text>
               <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
                 No nameplates yet
@@ -430,7 +450,7 @@ function BadgeSection({
     <View>
       <Text style={{
         fontSize: 13, fontWeight: '700', color: C.muted,
-        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
+        paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
         {title}
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 8 }}>
@@ -441,7 +461,7 @@ function BadgeSection({
             style={{ width: '25%', padding: 6, alignItems: 'center' }}
           >
             <View style={{
-              width: '100%', aspectRatio: 1, borderRadius: 16,
+              width: '100%', aspectRatio: 1, borderRadius: 12,
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
               alignItems: 'center', justifyContent: 'center' }}>
               {/^https?:\/\//i.test(b.icon || '') ? (

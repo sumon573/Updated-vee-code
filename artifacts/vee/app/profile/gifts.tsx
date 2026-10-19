@@ -8,6 +8,10 @@
  *
  * All data is real: aggregated from the user's wallet transaction history
  * (same source as the profile Gifts section). No demo content.
+ *
+ * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
+ * cards, 56dp title bar). LEGACY_GIFT_ID_MAP kept verbatim — all logic
+ * unchanged.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, Pressable, Image, Modal } from 'react-native';
@@ -26,17 +30,41 @@ import {
 import { ref, get, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
-// Light-mode colors (same tokens as profile/index.tsx)
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  text: '#000000',
-  muted: '#8E8E93',
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
   mutedLight: '#C7C7CC',
-  border: '#E5E5EA',
-  card: '#F2F2F7',
+  border: '#F0F1F2',
   blue: '#007AFF',
   blueLight: '#E3F2FD',
+  green: '#34C759',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  goldText: '#B8860B',
   gold: '#F59E0B' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// ─── IMO title bar: 56dp, back ‹ left, centered 17sp semibold, no gear ───
+function TitleBar({ title }: { title: string }) {
+  return (
+    <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+      <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        <Feather name="chevron-left" size={24} color={C.text} />
+      </Pressable>
+      <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+        {title}
+      </Text>
+      <View style={{ width: 40 }} />
+    </View>
+  );
+}
 
 /**
  * Canonical gift catalog — MUST match the api-server GIFT_CATALOG and
@@ -325,8 +353,8 @@ export default function GiftDisplayScreen() {
           style={{
             width: '100%',
             aspectRatio: 1,
-            backgroundColor: C.card,
-            borderRadius: 16,
+            backgroundColor: C.tile,
+            borderRadius: 12,
             alignItems: 'center',
             justifyContent: 'center' }}
         >
@@ -355,48 +383,38 @@ export default function GiftDisplayScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      {/* ── Header ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={{ padding: 8, marginRight: 4 }}>
-          <Feather name="arrow-left" size={24} color={C.text} />
-        </Pressable>
+      <TitleBar title="Gifts" />
+
+      {/* ── Summary card: DP + name + totals ── */}
+      <View style={[cardStyle, { flexDirection: 'row', alignItems: 'center', padding: 15 }]}>
         {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+          <Image source={{ uri: photoURL }} style={{ width: 64, height: 64, borderRadius: 32 }} />
         ) : (
           <View
             style={{
-              width: 80,
-              height: 80,
-              borderRadius: 40,
+              width: 64,
+              height: 64,
+              borderRadius: 32,
               backgroundColor: C.blueLight,
               alignItems: 'center',
               justifyContent: 'center' }}
           >
-            <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{initials(displayName)}</Text>
+            <Text style={{ fontSize: 26, fontWeight: '800', color: C.blue }}>{initials(displayName)}</Text>
           </View>
         )}
         <View style={{ marginLeft: 14, flex: 1 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: C.text }} numberOfLines={1}>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
             {displayName}
           </Text>
-          <Text style={{ fontSize: 26, fontWeight: '900', color: C.gold, marginTop: 2 }}>
-            🎁 {totalGifts}
-          </Text>
-          <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-            💎 {totalCoins.toLocaleString()} coins received
+          <Text style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+            🎁 {totalGifts} gifts · 💎 {totalCoins.toLocaleString()} coins received
           </Text>
         </View>
       </View>
 
       {/* ── Tabs ── */}
-      <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            backgroundColor: C.card,
-            borderRadius: 12,
-            padding: 4 }}
-        >
+      <View style={[cardStyle, { padding: 4 }]}>
+        <View style={{ flexDirection: 'row' }}>
           {(['display', 'board'] as Tab[]).map((t) => {
             const active = tab === t;
             return (
@@ -407,18 +425,14 @@ export default function GiftDisplayScreen() {
                   flex: 1,
                   paddingVertical: 10,
                   borderRadius: 9,
-                  backgroundColor: active ? '#FFFFFF' : 'transparent',
-                  alignItems: 'center',
-                  shadowColor: active ? '#000' : 'transparent',
-                  shadowOpacity: active ? 0.08 : 0,
-                  shadowRadius: 4,
-                  elevation: active ? 2 : 0 }}
+                  backgroundColor: active ? C.blueLight : 'transparent',
+                  alignItems: 'center' }}
               >
                 <Text
                   style={{
                     fontSize: 15,
                     fontWeight: active ? '700' : '500',
-                    color: active ? C.text : C.muted }}
+                    color: active ? C.blue : C.muted }}
                 >
                   {t === 'display' ? 'Gift Display' : 'Gift Board'}
                 </Text>
@@ -430,65 +444,67 @@ export default function GiftDisplayScreen() {
 
       {tab === 'display' ? (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-          {/* ── Other Gifts + sort ── */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: 8 }}
-          >
-            <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }}>Other Gifts</Text>
-            <Pressable
-              ref={sortBtnRef}
-              onPress={openSortMenu}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingLeft: 8 }}
-              hitSlop={8}
+          {/* ── Gift collection card ── */}
+          <View style={[cardStyle, { paddingBottom: 12 }]}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 15,
+                paddingTop: 14,
+                paddingBottom: 6 }}
             >
-              <Text style={{ fontSize: 14, color: C.muted, marginRight: 4 }}>
-                {sortMode === 'quantity' ? 'By quantity' : 'By value'}
-              </Text>
-              <Feather name="chevron-down" size={16} color={C.muted} />
-            </Pressable>
-          </View>
-
-          {catalogEntries.length > 0 ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-              {catalogEntries.map((e) => renderGiftCell(e, false))}
-            </View>
-          ) : (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 24, alignItems: 'center' }}>
-              <Text style={{ fontSize: 15, color: C.muted }}>No gifts received yet</Text>
-            </View>
-          )}
-
-          {/* ── Inactive Gifts ── */}
-          {inactiveEntries.length > 0 && (
-            <>
-              <Text
-                style={{
-                  fontSize: 17,
-                  fontWeight: '600',
-                  color: C.text,
-                  paddingHorizontal: 16,
-                  paddingTop: 20,
-                  paddingBottom: 8 }}
+              <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Gift Display</Text>
+              <Pressable
+                ref={sortBtnRef}
+                onPress={openSortMenu}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingLeft: 8 }}
+                hitSlop={8}
               >
-                Inactive Gifts
-              </Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-                {inactiveEntries.map((e) => renderGiftCell(e, true))}
+                <Text style={{ fontSize: 14, color: C.muted, marginRight: 4 }}>
+                  {sortMode === 'quantity' ? 'By quantity' : 'By value'}
+                </Text>
+                <Feather name="chevron-down" size={16} color={C.muted} />
+              </Pressable>
+            </View>
+
+            {catalogEntries.length > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 11 }}>
+                {catalogEntries.map((e) => renderGiftCell(e, false))}
               </View>
-            </>
-          )}
+            ) : (
+              <View style={{ paddingHorizontal: 16, paddingVertical: 24, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, color: C.muted }}>No gifts received yet</Text>
+              </View>
+            )}
+
+            {/* ── Inactive Gifts ── */}
+            {inactiveEntries.length > 0 && (
+              <>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: C.text,
+                    paddingHorizontal: 15,
+                    paddingTop: 14,
+                    paddingBottom: 6 }}
+                >
+                  Inactive Gifts
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 11 }}>
+                  {inactiveEntries.map((e) => renderGiftCell(e, true))}
+                </View>
+              </>
+            )}
+          </View>
         </ScrollView>
       ) : (
         /* ── Gift Board ── */
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
           {contributorList.length > 0 ? (
-            <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <View style={[cardStyle, { paddingVertical: 4, paddingHorizontal: 15 }]}>
               {contributorList.map((c, i) => {
                 const u = contributors[c.uid];
                 // Name fallback: DB name → email prefix → 'User'.
@@ -496,56 +512,57 @@ export default function GiftDisplayScreen() {
                 const name = u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
                 const avatar = u?.photoURL || undefined;
                 return (
-                  <View
-                    key={c.uid}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: C.card,
-                      borderRadius: 14,
-                      padding: 12,
-                      marginBottom: 8 }}
-                  >
-                    <Text
+                  <View key={c.uid}>
+                    <View
                       style={{
-                        fontSize: 16,
-                        fontWeight: '800',
-                        color: i < 3 ? C.gold : C.muted,
-                        width: 28,
-                        textAlign: 'center' }}
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingVertical: 10 }}
                     >
-                      {i + 1}
-                    </Text>
-                    {avatar ? (
-                      <Image source={{ uri: avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
-                    ) : (
-                      <View
+                      <Text
                         style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 22,
-                          backgroundColor: C.blueLight,
-                          alignItems: 'center',
-                          justifyContent: 'center' }}
+                          fontSize: 16,
+                          fontWeight: '800',
+                          color: i < 3 ? C.gold : C.mutedLight,
+                          width: 28,
+                          textAlign: 'center' }}
                       >
-                        <Text style={{ fontSize: 18, fontWeight: '800', color: C.blue }}>
-                          {initials(name)}
-                        </Text>
-                      </View>
+                        {i + 1}
+                      </Text>
+                      {avatar ? (
+                        <Image source={{ uri: avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      ) : (
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 22,
+                            backgroundColor: C.blueLight,
+                            alignItems: 'center',
+                            justifyContent: 'center' }}
+                        >
+                          <Text style={{ fontSize: 18, fontWeight: '800', color: C.blue }}>
+                            {initials(name)}
+                          </Text>
+                        </View>
+                      )}
+                      <Text
+                        style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }}
+                        numberOfLines={1}
+                      >
+                        {name}
+                      </Text>
+                      <Text style={{ fontSize: 14, color: C.muted }}>x{c.count} gifts</Text>
+                    </View>
+                    {i < contributorList.length - 1 && (
+                      <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 84 }} />
                     )}
-                    <Text
-                      style={{ flex: 1, fontSize: 16, fontWeight: '600', color: C.text, marginLeft: 12 }}
-                      numberOfLines={1}
-                    >
-                      {name}
-                    </Text>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: C.muted }}>x{c.count} gifts</Text>
                   </View>
                 );
               })}
             </View>
           ) : (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 48, alignItems: 'center' }}>
+            <View style={[cardStyle, { paddingVertical: 48, paddingHorizontal: 32, alignItems: 'center' }]}>
               <Text style={{ fontSize: 40, marginBottom: 12 }}>🎁</Text>
               <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>No contributors yet</Text>
               <Text style={{ fontSize: 13, color: C.muted, marginTop: 6, textAlign: 'center' }}>
@@ -569,9 +586,9 @@ export default function GiftDisplayScreen() {
               position: 'absolute',
               top: sortMenuTop,
               right: 16,
-              backgroundColor: '#FFFFFF',
+              backgroundColor: C.card,
               borderRadius: 12,
-              borderWidth: 1,
+              borderWidth: 0.5,
               borderColor: C.border,
               shadowColor: '#000',
               shadowOpacity: 0.12,
@@ -616,7 +633,7 @@ export default function GiftDisplayScreen() {
           />
           <View
             style={{
-              backgroundColor: '#FFFFFF',
+              backgroundColor: C.card,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               paddingTop: 10,
@@ -634,7 +651,7 @@ export default function GiftDisplayScreen() {
               {previewInfo?.name ?? 'Inactive gift'}
             </Text>
             {previewInfo && (
-              <Text style={{ fontSize: 16, fontWeight: '700', color: C.gold, marginTop: 6 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: C.goldText, marginTop: 6 }}>
                 💎 {previewInfo.coins} diamonds
               </Text>
             )}
