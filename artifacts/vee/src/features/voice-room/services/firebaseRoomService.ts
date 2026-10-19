@@ -47,6 +47,9 @@ export type RoomSeat = {
   photoURL?: string;
   muted: boolean;
   role: 'host' | 'admin' | 'member';
+  /** 2026-10-19 (IMO port Phase 1): numeric role level (9000/8000/7000).
+      Written going forward; readers fall back to string role when absent. */
+  roleLevel?: number;
   // 2026-10-14 (Sumon): active frame id — synced from user profile to seat
   activeFrame?: string;
   // 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank speaking ripple.
@@ -65,6 +68,8 @@ export type RoomAudienceMember = {
   color: string;
   photoURL?: string;
   role?: 'member' | 'admin';
+  /** 2026-10-19 (IMO port Phase 1): numeric role level (8000/7000). */
+  roleLevel?: number;
   /** 2026-10-13 (Sumon): active frame id for audience list display */
   activeFrame?: string;
   /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank entry effect. */
@@ -361,6 +366,7 @@ export async function createRoom(data: {
     color: getUserColor(data.hostId),
     muted: false,
     role: 'host',
+    roleLevel: 9000, // 2026-10-19 (IMO port Phase 1): numeric ChannelRole.OWNER
     ...(data.hostPhotoURL ? { photoURL: data.hostPhotoURL } : {}),
   });
 
@@ -753,7 +759,11 @@ async function takeSeatInner(
       return undefined;
     }
     // P1 ghost-seat fix (2026-10-12): stamp the heartbeat on claim.
-    return { ...member, seatTs: serverTimestamp() };
+    // 2026-10-19 (IMO port Phase 1): stamp numeric roleLevel from string role
+    // so every seat claim carries the ChannelRole hierarchy going forward.
+    const claimRoleLevel = (member as { roleLevel?: number }).roleLevel
+      ?? (member.role === 'host' ? 9000 : member.role === 'admin' ? 8000 : 7000);
+    return { ...member, roleLevel: claimRoleLevel, seatTs: serverTimestamp() };
   });
 
   if (!result.committed) {
@@ -931,7 +941,9 @@ export async function setSeatRole(
   const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
   const snap = await get(seatRef).catch(() => null);
   if (!snap?.exists()) return; // Don't create phantom seats
-  await update(seatRef, { role });
+  // 2026-10-19 (IMO port Phase 1): write numeric roleLevel alongside string role
+  const roleLevel = role === 'host' ? 9000 : role === 'admin' ? 8000 : 7000;
+  await update(seatRef, { role, roleLevel });
 }
 
 /** Remove a member from a seat (kick). If demoteUid is provided, the user's
@@ -963,6 +975,8 @@ export async function removeSeat(
       [`rooms/${roomId}/seats/${seatIndex}`]: null,
       [`rooms/${roomId}/admins/${demoteUid}`]: null,
       [`roomMembers/${roomId}/${demoteUid}/role`]: 'member',
+      // 2026-10-19 (IMO port Phase 1): numeric roleLevel follows the demotion
+      [`roomMembers/${roomId}/${demoteUid}/roleLevel`]: 7000,
     };
     if (audSnap && audSnap.exists()) {
       paths[`rooms/${roomId}/audience/${demoteUid}/role`] = 'member';
@@ -1145,7 +1159,11 @@ export async function setAudienceRole(
   userId: string,
   role: 'admin' | 'member',
 ): Promise<void> {
-  await update(ref(database, `rooms/${roomId}/audience/${userId}`), { role });
+  // 2026-10-19 (IMO port Phase 1): numeric roleLevel alongside string role
+  await update(ref(database, `rooms/${roomId}/audience/${userId}`), {
+    role,
+    roleLevel: role === 'admin' ? 8000 : 7000,
+  });
 }
 
 // ─── Seat Request System ──────────────────────────────────────────────────────
