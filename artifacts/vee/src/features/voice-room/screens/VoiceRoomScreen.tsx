@@ -2007,7 +2007,11 @@ export default function VoiceRoomScreen() {
   }, [engineToggleSpeaker]);
 
   const handleSeatPress = useCallback((seatIdx: number) => {
-    const member = seats[seatIdx];
+    // 2026-10-19 perf fix: read seats via seatsRef (kept in sync at line ~680)
+    // instead of the `seats` state closure, so this callback keeps a stable
+    // identity across speaking-state updates and memo()'d SeatCard skips
+    // re-rendering unchanged seats. Tap-time data is fresher this way too.
+    const member = seatsRef.current[seatIdx];
     // Tapping your OWN seat always opens your own profile view (View/Edit
     // Profile, Copy V ID) — regardless of role. Previously audience members
     // got no reaction at all, and hosts/admins got the moderation sheet
@@ -2057,7 +2061,16 @@ export default function VoiceRoomScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSeatActionIdx(seatIdx);
     setSeatActionOpen(true);
-  }, [isOwnerOrAdmin, seats, myUid, lockedSeats, roomId, myName, myInitials, myColor, ownerId, t]);
+  }, [isOwnerOrAdmin, myUid, lockedSeats, roomId, myName, myInitials, myColor, ownerId, t]);
+
+  // 2026-10-19 perf fix: stable per-seat press handlers. The old inline
+  // `() => handleSeatPress(idx)` recreated identity every render, defeating
+  // SeatCard's memo() and re-rendering all 10 seats on every speaking change.
+  const seatPressHandlers = useMemo(() => {
+    const map: Array<() => void> = [];
+    for (let i = 0; i < 10; i += 1) map[i] = () => handleSeatPress(i);
+    return map;
+  }, [handleSeatPress]);
 
   const muteToggleMember = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
@@ -3138,7 +3151,7 @@ export default function VoiceRoomScreen() {
                 accentColor={accentColor}
                 myId={myUid}
                 micDecorUrl={micDecorUrl}
-                onPress={() => handleSeatPress(idx)}
+                onPress={seatPressHandlers[idx]}
                 reaction={member ? seatReactions[member.id] : undefined}
               />
             </View>
