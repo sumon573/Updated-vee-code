@@ -3,7 +3,7 @@
  * Exact replication of IMO home: TopBar + StoryRow + ChatList + BottomBar.
  * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, FlatList, Text, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -118,7 +118,9 @@ export default function IMOHomeScreen() {
   // Stories (already loaded above via useStories)
   // Convert to IMO format — live profile name/DP wins over cached values
   // (2026-10-11 Issue #4).
-  const imoChats: IMOChat[] = chats
+  // 2026-10-19 perf: useMemo'd — the old inline map rebuilt fresh object
+  // identities on EVERY parent render, defeating row memoization.
+  const imoChats: IMOChat[] = useMemo(() => chats
     .filter((c) => !(c as any).isHidden) // hidden chats don't show in list
     .map((c) => {
     const live = c.participantId ? liveProfiles[c.participantId] : undefined;
@@ -135,7 +137,25 @@ export default function IMOHomeScreen() {
       isMuted: (c as any).isMuted === true,
       participantId: c.participantId,
     };
-  });
+  }), [chats, liveProfiles, avatarCache]);
+
+  // 2026-10-19 perf: fixed row heights (76px; 84px for the taller voice-club
+  // ring rows) with memoized prefix-sum offsets, so FlatList can skip
+  // per-row measurement. No scrollToIndex is used on this list; the layout
+  // only feeds the renderer's windowing math.
+  const rowOffsets = useMemo(() => {
+    const offsets: number[] = new Array(imoChats.length);
+    let y = 0;
+    for (let i = 0; i < imoChats.length; i += 1) {
+      offsets[i] = y;
+      y += imoChats[i].isVoiceClub ? 84 : 76;
+    }
+    return offsets;
+  }, [imoChats]);
+  const getRowLayout = useCallback((_data: ArrayLike<IMOChat> | null | undefined, index: number) => {
+    const h = _data?.[index]?.isVoiceClub ? 84 : 76;
+    return { length: h, offset: rowOffsets[index] ?? index * 76, index };
+  }, [rowOffsets]);
 
   // LONG-PRESS MENU (2026-10-11 Issue #6): imo-style context menu state.
   const [menuChat, setMenuChat] = useState<IMOChat | null>(null);
@@ -318,6 +338,7 @@ export default function IMOHomeScreen() {
       <FlatList
         data={imoChats}
         keyExtractor={(item) => item.id}
+        getItemLayout={getRowLayout}
         renderItem={({ item }) => (
           <IMOChatListItem
             chat={item}

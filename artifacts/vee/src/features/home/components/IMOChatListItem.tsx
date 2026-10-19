@@ -3,7 +3,7 @@
  * DP, name, preview, time, with pin/mute/unread/call/online indicators.
  * Matches IMO home screenshot exactly.
  */
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { VerifiedName } from '@/src/components/VerifiedName';
@@ -31,7 +31,10 @@ interface IMOChatListItemProps {
   onCallPress?: (chat: IMOChat) => void;
 }
 
-export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPress }: IMOChatListItemProps) {
+// 2026-10-19 perf: memo()'d — parent re-renders on every incoming message;
+// unchanged rows keep their `chat` identity (imoChats is useMemo'd below)
+// and stable handler props, so they skip re-render entirely.
+export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCallPress }: IMOChatListItemProps) {
   const handlePress = useCallback(() => onPress(chat.id), [onPress, chat.id]);
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
   const handleCallPress = useCallback(() => onCallPress?.(chat), [onCallPress, chat]);
@@ -196,4 +199,4 @@ export default function IMOChatListItem({ chat, onPress, onLongPress, onCallPres
       </View>
     </TouchableOpacity>
   );
-}
+})
