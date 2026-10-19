@@ -65,6 +65,13 @@ export type VeeUser = {
   /** Official verified badge (2026-10-09). Granted by admins only. */
   officialBadge?: { grantedBy: string; grantedAt: number };
   /**
+   * 2026-10-19 perf: preserved so AuthContext can share ONE users/{uid} read
+   * per auth callback across the ban check, Vee-ID backfill, and profile
+   * repair (previously the ban check did its own separate banned-flag read).
+   * Only ever set when true — never written back by profile updates.
+   */
+  banned?: boolean;
+  /**
    * Privacy settings saved by the user in the Privacy screen.
    * Stored at users/{uid}/privacy — read here so UI can enforce them without
    * a separate fetch when the profile is already subscribed.
@@ -169,6 +176,10 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
       : undefined,
     // Onboarding flag (2026-10-19) — undefined on legacy profiles = complete.
     profileComplete: typeof raw.profileComplete === 'boolean' ? raw.profileComplete : undefined,
+    // 2026-10-19 perf: keep the ban flag so one shared users/{uid} read can
+    // serve the ban check too. Set ONLY when true — profile update paths use
+    // partial-field updateUser calls, so this never writes banned:false.
+    banned: raw.banned === true ? true : undefined,
   };
 }
 

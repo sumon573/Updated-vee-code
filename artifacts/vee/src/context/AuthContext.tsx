@@ -19,20 +19,31 @@ import { withTimeout } from '../utils/withTimeout';
 import {
   setupPresence, setUserOffline, getUser, setUserVId, generateAndReserveVId,
 } from '../services/userService';
+import type { VeeUser } from '../services/userService';
 import generateVId from '../utils/generateVId';
 
 /** Maximum ms to wait for the first Firebase auth-state callback. */
 const AUTH_LOADING_TIMEOUT_MS = 10_000;
 
 /**
+ * Result of the single shared users/{uid} read per auth callback.
+ * `ok:false` means the read itself failed — consumers must treat that as
+ * "unknown", NOT as "no profile" (fail-soft: retry on next callback).
+ */
+type SharedProfile = { profile: VeeUser | null; ok: boolean };
+
+/**
  * Ensure the given user has a permanent Vee ID. Accounts created before the
  * Vee ID system existed (or created through a flow that skipped reservation)
  * are backfilled here exactly once, since this runs on every auth-state
  * change. The ID is never re-generated or edited if one already exists.
+ * 2026-10-19 perf: takes the shared profile snapshot instead of its own
+ * getUser read.
  */
-async function backfillVIdIfMissing(uid: string): Promise<void> {
+async function backfillVIdIfMissing(uid: string, shared: SharedProfile): Promise<void> {
   try {
-    const existing = await getUser(uid);
+    if (!shared.ok) return; // read failed — retry on next callback
+    const existing = shared.profile;
     if (!existing || existing.vId) return; // already has a permanent vId — never touch it
 
     const vId = await generateAndReserveVId(uid, generateVId);
@@ -99,6 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe = onUserStateChanged((firebaseUser) => {
         setUser(firebaseUser);
 
+        // 2026-10-19 perf fix: ONE users/{uid} read per auth callback, shared
+        // by the ban check, Vee-ID backfill, and profile name-repair below —
+        // previously each did its own read (3× the cost on every callback,
+        // including hourly token refreshes). `ok:false` = read failed:
+        // consumers must treat it as unknown, never as "no profile".
+        const sharedProfile: Promise<SharedProfile> = firebaseUser
+          ? getUser(firebaseUser.uid).then(
+            (profile) => ({ profile, ok: true as const }),
+            () => ({ profile: null, ok: false as const }),
+          )
+          : Promise.resolve({ profile: null, ok: true as const });
+
         // 2026-10-17 (Sumon): EXISTING USERS — ensure Vee Team system chat
         // exists on every login/app-start (not just signup). Safe to call
         // repeatedly — welcome message is deduped. Fire-and-forget.
@@ -118,32 +141,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // unban detect হয় না। Login-এ Firebase থেকে current banned flag পড়ে
         // সিদ্ধান্ত নিই — unbanned হলে ban state clear করে login allow করি।
         if (firebaseUser) {
-          import('../config/firebase').then(({ database }) => {
-            import('firebase/database').then(({ ref, get }) => {
-              get(ref(database, `users/${firebaseUser.uid}/banned`)).then((snap) => {
-                const currentlyBanned = snap.val() === true;
-                if (!currentlyBanned && bannedUidRef.current === firebaseUser.uid) {
-                  // Was banned, now unbanned — clear stale ban state, allow login
-                  bannedSessionRef.current = false;
-                  bannedUidRef.current = null;
-                  setIsBanned(false);
-                  setBanReason(null);
-                } else if (currentlyBanned) {
-                  // Still banned — enforce ban screen
-                  bannedSessionRef.current = true;
-                  bannedUidRef.current = firebaseUser.uid;
-                  setIsBanned(true);
-                  firebaseLogout().catch(() => {});
-                  setUser(null);
-                  return;
-                }
-                // Different UID — clear old ban state
-                if (bannedUidRef.current && firebaseUser.uid !== bannedUidRef.current) {
-                  bannedSessionRef.current = false;
-                  bannedUidRef.current = null;
-                }
-              }).catch(() => {});
-            }).catch(() => {});
+          // 2026-10-19 perf: ban flag comes from the shared profile snapshot
+          // instead of a second users/{uid}/banned read. A failed read
+          // (ok:false) preserves the current ban state — same as the old
+          // .catch(()=>{}) on the direct get.
+          sharedProfile.then(({ profile, ok }) => {
+            if (!ok) return;
+            const currentlyBanned = profile?.banned === true;
+            if (!currentlyBanned && bannedUidRef.current === firebaseUser.uid) {
+              // Was banned, now unbanned — clear stale ban state, allow login
+              bannedSessionRef.current = false;
+              bannedUidRef.current = null;
+              setIsBanned(false);
+              setBanReason(null);
+            } else if (currentlyBanned) {
+              // Still banned — enforce ban screen
+              bannedSessionRef.current = true;
+              bannedUidRef.current = firebaseUser.uid;
+              setIsBanned(true);
+              firebaseLogout().catch(() => {});
+              setUser(null);
+              return;
+            }
+            // Different UID — clear old ban state
+            if (bannedUidRef.current && firebaseUser.uid !== bannedUidRef.current) {
+              bannedSessionRef.current = false;
+              bannedUidRef.current = null;
+            }
           }).catch(() => {});
         }
         if (firebaseUser) {
@@ -232,7 +256,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch {
             // Presence is optional during startup; auth/navigation must continue.
           }
-          backfillVIdIfMissing(firebaseUser.uid).catch(() => {/* background: safe to swallow — Vee ID backfill retries on next login */});
+          // 2026-10-19 perf: backfill shares the single profile snapshot —
+          // no second getUser read.
+          sharedProfile
+            .then((shared) => backfillVIdIfMissing(firebaseUser.uid, shared))
+            .catch(() => {/* background: safe to swallow — Vee ID backfill retries on next login */});
           // FIX (2026-10-12): Backfill Google Auth profile data to DB if empty.
           // Google users may have empty DB name/photoURL (only visible to themselves
           // via Auth fallback). Others see empty. Copy from Auth if DB is empty.
@@ -241,8 +269,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // then everyone sees them as "Vee User" with no name/DP).
           (async () => {
             try {
-              const { getUser, updateUser, createUser } = await import('@/src/services/userService');
-              const profile = await getUser(firebaseUser.uid);
+              const { updateUser, createUser } = await import('@/src/services/userService');
+              // 2026-10-19 perf: reuse the shared profile snapshot — no third
+              // getUser read. A failed read (ok:false) skips repair entirely
+              // (same as the old catch-and-swallow) — it must NOT fall into
+              // the !profile branch, which would createUser-clobber a profile
+              // we simply failed to read.
+              const { profile, ok } = await sharedProfile;
+              if (!ok) return;
               if (!profile) {
                 // No DB profile — create one from Auth data so others see the
                 // real name/DP. Vee ID backfill (above) handles the vId.
