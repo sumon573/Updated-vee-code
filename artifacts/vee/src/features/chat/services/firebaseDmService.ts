@@ -154,6 +154,18 @@ export async function loadOlderMessages(
  * Send a text or media message.
  * Also updates userChats metadata for both participants.
  */
+/**
+ * 2026-10-19 perf: generate a client-side push key for a new message.
+ * Lets the UI render an optimistic bubble with the FINAL message id, so the
+ * live subscription's copy dedupes it by id when it arrives (no flicker,
+ * no fragile content matching).
+ */
+export function newMessageKey(chatId: string): string {
+  const k = push(ref(database, `chats/${chatId}/messages`)).key;
+  if (!k) throw new Error('Failed to generate message key');
+  return k;
+}
+
 export async function sendMessage(
   chatId: string,
   myUid: string,
@@ -163,6 +175,9 @@ export async function sendMessage(
   replyTo?: DmReplyPreview,
   cloudinaryId?: string,
   senderName?: string,
+  // 2026-10-19 perf: optional client-generated key (see newMessageKey) —
+  // the optimistic bubble and the real message share one id.
+  clientKey?: string,
 ): Promise<void> {
   // Block enforcement: neither side can message if blocked either way.
   const direction = await getBlockDirection(myUid, participantUid);
@@ -171,21 +186,19 @@ export async function sendMessage(
   }
 
   const msgsRef = ref(database, `chats/${chatId}/messages`);
-  const newMsgRef = push(msgsRef);
+  const newMsgRef = clientKey
+    ? ref(database, `chats/${chatId}/messages/${clientKey}`)
+    : push(msgsRef);
 
-  // TICK FIX (2026-10-10): Check if recipient is online to set initial status.
-  // Online → 'delivered' (double tick), Offline → 'sent' (single tick).
-  // When they read it, status becomes 'seen' (blue circle).
-  let initialStatus: DmMessage['status'] = 'sent';
-  try {
-    const { get } = await import('firebase/database');
-    const onlineSnap = await get(ref(database, `users/${participantUid}/online`));
-    if (onlineSnap.exists() && onlineSnap.val() === true) {
-      initialStatus = 'delivered';
-    }
-  } catch {
-    // Online check failed — default to 'sent'
-  }
+  // 2026-10-19 perf: the recipient-online check used to cost a full RTDB
+  // round-trip BEFORE the message was written. Now it runs concurrently and
+  // the message is written immediately as 'sent'; when the check resolves,
+  // an online recipient's message is upgraded to 'delivered' (fire-and-
+  // forget — the normal sent→delivered tick transition, just off the
+  // critical path).
+  const onlineCheck = get(ref(database, `users/${participantUid}/online`))
+    .then((snap) => snap.exists() && snap.val() === true)
+    .catch(() => false);
 
   const msg: Omit<DmMessage, 'id' | 'createdAt'> & { createdAt: object } = {
     chatId,
@@ -193,7 +206,7 @@ export async function sendMessage(
     type,
     content,
     createdAt: serverTimestamp() as object,
-    status: initialStatus,
+    status: 'sent',
     reactions: {},
     ...(replyTo ? { replyTo } : {}),
     ...(cloudinaryId ? { cloudinaryId } : {}),
@@ -202,6 +215,10 @@ export async function sendMessage(
   };
 
   await set(newMsgRef, msg);
+
+  onlineCheck.then((online) => {
+    if (online) update(newMsgRef, { status: 'delivered' }).catch(() => {/* ephemeral — next sync converges */});
+  });
 
   // Update chat list metadata for both users
   const meta = {

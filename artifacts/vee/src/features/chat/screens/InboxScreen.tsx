@@ -31,7 +31,7 @@ import { useTranslation } from 'react-i18next';
 
 import MessageBubble, { saveRemoteMediaToGallery } from '../components/MessageBubble';
 import {
-  subscribeMessages, sendMessage, markAllSeen,
+  subscribeMessages, sendMessage, markAllSeen, newMessageKey,
   subscribeTyping, subscribePresence, setTyping,
   addReaction, deleteMessage, clearChat,
   loadOlderMessages, DM_PAGE_SIZE } from '../services/firebaseDmService';
@@ -207,6 +207,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [messages, setMessages]             = useState<DmMessage[]>([]);
+  // 2026-10-19 perf: optimistic sends — bubbles with status:'sending' shown
+  // instantly while the real write is in flight. Same id as the final message
+  // (client-generated push key), so the live subscription dedupes them.
+  const [pendingMsgs, setPendingMsgs]       = useState<DmMessage[]>([]);
   const [inputText, setInputText]           = useState('');
   const [replyTarget, setReplyTarget]       = useState<DmMessage | null>(null);
   const [isTypingRemote, setIsTypingRemote] = useState(false);
@@ -413,6 +417,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, []);
 
   // ── Auto-scroll (only for new messages, not when older ones are loaded) ───
+  // 2026-10-19 perf: pendingMsgs.length in deps — an optimistic bubble must
+  // scroll into view the instant it renders, not when the server echo lands.
   useEffect(() => {
     if (messages.length > 0 && shouldScrollRef.current) {
       shouldScrollRef.current = false;
@@ -426,7 +432,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         userScrolledRef.current = false;
       }, 80);
     }
-  }, [messages.length]);
+  }, [messages.length, pendingMsgs.length]);
 
   // ── 2026-10-13 (Sumon): content height বদলালে (image/media async load)
   // initial 3s-এ scroll to end — user manually scroll করলে বন্ধ।
@@ -522,19 +528,40 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           type: replyTarget.type }
       : undefined;
 
-    // 2026-10-12 audit fix (HIGH DM-1): do NOT clear input before the send
-    // is acked. If the app is killed mid-send, the message is lost forever
-    // (no RTDB disk persistence). Clear only on success.
+    // 2026-10-19 perf (SUPERFAST bar): optimistic send. The bubble renders
+    // instantly with status:'sending' and the input clears immediately — the
+    // user never waits on the network. The optimistic id IS the final push
+    // key (newMessageKey), so the live subscription dedupes it by id when
+    // the real message arrives. On failure the input text is restored, so a
+    // failed send never loses what was typed.
     const savedReplyTarget = replyTarget;
+    const messageKey = newMessageKey(chatId);
+    const optimistic: DmMessage = {
+      id: messageKey,
+      chatId,
+      senderId: myUid,
+      type: 'text',
+      content: text,
+      createdAt: Date.now(),
+      status: 'sending',
+      reactions: {},
+      ...(replyPreview ? { replyTo: replyPreview } : {}),
+    };
+    setPendingMsgs((prev) => [...prev, optimistic]);
+    setInputText('');
+    setReplyTarget(null);
     shouldScrollRef.current = true;
     setTyping(chatId, myUid, false);
 
     try {
-      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined);
-      // Success — now clear.
-      setInputText('');
-      setReplyTarget(null);
+      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined, messageKey);
+      // Success — the live subscription delivers the real message under the
+      // same id; drop the optimistic copy (the id-dedupe is the backstop).
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
     } catch (e) {
+      // Failed — remove the optimistic bubble and restore the input text.
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+      setInputText(text);
       // Restore the reply target too (was previously dropped silently).
       if (savedReplyTarget) setReplyTarget(savedReplyTarget);
       if (e instanceof BlockedInteractionError) {
@@ -837,8 +864,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // RC8-A: combine older loaded messages with the live subscription window.
   // olderMessages is prepended so the conversation renders oldest-to-newest.
+  // 2026-10-19 perf: optimistic (still-sending) messages are appended last.
+  // They share the final push-key id with the real message (see newMessageKey),
+  // so the id-dedupe below drops the optimistic copy the moment the live
+  // subscription delivers the real one — no flicker, no content matching.
   const allVisibleMessages = useMemo(() => {
-    const combined = [...olderMessages, ...messages];
+    const combined = [...olderMessages, ...messages, ...pendingMsgs];
     // Deduplicate by id (overlap can happen at page boundaries)
     const seen = new Set<string>();
     return combined.filter((m) => {
@@ -847,7 +878,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       seen.add(m.id);
       return true;
     });
-  }, [olderMessages, messages]);
+  }, [olderMessages, messages, pendingMsgs]);
 
   // ── "Load earlier messages" header ────────────────────────────────────────
   const ListHeaderComponent = useMemo(() => {
