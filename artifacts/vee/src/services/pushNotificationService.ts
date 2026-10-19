@@ -12,8 +12,6 @@
  * truth — previously duplicated here and in the voice-room engine hook).
  */
 
-import { update, ref } from 'firebase/database';
-import { database } from '../config/firebase';
 import { isExpoGo } from '../utils/platform';
 
 // ─── OneSignal SDK — lazy native require ────────────────────────────────────
@@ -331,15 +329,14 @@ export async function registerNotificationOpenedHandler(
 }
 
 /** OneSignal subscription ID Firebase users/{uid}/oneSignalId-এ save করে */
-async function saveOneSignalIdToFirebase(uid: string, oneSignalId: string): Promise<void> {
-  try {
-    // 2026-10-14 (Sumon): Direct path-এ set করি — users/{uid} parent-এ update
-    // করলে parent-এর .validate rule (activeFrame check) trigger হয়ে block করতে পারে।
-    // Direct child path-এ write করলে parent validate bypass হয়।
-    const { set } = await import('firebase/database');
-    await set(ref(database, `users/${uid}/oneSignalId`), oneSignalId);
-    console.log('[OneSignal] ✅ oneSignalId saved to Firebase');
-  } catch (e) {
-    console.log('[OneSignal] ❌ Failed to save oneSignalId:', e);
-  }
+async function saveOneSignalIdToFirebase(_uid: string, _oneSignalId: string): Promise<void> {
+  // 2026-10-19 (batch 2D): TOKEN-CLOBBER GUARD — deliberately a no-op.
+  // fcmPushService is now the SINGLE writer of all token fields (fcmToken +
+  // oneSignalId mirror). This dead OneSignal path used to write a OneSignal
+  // UUID (not an FCM token) into a token field — if the dep ever returned,
+  // a live UUID would overwrite the good FCM token and blackout pushes.
+  // Kept as a no-op with this comment so the call sites (loginOneSignal /
+  // subscription-change listener) stay intact and can never clobber again.
+  void _uid;
+  void _oneSignalId;
 }
