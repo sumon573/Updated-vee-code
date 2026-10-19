@@ -8,10 +8,12 @@
  *
  * Tapping a room navigates into it. Active rooms show a green live dot;
  * closed rooms show a grey dot so the user can still see their history.
+ * 2026-10-19 (Sumon): restyled to IMO Me-tab design language —
+ * #F4F5F5 bg, white 12dp card, 56dp title bar. All logic untouched.
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, Image, Alert, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -28,17 +30,49 @@ import {
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-
+// IMO BIUI light tokens (matches app/profile/index.tsx)
 const C = {
-  bg:      '#FFFFFF',
-  primary: '#7C3AED',
-  glow:    '#8B5CF6',
-  text:    '#000000',
-  muted:   '#8E8E93',
-  border:  '#E5E5EA',
-  surface: '#F2F2F7',
-  gold:    '#F59E0B',
-  green:   '#22C55E' } as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759',
+  red: '#FF3B30',
+  gold: '#F59E0B',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  purple: '#7C3AED',
+  purpleLight: '#F1E8FF' } as const;
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// IMO title bar: 56dp, back left, 17sp semibold title centered, NO gear on inner screens
+function TitleBar({ title, count }: { title: string; count?: number }) {
+  const topPad = Platform.OS === 'web' ? 67 : 0;
+  return (
+    <View style={{ backgroundColor: C.card, paddingTop: topPad }}>
+      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+        <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+          <Feather name="chevron-left" size={24} color={C.text} />
+        </Pressable>
+        <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+          {title}
+        </Text>
+        <View style={{ width: 40, alignItems: 'center' }}>
+          {count !== undefined && (
+            <Text style={{ fontSize: 14, color: C.muted }}>{count}</Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
@@ -47,9 +81,9 @@ type UserRole = 'owner' | 'admin' | 'member';
 const ROLE_ORDER: Record<UserRole, number> = { owner: 0, admin: 1, member: 2 };
 
 const ROLE_CONFIG: Record<UserRole, { color: string; bg: string; border: string; label: string }> = {
-  owner:  { color: C.gold,    bg: 'rgba(245,158,11,0.15)',  border: 'rgba(245,158,11,0.35)',  label: 'Owner'  },
-  admin:  { color: '#7C3AED', bg: 'rgba(124,58,237,0.15)',  border: 'rgba(124,58,237,0.35)',  label: 'Admin'  },
-  member: { color: C.muted,   bg: 'rgba(142,142,147,0.08)', border: 'rgba(142,142,147,0.18)', label: 'Member' } };
+  owner:  { color: C.gold,    bg: C.goldBg,        border: C.goldBorder,  label: 'Owner'  },
+  admin:  { color: C.purple,  bg: C.purpleLight,   border: '#D9C8F5',     label: 'Admin'  },
+  member: { color: C.muted,   bg: C.tile,          border: C.border,       label: 'Member' } };
 
 function RoleBadge({ role }: { role: UserRole }) {
   const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.member; // Fallback for unexpected roles
@@ -62,10 +96,10 @@ function RoleBadge({ role }: { role: UserRole }) {
   );
 }
 
-// ─── Room card ────────────────────────────────────────────────────────────────
+// ─── Room row ─────────────────────────────────────────────────────────────────
 
-function RoomCard({
-  room, role, onDelete, onRoomPress }: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void }) {
+function RoomRow({
+  room, role, onDelete, onRoomPress, last }: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void; last?: boolean }) {
   // Backward compatible: rooms created before the `active` flag existed
   // (or with a missing field) are treated as active. Only an explicit
   // `active: false` means closed.
@@ -88,70 +122,73 @@ function RoomCard({
   // Owners now get a trash button to permanently delete a closed room.
 
   return (
-    <Pressable
-      onPress={handlePress}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        backgroundColor: C.surface, borderRadius: 16,
-        borderWidth: 1,
-        borderColor: isActive ? '#E5E5EA' : '#F2F2F7',
-        padding: 12, marginBottom: 10,
-        opacity: isActive ? 1 : 0.55 }}
-    >
-      {/* Thumbnail */}
-      {room.coverImageUrl ? (
-        <Image
-          source={{ uri: room.coverImageUrl }}
-          style={{ width: 52, height: 52, borderRadius: 12 }}
-        />
-      ) : (
-        <View style={{
-          width: 52, height: 52, borderRadius: 12,
-          backgroundColor: (room.themeColor || C.glow) + '33',
-          borderWidth: 1, borderColor: (room.themeColor || C.glow) + '66',
-          alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name={isActive ? 'mic' : 'mic-off'} size={22} color={isActive ? (room.themeColor || C.glow) : C.muted} />
-        </View>
-      )}
-
-      {/* Info */}
-      <View style={{ flex: 1, gap: 5 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text
-            style={{ color: isActive ? C.text : C.muted, fontSize: 15, fontWeight: '700', flex: 1 }}
-            numberOfLines={1}
-          >
-            {room.name}
-          </Text>
-          <RoleBadge role={role} />
-        </View>
-
-        <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
-          {room.topic}
-        </Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+    <View>
+      <Pressable
+        onPress={handlePress}
+        style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingVertical: 13, paddingHorizontal: 15,
+          opacity: isActive ? 1 : 0.55 }}
+      >
+        {/* Thumbnail */}
+        {room.coverImageUrl ? (
+          <Image
+            source={{ uri: room.coverImageUrl }}
+            style={{ width: 48, height: 48, borderRadius: 12, marginRight: 12 }}
+          />
+        ) : (
           <View style={{
-            width: 7, height: 7, borderRadius: 4,
-            backgroundColor: isActive ? C.green : C.muted }} />
-          <Text style={{ color: isActive ? C.green : C.muted, fontSize: 11 }}>
-            {isActive ? 'Live' : 'Closed'} · {room.memberCount ?? 0} members
-          </Text>
-        </View>
-      </View>
+            width: 48, height: 48, borderRadius: 12,
+            backgroundColor: C.tile,
+            borderWidth: 1, borderColor: C.border,
+            alignItems: 'center', justifyContent: 'center',
+            marginRight: 12 }}>
+            <Feather name={isActive ? 'mic' : 'mic-off'} size={20} color={isActive ? C.green : C.mutedLight} />
+          </View>
+        )}
 
-      <Feather name={isActive ? 'chevron-right' : 'lock'} size={16} color={C.muted} />
-      {!isActive && onDelete && (
-        <Pressable
-          onPress={onDelete}
-          hitSlop={10}
-          style={{
-            padding: 6, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.1)' }}
-        >
-          <Feather name="trash-2" size={16} color="#EF4444" />
-        </Pressable>
-      )}
-    </Pressable>
+        {/* Info */}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text
+              style={{ color: isActive ? C.text : C.muted, fontSize: 16, fontWeight: '600', flex: 1 }}
+              numberOfLines={1}
+            >
+              {room.name}
+            </Text>
+            <RoleBadge role={role} />
+          </View>
+
+          {room.topic ? (
+            <Text style={{ color: C.muted, fontSize: 13, marginTop: 3 }} numberOfLines={1}>
+              {room.topic}
+            </Text>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <View style={{
+              width: 7, height: 7, borderRadius: 4, marginRight: 6,
+              backgroundColor: isActive ? C.green : C.mutedLight }} />
+            <Text style={{ color: isActive ? C.green : C.muted, fontSize: 12 }}>
+              {isActive ? 'Live' : 'Closed'} · {room.memberCount ?? 0} members
+            </Text>
+          </View>
+        </View>
+
+        <Feather name={isActive ? 'chevron-right' : 'lock'} size={18} color={C.mutedLight} style={{ marginLeft: 8 }} />
+        {!isActive && onDelete && (
+          <Pressable
+            onPress={onDelete}
+            hitSlop={10}
+            style={{
+              padding: 7, borderRadius: 8, backgroundColor: '#FDE8E8', marginLeft: 8 }}
+          >
+            <Feather name="trash-2" size={16} color={C.red} />
+          </Pressable>
+        )}
+      </Pressable>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 75 }} />}
+    </View>
   );
 }
 
@@ -240,54 +277,45 @@ export default function ProfileRoomsScreen() {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      {/* Header */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: 20, paddingVertical: 14,
-        borderBottomWidth: 1, borderBottomColor: C.border }}>
-        <Pressable onPress={() => router.back()} style={{ marginRight: 14 }}>
-          <Feather name="arrow-left" size={24} color={C.text} />
-        </Pressable>
-        <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', flex: 1 }}>
-          {t('profile.statRooms', { defaultValue: 'My Rooms' })}
-        </Text>
-        <Text style={{ color: C.muted, fontSize: 14 }}>{sorted.length}</Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <TitleBar title={t('profile.statRooms', { defaultValue: 'My Rooms' })} count={loading ? undefined : sorted.length} />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <PremiumLoader size="large" />
         </View>
       ) : sorted.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-          <Feather name="mic-off" size={44} color={C.muted} />
-          <Text style={{ color: C.text, fontSize: 17, fontWeight: '700' }}>No rooms yet</Text>
-          <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 40 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+          <Feather name="mic-off" size={44} color={C.mutedLight} />
+          <Text style={{ color: C.text, fontSize: 17, fontWeight: '700', marginTop: 14 }}>No rooms yet</Text>
+          <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', marginTop: 6 }}>
             Create or join a voice room to see it here.
           </Text>
         </View>
       ) : (
-        <FlatList
-          data={sorted}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const role = getRole(item);
-            const isClosed = item.active === false;
-            return (
-              <RoomCard
-                room={item}
-                role={role}
-                onDelete={role === 'owner' && isClosed ? () => handleDeleteClosed(item) : undefined}
-                onRoomPress={(room) => requestRoomAccess(room, () => {
-                  router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
-                })}
-              />
-            );
-          }}
-          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        <ScrollView
           showsVerticalScrollIndicator={false}
-        />
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          <View style={cardStyle}>
+            {sorted.map((item, index) => {
+              const role = getRole(item);
+              const isClosed = item.active === false;
+              return (
+                <RoomRow
+                  key={item.id}
+                  room={item}
+                  role={role}
+                  last={index === sorted.length - 1}
+                  onDelete={role === 'owner' && isClosed ? () => handleDeleteClosed(item) : undefined}
+                  onRoomPress={(room) => requestRoomAccess(room, () => {
+                    router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
+                  })}
+                />
+              );
+            })}
+          </View>
+        </ScrollView>
       )}
       {pinDialog}
     </SafeAreaView>

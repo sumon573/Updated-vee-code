@@ -1,5 +1,8 @@
 /**
  * Help & Support Screen
+ * 2026-10-19 (Sumon): restyled to IMO Me-tab design language —
+ * #F4F5F5 bg, white 12dp cards, 56dp title bar, boss-standard button.
+ * All content + FAQ logic untouched.
  */
 
 import { useState } from 'react';
@@ -10,57 +13,75 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import ScalePress from '@/components/ScalePress';
 import { useTranslation } from 'react-i18next';
 
+// IMO BIUI light tokens (matches app/profile/index.tsx)
 const C = {
-  bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  surface: '#F2F2F7',
-} as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD' } as const;
 
-function FAQItem({ question, answer }: { question: string; answer: string }) {
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// IMO title bar: 56dp, back left, 17sp semibold title centered, NO gear on inner screens
+function TitleBar({ title }: { title: string }) {
+  const topPad = Platform.OS === 'web' ? 67 : 0;
+  return (
+    <View style={{ backgroundColor: C.card, paddingTop: topPad }}>
+      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+        <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+          <Feather name="chevron-left" size={24} color={C.text} />
+        </Pressable>
+        <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+          {title}
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
+    </View>
+  );
+}
+
+function FAQItem({ question, answer, last }: { question: string; answer: string; last?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
-    <Pressable
-      onPress={() => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setOpen((p) => !p);
-      }}
-      style={{
-        backgroundColor: C.surface, borderRadius: 14,
-        borderWidth: 1, borderColor: C.border,
-        marginBottom: 10, overflow: 'hidden',
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
-        <Text style={{ flex: 1, color: C.text, fontSize: 14, fontWeight: '700', lineHeight: 20 }}>
-          {question}
-        </Text>
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={18} color={C.mutedDim} />
-      </View>
-      {open && (
-        <View style={{
-          paddingHorizontal: 16, paddingBottom: 16,
-          borderTopWidth: 1, borderTopColor: C.border,
-        }}>
-          <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20, marginTop: 10 }}>
-            {answer}
+    <View>
+      <Pressable
+        onPress={() => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setOpen((p) => !p);
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16 }}>
+          <Text style={{ flex: 1, color: C.text, fontSize: 14, fontWeight: '700', lineHeight: 20 }}>
+            {question}
           </Text>
+          <Feather name={open ? 'chevron-up' : 'chevron-down'} size={18} color={C.mutedLight} style={{ marginLeft: 10 }} />
         </View>
-      )}
-    </Pressable>
+        {open && (
+          <View style={{
+            paddingHorizontal: 16, paddingBottom: 16,
+            borderTopWidth: 0.5, borderTopColor: C.border,
+          }}>
+            <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20, marginTop: 10 }}>
+              {answer}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border }} />}
+    </View>
   );
 }
 
 export default function HelpScreen() {
   const { t } = useTranslation();
-  const topPad = Platform.OS === 'web' ? 67 : 0;
 
   const faqs = [
     { q: t('help.faq1Q'), a: t('help.faq1A') },
@@ -72,69 +93,51 @@ export default function HelpScreen() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        >
-          {/* Back header */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 20,
-          }}>
-            <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
-              <Feather name="arrow-left" size={24} color={C.text} />
-            </Pressable>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>
-              {t('help.title')}
-            </Text>
-          </View>
-
-          {/* Contact */}
-          <View style={{
-            backgroundColor: 'rgba(139,92,246,0.1)',
-            borderRadius: 16, padding: 18, marginBottom: 24,
-            borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
-          }}>
-            <Text style={{ color: C.glow, fontSize: 16, fontWeight: '800', marginBottom: 4 }}>
-              {t('help.contactHeading')}
-            </Text>
-            <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20 }}>
-              {t('help.contactSub')}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 14 }}>
-              <ScalePress
-                onPress={() => Linking.openURL('mailto:veesupport0@gmail.com').catch(() => {
-                  Alert.alert(t('help.error'), t('help.linkError'));
-                })}
-              >
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
-                  backgroundColor: C.primary, borderRadius: 12,
-                  paddingHorizontal: 16, paddingVertical: 10,
-                }}>
-                  <Feather name="mail" size={16} color="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
-                    {t('help.emailUs')}
-                  </Text>
-                </View>
-              </ScalePress>
-            </View>
-          </View>
-
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 12,
-          }}>
-            {t('help.faqSection')}
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <TitleBar title={t('help.title')} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Contact */}
+        <View style={[cardStyle, { padding: 18 }]}>
+          <Text style={{ color: C.text, fontSize: 16, fontWeight: '800', marginBottom: 4 }}>
+            {t('help.contactHeading')}
           </Text>
+          <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20 }}>
+            {t('help.contactSub')}
+          </Text>
+          <Pressable
+            onPress={() => Linking.openURL('mailto:veesupport0@gmail.com').catch(() => {
+              Alert.alert(t('help.error'), t('help.linkError'));
+            })}
+            style={{
+              flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+              backgroundColor: C.blueLight, borderRadius: 12,
+              paddingHorizontal: 16, paddingVertical: 10, marginTop: 14,
+            }}
+          >
+            <Feather name="mail" size={16} color={C.blue} style={{ marginRight: 8 }} />
+            <Text style={{ color: C.blue, fontWeight: '700', fontSize: 13 }}>
+              {t('help.emailUs')}
+            </Text>
+          </Pressable>
+        </View>
 
+        <Text style={{
+          color: C.mutedLight, fontSize: 11, fontWeight: '700',
+          letterSpacing: 0.8, marginTop: 20, marginBottom: 2,
+          paddingHorizontal: 15,
+        }}>
+          {t('help.faqSection')}
+        </Text>
+
+        <View style={cardStyle}>
           {faqs.map((faq, i) => (
-            <FAQItem key={i} question={faq.q} answer={faq.a} />
+            <FAQItem key={i} question={faq.q} answer={faq.a} last={i === faqs.length - 1} />
           ))}
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

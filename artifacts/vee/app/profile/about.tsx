@@ -5,6 +5,9 @@
  * - Removed Tech Stack section.
  * - Professional About text.
  * - Official Vee logo (app icon image).
+ * 2026-10-19 (Sumon): restyled to IMO Me-tab design language —
+ * #F4F5F5 bg, white 12dp cards, 56dp title bar, IMO MenuRow link rows.
+ * All content + links untouched.
  */
 
 import {
@@ -13,146 +16,150 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import ScalePress from '@/components/ScalePress';
 import { useTranslation } from 'react-i18next';
 
+// IMO BIUI light tokens (matches app/profile/index.tsx)
 const C = {
-  bg: '#FFFFFF',
-  primary: '#7C3AED',
-  glow: '#8B5CF6',
-  text: '#000000',
-  muted: '#8E8E93',
-  mutedDim: '#C7C7CC',
-  border: '#E5E5EA',
-  surface: '#F2F2F7',
-} as const;
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
+  mutedLight: '#C7C7CC',
+  border: '#F0F1F2',
+  blue: '#007AFF',
+  blueLight: '#E3F2FD',
+  green: '#34C759' } as const;
 
-function LinkButton({
-  icon, label, onPress,
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+
+// IMO title bar: 56dp, back left, 17sp semibold title centered, NO gear on inner screens
+function TitleBar({ title }: { title: string }) {
+  const topPad = Platform.OS === 'web' ? 67 : 0;
+  return (
+    <View style={{ backgroundColor: C.card, paddingTop: topPad }}>
+      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+        <Pressable onPress={() => router.back()} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+          <Feather name="chevron-left" size={24} color={C.text} />
+        </Pressable>
+        <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+          {title}
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
+    </View>
+  );
+}
+
+// IMO menu row: 30dp rounded-square icon, 16sp label, external-link right
+function LinkRow({
+  icon, iconBg, iconColor, label, onPress, last,
 }: {
   icon: React.ComponentProps<typeof Feather>['name'];
+  iconBg: string;
+  iconColor: string;
   label: string;
   onPress: () => void;
+  last?: boolean;
 }) {
   return (
-    <ScalePress onPress={onPress}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: C.surface, borderRadius: 16,
-        padding: 16, marginBottom: 10,
-        borderWidth: 1, borderColor: C.border,
-      }}>
-        <View style={{
-          width: 40, height: 40, borderRadius: 12,
-          backgroundColor: 'rgba(139,92,246,0.14)',
-          alignItems: 'center', justifyContent: 'center', marginRight: 14,
-        }}>
-          <Feather name={icon} size={18} color={C.glow} />
+    <View>
+      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon} size={16} color={iconColor} />
         </View>
-        <Text style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
-        <Feather name="external-link" size={16} color={C.mutedDim} />
-      </View>
-    </ScalePress>
+        <Text style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }} numberOfLines={1}>{label}</Text>
+        <Feather name="external-link" size={16} color={C.mutedLight} />
+      </Pressable>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
+    </View>
   );
 }
 
 export default function AboutScreen() {
   const { t } = useTranslation();
-  const topPad = Platform.OS === 'web' ? 67 : 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        >
-          {/* Back header */}
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+      <TitleBar title={t('about.title')} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* App branding — official Vee logo */}
+        <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 8 }}>
+          <View style={{
+            width: 96, height: 96, borderRadius: 28,
+            overflow: 'hidden',
+            shadowColor: '#000', shadowOpacity: 0.12,
+            shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+            elevation: 8, marginBottom: 16,
+          }}>
+            <Image
+              source={require('@/assets/images/icon.png')}
+              style={{ width: 96, height: 96 }}
+              resizeMode="cover"
+            />
+          </View>
+          <Text style={{ color: C.text, fontSize: 28, fontWeight: '900' }}>Vee</Text>
+          <Text style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>{t('about.version')}</Text>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            paddingTop: topPad + 10, paddingBottom: 24,
+            marginTop: 10, backgroundColor: '#E6F7ED',
+            borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
           }}>
-            <Pressable onPress={() => router.back()} hitSlop={14} style={{ marginRight: 12 }}>
-              <Feather name="arrow-left" size={24} color={C.text} />
-            </Pressable>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>
-              {t('about.title')}
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green, marginRight: 6 }} />
+            <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>
+              {t('about.productionBuild')}
             </Text>
           </View>
+        </View>
 
-          {/* App branding — official Vee logo */}
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
-            <View style={{
-              width: 96, height: 96, borderRadius: 28,
-              overflow: 'hidden',
-              shadowColor: C.glow, shadowOpacity: 0.5,
-              shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
-              elevation: 16, marginBottom: 16,
-            }}>
-              <Image
-                source={require('@/assets/images/icon.png')}
-                style={{ width: 96, height: 96 }}
-                resizeMode="cover"
-              />
-            </View>
-            <Text style={{ color: C.text, fontSize: 28, fontWeight: '900' }}>Vee</Text>
-            <Text style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>{t('about.version')}</Text>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6,
-              marginTop: 10, backgroundColor: 'rgba(34,197,94,0.12)',
-              borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
-            }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' }} />
-              <Text style={{ color: '#22C55E', fontSize: 12, fontWeight: '700' }}>
-                {t('about.productionBuild')}
-              </Text>
-            </View>
-          </View>
-
-          {/* About text */}
-          <View style={{
-            backgroundColor: C.surface, borderRadius: 16,
-            padding: 18, marginBottom: 24,
-            borderWidth: 1, borderColor: C.border,
-          }}>
-            <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', marginBottom: 8 }}>
-              {t('about.aboutHeading')}
-            </Text>
-            <Text style={{ color: C.muted, fontSize: 14, lineHeight: 22 }}>
-              {t('about.aboutText')}
-            </Text>
-          </View>
-
-          {/* Legal */}
-          <Text style={{
-            color: C.mutedDim, fontSize: 11, fontWeight: '700',
-            letterSpacing: 0.8, marginBottom: 10,
-          }}>
-            {t('about.sectionLegal')}
+        {/* About text */}
+        <View style={[cardStyle, { padding: 18 }]}>
+          <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', marginBottom: 8 }}>
+            {t('about.aboutHeading')}
           </Text>
-          <LinkButton
-            icon="file-text"
+          <Text style={{ color: C.muted, fontSize: 14, lineHeight: 22 }}>
+            {t('about.aboutText')}
+          </Text>
+        </View>
+
+        {/* Legal */}
+        <Text style={{
+          color: C.mutedLight, fontSize: 11, fontWeight: '700',
+          letterSpacing: 0.8, marginTop: 20, marginBottom: 2,
+          paddingHorizontal: 15,
+        }}>
+          {t('about.sectionLegal')}
+        </Text>
+        <View style={cardStyle}>
+          <LinkRow
+            icon="file-text" iconBg={C.blueLight} iconColor={C.blue}
             label={t('about.termsOfService')}
             onPress={() => Linking.openURL('https://veeapp.com/terms').catch(() => {
               Alert.alert(t('about.error'), t('about.linkError'));
             })}
           />
-          <LinkButton
-            icon="shield"
+          <LinkRow
+            icon="shield" iconBg="#E6F7ED" iconColor={C.green}
             label={t('about.privacyPolicy')}
             onPress={() => Linking.openURL('https://welcome-to-vee-privacy-guidance.netlify.app/').catch(() => {
               Alert.alert(t('about.error'), t('about.linkError'));
             })}
+            last
           />
+        </View>
 
-          <Text style={{
-            color: C.mutedDim, fontSize: 12,
-            textAlign: 'center', marginTop: 24, lineHeight: 18,
-          }}>
-            {t('about.footer')}
-          </Text>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        <Text style={{
+          color: C.muted, fontSize: 12,
+          textAlign: 'center', marginTop: 24, lineHeight: 18,
+          paddingHorizontal: 30,
+        }}>
+          {t('about.footer')}
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
