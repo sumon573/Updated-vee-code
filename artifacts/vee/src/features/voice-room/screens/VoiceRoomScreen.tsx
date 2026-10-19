@@ -22,7 +22,7 @@ import { submitReport } from '@/src/services/reportService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
-import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo } from '../types/room';
+import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
 import { fmtDiamonds, getWeekStart } from '../utils/format';
 import { SeatCard } from '../components/SeatCard';
 import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
@@ -40,12 +40,9 @@ import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { EmojiPanel } from '../components/EmojiPanel';
 import { ExitModal } from '../components/ExitModal';
-// Entry effect: "X is Coming" banner when a user joins (2026-10-10)
 import EntryBanner from '../components/EntryBanner';
-// Track 3: gift fly animation (sender side) + gift receive banners (Firebase giftFeed)
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
 
-// ── Firebase Room Services ─────────────────────────────────────────────────
 import { checkVoiceBan, type VoiceBanInfo } from '../services/voiceBanService';
 import {
   subscribeSeats, subscribeAudience, subscribeRoomInfo,
@@ -56,441 +53,81 @@ import {
   grantRoomAdmin, revokeRoomAdmin,
   closeRoom, updateRoomSettings, getUserColor, getInitials,
   disbandRoom,
-  // Seat Request System (Firebase-persisted)
   sendSeatRequest, subscribeSeatRequests, approveSeatRequest, rejectSeatRequest,
   type SeatRequest,
-  // Block System (Firebase-persisted)
   blockUserInRoom, unblockUserInRoom, subscribeRoomBlocks, isUserBlockedInRoom,
   type RoomBlockRecord,
   type RoomSeat, type RoomAudienceMember,
   verifyRoomPin,
-  // Fix 1: Seat invite system
   sendSeatInvite, subscribeSeatInvites, removeSeatInvite, type SeatInvite,
-  // Fix 5: Emoji reaction broadcast
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
-  // P1 ghost-seat fix (2026-10-12): heartbeat + stale sweep
   refreshSeatHeartbeat, sweepStaleSeats,
-  // P0 security (2026-10-12): shared PIN session cache (2026-10-13: moved to
-  // the service so VoiceRoomHome's PIN dialog and this screen share it —
-  // previously a verified PIN at the list level was re-prompted in-screen).
   isPinVerifiedForSession as isPinVerified,
   setPinVerifiedForSession as setPinVerified,
-  // Entry broadcast (2026-10-10): all users see everyone's entry
   sendRoomEntryEvent, subscribeRoomEntryEvents,
-  // Gift animation broadcast (2026-10-10): all users see gift fly animations
   sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
 
-/* ═══════════════════════════════════════════
-   HELPERS
-═══════════════════════════════════════════ */
 
-// P0 security (2026-10-12): PIN session cache এখন firebaseRoomService-এ
-// শেয়ার্ড (isPinVerifiedForSession / setPinVerifiedForSession) — VoiceRoomHome-এর
-// PIN dialog আর এই স্ক্রিন একই ক্যাশ দেখে, double PIN prompt হয় না।
-// 2026-10-12 (Sumon): versioned — PIN বদলালে (pinVersion bump) পুরনো সেশন
-// অকার্যকর; 2026-10-12 review fix: uid দিয়ে key — logout/login-এ আগের
-// ইউজারের verification inherit হয় না।
-
-// P1 anti-spam (2026-10-12): per-room last-send timestamps for the 1.5s
-// chat throttle. Module-level so rapid re-renders can't reset it.
-const lastChatSendAt = new Map<string, number>();
-
-function fbSeatToParticipant(
-  seat: NonNullable<RoomSeat>,
-  speakingUsers: Record<string, boolean>,
-): Participant {
-  return {
-    id: seat.userId,
-    name: seat.userName,
-    initials: seat.initials,
-    color: seat.color,
-    photoURL: seat.photoURL,
-    speaking: speakingUsers[seat.userId] === true,
-    muted: seat.muted,
-    role: seat.role,
-    // 2026-10-14 (Sumon): ROOT CAUSE FIX — activeFrame was never copied from
-    // seat data to Participant, so frame could NEVER show on seats even though
-    // Firebase had it. This one line fixes it.
-    activeFrame: (seat as any).activeFrame || undefined,
-    // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
-    nobleRankIndex: (seat as any).nobleRankIndex ?? undefined };
-}
-
-function fbAudToParticipant(m: RoomAudienceMember): Participant {
-  return {
-    id: m.userId,
-    name: m.userName,
-    initials: m.initials,
-    color: m.color,
-    photoURL: m.photoURL,
-    speaking: false,
-    muted: true,
-    // Preserve Firebase-synced role (admin / member); default to 'member'
-    role: (m.role as Role | undefined) ?? 'member',
-    // 2026-10-13 (Sumon): active frame for audience list display
-    activeFrame: (m as any).activeFrame || undefined,
-    // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
-    nobleRankIndex: (m as any).nobleRankIndex ?? undefined };
-}
-
-function fbChatToMsg(m: RoomChatMsg): ChatMsg {
-  return {
-    id: m.id,
-    sender: m.senderName,
-    color: m.senderColor,
-    text: m.text,
-    isMe: m.isMe ?? false,
-    ts: m.ts,
-    replyTo: m.replyTo };
-}
-
-/* ═══════════════════════════════════════════
-   MAIN SCREEN
-═══════════════════════════════════════════ */
-/* ─────────────────────────── Live Audience Pill ─────────────────────────── */
-// 2026-10-14 (Sumon): imo-style live audience pill — small DP + count (1+, 2+, 1k+).
-// Position: top bar, next to Hourly Rank.
-// 2026-10-15 (Sumon): counts EVERYONE live in the room (seated + audience),
-// tap opens the full Live Audience page. DP is the exact real profile photo
-// of the first live person (initials avatar if they have no photo — never demo).
-function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: () => void; person?: Participant }) {
-  const formatCount = (n: number): string => {
-    if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.0', '')}k+`;
-    return `${n}+`;
-  };
-  const photoURL = person?.photoURL;
-  return (
-    <ScalePress onPress={onPress} style={{ marginLeft: 8 }}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        borderRadius: 20, paddingLeft: 12, paddingRight: 6, paddingVertical: 4,
-        borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)' }}>
-        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
-          {formatCount(count)}
-        </Text>
-        {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 28, height: 28, borderRadius: 14 }} />
-        ) : (
-          <View style={{
-            width: 28, height: 28, borderRadius: 14,
-            backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>{person?.initials || ''}</Text>
-          </View>
-        )}
-      </View>
-    </ScalePress>
-  );
-}
-
-/* ── LiveDateIcon — Royal Gold Calendar (2026-10-15, Sumon picked Option A):
-   Premium luxury calendar button: gold rings, gold gradient month strip,
-   bold day number (fully visible, never clipped), red live-event badge.
-   Ticks every 30s so the date rolls over at midnight without reopening
-   the room. Design NEVER changes — only month/day text updates.
-   liveCount = real live event count (badge hidden when 0, no demo numbers). ── */
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
-  const [todayKey, setTodayKey] = useState(() => new Date().toDateString());
-  useEffect(() => {
-    const id = setInterval(() => {
-      const k = new Date().toDateString();
-      setTodayKey((prev) => (prev === k ? prev : k));
-    }, 30000);
-    return () => clearInterval(id);
-  }, []);
-  const now = new Date();
-  const month = MONTHS_SHORT[now.getMonth()];
-  const day = now.getDate();
-  // Re-render is driven by todayKey; values below always reflect "now".
-  void todayKey;
-  // 2026-10-16 (Sumon): height 44 -> 56 so the day number is fully
-  // visible (was clipped). Design unchanged — Royal Gold calendar.
-  return (
-    <View style={{
-      width: 40, height: 56, borderRadius: 10,
-      backgroundColor: '#FFFFFF', overflow: 'hidden', alignItems: 'center',
-      borderWidth: 2, borderColor: '#D4AF37',
-      shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6,
-      shadowOffset: { width: 0, height: 2 }, elevation: 5 }}>
-      {/* Gold rings */}
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: -4, zIndex: 2 }}>
-        <View style={{ width: 6, height: 10, borderRadius: 3, backgroundColor: '#D4AF37' }} />
-        <View style={{ width: 6, height: 10, borderRadius: 3, backgroundColor: '#D4AF37' }} />
-      </View>
-      {/* Gold month strip */}
-      <View style={{
-        width: '100%', marginTop: 1, paddingVertical: 3, alignItems: 'center',
-        backgroundColor: '#D4AF37' }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 }}>
-          {month.toUpperCase()}
-        </Text>
-      </View>
-      {/* Day number — fully visible, generous padding so never clipped */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 2 }}>
-        <Text style={{ color: '#1A1A2E', fontSize: 20, fontWeight: '900', lineHeight: 22 }}>
-          {day}
-        </Text>
-      </View>
-      {/* Live event badge — only when count > 0 (never demo) */}
-      {liveCount > 0 && (
-        <View style={{
-          position: 'absolute', top: 4, right: 4,
-          minWidth: 16, height: 16, borderRadius: 8,
-          backgroundColor: '#FF3B30', borderWidth: 1.5, borderColor: '#FFFFFF',
-          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800' }}>
-            {liveCount > 99 ? '99+' : liveCount}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// 2026-10-15 (Sumon): MODULE-LEVEL join-message dedup — survives component
-// remounts (background return, etc.). Key: roomId + uid. Prevents "joined"
-// spam when the screen remounts without the restore=1 param.
-// 2026-10-19 polish: capped at 500 entries — a session-long Set never evicting
-// is a slow memory leak; FIFO prune the oldest keys past the cap.
-const sentJoinMsgKeys = new Set<string>();
-const SENT_JOIN_MSG_KEY_CAP = 500;
-function addSentJoinMsgKey(key: string): void {
-  if (sentJoinMsgKeys.size >= SENT_JOIN_MSG_KEY_CAP) {
-    let pruned = 0;
-    for (const oldest of sentJoinMsgKeys) {
-      sentJoinMsgKeys.delete(oldest);
-      if (++pruned >= SENT_JOIN_MSG_KEY_CAP / 2) break;
-    }
-  }
-  sentJoinMsgKeys.add(key);
-}
-
-/* ── ObsidianGiftButton — Option C (2026-10-15, Sumon picked):
-   Premium gift button: obsidian dark + gold border, twinkling sparkles
-   (Animated loop, staggered). Matches Royal Gold Task calendar luxury. ── */
-function TwinkleSparkle({ delay, style }: { delay: number; style: any }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0, duration: 900, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [anim, delay]);
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] });
-  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.25] });
-  return (
-    <Animated.Text style={[{ opacity, transform: [{ scale }] }, style]}>
-      ✨
-    </Animated.Text>
-  );
-}
-function ObsidianGiftButton() {
-  // 2026-10-15 (Sumon): NO background box — only floating gift + sparkles.
-  return (
-    <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 30 }}>🎁</Text>
-      <TwinkleSparkle delay={0} style={{ position: 'absolute', top: 0, left: 2, fontSize: 10 }} />
-      <TwinkleSparkle delay={600} style={{ position: 'absolute', top: 3, right: 3, fontSize: 10 }} />
-      <TwinkleSparkle delay={1200} style={{ position: 'absolute', bottom: 2, left: 5, fontSize: 10 }} />
-    </View>
-  );
-}
-
-/* ── ObsidianExitButton — Option B (2026-10-15, Sumon picked):
-   2026-10-15 (Sumon): NO background box — only floating ✕. ── */
-function ObsidianExitButton() {
-  return (
-    <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 26, fontWeight: '900', color: '#FF5252', lineHeight: 30 }}>✕</Text>
-    </View>
-  );
-}
-
-/* ── SapphireInviteButton — Option B (2026-10-15, Sumon picked):
-   Premium blue person-plus + orbiting sparkles. NO background box. ── */
-function OrbitSparkle({ delay, size }: { delay: number; size: number }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(anim, { toValue: 1, duration: 4000, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [anim, delay]);
-  const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const opacity = anim.interpolate({ inputRange: [0, 0.25, 0.5, 0.75, 1], outputRange: [0.3, 1, 0.3, 1, 0.3] });
-  return (
-    <Animated.View style={{
-      position: 'absolute', width: size, height: size,
-      alignItems: 'center', justifyContent: 'center',
-      transform: [{ rotate }],
-    }}>
-      <Animated.Text style={{ position: 'absolute', top: -4, fontSize: 10, opacity }}>✨</Animated.Text>
-    </Animated.View>
-  );
-}
-function SapphireInviteButton() {
-  return (
-    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-      {/* 2026-10-15 (Sumon): NO background box — floating blue person-plus + orbit sparkles. */}
-      <Feather name="user-plus" size={26} color="#007AFF" style={{ textShadowColor: 'rgba(0,122,255,0.5)', textShadowRadius: 8 }} />
-      <OrbitSparkle delay={0} size={56} />
-      <OrbitSparkle delay={2000} size={56} />
-    </View>
-  );
-}
-
-/* ── PulseMicButton — Option C (2026-10-15, Sumon picked):
-   Blue Feather mic + expanding pulse rings when unmuted.
-   Muted = red mic-off. NO background box. ── */
-function PulseRing({ delay, color }: { delay: number; color: string }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(anim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [anim, delay]);
-  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.5] });
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] });
-  return (
-    <Animated.View style={{
-      position: 'absolute', width: 44, height: 44, borderRadius: 22,
-      borderWidth: 2, borderColor: color,
-      opacity, transform: [{ scale }],
-    }} />
-  );
-}
-function PulseMicButton({ muted }: { muted: boolean }) {
-  const color = muted ? '#FF4444' : '#007AFF';
-  const iconName = muted ? 'mic-off' : 'mic';
-  return (
-    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-      {/* 2026-10-15 (Sumon): NO background box — floating mic + pulse rings. */}
-      {!muted && <PulseRing delay={0} color={color} />}
-      {!muted && <PulseRing delay={1000} color={color} />}
-      <Feather
-        name={iconName}
-        size={24}
-        color={color}
-        style={{ textShadowColor: color === '#007AFF' ? 'rgba(0,122,255,0.5)' : 'rgba(255,68,68,0.5)', textShadowRadius: 8 }}
-      />
-    </View>
-  );
-}
-
-/* ── LiquidGoldSpeaker — Option E (2026-10-15, Sumon picked):
-   Gold speaker + warm glow when ON, gray muted when OFF.
-   NO background box. ── */
-function LiquidGoldSpeaker({ speakerOn }: { speakerOn: boolean }) {
-  const color = speakerOn ? '#D4AF37' : '#6B7280';
-  const iconName = speakerOn ? 'volume-2' : 'volume-x';
-  return (
-    <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-      {/* 2026-10-15 (Sumon): NO background box — floating gold speaker. */}
-      <Feather
-        name={iconName}
-        size={24}
-        color={color}
-        style={speakerOn ? { textShadowColor: 'rgba(212,175,55,0.6)', textShadowRadius: 10 } : { opacity: 0.6 }}
-      />
-    </View>
-  );
-}
+import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker } from './VoiceRoomHelpers';
+import { VoiceRoomBottomBar } from './VoiceRoomBottomBar';
+import { VoiceRoomModals } from './VoiceRoomModals';
 
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
-  // 2026-10-15 (Sumon): session restore — cold start auto-return passes restore=1.
   const isRestore = restore === '1';
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { t } = useTranslation();
 
-  // Fix 4: Remove hardcoded ROOM_META.id fallback — roomId must come from route param
   const roomId = paramRoomId ?? '';
-  // 2026-10-16 (Sumon): Store room decor — background + mic decor bought from the Store.
   const { backgroundUrl: storeBgUrl, micDecorUrl } = useStoreRoomDecor(roomId || null);
   const myUid  = user?.uid ?? 'anonymous';
   const myUidRef = useRef(myUid);
   useEffect(() => { myUidRef.current = myUid; }, [myUid]);
 
-  // CRITICAL-6/7 fix: Firebase Auth user.displayName / photoURL are NOT updated
-  // when the user edits their profile inside Vee (those writes go to RTDB only).
-  // Fetch the canonical profile from RTDB once at mount so seat cards show the
-  // real name and photo.  The one-time fetch avoids triggering a voice engine
-  // re-init (which would happen if we subscribed and the value changed).
   const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string; activeFrame?: string } | null>(null);
-  // 2026-10-13 (Sumon): Verified badge status for voice room seats
   const [myVerified, setMyVerified] = useState(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
-    // 2026-10-13 (Sumon): Real-time subscription so DP/frame changes reflect immediately.
-    // Fixes Google-login DP sync issue (profile vs voice room showing different pictures).
     const unsub = subscribeUser(myUid, (p) => {
       if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: (p as any).activeFrame || undefined });
     });
-    // Check verified badge
     import('@/src/services/verifiedService').then(({ hasOfficialBadge }) => {
       hasOfficialBadge(myUid).then(setMyVerified).catch(() => {});
     }).catch(() => {});
     return unsub;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2026-10-13 (Sumon): When activeFrame loads/changes and user is seated,
-  // update the seat data so the frame shows in voice room.
-  // Fixes race condition where seat was taken before profile loaded.
   useEffect(() => {
     const frame = (myProfile as any)?.activeFrame;
     const seatIdx = mySeatIdxRef.current;
     if (!roomId || seatIdx < 0 || !myUid) return;
     if (frame) {
-      // 2026-10-14 (Sumon): Log failures — silent catch hid seat sync issues
       update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
         .then(() => console.log(`[VoiceRoom] ✅ Seat ${seatIdx} frame synced: ${frame}`))
         .catch((e) => console.log(`[VoiceRoom] ❌ Seat frame sync FAILED:`, e?.message || e));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(myProfile as any)?.activeFrame]);
 
-  // 2026-10-14 (Sumon): Periodic seat frame sync — frame grant হলে seat update
-  // না হলে অন্যরা frame দেখতে পায় না। প্রতি 30s-এ sync করো।
   useEffect(() => {
     if (!roomId || !myUid || myUid === 'anonymous') return;
     const syncFrame = () => {
       const frame = (myProfile as any)?.activeFrame;
       const seatIdx = mySeatIdxRef.current;
       if (!frame || seatIdx < 0) return;
-      // 2026-10-14 (Sumon): Log failures — silent catch hid seat sync issues
       update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
         .then(() => console.log(`[VoiceRoom] ✅ Periodic seat ${seatIdx} frame sync: ${frame}`))
         .catch((e) => console.log(`[VoiceRoom] ❌ Periodic seat frame sync FAILED:`, e?.message || e));
     };
-    // Initial sync after 5s (profile loaded by then)
     const initial = setTimeout(syncFrame, 5000);
-    // Periodic sync every 30s
     const interval = setInterval(syncFrame, 30000);
     return () => {
       clearTimeout(initial);
       clearInterval(interval);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid]);
 
   const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
@@ -498,20 +135,9 @@ export default function VoiceRoomScreen() {
   const myColor = getUserColor(myUid);
   const myInitials = getInitials(myName);
 
-  // Stable voice username — computed once so profile load doesn't cause a voice
-  // engine re-init.
-  // The voice engine's userName is used for its own presence layer; Vee's UI
-  // shows myName from Firebase.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const voiceUserName = useMemo(() => user?.displayName ?? myUid, []);
 
-  /**
-   * Staged voice init (crash-hardening): the native LiveKit/WebRTC stack is
-   * NOT initialized when this screen mounts. The room UI (Firebase seats,
-   * chat, info) renders first; only after the room info is confirmed valid
-   * AND the screen has stabilized do we hand a real roomID to the voice hook.
-   * A dead/closed room therefore never touches native audio at all.
-   */
+  
   const [voiceReady, setVoiceReady] = useState(false);
   const voiceReadyRef = useRef(false);
   const voiceReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -523,19 +149,9 @@ export default function VoiceRoomScreen() {
         voiceReadyTimerRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── AUTO-LEAVE PREVIOUS ROOM (2026-10-11 Issue #2): If the user minimized
-     a DIFFERENT room and now opens this one, leave the old room completely —
-     disconnect its LiveKit engine, remove Firebase seat/audience entries, and
-     clear the mini-player. The user is only ever in ONE room at a time.
-     ── FIX (2026-10-11): If the user opens the SAME room that was minimized
-     (e.g. via room list instead of Return button), clear the minimized state
-     so the Return bar disappears — they're back in the room now. ── */
-  // 2026-10-14 (Sumon): Voice room-এ ফিরলেই minimize bar গায়েব।
-  // useEffect শুধু roomId change-এ চলে — profile দেখে back করলে roomId same থাকে,
-  // তাই bar থেকে যেত। useFocusEffect দিয়ে প্রতিবার focus-এ clear করি।
+  
   useFocusEffect(
     useCallback(() => {
       const prev = getMinimizedRoom();
@@ -550,27 +166,16 @@ export default function VoiceRoomScreen() {
     const prev = getMinimizedRoom();
     if (!prev) return;
     if (prev.id === roomId) {
-      // Same room re-opened directly (not via Return) — clear minimized state
-      // so the Return bar disappears. The LiveKit engine persists.
       setMinimizedRoom(null);
       return;
     }
-    // Different room — tear down the old one. 2026-10-19 stability fix:
-    // WAIT for the old engine's leave() (disconnect() + stopAudioSession())
-    // to FULLY complete before proceeding. Starting the new room's
-    // AudioSession.startAudioSession() + room.connect() while the old engine
-    // is still tearing down is a classic Android SIGSEGV source.
     (async () => {
       try {
         await destroyPersistedVoiceRoomEngineAsync();
-      } catch { /* non-critical */ }
+      } catch {  }
       if (prev.mySeatIdx >= 0) {
-        // 2026-10-12: revoke admin powers too if the user was an admin —
-        // otherwise the admins-node entry goes stale with live powers.
         const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
         removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
-        // 2026-10-12 audit fix (HIGH): clean audience record on room switch —
-        // seated users keep it, leaving a ghost in the old room.
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
       } else {
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
@@ -580,25 +185,19 @@ export default function VoiceRoomScreen() {
       }
       setMinimizedRoom(null);
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  /** Called once the room info subscription confirms a live room. */
+  
   const handleRoomInfoOk = useCallback(() => {
     markVoiceStage('room_info_ok', roomId);
     if (voiceReadyRef.current) return;
     voiceReadyRef.current = true;
-    // Let the screen settle (layout, first Firebase snapshots) before the
-    // native audio stack initializes.
     voiceReadyTimerRef.current = setTimeout(() => {
       voiceReadyTimerRef.current = null;
       setVoiceReady(true);
     }, 1200);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // 2026-10-12 review fix: if the room info arrived before myUid loaded,
-  // the PIN gate skipped evaluation — re-evaluate now that auth is ready.
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
     if (pinEvaluatedForRef.current === roomId) return;
@@ -615,13 +214,10 @@ export default function VoiceRoomScreen() {
     setPinGate(nextGate);
     if (nextGate === 'passed') handleRoomInfoOk();
   }, [myUid, roomId, handleRoomInfoOk]);
-  // 2026-10-17 (Sumon): VOICE-ROOM BAN — a banned user can still use the app
-  // (login is untouched) but may not enter any voice room. Null-safe: no
-  // voiceBan record (old accounts) or any read failure → NOT banned.
   const [voiceBan, setVoiceBan] = useState<VoiceBanInfo | null>(null);
   const [banCheckDone, setBanCheckDone] = useState(false);
 
-  /* ── LiveKit real audio ── */
+  
   const {
     joined: voiceJoined,
     muted,
@@ -640,27 +236,16 @@ export default function VoiceRoomScreen() {
     playUserStream,
     stopUserStream,
     wasRestored } = useLivekitVoiceRoom({
-    // Empty until staged init completes — the hook skips native init for ''.
     roomID: voiceReady ? roomId : '',
-    // 2026-10-17 (Sumon): voice-banned users never connect to the voice
-    // channel — the hook already treats 'anonymous' as "don't connect".
     userID: voiceBan ? 'anonymous' : myUid,
-    // Use the stable voiceUserName (never changes after mount) so a profile
-    // load doesn't trigger a full voice engine re-init mid-session.
     userName: voiceUserName });
 
-  /* ── Core state ── */
+  
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
-  /**
-   * Instant comment-block state for the current user (2026-10-12).
-   * Derived from the live roomBlocks subscription — the moment an admin/owner
-   * comment-blocks (or room-blocks) me, the chat input shows
-   * "Your Comment blocked" and disables sending; unblocking restores it
-   * instantly. No polling, no waiting for a failed send.
-   */
+  
   const amChatBlocked = useMemo(
     () => blockedRecs.some(
       (r) => r.id === myUid && r.isActive &&
@@ -668,43 +253,26 @@ export default function VoiceRoomScreen() {
     ),
     [blockedRecs, myUid],
   );
-  // Entry effect: "X is Coming" banner (2026-10-10)
   const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
-  // Fix 9: Weekly diamonds earned (separate from total balance)
   const [weeklyEarned,  setWeeklyEarned] = useState(0);
-  // Fix 1: Incoming seat invites for this user in this room
   const [pendingSeatInvites, setPendingSeatInvites] = useState<SeatInvite[]>([]);
-  // Fix 11: Chat pagination state
   const [chatOldestKey,    setChatOldestKey]    = useState<string | null>(null);
   const [loadingOlderMsgs, setLoadingOlderMsgs] = useState(false);
   const [hasOlderMsgs,     setHasOlderMsgs]     = useState(true);
-  // 2026-10-14 (Sumon): scroll-to-bottom floating button — উপরে গেলে দেখাবে।
   const [showChatScrollBtn, setShowChatScrollBtn] = useState(false);
 
-  // Ref to keep speakingUsers accessible in callbacks without re-creating them
   const speakingRef = useRef<Record<string, boolean>>({});
   useEffect(() => { speakingRef.current = speakingUsers; }, [speakingUsers]);
 
-  // Fix 5: Ref for seats used inside emoji reaction subscription callback
   const seatsRef = useRef<Array<Participant | null>>(Array(10).fill(null));
   useEffect(() => { seatsRef.current = seats; }, [seats]);
-  // 2026-10-12: Ref for audience used inside the room-info self-heal
-  // (admin registry repair needs the latest audience roles).
   const audienceRef = useRef<Participant[]>([]);
   useEffect(() => { audienceRef.current = audience; }, [audience]);
 
-  /**
-   * CRITICAL-1 fix (minimize/restore): After returning from the minimized bar,
-   * the persisted LiveKit room is reused — but subscription events will NOT
-   * re-fire for tracks that were already subscribed before minimize.  We must
-   * manually re-subscribe each speaker's track so audio resumes for all
-   * participants.
-   * `wasRestored` is set once by the hook on detect of a persisted room;
-   * `hasRestoredRef` ensures the sweep runs at most once per session.
-   */
+  
   const hasRestoredRef = useRef(false);
   useEffect(() => {
     if (!wasRestored || hasRestoredRef.current) return;
@@ -715,31 +283,26 @@ export default function VoiceRoomScreen() {
         playUserStream(seat.id);
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wasRestored, seats]);
 
-  // Fix 5: Track last processed reaction timestamp to skip old/replayed events
   const lastReactionTsRef = useRef(0);
 
-  // Fix 1: Track which invite IDs have already shown an Alert (so we don't re-alert)
   const handledInviteIds = useRef<Set<string>>(new Set());
 
-  // Fix 4: Navigate back if no roomId is provided (removes ROOM_META.id fallback)
   useEffect(() => {
     if (!roomId) {
       Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.roomNotFound'));
       router.back();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── Real-time wallet balance subscription ── */
+  
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
     return subscribeWalletBalance(myUid, setWalletBalance);
   }, [myUid]);
 
-  /* ── Fix 9: Weekly diamonds earned subscription ── */
+  
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
     return onValue(
@@ -749,10 +312,7 @@ export default function VoiceRoomScreen() {
     );
   }, [myUid]);
 
-  /* ── Fix 1: Subscribe to incoming seat invites for this room ── */
-  // 2026-10-13: ১০ মিনিটের পুরনো invite প্রথম snapshot-এ প্রুন করো — পুরনো
-  // invite রুমে ঢুকলেই বারবার Alert দেখাত (Android-এ back দিয়ে dismiss
-  // করলে invite থেকে যেত)।
+  
   const invitesPrunedRef = useRef(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous' || !roomId) return;
@@ -773,7 +333,7 @@ export default function VoiceRoomScreen() {
     });
   }, [myUid, roomId]);
 
-  /* ── Fix 1: Show Alert when a seat invite arrives ── */
+  
   useEffect(() => {
     pendingSeatInvites.forEach((invite) => {
       if (handledInviteIds.current.has(invite.id)) return;
@@ -788,29 +348,22 @@ export default function VoiceRoomScreen() {
           {
             text: t('voiceRoom.screen.accept'),
             onPress: async () => {
-              // H1 fix: take the seat FIRST, only delete the invite on success.
-              // If takeSeat throws (offline/rules), the invite stays so the
-              // user can retry instead of losing it silently.
-              // H3 fix: vacate current seat first to avoid double occupancy.
               const currentIdx = mySeatIdxRef.current;
               if (currentIdx >= 0 && currentIdx !== invite.seatIdx) {
                 try {
                   await fbLeaveSeat(roomId, currentIdx, myUid);
                 } catch {
-                  // If vacate fails, don't proceed — better to keep the
-                  // current seat than risk double occupancy.
                   Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
                   return;
                 }
               }
               let result: { success: boolean };
               try {
-                // 2026-10-13 (Sumon): Check verified badge for seat display
                 let isVerified = false;
                 try {
                   const { hasOfficialBadge } = await import('@/src/services/verifiedService');
                   isVerified = await hasOfficialBadge(myUid);
-                } catch { /* non-critical */ }
+                } catch {  }
                 result = await takeSeat(roomId, invite.seatIdx, {
                   userId: myUid, userName: myName,
                   initials: myInitials, color: myColor,
@@ -823,12 +376,12 @@ export default function VoiceRoomScreen() {
                 return;
               }
               if (result.success) {
-                removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup after successful seat take */});
+                removeSeatInvite(myUid, invite.id).catch(() => {});
                 startPublishing();
                 sendRoomChatMsg(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
                   text: t('voiceRoom.screen.memberJoinedSeat', { name: myName, number: invite.seatIdx + 1 }),
-                  ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
+                  ts: Date.now() }).catch(() => {});
               } else {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
               }
@@ -836,23 +389,20 @@ export default function VoiceRoomScreen() {
           {
             text: t('voiceRoom.screen.decline'),
             style: 'cancel',
-            onPress: () => { removeSeatInvite(myUid, invite.id).catch(() => {/* background: safe to swallow — invite cleanup on decline */}); } },
+            onPress: () => { removeSeatInvite(myUid, invite.id).catch(() => {}); } },
         ],
       );
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSeatInvites]);
 
-  /* ── Fix 5: Subscribe to emoji reactions broadcast by any participant ── */
+  
   useEffect(() => {
     if (!roomId) return;
     return subscribeRoomEmojiReactions(roomId, (reaction) => {
       if (!reaction) return;
-      // Ignore stale reactions older than 5 seconds
       if (reaction.ts <= lastReactionTsRef.current) return;
       if (Date.now() - reaction.ts > 5000) return;
       lastReactionTsRef.current = reaction.ts;
-      // Animate the emoji ONLY over the sender's seat (not everyone's)
       const senderMember = seatsRef.current.find((m) => m && m.id === reaction.byUid);
       if (!senderMember) return;
       const translateY = new Animated.Value(0);
@@ -874,44 +424,38 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId]);
 
-  /* ── Room settings ── */
+  
   const [roomTopic,     setRoomTopic]    = useState<string>(t('voiceRoom.creation.defaultTopic'));
   const [roomName,      setRoomName]     = useState(ROOM_META.name);
   const [roomImageUri, setRoomImageUri] = useState<string | null>(null);
   const [activeThemeId, setActiveThemeId] = useState('cosmic');
-  /** Tracks the last Firebase-synced theme to avoid echo loops. */
+  
   const activeThemeIdRef = useRef('cosmic');
-  /** Persisted room visibility — synced from Firebase via subscribeRoomInfo. */
+  
   const [roomIsPublic,  setRoomIsPublic]  = useState(true);
-  /** Persisted room lock state — synced from Firebase via subscribeRoomInfo. */
+  
   const [roomIsLocked,  setRoomIsLocked]  = useState(false);
-  /** Room description — synced from Firebase via subscribeRoomInfo. */
+  
   const [roomDescription, setRoomDescription] = useState('');
   const accentColor = useMemo(
     () => ROOM_THEMES.find((th: { id: string; accent: string }) => th.id === activeThemeId)?.accent ?? C.primary,
     [activeThemeId],
   );
-  /** Deep background color for the current theme. */
+  
   const themeBg = useMemo(
     () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.bg ?? C.bg,
     [activeThemeId],
   );
-  /** Surface/card color for the current theme. */
+  
   const themeSurface = useMemo(
     () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.surface ?? 'rgba(255,255,255,0.055)',
     [activeThemeId],
   );
 
-  /* ── Join state ── */
+  
   const [hasJoined, setHasJoined] = useState(false);
-  // 2026-10-18 (Sumon): Track if user is a MEMBER (tapped "Tap to join") via
-  // Firebase roomMembers — persists across re-entries, unlike local hasJoined.
   const [isRoomMember, setIsRoomMember] = useState(false);
 
-  // 2026-10-13: প্রোফাইল লোড/বদলালে নিজের সিট/অডিয়েন্স রেকর্ডে নাম+ছবি সিঙ্ক
-  // করো। আগে প্রোফাইল লোডের আগেই audience join হয়ে গেলে খালি/পুরনো নাম
-  // আটকে থাকত (Google user-দের ক্ষেত্রে সবচেয়ে বেশি)। শুধু নিজের রেকর্ড
-  // লিখি, আর node না থাকলে তৈরি করি না (get-then-update)।
   useEffect(() => {
     if (!myProfile?.name || !roomId || !myUid || myUid === 'anonymous') return;
     let cancelled = false;
@@ -934,23 +478,14 @@ export default function VoiceRoomScreen() {
             await update(ref(database, `rooms/${roomId}/audience/${myUid}`), patch);
           }
         }
-      } catch { /* background: safe to swallow — profile sync */ }
+      } catch {  }
     })();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myProfile, roomId, hasJoined]);
 
-  // ── P0 security (2026-10-12): in-screen private-room PIN gate ──
-  // Direct deep-links (invite links, push-notification taps, profile room
-  // taps) navigate straight to /voice-room, bypassing the list-level
-  // PrivateRoomGate. Enforce the 4-digit PIN inside this screen BEFORE any
-  // audience join, chat presence, or voice init can run.
-  // Session cache: rooms verified once per app session don't re-prompt
-  // (covers minimize → return without weakening the gate).
   const [pinGate, setPinGate] = useState<'checking' | 'open' | 'passed'>('checking');
   const pinGateRef = useRef<'checking' | 'open' | 'passed'>('checking');
   const pinEvaluatedForRef = useRef<string | null>(null);
-  // Latest room info for PIN-gate re-evaluation when myUid loads late.
   const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string; pinVersion?: number } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
@@ -966,8 +501,6 @@ export default function VoiceRoomScreen() {
     return () => { cancelled = true; };
   }, [myUid]);
 
-  // 2026-10-17 (Sumon): PROFESSIONAL ban exit — hardware back on ban screen
-  // goes home safely, never crashes. Placed with other hooks (before conditional return).
   useEffect(() => {
     if (!banCheckDone || !voiceBan) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -983,11 +516,7 @@ export default function VoiceRoomScreen() {
     return () => sub.remove();
   }, [banCheckDone, voiceBan]);
 
-  /**
-   * P0 security (2026-10-12): verify the in-screen PIN gate.
-   * Double-tap guarded; network/transport failures surface their real cause
-   * (never misreported as "Incorrect PIN").
-   */
+  
   const submitPinGate = useCallback(async () => {
     if (pinSubmittingRef.current || pinVerifying) return;
     if (pinInput.length !== 4 || !/^\d{4}$/.test(pinInput)) {
@@ -1001,15 +530,12 @@ export default function VoiceRoomScreen() {
       const hashed = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, pinInput);
       const ok = await verifyRoomPin(roomId, hashed);
       if (ok) {
-        // Cache the CURRENT pin version — a later PIN change bumps the
-        // version and forces re-entry (Sumon 2026-10-12).
         const curVer = typeof pinInfoRef.current?.pinVersion === 'number' ? pinInfoRef.current.pinVersion : 0;
         setPinVerified(myUidRef.current, roomId, curVer);
         pinGateRef.current = 'passed';
         setPinGate('passed');
         setPinInput('');
         setPinError('');
-        // PIN passed after info already arrived — kick off voice init now.
         handleRoomInfoOk();
       } else {
         setPinError(t('voiceRoom.screen.pinIncorrect'));
@@ -1022,31 +548,17 @@ export default function VoiceRoomScreen() {
     }
   }, [pinInput, pinVerifying, roomId, handleRoomInfoOk, t]);
 
-  /** User cancelled the PIN gate — leave the room screen. */
+  
   const cancelPinGate = useCallback(() => {
     router.back();
   }, [router]);
 
-  // ENTRY EFFECT (2026-10-10): Show "X is Coming" banner when the local user
-  // joins too, so they see the effect working (not just when others join).
-  // ALSO broadcast the entry so ALL room participants see it.
   const hasShownSelfEntryRef = useRef(false);
-  // 2026-10-15 (Sumon): MODULE-LEVEL dedup — component remounts (background
-  // return, etc.) must NOT resend "joined" spam. Keyed by room+user.
   const hasSentEntryChatMsgRef = useRef(false);
   useEffect(() => {
-    // Wait for myProfile to load (has real name + photoURL from RTDB)
-    // before broadcasting — otherwise DP/name may be empty.
-    // 2026-10-17 (Sumon): Entry effect on ROOM ENTRY, not just join.
-    // Anyone entering the room sees/shows the entry effect — hasJoined
-    // only controls the "Tap to join" banner, not the entry effect.
     if (!hasShownSelfEntryRef.current && myUid && myProfile && roomId && pinGate === 'passed') {
       hasShownSelfEntryRef.current = true;
-      // Use myName/myPhotoURL (from RTDB profile) — not auth which may be empty
       const displayName = myName || 'User';
-      // 2026-10-15 (Sumon): PER-RANK entry effect — my real noble rank.
-      // Prefer the join-time ref; fall back to a direct read (entry effect can
-      // run before the join effect's async fetch completes).
       (async () => {
         let myRank = myNobleRankRef.current;
         if (myRank == null) {
@@ -1057,34 +569,29 @@ export default function VoiceRoomScreen() {
               myRank = noble.rankIndex;
               myNobleRankRef.current = myRank;
             }
-          } catch { /* non-noble — standard banner */ }
+          } catch {  }
         }
         setEntryBanner({
           name: displayName,
           photoURL: myPhotoURL || null,
           ...(myRank != null ? { nobleRankIndex: myRank } : {}) });
-        // Broadcast entry to all participants
         sendRoomEntryEvent(roomId, {
           uid: myUid,
           name: displayName,
           photoURL: myPhotoURL || null,
-          ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {/* non-critical */});
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {});
       })();
     }
   }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate]);
 
-  // ENTRY BROADCAST SUBSCRIPTION (2026-10-10): Show entry banner when ANY
-  // participant joins — so everyone sees everyone's entry effect.
   const lastEntryTsRef = useRef(0);
   useEffect(() => {
     if (!roomId) return;
     return subscribeRoomEntryEvents(roomId, (entry) => {
       if (!entry) return;
-      // Ignore stale entries
       if (entry.ts <= lastEntryTsRef.current) return;
       if (Date.now() - entry.ts > 10000) return; // 10s TTL
       lastEntryTsRef.current = entry.ts;
-      // Don't show for our own entry (we already showed it locally)
       if (entry.uid === myUid) return;
       setEntryBanner({
         name: entry.name || 'User',
@@ -1093,8 +600,6 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId, myUid]);
 
-  // GIFT BROADCAST SUBSCRIPTION (2026-10-10): Show gift fly animation when ANY
-  // participant sends a gift — so everyone sees all gift animations.
   const lastGiftTsRef = useRef(0);
   useEffect(() => {
     if (!roomId) return;
@@ -1103,9 +608,7 @@ export default function VoiceRoomScreen() {
       if (event.ts <= lastGiftTsRef.current) return;
       if (Date.now() - event.ts > 10000) return; // 10s TTL
       lastGiftTsRef.current = event.ts;
-      // Don't replay our own gifts (we already played them locally)
       if (event.fromUid === myUid) return;
-      // Play the fly animation for the received gift
       giftFlyRef.current?.playFly({
         fromName: event.fromName,
         fromAvatar: event.fromAvatar || undefined,
@@ -1124,25 +627,13 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId, myUid]);
 
-  // REJOIN FIX (2026-10-09): On mount, check if user is already in the
-  // room's audience/seats (e.g. rejoining after leave). Without this,
-  // hasJoined stays false and the Join button shows incorrectly.
-  // REAL FIX (2026-10-10): also check the persistent userRooms/{uid}/{roomId}
-  // membership index. Audience/seats are cleared on leave, so a member
-  // returning later was never found there — the Join banner showed again
-  // every time. userRooms is never cleared on leave: if it exists, this
-  // user has joined before and enters directly as audience, no Join tap.
   useEffect(() => {
-    // P0 security: no join-state resolution before the PIN gate passes.
-    // 2026-10-17 (Sumon): voice-banned users never resolve to joined — the
-    // ban screen renders instead and no presence is ever written.
     if (!roomId || !myUid || hasJoined || pinGate !== 'passed' || !banCheckDone || voiceBan) return;
     let cancelled = false;
     (async () => {
       try {
         const { get, ref } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
-        // Persistent membership first — the source of truth for "has joined".
         const memberSnap = await get(ref(database, `userRooms/${myUid}/${roomId}`));
         if (cancelled) return;
         if (memberSnap.exists()) {
@@ -1158,7 +649,6 @@ export default function VoiceRoomScreen() {
           setHasJoined(true);
           return;
         }
-        // Check if user is on any seat
         if (seatsSnap.exists()) {
           let onSeat = false;
           seatsSnap.forEach((child) => {
@@ -1167,43 +657,33 @@ export default function VoiceRoomScreen() {
           });
           if (onSeat) setHasJoined(true);
         }
-      } catch { /* non-critical */ }
+      } catch {  }
     })();
     return () => { cancelled = true; };
   }, [roomId, myUid, hasJoined, pinGate, banCheckDone, voiceBan]);
 
-  /* ── Chat ── */
+  
   const [messages,   setMessages]   = useState<ChatMsg[]>([]);
   const chatRef = useRef<FlatList<ChatMsg>>(null);
-  /** Holds the id of the last auto-scroll setTimeout so it can be cancelled on unmount. */
+  
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * Chat history auto-clean (2026-10-11): per-user, client-side.
-   * 10 minutes after THIS user joins, and every 10 minutes after that,
-   * keep only the last 5 messages locally (older ones are hidden, not deleted
-   * from Firebase — other users are unaffected). Each user's timer starts
-   * from their own join time.
-   */
+  
   const historyCutoffTsRef = useRef<number>(0);
   const historyCleanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chatInput,    setChatInput]    = useState('');
   const [replyingTo,   setReplyingTo]   = useState<ChatMsg | null>(null);
-  /** Active @-mention query: non-null while the user is typing an @-prefixed word. */
+  
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [sendingMsg,   setSendingMsg]   = useState(false);
 
-  /* ── Seat reaction overlays ── */
+  
   const [seatReactions,  setSeatReactions]  = useState<Record<string, SeatReaction>>({});
 
-  /* ── Track 3: gift fly animation refs ──
-     Each seated member's wrapper View is stored here keyed by member id and
-     measured ON DEMAND via measureInWindow when a gift is sent — this keeps
-     the target correct even after scrolling, since no layout-time snapshot
-     can go stale. Missing/unknown targets fall back to a top-center point. */
+  
   const giftFlyRef = useRef<GiftFlyHandle>(null);
   const seatViewRefs = useRef<Record<string, View | null>>({});
 
-  /* ── Modal states ── */
+  
   const [roomInfoOpen,    setRoomInfoOpen]    = useState(false);
   const [opHistOpen,      setOpHistOpen]      = useState(false);
   const [settingsOpen,    setSettingsOpen]    = useState(false);
@@ -1218,11 +698,6 @@ export default function VoiceRoomScreen() {
   const [giftsOpen,       setGiftsOpen]       = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
-  // 2026-10-15 (Sumon): keep the manage-modal member LIVE — activeMember was a
-  // frozen snapshot taken at open time, so an admin frame removal (which goes
-  // live everywhere else via the seat/audience sync) stayed visible in the
-  // modal until room re-entry. Re-resolve from the live seats/audience arrays;
-  // only push a new object when a visible field actually changed.
   useEffect(() => {
     if (!activeMember) return;
     const fresh =
@@ -1242,11 +717,11 @@ export default function VoiceRoomScreen() {
   const [exitModalOpen,   setExitModalOpen]   = useState(false);
   const [emojiPanelOpen,  setEmojiPanelOpen]  = useState(false);
 
-  /* ── My Vee ID (for the "Copy V ID" self-profile action) ── */
+  
   const [myVId, setMyVId] = useState<string>('');
   useEffect(() => {
     if (!user?.uid) return;
-    getUser(user.uid).then((profile) => { if (profile?.vId) setMyVId(profile.vId); }).catch(() => {/* background: safe to swallow — Vee ID prefetch for copy button */});
+    getUser(user.uid).then((profile) => { if (profile?.vId) setMyVId(profile.vId); }).catch(() => {});
   }, [user?.uid]);
 
   const handleViewOwnProfile = useCallback(() => {
@@ -1267,30 +742,20 @@ export default function VoiceRoomScreen() {
     });
   }, [myVId, t]);
 
-  /* ── Weekly diamond reset ── */
+  
   const [weekStart, setWeekStart] = useState<number>(() => getWeekStart());
   useEffect(() => {
     const ws = getWeekStart();
     if (ws > weekStart) { setWeekStart(ws); }
   }, [weekStart]);
 
-  /* ═══════════════════════════════════════════
-     FIREBASE SUBSCRIPTIONS
-  ═══════════════════════════════════════════ */
+  
 
-  // Subscribe to room info — BUG 16 fix: navigate away when room is closed
   useEffect(() => {
     return subscribeRoomInfo(roomId, (info) => {
-      // info is null (deleted) or active:false (host closed it)
       if (!info || info.active === false) {
-        // Only navigate if we haven't already started leaving ourselves.
-        // This prevents a double router.back() when the host closes their own room
-        // and the subscription fires AFTER handleLeave already called router.back().
         if (!hasLeftRef.current) {
           hasLeftRef.current = true;
-          // Navigate first, THEN show the informational alert.
-          // Showing the alert before navigating on Android can block the navigation
-          // and calling router.back() again inside the alert button causes a double-pop.
           router.back();
           Alert.alert(
             t('voiceRoom.screen.roomClosed'),
@@ -1302,16 +767,7 @@ export default function VoiceRoomScreen() {
       setRoomName(info.name);
       setRoomTopic(info.topic);
       setOwnerId(info.ownerId);
-      // P0 security (2026-10-12): evaluate the in-screen PIN gate once per
-      // room load. Private room + not owner + not verified this session →
-      // block all joins/voice until the correct PIN is entered.
-      // 2026-10-12 review fix: don't evaluate until myUid is loaded — an
-      // empty myUid would wrongly gate the room owner. Stash info so a
-      // late myUid can re-evaluate (see effect below).
       pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0 };
-      // 2026-10-12 (Sumon): if the owner changed the PIN mid-session
-      // (pinVersion bumped past our verified version), force re-entry with
-      // the NEW pin — the old PIN must stop working everywhere.
       const curPinVer = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
       if (
         pinGateRef.current === 'passed' &&
@@ -1335,9 +791,6 @@ export default function VoiceRoomScreen() {
         pinGateRef.current = nextGate;
         setPinGate(nextGate);
       }
-      // Self-heal: if WE are the owner but our seat says 'member'/'admin'
-      // (e.g. seated before ownerId loaded), correct it in Firebase.
-      // Runs on every info update but only writes when actually wrong.
       if (info.ownerId && info.ownerId === myUidRef.current) {
         const mySeatIdxNow = seatsRef.current.findIndex(
           (s: Participant | null) => s?.id === myUidRef.current,
@@ -1346,12 +799,6 @@ export default function VoiceRoomScreen() {
         if (mySeatNow && mySeatNow.role !== 'host') {
           setSeatRole(roomId, mySeatIdxNow, 'host').catch(() => {});
         }
-        // 2026-10-12: backfill + repair the rooms/$roomId/admins registry.
-        // Any member labelled 'admin' (seat or audience) must hold the powers
-        // the security rules check. Runs on every info update but only
-        // writes for members missing from the registry (additive only —
-        // removals go through dismiss/kick/leave so a stale label can never
-        // resurrect powers here).
         try {
           const adminIds = new Set<string>();
           for (const s of seatsRef.current) {
@@ -1368,34 +815,24 @@ export default function VoiceRoomScreen() {
               const updates: Record<string, true> = {};
               for (const id of missing) updates[id] = true;
               update(ref(database, `rooms/${roomId}/admins`), updates).catch(() => {
-                // background: safe to swallow — repaired on next info update
               });
             }).catch(() => {});
           }
         } catch {
-          // background: safe to swallow — admin registry repair is best-effort
         }
       }
       setRoomImageUri(info.coverImageUrl ?? null);
       setRoomIsPublic(info.isPublic);
       setRoomIsLocked(info.isLocked ?? false);
       setRoomDescription(info.description ?? '');
-      // Theme sync: owner/admin changes propagate to ALL users via Firebase.
       if (info.themeId && info.themeId !== activeThemeIdRef.current) {
         activeThemeIdRef.current = info.themeId;
         setActiveThemeId(info.themeId);
       }
-      // Room is live — begin the staged native voice init.
-      // P0 security: never start voice before the PIN gate passes.
       if (pinGateRef.current === 'passed') handleRoomInfoOk();
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // 2026-10-12 (Sumon): force-leave when *I* am room-blocked mid-session.
-  // The join-time check only bounces blocked users at entry; without this a
-  // user blocked while inside would linger in the room. Comment-blocks do
-  // NOT trigger this (chat-only restriction — the input already shows it).
   const forceLeftRef = useRef(false);
   useEffect(() => {
     if (!hasJoined || forceLeftRef.current) return;
@@ -1405,9 +842,8 @@ export default function VoiceRoomScreen() {
     if (!myBlock) return;
     forceLeftRef.current = true;
     hasLeftRef.current = true;
-    try { stopPublishing(); } catch { /* non-critical */ }
-    try { stopUserStream(myUid); } catch { /* non-critical */ }
-    // Navigate first (Android alert-before-nav can block the pop), then inform.
+    try { stopPublishing(); } catch {  }
+    try { stopUserStream(myUid); } catch {  }
     router.back();
     Alert.alert(
       t('voiceRoom.screen.removedTitle'),
@@ -1415,7 +851,6 @@ export default function VoiceRoomScreen() {
     );
   }, [blockedRecs, hasJoined, myUid, stopPublishing, stopUserStream, t]);
 
-  // Subscribe to Firebase-persisted room blocks
   useEffect(() => {
     return subscribeRoomBlocks(roomId, (blocksMap) => {
       const records: BlockRecord[] = Array.from(blocksMap.values()).map((b: RoomBlockRecord) => ({
@@ -1431,12 +866,10 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId]);
 
-  // Subscribe to pending seat requests (shown to host/admin)
   useEffect(() => {
     return subscribeSeatRequests(roomId, setPendingRequests);
   }, [roomId]);
 
-  // Subscribe to seats
   useEffect(() => {
     return subscribeSeats(roomId, (fbSeats) => {
       setSeats(fbSeats.map(seat =>
@@ -1445,19 +878,13 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId]);
 
-  // Subscribe to audience
   useEffect(() => {
     return subscribeAudience(roomId, (fbAudience) => {
       const participants = fbAudience.map(fbAudToParticipant);
       setAudience(participants);
-      // NOTE (2026-10-10): Entry banner now handled by the entry broadcast
-      // subscription above (sendRoomEntryEvent/subscribeRoomEntryEvents).
     });
   }, [roomId]);
 
-  // 2026-10-18 (Sumon): Subscribe to my membership record — "Tap to join"
-  // writes to roomMembers, and the banner must stay hidden on re-entry.
-  // Local hasJoined resets on every mount, so Firebase is the source of truth.
   useEffect(() => {
     if (!roomId || !myUid) {
       setIsRoomMember(false);
@@ -1466,7 +893,6 @@ export default function VoiceRoomScreen() {
     const memberRef = ref(database, `roomMembers/${roomId}/${myUid}`);
     const unsub = onValue(memberRef, (snap) => {
       setIsRoomMember(snap.exists());
-      // Sync local hasJoined so legacy gates stay consistent
       if (snap.exists()) setHasJoined(true);
     }, () => {
       setIsRoomMember(false);
@@ -1474,8 +900,6 @@ export default function VoiceRoomScreen() {
     return () => unsub();
   }, [roomId, myUid]);
 
-  // Subscribe to room chat — Fix 11: track oldest key for pagination
-  // 2026-10-11: history auto-clean — hide messages older than the cutoff.
   useEffect(() => {
     return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
       const cutoff = historyCutoffTsRef.current;
@@ -1483,10 +907,8 @@ export default function VoiceRoomScreen() {
       setMessages(visible.map(fbChatToMsg));
       if (visible.length > 0) {
         setChatOldestKey(visible[0].id);
-        // If we got a full page (50), there might be older messages
         setHasOlderMsgs(visible.length >= 50);
       }
-      // Clear any pending scroll timer before scheduling a new one
       if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
       scrollTimerRef.current = setTimeout(() => {
         scrollTimerRef.current = null;
@@ -1495,8 +917,6 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId, myUid]);
 
-  // Chat history auto-clean timer (2026-10-11): starts when THIS user joins.
-  // Every 10 minutes, keep only the last 5 messages (local view only).
   useEffect(() => {
     if (!hasJoined) return;
     if (historyCleanTimerRef.current !== null) return; // already running
@@ -1505,7 +925,6 @@ export default function VoiceRoomScreen() {
       setMessages((prev) => {
         if (prev.length <= 5) return prev;
         const keep = prev.slice(-5);
-        // Hide everything older than the oldest kept message.
         historyCutoffTsRef.current = keep[0].ts ?? 0;
         return keep;
       });
@@ -1519,15 +938,11 @@ export default function VoiceRoomScreen() {
     };
   }, [hasJoined]);
 
-  /* ── Entry message on room ENTER (mount) ──
-   * Per Sumon 2026-10-12: everyone's entry visible, even pure audience
-   * who never taps Join. The hasJoined effect above handles the join case;
-   * this handles the view-only entry case. Ref prevents duplicates. */
+  
   useEffect(() => {
     if (hasSentEntryChatMsgRef.current) return;
     if (!roomId || !myUid || !myName) return;
     hasSentEntryChatMsgRef.current = true;
-    // Per Sumon 2026-10-12: owner entry shows gold 👑 badge
     const isOwner = ownerId && ownerId === myUid;
     const displayName = isOwner ? `${myName} 👑` : myName;
     sendRoomChatMsg(roomId, {
@@ -1535,31 +950,23 @@ export default function VoiceRoomScreen() {
       senderName: 'System',
       senderColor: C.gold,
       text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
-      ts: Date.now() }).catch(() => {/* non-critical */});
+      ts: Date.now() }).catch(() => {});
   }, [roomId, myUid, myName, ownerId, t]);
 
-  /* ── mySeatIdx: declared early so all effects below can reference it safely ── */
+  
   const mySeatIdx = useMemo(
     () => seats.findIndex((s: Participant | null) => s?.id === myUid),
     [seats, myUid],
   );
 
-  /**
-   * Ref that always holds the latest mySeatIdx.
-   */
+  
   const mySeatIdxRef = useRef(mySeatIdx);
   useEffect(() => {
     mySeatIdxRef.current = mySeatIdx;
   }, [mySeatIdx]);
 
-  // P1 ghost-seat fix (2026-10-12): heartbeat while seated. Refreshes the
-  // seat's server timestamp every 60s so crashed/killed clients' seats can
-  // be swept. Also sweeps stale seats once on room enter.
-  // 2026-10-13: heartbeat-এ userId পাঠাও — transaction abort করে যদি সিটটা
-  // আর নিজের না হয় (phantom seat তৈরি বন্ধ)।
   useEffect(() => {
     sweepStaleSeats(roomId).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
@@ -1569,71 +976,36 @@ export default function VoiceRoomScreen() {
     return () => clearInterval(timer);
   }, [roomId, mySeatIdx, myUid]);
 
-  /**
-   * Auto-publish guard: fires at most once per room session.
-   * Handles two cases where startPublishing() would otherwise be skipped:
-   *   1. Owner: createRoom() places them in seat 0, so they arrive in the
-   *      room already seated — they never call joinSeat() and thus never
-   *      reach the startPublishing() call inside it.
-   *   2. Invited to seat: host calls takeSeat() on behalf of an audience
-   *      member. That member's client sees the seat appear via subscribeSeats,
-   *      but joinSeat() is never called on their device.
-   * Guard fires only once (hasAutoPublishedRef) so it doesn't re-publish on
-   * subsequent mySeatIdx changes (e.g. moving between seats).
-   */
+  
   const hasAutoPublishedRef = useRef(false);
   useEffect(() => {
     if (hasAutoPublishedRef.current) return;
     if (!voiceJoined || mySeatIdx < 0) return;
     hasAutoPublishedRef.current = true;
-    // Mark as joined so leave/unmount cleanup runs correctly for owner
     if (!hasJoined) setHasJoined(true);
     startPublishing();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceJoined, mySeatIdx]);
 
-  /**
-   * Owner auto-join fix: Auto-mark owner as joined when they enter their own
-   * room — regardless of whether they currently have a seat.
-   *
-   * Previously the guard `mySeatIdx >= 0` blocked auto-join when the owner
-   * re-entered after leaving their seat (e.g. via "My Rooms"). Without this
-   * fix the owner was never added to the audience list, `hasJoined` stayed
-   * false, and they could not interact with the room properly.
-   *
-   * Removing the seat-index guard is safe: `joinRoomAsAudience` is idempotent,
-   * and `takeSeat` removes the owner from audience as soon as they sit down.
-   */
+  
   useEffect(() => {
-    // 2026-10-17 (Sumon): voice-banned owners also stay out — ban covers all rooms.
     if (voiceBan) return;
     if (!hasJoined && ownerId && ownerId === myUid) {
       setHasJoined(true);
     }
   }, [hasJoined, ownerId, myUid, voiceBan]);
 
-  /**
-   * Issue 2 fix: Sync host-driven Firebase seat.muted changes → local mic.
-   * When a host/admin toggles someone's mute in SeatActionSheet → setSeatMute(),
-   * the target user's Firebase seat entry updates. This effect detects the change
-   * and mutes/unmutes the local microphone to match.
-   */
+  
   const prevFbMutedRef = useRef<boolean | null>(null);
-  // CRITICAL-4 fix: track seat index to reset mute-sync on seat changes
   const prevMySeatIdxRef = useRef<number>(-1);
   useEffect(() => {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = -1;
-      // SAFETY (2026-10-09): if not on any seat but still publishing
-      // (e.g. rapid seat-switch race left us seatless), stop the mic.
-      // Prevents "ghost mic" where ID disappears but audio continues.
       if (isPublishing) {
         stopPublishing();
       }
       return;
     }
-    // Seat changed — always apply new seat's muted value regardless of prev
     if (prevMySeatIdxRef.current !== mySeatIdx) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = mySeatIdx;
@@ -1642,52 +1014,34 @@ export default function VoiceRoomScreen() {
     if (!mySeat) return;
     const fbMuted = mySeat.muted;
     if (!isPublishing) {
-      // FIX (2026-10-10): Do NOT mark the mute as applied when not publishing.
-      // Previously prevFbMutedRef was set even when setMicMuted was skipped,
-      // so when publishing later started, the effect saw "no change" and never
-      // applied the seat's mute — the engine stayed muted=true while the UI
-      // showed unmuted (mic dead on some IDs). Reset instead so the mute is
-      // applied on the first effect run after publishing starts.
       prevFbMutedRef.current = null;
       return;
     }
     if (prevFbMutedRef.current === fbMuted) return; // no change
     prevFbMutedRef.current = fbMuted;
     setMicMuted(fbMuted);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seats, mySeatIdx, isPublishing]);
 
-  /* ── LiveKit speaking detection → seats speaking state ── */
+  
   useEffect(() => {
-    // 2026-10-15 (Sumon, re-audit): NO early-return on empty map. When the
-    // last speaker stops, speakingUsers becomes {} — the old
-    // `Object.keys().length === 0 → return` skipped the clear, leaving that
-    // seat's speaking=true (stuck ripple) until some unrelated Firebase
-    // update rebuilt the seats. Now {} correctly clears every seat; the inner
-    // `isSpeaking !== s.speaking` guard still prevents no-op re-renders.
     if (!speakingUsers) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
       if (!s || s.id === myUid) return s;
-      // 2026-10-15 (Sumon): muted seat NEVER ripples — guards stale speaking
-      // flags (remote mute / host-mute timing). A muted mic has no audio.
       const isSpeaking = speakingUsers[s.id] === true && !s.muted;
       return isSpeaking !== s.speaking ? { ...s, speaking: isSpeaking } : s;
     }));
   }, [speakingUsers, myUid]);
 
-  // Local user
   useEffect(() => {
     if (mySeatIdx < 0) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) => {
       if (i !== mySeatIdx || !s) return s;
-      // 2026-10-15 (Sumon): own seat never ripples while muted — belt-and-braces
-      // with the engine clearing localSpeaking in setMuted (no Firebase wait).
       const effectiveSpeaking = localSpeaking && !muted;
       return s.speaking !== effectiveSpeaking ? { ...s, speaking: effectiveSpeaking } : s;
     }));
   }, [localSpeaking, mySeatIdx, muted]);
 
-  /* ── Join room: check if blocked before joining ── */
+  
   useEffect(() => {
     if (!hasJoined) return;
     isUserBlockedInRoom(roomId, myUid).then((blocked) => {
@@ -1695,47 +1049,30 @@ export default function VoiceRoomScreen() {
         Alert.alert(t('voiceRoom.screen.accessDenied'), t('voiceRoom.screen.accessDeniedMsg'));
         router.back();
       }
-    }).catch(() => {/* background: safe to swallow — block check; fail-open keeps user in room */});
+    }).catch(() => {});
   }, [hasJoined, roomId, myUid]);
 
-  /* ── BUG 11 fix: track whether the leave cleanup has already been run
-     (either explicitly via handleLeave/handleMinimize, or by the effect
-     cleanup on unmount). Prevents the double-remove that occurred when
-     router.back() unmounted the screen right after handleLeave ran. ── */
+  
   const hasLeftRef = useRef(false);
-  // 2026-10-15 (Sumon): session restore / presence re-register guards.
   const presenceReadyRef = useRef(false); // join effect finished
-  // 2026-10-15 (Sumon): my noble rank index — fetched once at join, written
-  // to presence (seat/audience) so others render my per-rank ripple/entry.
   const myNobleRankRef = useRef<number | undefined>(undefined);
   const mutedRef = useRef(false);
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
-  /* ── Join room: add to Firebase audience ── */
-  // 2026-10-18 (Sumon): FIX — audience write must happen on ROOM ENTRY, not
-  // on "Tap to join". Per Sumon's concept: entering = immediately in Live
-  // Audience (no Join tap needed). The old `if (!hasJoined) return` gate meant
-  // the count stayed 0 until the user tapped Join.
+  
   useEffect(() => {
     if (!roomId || !myUid || pinGate !== 'passed') return;
     hasLeftRef.current = false;
     let cancelled = false;
 
     (async () => {
-      // 2026-10-15 (Sumon): fetch my noble rank FIRST — presence (seat/audience)
-      // carries it so everyone sees my per-rank ripple + entry effect.
       try {
         const { getNobleState } = await import('@/src/services/nobleService');
         const noble = await getNobleState(myUid).catch(() => null);
         if (noble && !noble.lapsed) myNobleRankRef.current = noble.rankIndex;
-      } catch { /* non-noble or read failed — presence omits the field */ }
+      } catch {  }
       if (cancelled) return;
-      // ROOM LOCK (2026-10-13, Sumon): "Lock Room" এখন সত্যিকারের গেট —
-      // লক থাকলে নতুন দর্শক ঢুকতে পারবে না। শুধু owner/admin আর আগের
-      // মেম্বাররা (userRooms/audience/seat রেকর্ড আছে) ফিরতে পারবে।
       try {
-        // ব্লকড ইউজারের ক্ষেত্রে আলাদা blocked-check effect Alert দেখায় —
-        // এখানে early return, নইলে double alert হতো।
         const blockSnap = await get(
           ref(database, `roomBlocks/${roomId}/${myUid}`),
         ).catch(() => null);
@@ -1770,13 +1107,9 @@ export default function VoiceRoomScreen() {
           }
         }
       } catch {
-        // লক চেক fail হলে fail-open — নেটওয়ার্ক সমস্যায় কাউকে আটকাবো না
       }
       if (cancelled) return;
 
-      // 2026-10-15 (Sumon): SESSION RESTORE — cold start auto-returned us here
-      // (restore=1). Reclaim our seat if we had one and it's still free/ours;
-      // if someone else took it, fall through to audience.
       let finalSeatIdx = -1;
       if (isRestore) {
         try {
@@ -1793,7 +1126,7 @@ export default function VoiceRoomScreen() {
               }
             }
           }
-        } catch { /* best-effort — fall back to audience */ }
+        } catch {  }
       }
       if (cancelled) return;
 
@@ -1804,18 +1137,11 @@ export default function VoiceRoomScreen() {
           initials: myInitials,
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-          // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
-          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) }).catch(() => {/* background: safe to swallow — audience join lifecycle */});
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) }).catch(() => {});
       }
-      // 2026-10-15 (Sumon): persist active room — cold start auto-returns here.
       persistActiveRoom({ roomId, myUid, mySeatIdx: finalSeatIdx }).catch(() => {});
-      // 2026-10-14 (Sumon): Track current room for logout cleanup (even when not minimized)
       setCurrentRoom({ id: roomId, myUid, mySeatIdx: finalSeatIdx });
 
-      // Send join message to room chat (only if not already sent on entry)
-      // Per Sumon 2026-10-12: everyone's entry visible, even audience
-      // 2026-10-15 (Sumon): on session restore we never left — no "joined" spam.
-      // 2026-10-15 (Sumon): module-level dedup — remounts never resend.
       const joinKey = `${roomId}:${myUid}`;
       if (!isRestore && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
@@ -1825,39 +1151,27 @@ export default function VoiceRoomScreen() {
           senderName: 'System',
           senderColor: C.gold,
           text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-          ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral join chat message */});
+          ts: Date.now() }).catch(() => {});
       }
       presenceReadyRef.current = true;
     })();
 
     return () => {
       cancelled = true;
-      // BUG 11 fix: only run cleanup once — handleLeave marks hasLeftRef first
       if (hasLeftRef.current) return;
       hasLeftRef.current = true;
       if (mySeatIdxRef.current >= 0) {
-        removeSeat(roomId, mySeatIdxRef.current).catch(() => {/* background: safe to swallow — unmount cleanup */});
-        // 2026-10-12 audit fix (HIGH): clean the audience record too —
-        // seated users keep it, and this path (system back/kill) bypasses
-        // handleLeave. (Minimize sets hasLeftRef first, so it's excluded.)
-        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
+        removeSeat(roomId, mySeatIdxRef.current).catch(() => {});
+        leaveAudience(roomId, myUid).catch(() => {});
       } else {
-        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — unmount cleanup */});
-        // 2026-10-14 (Sumon): Clear current room tracking on unmount
+        leaveAudience(roomId, myUid).catch(() => {});
         clearCurrentRoom();
       }
-      // 2026-10-15 (Sumon): unmount without minimize = left the room —
-      // clear persisted room (minimize sets hasLeftRef first, so it's excluded).
       clearPersistedActiveRoom().catch(() => {});
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid, pinGate]);
 
-  /* ── 2026-10-15 (Sumon): re-register presence on Firebase reconnect.
-     Long background can drop the socket → onDisconnect wipes our
-     audience/seat entry server-side, but this screen is still mounted so the
-     join effect never re-runs. Without this the user becomes a ghost: inside
-     the room UI but invisible in counts (the pill showed 0+). ── */
+  
   useEffect(() => {
     if (!hasJoined) return;
     const connRef = ref(database, '.info/connected');
@@ -1873,16 +1187,12 @@ export default function VoiceRoomScreen() {
           initials: myInitials,
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-          // 2026-10-15 (Sumon): noble rank for per-rank entry effect.
           ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
         if (seatIdx >= 0) {
-          // Re-claim our seat if it's empty or still ours; if someone else
-          // took it while we were gone, fall back to audience.
           const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${seatIdx}`)).catch(() => null);
           const cur = seatSnap?.val() as { userId?: string } | null;
           if (!cur || cur.userId === myUid) {
             const seatData = buildSeatData();
-            // Keep the live mic state (not the possibly stale seat flag).
             seatData.muted = mutedRef.current;
             const seatRef = ref(database, `rooms/${roomId}/seats/${seatIdx}`);
             await set(seatRef, { ...seatData, seatTs: serverTimestamp() }).catch(() => {});
@@ -1897,7 +1207,7 @@ export default function VoiceRoomScreen() {
         } else {
           await joinRoomAsAudience(roomId, audData).catch(() => {});
         }
-      } catch { /* best-effort — next reconnect retries */ }
+      } catch {  }
     };
     const unsub = onValue(connRef, (snap) => {
       const connected = snap.val() === true;
@@ -1908,10 +1218,9 @@ export default function VoiceRoomScreen() {
       }
     });
     return () => { disposed = true; unsub(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasJoined, roomId]);
 
-  /* ── Cleanup scroll timer on unmount ── */
+  
   useEffect(() => {
     return () => {
       if (scrollTimerRef.current !== null) {
@@ -1921,14 +1230,9 @@ export default function VoiceRoomScreen() {
     };
   }, []);
 
-  /* ═══════════════════════════════════════════
-     DERIVED STATE
-  ═══════════════════════════════════════════ */
+  
 
   const seatMembers = useMemo(() => seats.filter((s: Participant | null): s is Participant => s !== null), [seats]);
-  // DEDUPE FIX (2026-10-09): the same user can appear in seats + audience
-  // (or ghost seats) — dedupe by ID so member lists, counts and gift
-  // recipient pickers never show the same person twice.
   const allMembers  = useMemo(() => {
     const map = new Map<string, Participant>();
     for (const p of [...seatMembers, ...audience]) {
@@ -1940,30 +1244,20 @@ export default function VoiceRoomScreen() {
   const myRole: Role = useMemo(() => {
     const mySeat = seats.find((s: Participant | null) => s?.id === myUid);
     if (mySeat?.role) return mySeat.role;
-    // 2026-10-12: admins moved to the audience keep their powers (the
-    // rooms/$roomId/admins registry), so the audience record's role must
-    // count too — otherwise a moved-down admin loses the moderation UI
-    // while still holding the powers.
     const myAud = audience.find((m: Participant) => m.id === myUid);
     if (myAud?.role === 'admin') return 'admin';
-    // Fall back to ownerId when the user currently has no seat (e.g. the
-    // host stepped down from their seat) so the owner never gets
-    // misdetected as a plain member and loses host-only capabilities.
     return (ownerId && ownerId === myUid ? 'host' : 'member');
   }, [seats, audience, myUid, ownerId]);
 
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
 
-  // "Tap to join" must only ever be shown to audience who have not joined
-  // yet — never to the owner/admin/member who are already inside the room.
-  // 2026-10-18 (Sumon): Use isRoomMember (Firebase roomMembers, persists across
-  // re-entries) instead of local hasJoined (resets on every mount → banner
-  // incorrectly reappeared on re-entry).
+  const myRoleLevel: number = useMemo(() => roleToLevel(myRole), [myRole]);
+
   const showJoinBanner = !isRoomMember && !hasJoined && !isOwnerOrAdmin && mySeatIdx < 0;
 
   const seatActionMember = seatActionIdx >= 0 ? seats[seatActionIdx] ?? null : null;
 
-  /** Live members whose names start with the current @-query (max 6, excludes self). */
+  
   const mentionCandidates = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
@@ -1972,7 +1266,7 @@ export default function VoiceRoomScreen() {
       .filter((m: Participant) => !q || m.name.toLowerCase().startsWith(q));
   }, [mentionQuery, allMembers, myUid]);
 
-  /** Handles chat TextInput changes and detects @-mention triggers. */
+  
   const handleChatInput = useCallback((text: string) => {
     setChatInput(text);
     const match = text.match(/@(\w*)$/);
@@ -1983,34 +1277,27 @@ export default function VoiceRoomScreen() {
     }
   }, []);
 
-  /** Replaces the trailing @query with the selected member name and closes the picker. */
+  
   const handleSelectMention = useCallback((memberName: string) => {
     setChatInput((prev: string) => prev.replace(/@\w*$/, `@${memberName} `));
     setMentionQuery(null);
   }, []);
 
-  /* ═══════════════════════════════════════════
-     ACTIONS
-  ═══════════════════════════════════════════ */
+  
 
   const toggleMic = useCallback(() => {
-    // Must be in a seat to toggle mic
     if (mySeatIdx < 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!isPublishing) {
-      // Not publishing yet (e.g. voice engine still initialising, or owner pre-seated).
-      // Start publishing — mic will start muted; user taps again to unmute.
       startPublishing();
       return;
     }
 
     const newMuted = engineToggleMic(); // single source of truth — never `!muted`
-    // Optimistically update local seat indicator (no wait for Firebase round-trip)
     setSeats(prev => prev.map((s, i) =>
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
-    // Persist mute state so other clients see the mic indicator change
     setSeatMute(roomId, mySeatIdx, newMuted).catch(() => {});
   }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId]);
 
@@ -2020,21 +1307,12 @@ export default function VoiceRoomScreen() {
   }, [engineToggleSpeaker]);
 
   const handleSeatPress = useCallback((seatIdx: number) => {
-    // 2026-10-19 perf fix: read seats via seatsRef (kept in sync at line ~680)
-    // instead of the `seats` state closure, so this callback keeps a stable
-    // identity across speaking-state updates and memo()'d SeatCard skips
-    // re-rendering unchanged seats. Tap-time data is fresher this way too.
     const member = seatsRef.current[seatIdx];
-    // Tapping your OWN seat always opens your own profile view (View/Edit
-    // Profile, Copy V ID) — regardless of role. Previously audience members
-    // got no reaction at all, and hosts/admins got the moderation sheet
-    // meant for other people.
     if (member && member.id === myUid) { setActiveMember(member); return; }
     if (!isOwnerOrAdmin) {
       if (member && member.id !== myUid) { setActiveMember(member); return; }
       if (!member) {
         if (lockedSeats.has(seatIdx)) {
-          // CRITICAL-5 fix: Locked seat → prompt to send a request
           Alert.alert(
             t('voiceRoom.screen.lockedSeat'),
             t('voiceRoom.screen.lockedSeatMsg'),
@@ -2065,7 +1343,6 @@ export default function VoiceRoomScreen() {
           );
           return;
         }
-        // CRITICAL-5 fix: Unlocked empty seat → join immediately, no request needed
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         joinSeat(seatIdx);
       }
@@ -2076,9 +1353,6 @@ export default function VoiceRoomScreen() {
     setSeatActionOpen(true);
   }, [isOwnerOrAdmin, myUid, lockedSeats, roomId, myName, myInitials, myColor, ownerId, t]);
 
-  // 2026-10-19 perf fix: stable per-seat press handlers. The old inline
-  // `() => handleSeatPress(idx)` recreated identity every render, defeating
-  // SeatCard's memo() and re-rendering all 10 seats on every speaking change.
   const seatPressHandlers = useMemo(() => {
     const map: Array<() => void> = [];
     for (let i = 0; i < 10; i += 1) map[i] = () => handleSeatPress(i);
@@ -2093,16 +1367,11 @@ export default function VoiceRoomScreen() {
     const newMuted = !prevMuted;
     if (newMuted) muteRemoteUser(memberId);
     else playUserStream(memberId);
-    // Optimistic UI — reverted below if the Firebase write fails, so the
-    // icon never lies about the real moderation state (2026-10-12 fix:
-    // admin writes used to be silently denied by the security rules).
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
       (i === seatIdx && s ? { ...s, muted: newMuted } : s),
     ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSeatMute(roomId, seatIdx, newMuted).catch((e: unknown) => {
-      // Write failed (e.g. permission denied) — revert the optimistic
-      // update, restore the remote stream state, and show the real cause.
       setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
         (i === seatIdx && s ? { ...s, muted: prevMuted } : s),
       ));
@@ -2124,10 +1393,6 @@ export default function VoiceRoomScreen() {
     } else {
       stopUserStream(member.id);
     }
-    // Issue 6: pass full member data (including photoURL + role) so the user
-    // is properly restored to the Live Audience list with their profile photo.
-    // 2026-10-12: an admin moved down keeps their admin powers (title is
-    // independent of stage position); surface failures instead of swallowing.
     fbLeaveSeat(roomId, seatIdx, member.id, {
       userId: member.id,
       userName: member.name,
@@ -2145,14 +1410,7 @@ export default function VoiceRoomScreen() {
     });
   }, [seats, myUid, roomId, stopPublishing, stopUserStream, t]);
 
-  // 2026-10-15 (Sumon): builds the seat member object. Extracted from
-  // joinSeat so session restore + presence re-register can reclaim the
-  // identical seat (same frame, badge, role, mute).
   const buildSeatData = useCallback((): NonNullable<RoomSeat> => {
-    // role: the owner MUST always be seated as 'host', even if room info
-    // (ownerId) hasn't finished loading yet — otherwise a race seats the
-    // owner as 'member' and they lose host powers + see the wrong badge.
-    // Belt-and-braces: check ownerId directly, not just the myRole memo.
     const seatRole: Role = (ownerId && ownerId === myUid) ? 'host' : myRole;
     return {
       userId: myUid,
@@ -2160,26 +1418,17 @@ export default function VoiceRoomScreen() {
       initials: myInitials,
       color: myColor,
       ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-      // 2026-10-13 (Sumon): Include active frame so seats show it.
       ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
-      // 2026-10-15 (Sumon): Include equipped ripple + entry effect + nameplate
-      // so seats show the user's chosen designs (fallback to rank theme).
       ...((myProfile as any)?.activeRipple ? { activeRipple: (myProfile as any).activeRipple } : {}),
       ...((myProfile as any)?.activeEntryEffect ? { activeEntryEffect: (myProfile as any).activeEntryEffect } : {}),
       ...((myProfile as any)?.activeNameplate ? { activeNameplate: (myProfile as any).activeNameplate } : {}),
-      // 2026-10-13 (Sumon): Verified badge next to name in seats.
       ...(myVerified ? { verified: true } : {}),
-      // CRITICAL-4 fix: preserve current mute state when moving between seats;
-      // start muted only on first join from audience (mySeatIdx < 0).
       muted: mySeatIdx >= 0 ? muted : true,
       role: seatRole,
-      // 2026-10-15 (Sumon): noble rank for per-rank speaking ripple.
       ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
   }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted]);
 
   const joinSeat = useCallback(async (seatIdx: number) => {
-    // Already sitting in this seat — nothing to do. (takeSeat's transaction
-    // would abort on our own occupied seat, so short-circuit here.)
     if (mySeatIdx === seatIdx) return;
     const target = seats[seatIdx];
     if (target && target.id !== myUid) {
@@ -2187,14 +1436,8 @@ export default function VoiceRoomScreen() {
       return;
     }
 
-    // 2026-10-15 (Sumon): shared seat-data builder (extracted) so session
-    // restore + presence re-register can reclaim the identical seat.
     const seatData: NonNullable<RoomSeat> = buildSeatData();
 
-    // RACE FIX: await the takeSeat transaction BEFORE vacating the old seat.
-    // Previously takeSeat() was fire-and-forget and removeSeat(oldSeat) ran
-    // unconditionally — losing the seat race (or a network/rules failure)
-    // left the user seatless in the audience with publishing state out of sync.
     let won = false;
     try {
       won = (await takeSeat(roomId, seatIdx, seatData)).success;
@@ -2206,34 +1449,21 @@ export default function VoiceRoomScreen() {
       return;
     }
 
-    // H8 FIX: Use ref (not stale state) for old seat index. During rapid
-    // switches, mySeatIdx (from useMemo on seats) can be stale because
-    // Firebase hasn't synced yet. Update ref synchronously.
     const oldIdx = mySeatIdxRef.current;
     mySeatIdxRef.current = seatIdx;
-    // 2026-10-14 (Sumon): Update currentRoom seat index for logout cleanup
     setCurrentRoom({ id: roomId, myUid, mySeatIdx: seatIdx });
-    // 2026-10-15 (Sumon): persist seat for session restore after app kill.
     persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
     if (oldIdx >= 0 && oldIdx !== seatIdx) {
       removeSeat(roomId, oldIdx).catch(() => {});
     } else if (oldIdx < 0) {
       startPublishing();
-      // FIRST-SEAT FIX (2026-10-09): Firebase seat.muted=true but the local
-      // mic starts live — explicitly mute to match. Otherwise the UI shows
-      // muted while the mic is actually transmitting.
       setMicMuted(true);
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData]);
 
-  /**
-   * CRITICAL-3 fix: Mic bar button behaves differently by role.
-   * Placed after joinSeat declaration to avoid "used before assigned" TS error.
-   * • Audience (not in a seat): tapping joins the first available unlocked seat.
-   * • Speaker (in a seat): tapping toggles Mute / Unmute.
-   */
+  
   const handleMicBarPress = useCallback(() => {
     if (mySeatIdx >= 0) {
       toggleMic();
@@ -2253,7 +1483,6 @@ export default function VoiceRoomScreen() {
     }
   }, [mySeatIdx, toggleMic, seats, lockedSeats, joinSeat, t]);
 
-  // ── Subscribe to Firebase-synced locked seats ──────────────────────────────
   useEffect(() => {
     if (!roomId) return;
     const unsub = subscribeLockedSeats(roomId, setLockedSeats);
@@ -2261,8 +1490,6 @@ export default function VoiceRoomScreen() {
   }, [roomId]);
 
   const lockSeat = useCallback((seatIdx: number) => {
-    // 2026-10-12: surface failures — a silent catch here hid the fact that
-    // room admins were denied by the security rules for weeks.
     fbLockSeat(roomId, seatIdx).then(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }).catch((e: unknown) => {
@@ -2288,10 +1515,6 @@ export default function VoiceRoomScreen() {
 
   const setAdminRole = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
-    // Room-admin powers live in the rooms/$roomId/admins registry (checked by
-    // the security rules); the seat role is only the visible label. Both are
-    // written together — powers without label (or label without powers) is a
-    // broken state, so a failure here is surfaced, never swallowed.
     const writes: Array<Promise<unknown>> = [];
     if (seatIdx >= 0) {
       writes.push(setSeatRole(roomId, seatIdx, 'admin'));
@@ -2301,12 +1524,8 @@ export default function VoiceRoomScreen() {
       writes.push(setAudienceRole(roomId, memberId, 'admin'));
     }
     writes.push(grantRoomAdmin(roomId, memberId));
-    // P1 fix (2026-10-12): RoomInfoModal orders owner → admin → members from
-    // the roomMembers reverse index. Sync the role there too, or a promoted
-    // admin stays listed under "members" until they rejoin.
     writes.push(
       update(ref(database), { [`roomMembers/${roomId}/${memberId}/role`]: 'admin' }).catch(() => {
-        // best-effort: index sync must not fail the promotion
       }),
     );
     Promise.all(writes).then(() => {
@@ -2331,11 +1550,8 @@ export default function VoiceRoomScreen() {
       writes.push(setAudienceRole(roomId, memberId, 'member'));
     }
     writes.push(revokeRoomAdmin(roomId, memberId));
-    // P1 fix (2026-10-12): keep the roomMembers reverse index in sync so
-    // Room Info ordering updates immediately on demotion too.
     writes.push(
       update(ref(database), { [`roomMembers/${roomId}/${memberId}/role`]: 'member' }).catch(() => {
-        // best-effort: index sync must not fail the demotion
       }),
     );
     Promise.all(writes).then(() => {
@@ -2355,15 +1571,8 @@ export default function VoiceRoomScreen() {
     const member = inSeat ?? inAud;
     if (!member) return;
 
-    // 2026-10-12: a room-blocked admin must lose their admin powers too.
-    // Comment-block keeps everything else intact (chat-only restriction).
     const demoteUid = action === 'room-block' && member.role === 'admin' ? memberId : undefined;
 
-    // 2026-10-12 FIX (Sumon): room-block FULLY removes the user from the room.
-    // Previously only the seat was removed — but seated users keep their
-    // audience record (joinSeat never clears it), so the "blocked" user stayed
-    // in the room as audience. Now both are removed atomically where possible.
-    // The victim's client is force-leaved via the roomBlocks subscription.
     const kick = (async () => {
       if (action === 'room-block') {
         const ops: Array<Promise<unknown>> = [];
@@ -2371,8 +1580,6 @@ export default function VoiceRoomScreen() {
           const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
           ops.push(removeSeat(roomId, seatIdx, demoteUid));
         }
-        // Always clear the audience record too — belt-and-braces, since a
-        // seated user normally still holds one.
         ops.push(
           removeAudienceMember(roomId, memberId).then(() => {
             if (demoteUid) return revokeRoomAdmin(roomId, demoteUid);
@@ -2397,8 +1604,6 @@ export default function VoiceRoomScreen() {
       byName: myName,
       action };
 
-    // 2026-10-12: never claim success before the writes land — the old code
-    // showed "blocked" even when every write was permission-denied.
     Promise.all([kick, blockUserInRoom(roomId, blockRecord)]).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
@@ -2419,7 +1624,6 @@ export default function VoiceRoomScreen() {
   const unblockUser = useCallback((userId: string) => {
     const record = blockedRecs.find((r: BlockRecord) => r.id === userId && r.isActive);
     if (!record) return;
-    // 2026-10-12: surface failures — unblock used to look successful while denied.
     unblockUserInRoom(roomId, userId).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }).catch((e: unknown) => {
@@ -2431,7 +1635,6 @@ export default function VoiceRoomScreen() {
     });
   }, [blockedRecs, roomId, t]);
 
-  // Fix 1: Send seat invite via Firebase instead of directly placing the user
   const inviteToSeat = useCallback((memberId: string, seatIdx: number) => {
     const member = audience.find((m: Participant) => m.id === memberId);
     if (!member) return;
@@ -2446,7 +1649,6 @@ export default function VoiceRoomScreen() {
         {
           text: t('voiceRoom.screen.sendInvite'),
           onPress: () => {
-            // Fix 1: Write invite to Firebase — invited user decides to accept/decline
             sendSeatInvite(member.id, {
               roomId, roomName, seatIdx,
               inviterUid: myUid, inviterName: myName,
@@ -2462,60 +1664,33 @@ export default function VoiceRoomScreen() {
   }, [audience, seats, roomId, roomName, myUid, myName, t]);
 
   const handleLeave = useCallback(() => {
-    // 2026-10-15 (Sumon): BULLETPROOF EXIT — router.back() MUST run even if
-    // cleanup throws (e.g. stopPublishing on a dead engine after session
-    // restore). A stuck exit screen is worse than a leftover Firebase record.
-    // BUG 11 fix: mark as already cleaned up so the effect cleanup
-    // (triggered by router.back() → unmount) doesn't run it a second time.
     hasLeftRef.current = true;
     try {
-      // 2026-10-15 (Sumon): explicit leave — clear persisted room so a later
-      // cold start does NOT auto-return to a room the user chose to leave.
       clearPersistedActiveRoom().catch(() => {});
-      // 2026-10-15 (Sumon): clear join-msg dedup so a future rejoin sends fresh.
       sentJoinMsgKeys.delete(`${roomId}:${myUid}`);
 
       if (mySeatIdx >= 0) {
-        try { stopPublishing(); } catch { /* dead engine — safe to swallow */ }
-        // 2026-10-12: an admin leaving surrenders their admin powers atomically
-        // with the seat removal (removeSeat handles both in one update).
+        try { stopPublishing(); } catch {  }
         const demoteUid = myRole === 'admin' ? myUid : undefined;
-        removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
-        // 2026-10-12 audit fix (HIGH): seated users KEEP their audience record
-        // — clean it here or ghost audience records accumulate forever
-        // (onDisconnect only fires if the connection drops, not on clean exit).
-        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow */});
+        removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {});
+        leaveAudience(roomId, myUid).catch(() => {});
       } else if (hasJoined) {
-        leaveAudience(roomId, myUid).catch(() => {/* background: safe to swallow — leave teardown; screen navigates away */});
-        // Audience admin leaving: drop powers too (best-effort; owner self-heal
-        // never re-adds since the label is gone with the audience record).
+        leaveAudience(roomId, myUid).catch(() => {});
         if (myRole === 'admin') {
           revokeRoomAdmin(roomId, myUid).catch(() => {});
         }
       }
-      // Issue 8 fix: Rooms persist until the owner explicitly deletes them from
-      // Settings. Do NOT auto-close when the host leaves — other users can still
-      // rejoin and the room remains discoverable in the room list.
     } finally {
-      // ALWAYS navigate away — even if everything above threw.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       setExitModalOpen(false);
-      // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack —
-      // router.back() would silently do nothing and strand the user on the
-      // exited room screen. Fall back to home.
       if (router.canGoBack()) router.back();
       else router.replace('/home');
     }
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
 
   const handleMinimize = useCallback(() => {
-    // BUG 11 fix: mark as already cleaned up so the effect cleanup
-    // does not incorrectly remove the user from the room on minimize.
-    // The user is still "in" the minimized room — do NOT remove them.
     hasLeftRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Minimize fix: signal the voice hook to persist the LiveKit room instead
-    // of disconnecting it when the screen unmounts.
     setVoiceRoomMinimized(true);
     setMinimizedRoom({
       id:       roomId,
@@ -2527,16 +1702,10 @@ export default function VoiceRoomScreen() {
       role:     myRole,
       ...(roomImageUri ? { coverImageUrl: roomImageUri } : {}) });
     setExitModalOpen(false);
-    // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack —
-    // router.back() would silently do nothing, leaving the minimize bar
-    // floating over the room screen with no way out. Fall back to home.
     if (router.canGoBack()) router.back();
     else router.replace('/home');
   }, [roomId, roomName, roomTopic, myUid, mySeatIdx, muted, myRole, roomImageUri]);
 
-  // BACK BUTTON → MINIMIZE (2026-10-10, Sumon's order): pressing the phone's
-  // back button while in a voice room minimizes instead of leaving.
-  // The room keeps running in the background (talk + listen).
   useEffect(() => {
     const onBackPress = () => {
       handleMinimize();
@@ -2546,25 +1715,14 @@ export default function VoiceRoomScreen() {
     return () => sub.remove();
   }, [handleMinimize]);
 
-  // RACE FIX (double-tap): `sendingMsg` is state — two invocations within the
-  // same frame (double-tap, or keyboard submit racing the send button) both
-  // read the stale `false` value and send duplicates. The ref closes that
-  // window; it also serializes sends so same-device messages stay in order.
-  // The input is only cleared on success, so a dropped duplicate loses nothing.
   const sendingMsgRef = useRef(false);
 
   const sendMessage = useCallback(async () => {
     const text = chatInput.trim();
     if (!text || sendingMsgRef.current) return;
-    // P1 anti-spam (2026-10-12): throttle to one message per 1.5s per room.
-    // Module-level map so it survives re-renders; silent drop keeps the UX snappy.
-    // 2026-10-12 review fix: stamp AFTER the block-check so a blocked attempt
-    // doesn't consume the throttle window.
     const now = Date.now();
     const lastSent = lastChatSendAt.get(roomId) ?? 0;
     if (now - lastSent < 1500) return;
-    // Instant client-side guard (the input is already disabled, but the
-    // service also enforces this server-side as the source of truth).
     if (amChatBlocked) {
       Alert.alert(
         t('voiceRoom.screen.blockedTitle'),
@@ -2584,7 +1742,6 @@ export default function VoiceRoomScreen() {
         text,
         ts: Date.now(),
         ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}) });
-      // Only clear input + scroll on success
       setChatInput('');
       setReplyingTo(null);
       setMentionQuery(null);
@@ -2594,7 +1751,6 @@ export default function VoiceRoomScreen() {
         chatRef.current?.scrollToEnd({ animated: true });
       }, 80);
     } catch (err) {
-      // Comment-block / room-block enforcement: show feedback to the user
       if (err instanceof Error && err.message === 'blocked') {
         Alert.alert(
           t('voiceRoom.screen.blockedTitle'),
@@ -2610,31 +1766,21 @@ export default function VoiceRoomScreen() {
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
 
   const handleJoinRoom = useCallback(() => {
-    // 2026-10-17 (Sumon): CRITICAL FIX — Join must write to Firebase, not just
-    // local state. Previously only setHasJoined(true) was called, so no
-    // userRooms/audience record was created. On re-enter, the rejoin check
-    // found nothing → "Tap to join" showed again every time.
-    // 2026-10-18 (Sumon): "Tap to join" = become a MEMBER. Write to roomMembers
-    // (shows in Room Info member list, persists across re-entries). The audience
-    // presence is now handled by the entry effect (runs on room entry).
     setHasJoined(true);
     setIsRoomMember(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (roomId && myUid) {
-      // Member record — visible in Room Info, survives re-entry
       const memberRef = ref(database, `roomMembers/${roomId}/${myUid}`);
       set(memberRef, {
         role: 'member',
         joinedAt: Date.now(),
         name: myName,
-      }).catch(() => {/* background: safe to swallow — member record */});
-      // Also ensure userRooms index (for "My Room" / rejoin checks)
+      }).catch(() => {});
       const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
       set(userRoomRef, {
         joinedAt: Date.now(),
         role: 'member',
-      }).catch(() => {/* background: safe to swallow — userRooms index */});
-      // Ensure audience presence (in case entry effect hasn't run yet)
+      }).catch(() => {});
       joinRoomAsAudience(roomId, {
         userId: myUid,
         userName: myName,
@@ -2642,20 +1788,17 @@ export default function VoiceRoomScreen() {
         color: myColor,
         ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
         ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
-      }).catch(() => {/* background: safe to swallow */});
+      }).catch(() => {});
     }
   }, [roomId, myUid, myName, myInitials, myColor, myPhotoURL]);
 
-  /** Disband the room entirely (owner only) — removes all Firebase data then navigates away. */
+  
   const handleDisband = useCallback(async () => {
     hasLeftRef.current = true;
     stopPublishing();
     try {
       await disbandRoom(roomId);
     } catch {
-      // DISBAND FIX (2026-10-10): never fail silently — the user must know
-      // the room was NOT deleted (previously the rules denied the delete and
-      // the room silently survived).
       Alert.alert('Disband failed', 'Could not delete the room. Please try again.');
       hasLeftRef.current = false;
       return;
@@ -2663,16 +1806,13 @@ export default function VoiceRoomScreen() {
     router.back();
   }, [roomId, stopPublishing]);
 
-  // Track 3: GiftsModal now delivers a GiftSentInfo payload. Keep the ephemeral
-  // chat message, then trigger the sender-side fly animation once per recipient.
   const handleGiftSent = useCallback((info: GiftSentInfo) => {
-    // Wallet balance updates automatically via Firebase subscription
     sendRoomChatMsg(roomId, {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
       text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
-      ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral gift chat message */});
+      ts: Date.now() }).catch(() => {});
 
     const fly = (toUid: string, toName: string, toAvatar: string | undefined, target: { x: number; y: number } | null) => {
       giftFlyRef.current?.playFly({
@@ -2689,7 +1829,6 @@ export default function VoiceRoomScreen() {
       videoFullscreen: info.videoFullscreen});
     };
     for (const r of info.recipients) {
-      // Broadcast gift event so ALL participants see the animation (2026-10-10)
       sendRoomGiftEvent(roomId, {
         giftId: info.giftId,
         emoji: info.emoji,
@@ -2703,11 +1842,10 @@ export default function VoiceRoomScreen() {
       animationUrl: info.animationUrl || null,
       animationType: info.animationType || null,
       videoSize: info.videoSize || null,
-      videoFullscreen: info.videoFullscreen || null }).catch(() => {/* non-critical */});
+      videoFullscreen: info.videoFullscreen || null }).catch(() => {});
       try {
         const v = seatViewRefs.current[r.uid];
         if (v) {
-          // measureInWindow gives screen coords the overlay can use directly.
           v.measureInWindow((x, y, w, h) => fly(r.uid, r.name, r.photoURL, { x: x + w / 2, y: y + h / 2 }));
         } else {
           fly(r.uid, r.name, r.photoURL, null); // recipient not on a seat → top-center fallback
@@ -2718,21 +1856,18 @@ export default function VoiceRoomScreen() {
     }
   }, [roomId, myUid, myName, myColor, t]);
 
-  // Fix 5: Broadcast emoji via Firebase so all clients animate simultaneously
   const sendEmojiReaction = useCallback((emoji: string) => {
     setEmojiPanelOpen(false);
-    // Write to Firebase — subscribeRoomEmojiReactions handles animation on ALL clients
-    sendRoomEmojiReaction(roomId, { emoji, byUid: myUid, byName: myName }).catch(() => {/* background: safe to swallow — ephemeral emoji broadcast */});
+    sendRoomEmojiReaction(roomId, { emoji, byUid: myUid, byName: myName }).catch(() => {});
     sendRoomChatMsg(roomId, {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
       text: emoji,
-      ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral emoji chat message */});
+      ts: Date.now() }).catch(() => {});
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [roomId, myUid, myName, myColor]);
 
-  // Fix 11: Load older messages (chat pagination)
   const handleLoadOlderMessages = useCallback(async () => {
     if (!chatOldestKey || loadingOlderMsgs || !hasOlderMsgs) return;
     setLoadingOlderMsgs(true);
@@ -2744,11 +1879,10 @@ export default function VoiceRoomScreen() {
         setMessages((prev: ChatMsg[]) => [...older.map(fbChatToMsg), ...prev]);
         setChatOldestKey(older[0].id);
       }
-    } catch { /* non-critical */ }
+    } catch {  }
     setLoadingOlderMsgs(false);
   }, [chatOldestKey, loadingOlderMsgs, hasOlderMsgs, roomId, myUid]);
 
-  // Fix 13: Navigate to another user's profile screen
   const handleViewOtherProfile = useCallback((uid: string, name: string) => {
     router.push({ pathname: '/user-profile', params: { uid, name } } as Parameters<typeof router.push>[0]);
   }, []);
@@ -2760,15 +1894,11 @@ export default function VoiceRoomScreen() {
     [accentColor],
   );
 
-  /* ── Layout ── */
+  
   const bottomPad  = Math.max(insets.bottom, Platform.OS === 'web' ? 20 : 8) + 14;
   const BOTTOM_BAR_H = bottomPad + 10 + 74;
 
-  /* ── Keyboard visibility (2026-10-15, Sumon) ──
-     While the comment keyboard is open the bottom action bar (Join Seat /
-     Speaker / Tasks / Gift / Invite / Exit) must NOT ride up above the
-     keyboard — it hides until the keyboard closes. Also keeps the latest
-     chat messages scrolled into view above the input. */
+  
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
     const onShow = Keyboard.addListener('keyboardDidShow', () => {
@@ -2779,12 +1909,7 @@ export default function VoiceRoomScreen() {
     return () => { onShow.remove(); onHide.remove(); };
   }, []);
 
-  /* ═══ RENDER ═══ */
-  // 2026-10-17 (Sumon): VOICE-ROOM BAN — banned users see this screen only.
-  // Login/app is untouched; they just cannot enter voice rooms. Placed AFTER
-  // all hooks (Rules of Hooks) and BEFORE the room render.
-  // 2026-10-17 (Sumon): PROFESSIONAL ban exit — safe back navigation, clear
-  // minimized state, hardware back handled. No crashes, no "something went wrong".
+  
   if (banCheckDone && voiceBan) {
     const handleBanBack = () => {
       try {
@@ -2846,16 +1971,12 @@ export default function VoiceRoomScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      /* 2026-10-16 (Sumon): PERMANENT keyboard fix — KAV actively manages
-         the keyboard on both platforms with 'padding' behavior. app.json uses
-         softwareKeyboardLayoutMode="pan" so the window does NOT shrink —
-         KAV is the single source of truth, no double-adjustment. */
+      
       behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
-      {/* 2026-10-16 (Sumon): Store-bought room background — full-bleed image
-          under the theme glow. Null-safe: renders nothing until a design is set. */}
+      {}
       {storeBgUrl && (
         <Image
           source={{ uri: storeBgUrl }}
@@ -2863,14 +1984,13 @@ export default function VoiceRoomScreen() {
           resizeMode="cover"
         />
       )}
-      {/* Animated theme background — breathing glow + floating particles.
-          Theme is Firebase-synced so every user sees the same animation. */}
+      {}
       <AnimatedThemeBackground accentColor={accentColor} />
       <SafeAreaView edges={['top']}>
-        {/* ═══ HEADER ═══ */}
+        {}
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 10, paddingBottom: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {/* Room avatar — cover image or first-letter initials */}
+            {}
             <Pressable onPress={() => setRoomInfoOpen(true)}>
               <View style={{
                 width: 36, height: 36, borderRadius: 18,
@@ -2888,14 +2008,14 @@ export default function VoiceRoomScreen() {
               </View>
             </Pressable>
 
-            {/* Room name — taps open room info panel */}
+            {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1 }}>
               <Text numberOfLines={1} style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>
                 {roomName}
               </Text>
             </Pressable>
 
-            {/* Join button — shown to passive viewers who haven't tapped Join yet */}
+            {}
             {showJoinBanner && (
               <ScalePress onPress={handleJoinRoom}>
                 <View style={{
@@ -2913,7 +2033,7 @@ export default function VoiceRoomScreen() {
             )}
 
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              {/* Diamond counter */}
+              {}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                 backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 999,
                 paddingHorizontal: 10, paddingVertical: 5,
@@ -2924,7 +2044,7 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
 
-              {/* Pending seat requests badge — host/admin only */}
+              {}
               {isOwnerOrAdmin && pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
@@ -2945,17 +2065,14 @@ export default function VoiceRoomScreen() {
                               ]);
                               if (seatsSnap.exists()) {
                                 Alert.alert(t('voiceRoom.screen.seatNoLongerEmpty'), t('voiceRoom.screen.seatNoLongerEmptyMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {/* background: safe to swallow — request cleanup after alert shown */});
+                                rejectSeatRequest(roomId, req.id).catch(() => {});
                                 return;
                               }
                               if (lockedSnap.exists() && lockedSnap.val() === true) {
                                 Alert.alert(t('voiceRoom.screen.seatLocked'), t('voiceRoom.screen.seatLockedMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {/* background: safe to swallow — request cleanup after alert shown */});
+                                rejectSeatRequest(roomId, req.id).catch(() => {});
                                 return;
                               }
-                              // 2026-10-14 Bug #2 fix (Sumon): Ghost seat — user requested seat then LEFT
-                              // the room. Owner accepting creates a ghost. Verify user is still
-                              // in the room before takeSeat.
                               const audienceSnap = await get(ref(database, `rooms/${roomId}/audience/${req.userId}`));
                               if (!audienceSnap.exists()) {
                                 Alert.alert(
@@ -2965,11 +2082,6 @@ export default function VoiceRoomScreen() {
                                 rejectSeatRequest(roomId, req.id).catch(() => {});
                                 return;
                               }
-                              // RACE FIX: the emptiness check above is read-then-act —
-                              // someone may sit down in the gap before the write.
-                              // Only mark the request approved when the seat was
-                              // actually won, otherwise the requester gets an
-                              // "approved" push but no seat.
                               const seatResult = await takeSeat(roomId, req.seatIdx, {
                                 userId: req.userId,
                                 userName: req.userName,
@@ -2979,7 +2091,7 @@ export default function VoiceRoomScreen() {
                                 role: 'member' });
                               if (!seatResult.success) {
                                 Alert.alert(t('voiceRoom.screen.seatNoLongerEmpty'), t('voiceRoom.screen.seatNoLongerEmptyMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {/* background: safe to swallow — request cleanup after alert shown */});
+                                rejectSeatRequest(roomId, req.id).catch(() => {});
                                 return;
                               }
                               await approveSeatRequest(roomId, req.id);
@@ -2988,10 +2100,9 @@ export default function VoiceRoomScreen() {
                                 senderName: 'System',
                                 senderColor: C.gold,
                                 text: t('voiceRoom.screen.memberJoinedSeatApproved', { name: req.userName, number: req.seatIdx + 1 }),
-                                ts: Date.now() }).catch(() => {/* background: safe to swallow — ephemeral system chat message */});
+                                ts: Date.now() }).catch(() => {});
                               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                             } catch (e) {
-                              // 2026-10-12: show the real cause, not a generic message.
                               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
                               Alert.alert(
                                 t('voiceRoom.screen.error'),
@@ -3003,8 +2114,6 @@ export default function VoiceRoomScreen() {
                           text: t('voiceRoom.screen.reject'),
                           style: 'destructive',
                           onPress: () => {
-                            // 2026-10-12: surface failures — a silent catch hid
-                            // denied writes here too.
                             rejectSeatRequest(roomId, req.id).then(() => {
                               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                             }).catch((e: unknown) => {
@@ -3039,9 +2148,9 @@ export default function VoiceRoomScreen() {
               )}
             </View>
           </View>
-          {/* ── Row 2: Hourly Rank + Live Audience (2026-10-14, imo-style) ── */}
+          {}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
-            {/* Hourly Rank */}
+            {}
             <ScalePress onPress={() => setLeaderboardOpen(true)}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -3053,9 +2162,7 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
-            {/* Live Audience pill — imo position, 1+/2+/1k+ format.
-                2026-10-15 (Sumon): counts everyone LIVE in the room, opens the
-                Live Audience page (same page the removed bottom row opened). */}
+            {}
             <LiveAudiencePill
               count={allMembers.length}
               onPress={() => setMembersOpen(true)}
@@ -3065,10 +2172,10 @@ export default function VoiceRoomScreen() {
         </View>
       </SafeAreaView>
 
-      {/* ═══ BODY ═══ */}
+      {}
       <View style={{ flex: 1, paddingHorizontal: 14, paddingBottom: BOTTOM_BAR_H }}>
 
-        {/* ── Join banner: audience only, never owner/admin/already-joined ── */}
+        {}
         {showJoinBanner && (
           <ScalePress onPress={handleJoinRoom}>
             <View style={{
@@ -3085,7 +2192,7 @@ export default function VoiceRoomScreen() {
           </ScalePress>
         )}
 
-        {/* ── My role badge — shown once actually inside the room ── */}
+        {}
         {(hasJoined || mySeatIdx >= 0) && (
           <View style={{
             alignSelf: 'flex-start', marginBottom: 8, flexDirection: 'row', alignItems: 'center',
@@ -3111,12 +2218,7 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Voice connection error banner ──
-            Previously `voiceError` (token fetch failure, LiveKit connect
-            failure, mic denial, unexpected disconnect) was destructured but
-            never rendered — the user sat in the room with no audio and no
-            explanation. The banner surfaces the engine's message with a
-            Retry action (hook's retryConnection: leave + re-join). */}
+        {}
         {voiceError && (
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -3140,16 +2242,14 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Seat grid — clean 5-column professional layout ── */}
+        {}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
           {seats.map((member: Participant | null, idx: number) => (
-            /* Track 3: wrapper measured on demand (measureInWindow) so gift fly
-               animations can target this seat's screen center. collapsable={false}
-               keeps a real native view for measurement. */
+            
             <View
               key={idx}
               collapsable={false}
-              style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
+              style={{ width: '25%', alignItems: 'center', paddingVertical: 6 }}
               ref={(v) => {
                 const id = member?.id;
                 if (!id) return;
@@ -3171,13 +2271,13 @@ export default function VoiceRoomScreen() {
           ))}
         </View>
 
-        {/* ── Room Chat ── */}
+        {}
         <View style={{
           flex: 1, borderRadius: 16,
           backgroundColor: themeSurface + '55',
           borderWidth: 1, borderColor: accentColor + '22',
           overflow: 'hidden' }}>
-          {/* Fix 11: Chat pagination — "Load earlier" button at the top */}
+          {}
           <FlatList<ChatMsg>
             ref={chatRef}
             data={messages}
@@ -3209,7 +2309,7 @@ export default function VoiceRoomScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={10}
           />
-          {/* 2026-10-14 (Sumon): Scroll-to-bottom floating button */}
+          {}
           {showChatScrollBtn && (
             <Pressable
               onPress={() => {
@@ -3233,7 +2333,7 @@ export default function VoiceRoomScreen() {
           )}
         </View>
 
-        {/* ── @ Mention picker ── */}
+        {}
         {mentionQuery !== null && mentionCandidates.length > 0 && (
           <View style={{
             maxHeight: 180,
@@ -3276,7 +2376,7 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Reply preview ── */}
+        {}
         {replyingTo && (
           <View style={{
             flexDirection: 'row', alignItems: 'center',
@@ -3292,7 +2392,7 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {/* ── Chat input (2026-10-14 polish): imo-style unified with bottom bar, no gap */}
+        {}
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 10,
           marginTop: 0, marginBottom: 0,
@@ -3302,7 +2402,7 @@ export default function VoiceRoomScreen() {
             <Feather name="smile" size={26} color={C.sub} />
           </ScalePress>
 
-          {/* @ Mention shortcut — opens picker for all live members */}
+          {}
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -3354,402 +2454,117 @@ export default function VoiceRoomScreen() {
         </View>
       </View>
 
-      {/* ═══ EMOJI PANEL ═══ */}
+      {}
       <EmojiPanel
         visible={emojiPanelOpen}
         onSelect={sendEmojiReaction}
         onClose={() => setEmojiPanelOpen(false)}
         bottomOffset={BOTTOM_BAR_H + 8}
       />
-
-      {/* ═══ BOTTOM BAR ═══ */}
-      {/* 2026-10-15 (Sumon): container background REMOVED — only the round buttons
-          float, no bar behind them. ALL buttons uniform 46px circles
-          (2026-10-15: Gift resized 56px → 46px per Sumon — same size as others).
-          fixed-width items + space-evenly = perfectly equal spacing.
-          Hidden while the comment keyboard is open. */}
-      {!keyboardOpen && (
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-evenly',
-        paddingBottom: bottomPad, paddingTop: 10, paddingHorizontal: 8,
-        backgroundColor: 'transparent' }}>
-        {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={handleMicBarPress}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): Option C Pulse Ring mic button.
-                Join Seat keeps user-plus; seated uses PulseMicButton. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-            {mySeatIdx < 0 ? (
-              <Feather name="user-plus" size={21} color={accentColor} />
-            ) : (
-              <PulseMicButton muted={muted} />
-            )}
-            </View>
-            <Text style={{
-              color: mySeatIdx < 0 ? accentColor : muted ? C.red : '#007AFF',
-              fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {mySeatIdx < 0
-                ? t('voiceRoom.screen.joinSeat')
-                : t('voiceRoom.screen.mic')}
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-
-        {/* Speaker — uniform circle */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={toggleSpeaker}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): Option E Liquid Gold speaker. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-                        <LiquidGoldSpeaker speakerOn={speakerOn} />
-            </View>
-            <Text style={{ color: speakerOn ? '#D4AF37' : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.speaker')}
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-
-        {/* Task Center — Royal Gold Calendar button (2026-10-15, Sumon picked Option A).
-            The calendar IS the button (no circular wrapper). Date updates live;
-            design never changes. */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-                        <LiveDateIcon />
-            </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              Tasks
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-
-        {/* Gifts — hero */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-                        <ObsidianGiftButton />
-            </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.gift')}
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-
-        {/* Invite — uniform circle */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={() => setInviteOpen(true)}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): Option B Sapphire Orbit invite button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-                        <SapphireInviteButton />
-            </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.invite')}
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-
-        {/* Exit Room — uniform circle */}
-        <View style={{ flex: 1, alignItems: 'center' }}>
-        <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
-            {/* 2026-10-15 (Sumon): Option B Obsidian Exit button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
-                        <ObsidianExitButton />
-            </View>
-            <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.exit')}
-            </Text>
-          </View>
-        </ScalePress>
-        </View>
-      </View>
-      )}
-
-      {/* ═══ MODALS ═══ */}
-      {/* Fix 3/8/9: Cloudinary upload happens inside RoomInfoModal; we persist the URL here */}
-      <RoomInfoModal
-        visible={roomInfoOpen}
-        onClose={() => setRoomInfoOpen(false)}
-        allMembers={allMembers}
-        weeklyEarned={weeklyEarned}
-        description={roomDescription}
-        roomTopic={roomTopic}
-        accent={accentColor}
-        roomName={roomName}
-        onChangeRoomName={(newName) => {
-          setRoomName(newName);
-          updateRoomSettings(roomId, { name: newName }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
-        roomImageUri={roomImageUri}
-        onChangeRoomImage={(cloudUrl) => {
-          setRoomImageUri(cloudUrl);
-          updateRoomSettings(roomId, { coverImageUrl: cloudUrl }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
+      <VoiceRoomBottomBar
+        keyboardOpen={keyboardOpen}
+        bottomPad={bottomPad}
+        handleMicBarPress={handleMicBarPress}
+        mySeatIdx={mySeatIdx}
+        muted={muted}
+        accentColor={accentColor}
+        toggleSpeaker={toggleSpeaker}
+        speakerOn={speakerOn}
+        setTaskCenterOpen={setTaskCenterOpen}
+        setGiftsOpen={setGiftsOpen}
+        setInviteOpen={setInviteOpen}
+        setExitModalOpen={setExitModalOpen}
+      />
+      <VoiceRoomModals
+        accentColor={accentColor}
         roomId={roomId}
-        isOwner={myRole === 'host'}
-        isAdmin={myRole === 'admin'}
-        ownerId={ownerId}
-        onDisband={handleDisband}
-        onLeave={() => { setRoomInfoOpen(false); setExitModalOpen(true); }}
-        onVisitProfile={handleViewOtherProfile}
-      />
-      <OperationHistoryModal
-        visible={opHistOpen}
-        onClose={() => setOpHistOpen(false)}
-        records={blockedRecs}
-        onUnblock={unblockUser}
-        accent={accentColor}
-      />
-      <SettingsModal
-        visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        isOwnerOrAdmin={isOwnerOrAdmin}
-        canEdit={myRole === 'host'}
-        topic={roomTopic}
-        setTopic={(newTopic) => {
-          setRoomTopic(newTopic);
-          updateRoomSettings(roomId, { topic: newTopic }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
-        description={roomDescription}
-        setDescription={(newDesc) => {
-          setRoomDescription(newDesc);
-          updateRoomSettings(roomId, { description: newDesc }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
-        activeThemeId={activeThemeId}
-        onThemeChange={(newThemeId) => {
-          // Optimistic local update + Firebase sync so ALL users see the change.
-          activeThemeIdRef.current = newThemeId;
-          setActiveThemeId(newThemeId);
-          updateRoomSettings(roomId, { themeId: newThemeId }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
-        onOpenHistory={() => { setSettingsOpen(false); setOpHistOpen(true); }}
-        accent={accentColor}
-        roomIsPublic={roomIsPublic}
-        roomIsLocked={roomIsLocked}
-        onSaveSettings={(newIsPublic, newIsLocked) => {
-          setRoomIsPublic(newIsPublic);
-          setRoomIsLocked(newIsLocked);
-          updateRoomSettings(roomId, { isPublic: newIsPublic, isLocked: newIsLocked }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
-        roomId={roomId}
-      />
-      <SeatActionSheet
-        visible={seatActionOpen}
-        seatIdx={seatActionIdx}
-        member={seatActionMember ?? undefined}
-        myRole={myRole}
-        myId={myUid}
-        locked={seatActionIdx >= 0 && lockedSeats.has(seatActionIdx)}
-        audience={audience}
-        onClose={() => setSeatActionOpen(false)}
-        onDown={() => { downFromSeat(seatActionIdx); setSeatActionOpen(false); }}
-        onJoin={() => { joinSeat(seatActionIdx); setSeatActionOpen(false); }}
-        onMute={() => { if (seatActionMember) muteToggleMember(seatActionMember.id); setSeatActionOpen(false); }}
-        onSetAdmin={() => { if (seatActionMember) setAdminRole(seatActionMember.id); setSeatActionOpen(false); }}
-        onDismissAdmin={() => { if (seatActionMember) dismissAdmin(seatActionMember.id); setSeatActionOpen(false); }}
-        onMention={() => { if (seatActionMember) { handleMention(seatActionMember.name); setSeatActionOpen(false); } }}
-        onBlock={() => { if (seatActionMember) { blockUser(seatActionMember.id, 'room-block'); setSeatActionOpen(false); } }}
-        onUnblock={() => { if (seatActionMember) { unblockUser(seatActionMember.id); setSeatActionOpen(false); } }}
-        isRoomBlocked={!!seatActionMember && blockedRecs.some((r: BlockRecord) => r.id === seatActionMember.id && r.isActive && r.action === 'room-block')}
-        onLock={() => { lockSeat(seatActionIdx); setSeatActionOpen(false); }}
-        onUnlock={() => { unlockSeat(seatActionIdx); setSeatActionOpen(false); }}
-        onInvite={() => { setInvToSeatIdx(seatActionIdx); setSeatActionOpen(false); setInvToSeatOpen(true); }}
-        accent={accentColor}
-      />
-      <InviteToSeatModal
-        visible={invToSeatOpen}
-        audience={audience}
-        seatIdx={invToSeatIdx}
-        onClose={() => setInvToSeatOpen(false)}
-        onInvite={(memberId) => { inviteToSeat(memberId, invToSeatIdx); setInvToSeatOpen(false); }}
-        accent={accentColor}
-      />
-      <InviteModal
-        visible={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        roomId={roomId}
-        roomName={roomName}
-      />
-      {/* ── Track 3: gift showpiece overlays (absolute, pointerEvents=none) ──
-          Above the seat grid/chat, below the modals. */}
-      <GiftFlyAnimation ref={giftFlyRef} />
-      {roomId ? <GiftReceiveBanners roomId={roomId} /> : null}
-      {/* ── Entry effect: "X is Coming" banner (2026-10-10) ── */}
-      {entryBanner ? (
-        <EntryBanner
-          name={entryBanner.name}
-          photoURL={entryBanner.photoURL}
-          nobleRankIndex={entryBanner.nobleRankIndex}
-          onDismiss={() => setEntryBanner(null)}
-        />
-      ) : null}
-      <GiftsModal
-        visible={giftsOpen}
-        onClose={() => { setGiftsOpen(false); setGiftsRecipient(null); }}
-        onGiftSent={handleGiftSent}
-        // 2026-10-13 (Sumon-এর নিয়ম): gift সবাইকে পাঠানো যাবে — seated +
-        // audience সবাই (self সহ)। আগে শুধু seated members ছিল।
-        members={allMembers}
-        initialRecipient={giftsRecipient}
-        walletBalance={walletBalance}
         myUid={myUid}
         myName={myName}
-        roomId={roomId}
-      />
-      <LeaderboardModal
-        visible={leaderboardOpen}
-        onClose={() => setLeaderboardOpen(false)}
-      />
-      <RoomMembersModal
-        visible={membersOpen}
-        onClose={() => setMembersOpen(false)}
+        myRole={myRole}
+        myRoleLevel={myRoleLevel}
         ownerId={ownerId}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        roomName={roomName}
+        setRoomName={setRoomName}
+        roomTopic={roomTopic}
+        setRoomTopic={setRoomTopic}
+        roomDescription={roomDescription}
+        setRoomDescription={setRoomDescription}
+        roomImageUri={roomImageUri}
+        setRoomImageUri={setRoomImageUri}
+        roomIsPublic={roomIsPublic}
+        setRoomIsPublic={setRoomIsPublic}
+        roomIsLocked={roomIsLocked}
+        setRoomIsLocked={setRoomIsLocked}
+        activeThemeId={activeThemeId}
+        setActiveThemeId={setActiveThemeId}
+        activeThemeIdRef={activeThemeIdRef}
+        weeklyEarned={weeklyEarned}
+        walletBalance={walletBalance}
         seats={seats}
         audience={audience}
-        onManageMember={(m) => { setMembersOpen(false); setActiveMember(m); }}
+        allMembers={allMembers}
+        blockedRecs={blockedRecs}
+        lockedSeats={lockedSeats}
+        roomInfoOpen={roomInfoOpen}
+        setRoomInfoOpen={setRoomInfoOpen}
+        opHistOpen={opHistOpen}
+        setOpHistOpen={setOpHistOpen}
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
+        seatActionOpen={seatActionOpen}
+        setSeatActionOpen={setSeatActionOpen}
+        seatActionIdx={seatActionIdx}
+        seatActionMember={seatActionMember}
+        mySeatIdx={mySeatIdx}
+        invToSeatOpen={invToSeatOpen}
+        setInvToSeatOpen={setInvToSeatOpen}
+        invToSeatIdx={invToSeatIdx}
+        setInvToSeatIdx={setInvToSeatIdx}
+        inviteOpen={inviteOpen}
+        setInviteOpen={setInviteOpen}
+        giftsOpen={giftsOpen}
+        setGiftsOpen={setGiftsOpen}
+        giftsRecipient={giftsRecipient}
+        setGiftsRecipient={setGiftsRecipient}
+        leaderboardOpen={leaderboardOpen}
+        setLeaderboardOpen={setLeaderboardOpen}
+        membersOpen={membersOpen}
+        setMembersOpen={setMembersOpen}
+        activeMember={activeMember}
+        setActiveMember={setActiveMember}
+        exitModalOpen={exitModalOpen}
+        setExitModalOpen={setExitModalOpen}
+        pinGate={pinGate}
+        pinInput={pinInput}
+        setPinInput={setPinInput}
+        pinError={pinError}
+        setPinError={setPinError}
+        pinVerifying={pinVerifying}
+        submitPinGate={submitPinGate}
+        cancelPinGate={cancelPinGate}
+        giftFlyRef={giftFlyRef}
+        entryBanner={entryBanner}
+        setEntryBanner={setEntryBanner}
+        handleDisband={handleDisband}
+        handleViewOtherProfile={handleViewOtherProfile}
+        handleViewOwnProfile={handleViewOwnProfile}
+        handleEditOwnProfile={handleEditOwnProfile}
+        handleMention={handleMention}
+        handleGiftSent={handleGiftSent}
+        handleLeave={handleLeave}
+        handleMinimize={handleMinimize}
+        downFromSeat={downFromSeat}
+        joinSeat={joinSeat}
+        muteToggleMember={muteToggleMember}
+        setAdminRole={setAdminRole}
+        dismissAdmin={dismissAdmin}
+        blockUser={blockUser}
+        unblockUser={unblockUser}
+        lockSeat={lockSeat}
+        unlockSeat={unlockSeat}
+        inviteToSeat={inviteToSeat}
       />
-      <MemberManageModal
-        member={activeMember}
-        myRole={myRole}
-        myId={myUid}
-        onClose={() => setActiveMember(null)}
-        onGift={() => { setGiftsRecipient(activeMember); setActiveMember(null); setGiftsOpen(true); }}
-        onMention={handleMention}
-        onBlock={(action) => { if (activeMember) blockUser(activeMember.id, action); setActiveMember(null); }}
-        onUnblock={() => { if (activeMember) unblockUser(activeMember.id); setActiveMember(null); }}
-        isCommentBlocked={!!activeMember && blockedRecs.some((r: BlockRecord) => r.id === activeMember.id && r.isActive && r.action === 'comment-block')}
-        isRoomBlocked={!!activeMember && blockedRecs.some((r: BlockRecord) => r.id === activeMember.id && r.isActive && r.action === 'room-block')}
-        onReport={(memberId, memberName) => {
-          submitReport({
-            reporterUid: myUid,
-            reporterName: myName,
-            reportedUid: memberId,
-            reportedName: memberName,
-            reason: 'inappropriate',
-            roomId }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.memberManage.reportError'));
-          });
-          setActiveMember(null);
-        }}
-        onSetAdmin={() => { if (activeMember) setAdminRole(activeMember.id); setActiveMember(null); }}
-        onDismissAdmin={() => { if (activeMember) dismissAdmin(activeMember.id); setActiveMember(null); }}
-        onViewProfile={handleViewOwnProfile}
-        onViewOtherProfile={handleViewOtherProfile}
-        onEditProfile={handleEditOwnProfile}
-        // Issue 2: Down Mic / Leave Seat (self view — replaces Copy V ID)
-        isSeated={activeMember ? seats.some((s) => s?.id === activeMember.id) : false}
-        onDown={() => { if (mySeatIdx >= 0) downFromSeat(mySeatIdx); setActiveMember(null); }}
-        // Issue 4: Owner/Admin — move another member down from their seat
-        onDownFromSeat={() => {
-          if (activeMember) {
-            const targetIdx = seats.findIndex((s) => s?.id === activeMember.id);
-            if (targetIdx >= 0) downFromSeat(targetIdx);
-          }
-          setActiveMember(null);
-        }}
-      />
-      <ExitModal
-        visible={exitModalOpen}
-        onClose={() => setExitModalOpen(false)}
-        onLeave={handleLeave}
-        onMinimize={handleMinimize}
-        roomName={roomName}
-      />
-      {/* P0 security (2026-10-12): in-screen PIN gate overlay. Blocks the
-          entire room UI until the correct 4-digit PIN is entered — closes
-          the deep-link bypass (invite/notification/profile taps). */}
-      <Modal
-        visible={pinGate === 'open'}
-        animationType="fade"
-        transparent={false}
-        onRequestClose={cancelPinGate}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }} edges={['top', 'bottom']}>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
-            <View style={{
-              width: 72, height: 72, borderRadius: 36,
-              backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center',
-              marginBottom: 20 }}>
-              <Feather name="lock" size={30} color="#007AFF" />
-            </View>
-            <Text style={{ color: '#000000', fontSize: 20, fontWeight: '900', marginBottom: 6, textAlign: 'center' }} numberOfLines={1}>
-              {roomName || t('voiceRoom.screen.pinGateTitle')}
-            </Text>
-            <Text style={{ color: '#8E8E93', fontSize: 14, marginBottom: 24, textAlign: 'center' }}>
-              {t('voiceRoom.screen.pinGateMsg')}
-            </Text>
-            <TextInput
-              style={{
-                backgroundColor: '#F2F2F7', borderRadius: 14, borderWidth: 1.5,
-                borderColor: pinError ? '#FF4B4B' : '#E3F2FD',
-                color: '#000000', fontSize: 28, fontWeight: '800',
-                textAlign: 'center', letterSpacing: 16,
-                paddingVertical: 14, marginBottom: 8, width: 220 }}
-              placeholder="••••"
-              placeholderTextColor="#C7C7CC"
-              value={pinInput}
-              onChangeText={(txt) => {
-                const digits = txt.replace(/[^0-9]/g, '').slice(0, 4);
-                setPinInput(digits);
-                if (pinError) setPinError('');
-              }}
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              autoFocus
-              editable={!pinVerifying}
-              onSubmitEditing={submitPinGate}
-            />
-            {pinError ? (
-              <Text style={{ color: '#FF4B4B', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>{pinError}</Text>
-            ) : (
-              <Text style={{ color: '#C7C7CC', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>
-                {t('voiceRoom.screen.pinNumbersOnly')}
-              </Text>
-            )}
-            <Pressable
-              onPress={submitPinGate}
-              disabled={pinVerifying || pinInput.length !== 4}
-              style={{
-                backgroundColor: '#E3F2FD', borderRadius: 14,
-                paddingVertical: 14, paddingHorizontal: 48, marginBottom: 12,
-                opacity: (pinVerifying || pinInput.length !== 4) ? 0.5 : 1 }}
-            >
-              <Text style={{ color: '#007AFF', fontSize: 16, fontWeight: '800' }}>
-                {pinVerifying ? t('voiceRoom.screen.pinVerifying') : t('voiceRoom.screen.pinJoin')}
-              </Text>
-            </Pressable>
-            <Pressable onPress={cancelPinGate} style={{ paddingVertical: 10 }}>
-              <Text style={{ color: '#8E8E93', fontSize: 15, fontWeight: '600' }}>
-                {t('voiceRoom.screen.pinCancel')}
-              </Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </Modal>
     </View>
     </KeyboardAvoidingView>
   );
