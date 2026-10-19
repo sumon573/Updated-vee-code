@@ -55,6 +55,9 @@ function buildFormData(localUri: string, mime: string, fileName: string, type: s
  * - HTTP 5xx: one retry. HTTP 4xx (auth/validation): fail fast, no retry.
  * - Aborted (caller cancelled, e.g. screen unmounted): always throws
  *   'Upload cancelled' immediately, never retried.
+ * - Timeout (2026-10-19, Sumon): when `timeoutMs` is set, the upload is
+ *   aborted after that long and throws a REAL timeout error immediately
+ *   (never retried — a 30s stall won't clear in another 30s).
  * The body is rebuilt per attempt — a consumed FormData cannot be re-sent.
  */
 async function postUpload(
@@ -62,33 +65,58 @@ async function postUpload(
   idToken: string,
   signal: AbortSignal | undefined,
   label: string,
+  timeoutMs?: number,
 ): Promise<any> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) throw new Error('Upload cancelled');
-    let response: Response;
-    try {
-      response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: buildBody(),
-        ...(signal ? { signal } : {}),
-      });
-    } catch (e) {
-      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
-        throw new Error('Upload cancelled');
+  // Timeout controller: linked to the caller's signal (caller abort still
+  // propagates) plus our own timer when a bounded wait was requested.
+  const timeoutCtrl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
+  const onCallerAbort = () => timeoutCtrl.abort();
+  if (timeoutMs && timeoutMs > 0) {
+    timer = setTimeout(() => {
+      timedOut = true;
+      timeoutCtrl.abort();
+    }, timeoutMs);
+  }
+  if (signal) {
+    if (signal.aborted) timeoutCtrl.abort();
+    else signal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  const timeoutMessage = `${label} upload timed out after ${Math.round((timeoutMs || 0) / 1000)}s — please check your connection and try again.`;
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal?.aborted) throw new Error('Upload cancelled');
+      if (timeoutCtrl.signal.aborted && timedOut) throw new Error(timeoutMessage);
+      let response: Response;
+      try {
+        response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: buildBody(),
+          signal: timeoutCtrl.signal,
+        });
+      } catch (e) {
+        if (timedOut) throw new Error(timeoutMessage);
+        if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
+          throw new Error('Upload cancelled');
+        }
+        if (attempt === 0) continue; // transient network failure — one retry
+        throw e;
       }
-      if (attempt === 0) continue; // transient network failure — one retry
-      throw e;
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        const msg = err?.error ?? `${label} upload failed (${response.status})`;
+        if (response.status >= 500 && attempt === 0) continue; // transient server error — one retry
+        throw new Error(msg);
+      }
+      return await response.json();
     }
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      const msg = err?.error ?? `${label} upload failed (${response.status})`;
-      if (response.status >= 500 && attempt === 0) continue; // transient server error — one retry
-      throw new Error(msg);
-    }
-    return await response.json();
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener('abort', onCallerAbort);
   }
   // Unreachable: both attempts either returned or threw.
   throw new Error(`${label} upload failed`);
@@ -108,6 +136,11 @@ type UploadOptions = {
   mimeHint?: string;     // 2026-10-18: explicit MIME (e.g. 'video/mp4') when URI has no extension
   /** 2026-10-19: AbortController signal — lets the caller cancel an in-flight upload. */
   signal?: AbortSignal;
+  /** 2026-10-19 (Sumon): upload timeout in ms — a hung upload must fail with
+   *  a REAL error instead of spinning forever (DP black-screen fix). Only
+   *  set on paths where a bounded wait is safe (profile photos); video/audio
+   *  uploads stay unbounded. */
+  timeoutMs?: number;
 };
 
 /**
@@ -166,6 +199,7 @@ export async function uploadImage(
     idToken,
     options.signal,
     'Media',
+    options.timeoutMs,
   );
 
   const url = data.url as string;
@@ -185,9 +219,14 @@ export async function uploadImage(
 
 /**
  * Profile photo upload.
+ * 2026-10-19 (Sumon): 30s timeout — a hung DP upload must surface a real
+ * error instead of a stuck spinner (DP black-screen fix). Downscaling to
+ * ~1024px is NOT done here: expo-image-manipulator is a native module and
+ * Sumon hasn't approved new native modules (flagged for a server-side
+ * resize on the media server instead).
  */
 export async function uploadProfilePhoto(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, { folder: 'vee/avatars' });
+  return uploadImage(localUri, { folder: 'vee/avatars', timeoutMs: 30_000 });
 }
 
 /**

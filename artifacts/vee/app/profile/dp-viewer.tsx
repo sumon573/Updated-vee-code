@@ -25,12 +25,16 @@ export default function DpViewerScreen() {
   const [displayName, setDisplayName] = useState('User');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  // 2026-10-19 (Sumon): if the DP image fails to load (dead URL after a
+  // failed upload), show the initials fallback instead of a black screen.
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (!targetUid) { setLoading(false); return; }
     getUser(targetUid).then((u) => {
       setPhotoURL(u?.photoURL || null);
       setDisplayName(u?.name || 'User');
+      setImageError(false);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [targetUid]);
@@ -48,6 +52,7 @@ export default function DpViewerScreen() {
       const upload = await uploadProfilePhoto(result.assets[0].uri);
       await updateUser(user.uid, { photoURL: upload.url });
       setPhotoURL(upload.url);
+      setImageError(false);
     } catch {
       // Silent fail — user can retry
     } finally {
@@ -68,11 +73,12 @@ export default function DpViewerScreen() {
         </Pressable>
         {loading ? (
           <PremiumLoader size="large" />
-        ) : photoURL ? (
+        ) : photoURL && !imageError ? (
           <Image
             source={{ uri: photoURL }}
             style={{ width: '100%', aspectRatio: 1, maxHeight: '70%' }}
             resizeMode="contain"
+            onError={() => setImageError(true)}
           />
         ) : (
           <View style={{ width: 160, height: 160, borderRadius: 80, backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }}>

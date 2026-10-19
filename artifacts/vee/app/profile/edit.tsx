@@ -119,19 +119,24 @@ export default function EditProfileScreen() {
     if (!user?.uid) return;
     setUploadingPhoto(true);
     try {
-      // RC8-B2: Delete old Cloudinary asset before uploading a new one to prevent
-      // orphaned images accumulating in the Cloudinary account. The publicId is
-      // stored in users/{uid}/photoPublicId by the previous upload call.
+      // The old asset's publicId is stored in users/{uid}/photoPublicId by
+      // the previous upload call.
       const oldPublicId = profile?.photoPublicId;
-      if (oldPublicId) {
-        deleteCloudinaryAsset(oldPublicId).catch(() => {/* non-critical */});
-      }
 
       const result = await uploadProfilePhoto(localUri);
       setPhotoURI(result.url);
       await updateUser(user.uid, {
         photoURL: result.url,
         ...(result.publicId ? { photoPublicId: result.publicId } : {}) });
+
+      // 2026-10-19 (Sumon): delete the old asset ONLY AFTER the new upload
+      // succeeded. Deleting before (the old RC8-B2 order) meant a failed
+      // upload left Firebase pointing at a deleted image = black screen.
+      // (Currently a no-op: Telegram storage has no delete; kept for the
+      // safe ordering in case a future backend re-implements it.)
+      if (oldPublicId && oldPublicId !== result.publicId) {
+        deleteCloudinaryAsset(oldPublicId).catch(() => {/* non-critical */});
+      }
     } catch (err) {
       Alert.alert(t('editProfile.error'), err instanceof Error ? err.message : t('editProfile.uploadFailedMsg'));
     } finally {
