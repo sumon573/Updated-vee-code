@@ -379,6 +379,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       // Mark offline before signing out — with timeout so offline hang doesn't block logout
       await withTimeout(setUserOffline(user.uid), 3000).catch(() => {/* background: safe to swallow — onDisconnect hook marks offline anyway */});
+      // 2026-10-19 (batch 2D): delete THIS device's per-device FCM token
+      // BEFORE sign-out (rules require auth) so a logged-out device stops
+      // receiving the user's pushes.
+      await import('../services/fcmPushService').then(({ unregisterFcmToken }) =>
+        unregisterFcmToken(user.uid).catch(() => {})
+      ).catch(() => {});
     }
     await firebaseLogout();
   }, [user]);

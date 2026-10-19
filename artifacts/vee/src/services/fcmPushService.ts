@@ -5,7 +5,10 @@
  * - VPS sends FCM direct to the device's FCM token (unlimited, $0)
  * - App gets FCM token via expo-notifications (official Expo plugin, no third-party risk)
  * - expo-notifications displays in FOREGROUND + BACKGROUND + KILLED
- * - Token saved to users/{uid}/fcmToken (VPS reads from here)
+ * - Token saved per-device to users/{uid}/fcmTokens/{deviceId} (2026-10-19:
+ *   a scalar fcmToken meant a second device's login clobbered the first
+ *   device's token). The legacy users/{uid}/fcmToken is still written for
+ *   backward compat with the current server; per-device node removed on logout.
  * 
  * This replaces OneSignal for push delivery. OneSignal SDK can stay for now
  * (or be removed later) — it is not used for receiving.
@@ -14,8 +17,29 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { ref, set } from 'firebase/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ref, set, remove } from 'firebase/database';
 import { database } from '../config/firebase';
+
+/** AsyncStorage key for the stable per-device push ID (pure JS — no native module). */
+const FCM_DEVICE_ID_KEY = 'vee_fcm_device_id';
+
+/**
+ * Stable per-device ID used as the key under users/{uid}/fcmTokens/.
+ * Generated once and persisted in AsyncStorage (no native module needed).
+ */
+async function getOrCreateDeviceId(): Promise<string> {
+  try {
+    let id = await AsyncStorage.getItem(FCM_DEVICE_ID_KEY);
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      await AsyncStorage.setItem(FCM_DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'dev_unknown';
+  }
+}
 
 let handlerSet = false;
 
@@ -89,11 +113,38 @@ export async function registerFcmToken(uid: string): Promise<string | null> {
     await set(ref(database, `users/${uid}/fcmToken`), fcmToken);
     // Also mirror to oneSignalId for VPS backward-compat (VPS checks both)
     await set(ref(database, `users/${uid}/oneSignalId`), fcmToken);
+    // 2026-10-19 (batch 2D): per-device token node — multi-device pushes.
+    // The scalar fcmToken above is kept for backward compat with the current
+    // server; devices are distinguished by the fcmTokens/{deviceId} map so
+    // one device's login never clobbers another's. (Server-side multicast of
+    // all tokens in this map is a separate VPS task — client only.)
+    try {
+      const deviceId = await getOrCreateDeviceId();
+      await set(ref(database, `users/${uid}/fcmTokens/${deviceId}`), fcmToken);
+    } catch {
+      // non-critical — legacy scalar token already saved above
+    }
     console.log('[FCM] ✅ Token saved to Firebase');
     return fcmToken;
   } catch (e) {
     console.log('[FCM] registerFcmToken error:', e);
     return null;
+  }
+}
+
+/**
+ * 2026-10-19 (batch 2D): remove THIS device's token on logout so a logged-out
+ * device stops receiving the user's pushes. Must run BEFORE sign-out (rules
+ * require auth). The legacy scalar fcmToken is left untouched — it is
+ * overwritten by the next login on this or any device.
+ */
+export async function unregisterFcmToken(uid: string): Promise<void> {
+  try {
+    const deviceId = await getOrCreateDeviceId();
+    await remove(ref(database, `users/${uid}/fcmTokens/${deviceId}`));
+    console.log('[FCM] device token removed on logout');
+  } catch {
+    // non-critical — stale token entry is harmless
   }
 }
 
