@@ -280,25 +280,37 @@ export function GiftsModal({
     // during the 1.6s success animation (would allow double-charge).
     let didSucceed = false;
     try {
-      // Idempotency: ONE key per (recipient, gift), PERSISTED across attempts.
+      // Idempotency: ONE key per (recipient, gift, unit), PERSISTED across attempts.
       // 2026-10-12 audit fix (CRITICAL C2): keys were regenerated on every
       // handleSend(). If the app crashed after charge but before confirmation,
       // the retry used a NEW key → double-charge. Now: reuse the pending key
       // from AsyncStorage; clear it only on confirmed success.
-      const keys = new Map<string, string>();
+      // 2026-10-19 (Sumon): units q>=1 used fresh random UUIDs that were NEVER
+      // persisted — a crash after charging unit q but before its confirmation
+      // double-charged that unit on retry (and the cleared q=0 key meant a
+      // retry of a partially-failed recipient double-charged the units that
+      // HAD succeeded). Now every unit's key is persisted BEFORE the loop,
+      // and ALL of a recipient's keys are cleared only after the recipient's
+      // FULL quantity succeeds — so a retry reuses the same keys and the
+      // server dedupes instead of double-charging.
+      const keys = new Map<string, string[]>();
       for (const r of recipients) {
-        const storeKey = `pendingGiftKey:${myUid}:${r.id}:${g.id}`;
-        let key: string | null = null;
-        try {
-          key = await AsyncStorage.getItem(storeKey);
-        } catch { /* non-critical */ }
-        if (!key) {
-          key = Crypto.randomUUID();
+        const unitKeys: string[] = [];
+        for (let q = 0; q < quantity; q++) {
+          const storeKey = `pendingGiftKey:${myUid}:${r.id}:${g.id}:q${q}`;
+          let key: string | null = null;
           try {
-            await AsyncStorage.setItem(storeKey, key);
+            key = await AsyncStorage.getItem(storeKey);
           } catch { /* non-critical */ }
+          if (!key) {
+            key = Crypto.randomUUID();
+            try {
+              await AsyncStorage.setItem(storeKey, key);
+            } catch { /* non-critical */ }
+          }
+          unitKeys.push(key);
         }
-        keys.set(r.id, key);
+        keys.set(r.id, unitKeys);
       }
       const senderAvatar = members.find(m => m.id === myUid)?.photoURL;
 
@@ -312,7 +324,9 @@ export function GiftsModal({
         let recipientErr: unknown = null;
         let recipientInsufficient = false;
         for (let q = 0; q < quantity; q++) {
-        const key = q === 0 ? keys.get(r.id)! : Crypto.randomUUID();
+        // Persisted per-unit key — the SAME key is reused on retry so the
+        // server dedupes instead of double-charging (see the C2 comment above).
+        const key = keys.get(r.id)![q];
         let lastErr: unknown = null;
         let charged = false;
         // SELF-GIFT: route through server /send-gift (deduct-only).
@@ -339,12 +353,6 @@ export function GiftsModal({
           recipientInsufficient = lastErr instanceof InsufficientFundsError;
           break; // stop quantity loop for this recipient
         }
-        // 2026-10-12 audit fix (C2): clear the persisted idempotency key —
-        // the gift is confirmed, a future attempt must use a fresh key.
-        try {
-          await AsyncStorage.removeItem(`pendingGiftKey:${myUid}:${r.id}:${g.id}`);
-        } catch { /* non-critical */ }
-
         // Best-effort feed entry — the gift is already charged. Fire and
         // forget: onGiftSent below must NOT wait for the RTDB echo.
         if (roomId) {
@@ -363,6 +371,15 @@ export function GiftsModal({
         }
         } // end quantity loop
         if (recipientOk) {
+          // Full quantity confirmed — clear ALL of this recipient's persisted
+          // unit keys so the next fresh send uses new keys. Recipients that
+          // failed keep their keys: a retry reuses them and the server
+          // dedupes instead of double-charging (2026-10-19, Sumon).
+          for (let q = 0; q < quantity; q++) {
+            try {
+              await AsyncStorage.removeItem(`pendingGiftKey:${myUid}:${r.id}:${g.id}:q${q}`);
+            } catch { /* non-critical */ }
+          }
           return { ok: true, recipient: r };
         } else {
           return { ok: false, recipient: r, error: recipientErr, insufficient: recipientInsufficient };
