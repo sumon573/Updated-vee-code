@@ -17,7 +17,7 @@ import { Chat } from '@/src/features/chat/types';
 import { subscribeUserChats } from '@/src/features/chat/services/firebaseDmService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
-import { getUser } from '@/src/services/userService';
+import { subscribeLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { useEffect } from 'react';
 
 export default function IMOSearchScreen() {
@@ -34,28 +34,25 @@ export default function IMOSearchScreen() {
   }, [user?.uid]);
 
   // DP HYDRATION (2026-10-10): Fetch missing DPs from RTDB
+  // 2026-10-19 perf: reuse the module-level ref-counted profile cache
+  // (useLiveUserProfile.ts, batch 2B) instead of one whole-node getUser()
+  // per row. Concurrent rows and screens share a single users/{uid}
+  // subscription per uid, payloads are name+avatar only, and DPs stay live
+  // instead of one-shot.
   useEffect(() => {
-    const missing = chats
+    const missing = [...new Set(chats
       .filter((c) => c.participantId && !c.participantAvatar && !avatarCache[c.participantId])
-      .map((c) => c.participantId!);
+      .map((c) => c.participantId!))];
     if (missing.length === 0) return;
-    Promise.all(
-      [...new Set(missing)].map(async (uid) => {
-        try {
-          const p = await getUser(uid);
-          const url = (p as any)?.photoURL;
-          if (url) return [uid, url] as const;
-        } catch {/* ignore */}
-        return null;
-      })
-    ).then((results) => {
-      const updates: Record<string, string> = {};
-      for (const r of results) if (r) updates[r[0]] = r[1];
-      if (Object.keys(updates).length > 0) {
-        setAvatarCache((prev) => ({ ...prev, ...updates }));
-      }
-    });
-  }, [chats]);
+    const unsubs = missing.map((uid) =>
+      subscribeLiveUserProfile(uid, (p) => {
+        if (p.avatar) {
+          setAvatarCache((prev) => (prev[uid] ? prev : { ...prev, [uid]: p.avatar as string }));
+        }
+      }),
+    );
+    return () => { unsubs.forEach((u) => u()); };
+  }, [chats, avatarCache]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return chats;
