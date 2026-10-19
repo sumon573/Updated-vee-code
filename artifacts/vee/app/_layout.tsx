@@ -85,6 +85,11 @@ import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoom
 import RoomInvitePopup from '@/src/features/voice-room/components/RoomInvitePopup';
 import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBar';
 import {
+  startIncomingCallAlert,
+  stopIncomingCallAlert,
+  dismissIncomingCallNotifications,
+} from '@/src/features/audio-call/services/incomingCallRingtone';
+import {
   isCallMinimizing,
   getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { isVoiceRoomAudioActive } from '@/src/services/audioOwner';
@@ -688,6 +693,23 @@ function IncomingCallListener({
     incomingRef.current = call;
     setIncoming(call);
   }, []);
+
+  // 2026-10-19 polish: incoming calls were completely silent. While the
+  // ringing modal is up, play the ringtone + vibration (idempotent start);
+  // stop both the moment the modal goes away (accept / decline /
+  // caller-cancel / timeout) and dismiss the stale tray notification.
+  // The cleanup also stops the alert on unmount.
+  useEffect(() => {
+    if (incoming) {
+      startIncomingCallAlert();
+    } else {
+      stopIncomingCallAlert();
+      dismissIncomingCallNotifications().catch(() => {});
+    }
+    return () => {
+      stopIncomingCallAlert();
+    };
+  }, [incoming]);
 
   // 2026-10-19 CRASH-RISK fix: consume the push-tap-seeded incoming call so
   // the ringing modal renders on launch. The live RTDB subscribe (below)

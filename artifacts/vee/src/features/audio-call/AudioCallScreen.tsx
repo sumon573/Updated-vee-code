@@ -137,8 +137,10 @@ export default function AudioCallScreen({
   const router = useRouter();
   const navigation = useNavigation();
   const { t } = useTranslation();
-  // Keep screen on during the call — prevents the OS from sleeping the
-  // device mid-call (2026-10-09).
+  // 2026-10-19 polish (stale comment corrected): there is NO keep-awake call
+  // here — the screen MAY sleep mid-call. Audio keeps running because the
+  // Android mic foreground service holds the process (voiceForegroundService),
+  // not because the display stays on.
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);
