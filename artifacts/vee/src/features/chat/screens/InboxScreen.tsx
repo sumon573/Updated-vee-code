@@ -448,22 +448,31 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, []);
 
   // 2026-10-14 (Sumon): scroll position track — নিচে না থাকলে floating button দেখাও।
+  // 2026-10-19 perf: ref-guard — scrollEventThrottle={16} fires ~60×/s; only
+  // setState when the boolean actually flips (was: setState on every event).
+  const showScrollBtnRef = useRef(false);
+  const setShowScrollBtnGuarded = useCallback((v: boolean) => {
+    if (showScrollBtnRef.current !== v) {
+      showScrollBtnRef.current = v;
+      setShowScrollBtn(v);
+    }
+  }, []);
   const handleScroll = useCallback((e: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
     const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
     const wasAtBottom = atBottomRef.current;
     atBottomRef.current = isAtBottom;
-    setShowScrollBtn(!isAtBottom);
+    setShowScrollBtnGuarded(!isAtBottom);
     // 2026-10-19: user scrolled back to the bottom after reading history —
     // messages that arrived meanwhile are now visible; mark them seen.
     if (isAtBottom && !wasAtBottom) markSeenThrottled();
-  }, [markSeenThrottled]);
+  }, [markSeenThrottled, setShowScrollBtnGuarded]);
 
   const scrollToBottom = useCallback(() => {
     flatRef.current?.scrollToEnd({ animated: true });
-    setShowScrollBtn(false);
+    setShowScrollBtnGuarded(false);
     userScrolledRef.current = false;
-  }, []);
+  }, [setShowScrollBtnGuarded]);
 
   // ── Load older messages (pagination) ─────────────────────────────────────
   // RC8-A: cursor-based "load more" using the oldest key in the current window.
