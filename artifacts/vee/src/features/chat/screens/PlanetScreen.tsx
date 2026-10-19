@@ -458,6 +458,14 @@ export default function PlanetScreen() {
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           onMomentumScrollEnd={onMomentumScrollEnd}
+          // 2026-10-19 perf: virtualization tuning for full-screen media.
+          // Default windowSize=21 kept ~21 full-screen items mounted, each
+          // buffering video. windowSize=3 keeps only ~1.5 screens each side;
+          // removeClippedSubviews unmounts off-screen items so players release.
+          windowSize={3}
+          maxToRenderPerBatch={2}
+          initialNumToRender={2}
+          removeClippedSubviews
         />
       )}
     </View>
