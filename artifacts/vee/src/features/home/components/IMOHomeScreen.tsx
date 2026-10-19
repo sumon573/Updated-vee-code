@@ -81,7 +81,11 @@ export default function IMOHomeScreen() {
     return () => {
       for (const u of unsubs) u();
     };
-  }, [chats.map((c) => c.participantId).join(',')]);
+    // FIX (2026-10-19): order-insensitive dep key. The old key
+    // (chats.map(...).join(',')) changed on every reorder — i.e. every
+    // incoming message — tearing down and recreating ALL per-participant
+    // listeners. Now the effect only re-runs when the UID *set* changes.
+  }, [Array.from(new Set(chats.map((c) => c.participantId))).sort().join(',')]);
 
   // Profile
   useEffect(() => {
