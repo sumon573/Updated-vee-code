@@ -12,7 +12,7 @@
  * A pinned "Your Rank" bar shows the viewer's own rank with DP + name.
  * Light mode. Rankings update live via Firebase subscriptions.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
@@ -159,24 +159,62 @@ export function LeaderboardModal({
 
   /* 2026-10-16 (Sumon): REAL live counts — ground truth read straight from
      rooms/{id}/seats + rooms/{id}/audience. Stored info.memberCount can go
-     stale, so the leaderboard never trusts it for ranking or display. */
+     stale, so the leaderboard never trusts it for ranking or display.
+     2026-10-19 perf: DELTA-MANAGED subscriptions. The old effect tore down
+     and recreated all ~80 listeners on every rooms-array rebuild (any room
+     churn). Now subscriptions are keyed by room id in a ref: only rooms
+     entering the top-40 set are subscribed, only rooms leaving it are
+     unsubscribed. Ground-truth semantics unchanged. */
   const [liveCounts, setLiveCounts] = useState<Record<string, number>>({});
+  const liveSubsRef = useRef(new Map<string, () => void>());
+  const liveCountsRef = useRef<Record<string, number>>({});
+
+  const teardownLiveCounts = () => {
+    liveSubsRef.current.forEach((u) => { try { u(); } catch { /* noop */ } });
+    liveSubsRef.current.clear();
+    liveCountsRef.current = {};
+  };
+
   useEffect(() => {
-    if (!visible || rooms.length === 0) return;
-    let cancelled = false;
-    const unsubs: Array<() => void> = [];
-    const counts: Record<string, number> = {};
-    const push = () => { if (!cancelled) setLiveCounts({ ...counts }); };
-    // Seed from stored values so the list never flashes empty/wrong.
+    if (!visible || rooms.length === 0) {
+      if (liveSubsRef.current.size > 0) {
+        teardownLiveCounts();
+        setLiveCounts({});
+      }
+      return;
+    }
+    const subs = liveSubsRef.current;
+    const counts = liveCountsRef.current;
+    // Same top-40 seeding as before — only the subscription management changed.
     const seeded = [...rooms]
       .sort((a, b) => (b.liveCount ?? b.memberCount ?? 0) - (a.liveCount ?? a.memberCount ?? 0))
       .slice(0, 40);
-    seeded.forEach((r) => { counts[r.id] = r.liveCount ?? r.memberCount ?? 0; });
-    push();
+    const wanted = new Set(seeded.map((r) => r.id));
+    // Unsubscribe rooms that fell out of the set.
+    subs.forEach((unsub, id) => {
+      if (!wanted.has(id)) {
+        try { unsub(); } catch { /* noop */ }
+        subs.delete(id);
+        delete counts[id];
+      }
+    });
+    const push = () => setLiveCounts({ ...counts });
+    let seededAny = false;
+    // Seed newly-added rooms from stored values so the list never flashes
+    // empty/wrong before the first ground-truth snapshot lands.
+    seeded.forEach((r) => {
+      if (!(r.id in counts)) {
+        counts[r.id] = r.liveCount ?? r.memberCount ?? 0;
+        seededAny = true;
+      }
+    });
+    // Subscribe only rooms we don't already track.
     seeded.forEach((room) => {
+      if (subs.has(room.id)) return;
       let seatsSnap: any = null;
       let audSnap: any = null;
       const recompute = () => {
+        if (!subs.has(room.id)) return; // unsubscribed meanwhile — drop stale callback
         const seen = new Set<string>();
         let seated = 0;
         seatsSnap.forEach((ch: any) => {
@@ -188,11 +226,17 @@ export function LeaderboardModal({
         push();
       };
       const tryCompute = () => { if (seatsSnap && audSnap) recompute(); };
-      unsubs.push(onValue(ref(database, `rooms/${room.id}/seats`), (s) => { seatsSnap = s; tryCompute(); }));
-      unsubs.push(onValue(ref(database, `rooms/${room.id}/audience`), (s) => { audSnap = s; tryCompute(); }));
+      const u1 = onValue(ref(database, `rooms/${room.id}/seats`), (s) => { seatsSnap = s; tryCompute(); });
+      const u2 = onValue(ref(database, `rooms/${room.id}/audience`), (s) => { audSnap = s; tryCompute(); });
+      subs.set(room.id, () => { u1(); u2(); });
     });
-    return () => { cancelled = true; unsubs.forEach((u) => u()); };
+    if (seededAny) push();
+    // NOTE: intentionally no per-run teardown — subscriptions are
+    // delta-managed above. Unmount teardown is in the effect below.
   }, [visible, rooms]);
+
+  // Unmount safety: never leak the delta-managed subscriptions.
+  useEffect(() => () => { teardownLiveCounts(); }, []);
 
   /* Rooms ranked by REAL live count. Top Live = genuinely occupied rooms only,
      so the LIVE badge never shows on an empty room (Sumon 2026-10-16). */
@@ -279,14 +323,33 @@ export function LeaderboardModal({
 
   // 2026-10-17 (Sumon): realtime user profiles — fetch live name/photoURL for
   // all visible leaderboard UIDs so DPs are always real and current.
+  // 2026-10-19 perf: DELTA-MANAGED. The old effect tore down and recreated
+  // all ~60 users/{uid} listeners on every senders/receivers array rebuild
+  // (weekly-stats updates). Now a ref-held Map tracks live subscriptions:
+  // only new UIDs are subscribed, only departed UIDs are unsubscribed.
+  const profileSubsRef = useRef(new Map<string, () => void>());
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      if (profileSubsRef.current.size > 0) {
+        profileSubsRef.current.forEach((u) => { try { u(); } catch { /* noop */ } });
+        profileSubsRef.current.clear();
+      }
+      return;
+    }
     const uids = new Set<string>();
     for (const s of senders) uids.add(s.uid);
     for (const r of receivers) uids.add(r.uid);
-    if (uids.size === 0) return;
-    const unsubs: (() => void)[] = [];
+    const subs = profileSubsRef.current;
+    // Unsubscribe UIDs no longer on the board.
+    subs.forEach((unsub, uid) => {
+      if (!uids.has(uid)) {
+        try { unsub(); } catch { /* noop */ }
+        subs.delete(uid);
+      }
+    });
+    // Subscribe only new UIDs.
     for (const uid of uids) {
+      if (subs.has(uid)) continue;
       const unsub = onValue(ref(database, `users/${uid}`), (snap) => {
         const v = snap.val();
         if (v) {
@@ -299,10 +362,16 @@ export function LeaderboardModal({
           }));
         }
       });
-      unsubs.push(unsub);
+      subs.set(uid, unsub);
     }
-    return () => { for (const u of unsubs) u(); };
+    // NOTE: intentionally no per-run teardown — delta-managed above.
   }, [visible, senders, receivers]);
+
+  // Unmount safety: never leak the delta-managed subscriptions.
+  useEffect(() => () => {
+    profileSubsRef.current.forEach((u) => { try { u(); } catch { /* noop */ } });
+    profileSubsRef.current.clear();
+  }, []);
 
   // ── My own weekly stats (for the pinned "Your Rank" bar) ───────────────────
   const [mySent, setMySent] = useState<number | null>(null);
