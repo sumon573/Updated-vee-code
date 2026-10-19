@@ -910,6 +910,9 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     alreadyInCallTitle: 'ইতিমধ্যে একটি কলে আছেন',
     alreadyInCallMsg: 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।',
     followsSystem: 'সিস্টেম অনুসরণ করে',
+    mute: 'মিউট',
+    unmute: 'আনমিউট',
+    minimize: 'মিনিমাইজ',
   },
   store: {
     shortId: 'শর্ট আইডি',
