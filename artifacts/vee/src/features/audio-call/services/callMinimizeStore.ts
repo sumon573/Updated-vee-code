@@ -74,6 +74,27 @@ export function clearPersistedCallSession(): void {
   _persistedRoomId = null;
 }
 
+// ─── Store-level teardown for a minimized call (2026-10-19, Sumon) ──────────
+// A minimized call outlives its AudioCallScreen: session callbacks (e.g.
+// remote hangup) fire on an UNMOUNTED instance's closures. Running `endCall`
+// there risks touching dead refs/native objects from the wrong owner. So the
+// WebRTC teardown for a persisted session lives HERE, in the store/session
+// layer — the dead instance never performs the native hangup itself.
+export function teardownPersistedCall(roomId: string): void {
+  if (_persistedRoomId !== roomId) return;
+  const session = _persistedSession as { hangup?: () => void } | null;
+  _persistedSession = null;
+  _persistedRoomId = null;
+  if (session && typeof session.hangup === 'function') {
+    try {
+      session.hangup();
+    } catch {
+      /* non-critical — peer already gone */
+    }
+  }
+  setMinimizedCall(null);
+}
+
 // ─── Minimize intent flag (2026-10-11 fix) ───────────────────────────────────
 // Module-level flag set BEFORE navigating away, so every cleanup path
 // (unmount, timers, remote-ended) can tell "minimizing" apart from "ending"

@@ -41,6 +41,7 @@ import {
   setPersistedCallSession,
   getPersistedCallSession,
   clearPersistedCallSession,
+  teardownPersistedCall,
   setCallMinimizing,
   isCallMinimizing,
   setCallScreenMounted,
@@ -308,13 +309,20 @@ export default function AudioCallScreen({
 
     // WebRTC teardown — the session owns the peer connection, RTDB
     // listeners, and the ephemeral signaling node.
-    const session = webrtcRef.current;
+    // 2026-10-19 (Sumon): when the call was minimized, the session lives at
+    // module level and this instance may be unmounted (remote hangup while
+    // minimized). Route the native hangup through the store so no dead
+    // instance's closure owns it; a live local session ends directly.
+    if (roomId && getPersistedCallSession(roomId)) {
+      teardownPersistedCall(roomId);
+    } else {
+      const session = webrtcRef.current;
+      if (session) {
+        try { session.hangup(); } catch { /* non-critical */ }
+      }
+    }
     webrtcRef.current = null;
     mountedRef.current = false;
-
-    if (session) {
-      try { session.hangup(); } catch { /* non-critical */ }
-    }
 
     if (goBack) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
