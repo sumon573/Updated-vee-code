@@ -19,21 +19,25 @@ import { DmMessage } from '../types/dm';
 import { addReaction, deleteMessage } from '../services/firebaseDmService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+import VoiceMessageBubble from './VoiceMessageBubble';
 
 const { width } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
 
+// IMO bubble spec (measured from IMO v2026.09.1051 layouts av7/av3):
+// sent = #bbdefb light blue, received = #ffffff white, 8dp radius,
+// 16sp black text, 12sp #70000000 timestamp inside bubble bottom-right.
 const C = {
-  myBubble: '#007AFF',
-  theirBubble: '#E9E9EB',
-  myText: '#FFFFFF',
+  myBubble: '#bbdefb',
+  theirBubble: '#ffffff',
+  myText: '#000000',
   theirText: '#000000',
   muted: '#8E8E93',
   dim: '#C7C7CC',
   border: '#E5E5EA',
   reactionBg: 'rgba(255,255,255,0.95)',
   seen: '#8B5CF6',
-  sent: 'rgba(255,255,255,0.7)',
+  sent: '#70000000',
 } as const;
 
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
@@ -242,7 +246,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               {message.replyTo.senderName}
             </Text>
             <Text style={{ color: isMe ? 'rgba(255,255,255,0.8)' : C.muted, fontSize: 12 }} numberOfLines={1}>
-              {message.replyTo.type !== 'text' ? '📷 Media' : message.replyTo.preview}
+              {message.replyTo.type !== 'text'
+                ? (message.replyTo.type === 'voice' ? '🎤 Voice message' : '📷 Media')
+                : message.replyTo.preview}
             </Text>
           </View>
         )}
@@ -258,11 +264,11 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             borderWidth: 0,
             overflow: 'hidden',
           } : {
+            // IMO bubble chrome: 8dp radius, no tails, sent = #bbdefb,
+            // received = #ffffff with a hairline border.
             backgroundColor: bubbleBg,
-            borderRadius: 18,
-            borderBottomRightRadius: isMe ? 4 : 18,
-            borderBottomLeftRadius: isMe ? 18 : 4,
-            paddingHorizontal: 14, paddingVertical: 10,
+            borderRadius: 8,
+            paddingHorizontal: 12, paddingVertical: 8,
             borderWidth: isMe ? 0 : 1, borderColor: C.border,
           }}
         >
@@ -320,36 +326,25 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               </View>
             </View>
           ) : message.type === 'voice' ? (
-            // 2026-10-19 polish: voice messages are not playable yet (open
-            // feature request — do NOT build it here). Render a graceful
-            // placeholder instead of falling through to the raw audio URL.
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-              <View style={{
-                width: 38, height: 38, borderRadius: 19,
-                backgroundColor: 'rgba(0,122,255,0.15)',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Feather name="mic" size={18} color="#007AFF" />
-              </View>
-              <View>
-                <Text style={{ color: textColor, fontSize: 14, fontWeight: '600' }}>
-                  Voice message
-                </Text>
-                <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                  Update the app to play
-                </Text>
-              </View>
-            </View>
+            // IMO-style voice message — playable bubble (play/pause +
+            // progress + duration), uploaded to Vee's Telegram storage.
+            <VoiceMessageBubble
+              uri={message.content}
+              durationSec={message.durationSec}
+              isMe={isMe}
+            />
           ) : (
-            <Text style={{ color: textColor, fontSize: 15, lineHeight: 22 }}>
+            // IMO: 16sp message text.
+            <Text style={{ color: textColor, fontSize: 16, lineHeight: 22 }}>
               {message.content}
             </Text>
           )}
 
-          {/* Timestamp + seen */}
+          {/* Timestamp + ticks — IMO style: 12sp #70000000, inside the
+              bubble at bottom-right, check marks for sent messages. */}
           {!message.deletedForEveryone && (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
-              <Text style={{ color: timeColor, fontSize: 10 }}>
+              <Text style={{ color: timeColor, fontSize: 12 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
               {isMe && (
