@@ -1,12 +1,19 @@
 /**
- * IMOHomeScreen — IMO-style home screen (2026-10-10).
- * Exact replication of IMO home: TopBar + StoryRow + ChatList + BottomBar.
- * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
+ * IMOHomeScreen — IMO-style home shell (2026-10-19).
+ * 5-tab IMO layout: Chats · Contacts · Stories · Calls · Me (bottom text tabs).
+ * - Chats: search bar + story strip + chat list (IMOChatListItem — owned by chat agent, not restyled here)
+ * - Contacts: existing ContactsScreen
+ * - Stories: StoriesTabScreen (story groups list)
+ * - Calls: CallsTabScreen (call history)
+ * - Me: navigates to /profile (profile screens untouched)
+ * Voice rooms: floating action button on Chats tab → full-screen VoiceRoomHome modal.
+ * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl } from 'react-native';
+import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
@@ -26,25 +33,27 @@ import { loadChatList, saveChatList } from '@/src/features/chat/services/chatCac
 // NOTE 5 (2026-10-11): IMO-style bottom network status bar.
 import NetworkStatusBar from '@/src/components/NetworkStatusBar';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
+import type { CallHistoryEntry } from '@/src/features/audio-call/services/callHistoryService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { getUser } from '@/src/services/userService';
-import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
 import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu';
-import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
+import IMOTabBar, { type HomeTab } from '@/src/features/home/components/IMOTabBar';
+import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
+import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
 import StoryViewer from '@/src/features/chat/screens/StoryViewer';
 import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
-type Tab = 'chat' | 'voice' | 'contacts';
+type ContentTab = Exclude<HomeTab, 'me'>;
 
 export default function IMOHomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>('chat');
+  const [activeTab, setActiveTab] = useState<ContentTab>('chats');
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,6 +65,10 @@ export default function IMOHomeScreen() {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
+  // Voice rooms entry (FAB → full-screen modal)
+  const [voiceRoomsVisible, setVoiceRoomsVisible] = useState(false);
+  // Missed-call badge for the Calls tab
+  const [missedCalls, setMissedCalls] = useState(0);
   const { stories, publish, react, comment, remove, getContactUids } = useStories();
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
@@ -264,8 +277,17 @@ export default function IMOHomeScreen() {
 
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  const handleTabPress = useCallback((tab: Tab) => {
+  const handleTabPress = useCallback((tab: HomeTab) => {
+    if (tab === 'me') {
+      // Me → Vee profile (profile screens owned elsewhere; navigate only)
+      router.push('/profile' as any);
+      return;
+    }
     setActiveTab(tab);
+  }, [router]);
+
+  const handleMissedCountChange = useCallback((n: number) => {
+    setMissedCalls(n);
   }, []);
 
   const handleStoryPress = useCallback((storyId: string) => {
@@ -285,7 +307,7 @@ export default function IMOHomeScreen() {
 
   const handleAddStory = useCallback(() => {
     router.push('/create-story');
-  }, []);
+  }, [router]);
 
   const handleChatPress = useCallback((chatId: string) => {
     // Find the chat to get participant details for the inbox header
@@ -302,122 +324,158 @@ export default function IMOHomeScreen() {
     }
   }, [router, imoChats]);
 
-  const handleCallPress = useCallback((chat: IMOChat) => {
-    if (!user?.uid || !chat.participantId) return;
+  // Shared call starter — used by chat-row call buttons and call-history call-back.
+  const startCall = useCallback((participantId: string, name: string, photoURL?: string | null) => {
+    if (!user?.uid || !participantId) return;
     // P1 fix (2026-10-12): busy guard — never dial while a call is active/minimized.
     if (getMinimizedCall()) {
       Alert.alert('ইতিমধ্যে একটি কলে আছেন', 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।');
       return;
     }
-    const callRoomId = buildCallRoomId(user.uid, chat.participantId);
-    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(chat.participantId)}&remoteName=${encodeURIComponent(chat.name)}&calleeUid=${encodeURIComponent(chat.participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName || 'Vee User')}`;
-    if (chat.photoURL) url += `&remotePhotoURL=${encodeURIComponent(chat.photoURL)}`;
+    const callRoomId = buildCallRoomId(user.uid, participantId);
+    let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(participantId)}&remoteName=${encodeURIComponent(name)}&calleeUid=${encodeURIComponent(participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName || 'Vee User')}`;
+    if (photoURL) url += `&remotePhotoURL=${encodeURIComponent(photoURL)}`;
     if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
     router.push(url as any);
   }, [router, user]);
 
-  if (activeTab === 'voice') {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <IMOTopBar
-          profilePhotoURL={profile?.photoURL || user?.photoURL}
-          profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
-          activeTab={activeTab}
-          chatBadgeCount={totalUnread}
-          onProfilePress={() => router.push('/profile' as any)}
-          onTabPress={handleTabPress}
-        />
-        <VoiceRoomHome />
-        {/* NOTE 5: IMO-style network status bar (home screen bottom). */}
-        <NetworkStatusBar />
-      </SafeAreaView>
-    );
-  }
+  const handleCallPress = useCallback((chat: IMOChat) => {
+    if (!chat.participantId) return;
+    startCall(chat.participantId, chat.name, chat.photoURL);
+  }, [startCall]);
 
-  if (activeTab === 'contacts') {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <IMOTopBar
-          profilePhotoURL={profile?.photoURL || user?.photoURL}
-          profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
-          activeTab={activeTab}
-          chatBadgeCount={totalUnread}
-          onProfilePress={() => router.push('/profile' as any)}
-          onTabPress={handleTabPress}
-        />
-        <ContactsScreen />
-        {/* NOTE 5: IMO-style network status bar (home screen bottom). */}
-        <NetworkStatusBar />
-      </SafeAreaView>
-    );
-  }
+  const handleCallBack = useCallback((entry: CallHistoryEntry) => {
+    startCall(entry.remoteUid, entry.remoteName || 'Vee User', entry.remotePhotoURL);
+  }, [startCall]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <IMOTopBar
-        profilePhotoURL={profile?.photoURL || user?.photoURL}
-        profileInitials={(profile?.name || user?.displayName)?.charAt(0) || '?'}
-        activeTab={activeTab}
-        chatBadgeCount={totalUnread}
-        onProfilePress={() => router.push('/profile' as any)}
-        onTabPress={handleTabPress}
-      />
-      <IMOStoryRow
-        stories={imoStories}
-        onAddStory={handleAddStory}
-        onStoryPress={handleStoryPress}
-      />
-      <FlatList
-        data={imoChats}
-        keyExtractor={(item) => item.id}
-        getItemLayout={getRowLayout}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        // 2026-10-19 polish: empty state — only after the first load so the
-        // cached/live fetch doesn't flash "no chats" while loading.
-        ListEmptyComponent={chatsReady ? (
-          <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>
-            <Text style={{ fontSize: 52, marginBottom: 14 }}>💬</Text>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#111111' }}>
-              No chats yet
-            </Text>
-            <Text style={{ fontSize: 13, color: '#666666', marginTop: 6, textAlign: 'center' }}>
-              Start a conversation from the Contacts tab
-            </Text>
-          </View>
-        ) : null}
-        renderItem={({ item }) => (
-          <IMOChatListItem
-            chat={item}
-            onPress={handleChatPress}
-            onLongPress={handleLongPress}
-            onCallPress={handleCallPress}
+      {activeTab === 'chats' && (
+        <View style={{ flex: 1 }}>
+          {/* IMO search bar — rounded #f4f5f5, magnifier + "Search" hint */}
+          <TouchableOpacity
+            onPress={() => router.push('/search' as any)}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#F4F5F5',
+              borderRadius: 18,
+              marginHorizontal: 15,
+              marginTop: 10,
+              marginBottom: 4,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+            }}
+          >
+            <Ionicons name="search" size={18} color="#788187" />
+            <Text style={{ marginLeft: 8, fontSize: 14, color: '#788187' }}>Search</Text>
+          </TouchableOpacity>
+          <IMOStoryRow
+            stories={imoStories}
+            onAddStory={handleAddStory}
+            onStoryPress={handleStoryPress}
           />
-        )}
-        style={{ flex: 1 }}
-      />
-      {/* Long-press context menu (2026-10-11 Issue #6) */}
-      <ChatLongPressMenu
-        visible={!!menuChat}
-        chatName={menuChat?.name ?? ''}
-        isPinned={menuChat?.isPinned ?? false}
-        isMuted={menuChat?.isMuted ?? false}
-        isHidden={false}
-        onPin={() => runMenuAction(() =>
-          (menuChat?.isPinned ? unpinChat(user!.uid, menuChat!.id) : pinChat(user!.uid, menuChat!.id))
-        )}
-        onMute={() => runMenuAction(() =>
-          (menuChat?.isMuted ? unmuteChat(user!.uid, menuChat!.id) : muteChat(user!.uid, menuChat!.id))
-        )}
-        onHide={() => runMenuAction(() => hideChat(user!.uid, menuChat!.id))}
-        onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
-        onClose={closeMenu}
-      />
-      <IMOBottomBar
-        onAddPress={() => setActiveTab('voice')}
-        onSearchPress={() => router.push('/search' as any)}
-      />
+          <FlatList
+            data={imoChats}
+            keyExtractor={(item) => item.id}
+            getItemLayout={getRowLayout}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            }
+            // 2026-10-19 polish: empty state — only after the first load so the
+            // cached/live fetch doesn't flash "no chats" while loading.
+            ListEmptyComponent={chatsReady ? (
+              <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>
+                <Text style={{ fontSize: 52, marginBottom: 14 }}>💬</Text>
+                <Text style={{ fontSize: 17, fontWeight: '700', color: '#111111' }}>
+                  No chats yet
+                </Text>
+                <Text style={{ fontSize: 13, color: '#666666', marginTop: 6, textAlign: 'center' }}>
+                  Start a conversation from the Contacts tab
+                </Text>
+              </View>
+            ) : null}
+            renderItem={({ item }) => (
+              <IMOChatListItem
+                chat={item}
+                onPress={handleChatPress}
+                onLongPress={handleLongPress}
+                onCallPress={handleCallPress}
+              />
+            )}
+            style={{ flex: 1 }}
+          />
+          {/* Long-press context menu (2026-10-11 Issue #6) */}
+          <ChatLongPressMenu
+            visible={!!menuChat}
+            chatName={menuChat?.name ?? ''}
+            isPinned={menuChat?.isPinned ?? false}
+            isMuted={menuChat?.isMuted ?? false}
+            isHidden={false}
+            onPin={() => runMenuAction(() =>
+              (menuChat?.isPinned ? unpinChat(user!.uid, menuChat!.id) : pinChat(user!.uid, menuChat!.id))
+            )}
+            onMute={() => runMenuAction(() =>
+              (menuChat?.isMuted ? unmuteChat(user!.uid, menuChat!.id) : muteChat(user!.uid, menuChat!.id))
+            )}
+            onHide={() => runMenuAction(() => hideChat(user!.uid, menuChat!.id))}
+            onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
+            onClose={closeMenu}
+          />
+          {/* Voice rooms FAB — prominent entry point (IMO has no voice tab;
+              Vee's rooms stay one tap away) */}
+          <TouchableOpacity
+            onPress={() => setVoiceRoomsVisible(true)}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{
+              position: 'absolute',
+              right: 18,
+              bottom: 26,
+              width: 58,
+              height: 58,
+              borderRadius: 29,
+              backgroundColor: '#009dff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: 0.25,
+              shadowRadius: 6,
+              elevation: 6,
+            }}
+          >
+            {/* 2026-10-13 (Sumon): his custom voice icon, হুবহু */}
+            <Image
+              source={require('@/assets/images/voice-tab-icon.png')}
+              style={{ width: 30, height: 30, tintColor: '#FFFFFF' }}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {activeTab === 'contacts' && <ContactsScreen />}
+
+      {activeTab === 'stories' && (
+        <StoriesTabScreen
+          stories={stories}
+          myUserId={user?.uid}
+          myAvatar={profile?.photoURL || user?.photoURL || null}
+          onStoryPress={handleStoryPress}
+          onAddStory={handleAddStory}
+        />
+      )}
+
+      {activeTab === 'calls' && (
+        <CallsTabScreen
+          onCallBack={handleCallBack}
+          onMissedCountChange={handleMissedCountChange}
+        />
+      )}
+
+      {/* Shared story viewer/creator (chats-tab strip + stories tab) */}
       <StoryViewer
         visible={storyViewerVisible}
         startUserIndex={storyViewerIndex}
@@ -443,8 +501,45 @@ export default function IMOHomeScreen() {
           setStoryCreatorVisible(false);
         }}
       />
+
+      {/* Voice rooms full-screen modal */}
+      <Modal
+        visible={voiceRoomsVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setVoiceRoomsVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+          <VoiceRoomHome />
+          <TouchableOpacity
+            onPress={() => setVoiceRoomsVisible(false)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+
       {/* NOTE 5: IMO-style network status bar (home screen bottom). */}
       <NetworkStatusBar />
+      <IMOTabBar
+        activeTab={activeTab}
+        chatsBadgeCount={totalUnread}
+        callsBadgeCount={missedCalls}
+        onTabPress={handleTabPress}
+      />
     </SafeAreaView>
   );
 }
