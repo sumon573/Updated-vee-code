@@ -52,7 +52,7 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
   useFonts } from '@expo-google-fonts/inter';
-import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigationState } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
@@ -171,6 +171,37 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // Ref mirror — the mount-once FCM effect calls the latest seeder.
   const seedPendingIncomingCallFromTapRef = useRef(seedPendingIncomingCallFromTap);
   seedPendingIncomingCallFromTapRef.current = seedPendingIncomingCallFromTap;
+  // 2026-10-19 stability fix: room-invite push must never stack a second
+  // voice-room modal over an active room — two VoiceRoomScreen instances =
+  // two LiveKit engines on one mic (native crash territory). If a room is
+  // already open: same room → ignore the tap; different room → dismiss the
+  // current modal first so its engine tears down before the new one opens.
+  // Ref mirrors keep the mount-once notification handler below reading fresh
+  // navigation state.
+  const segmentsRef = useRef<string[]>([]);
+  segmentsRef.current = segments as string[];
+  const globalParams = useGlobalSearchParams();
+  const globalParamsRef = useRef(globalParams);
+  globalParamsRef.current = globalParams;
+  const handleRoomInviteTap = useCallback((roomId: string) => {
+    stashPendingLinkRef.current(() => {
+      if (segmentsRef.current.includes('voice-room')) {
+        const currentRoomId = globalParamsRef.current?.roomId;
+        if (typeof currentRoomId === 'string' && currentRoomId === roomId) {
+          return; // already in this room — ignore the tap
+        }
+        if (router.canDismiss()) {
+          router.dismiss();
+        }
+        // Let the dismiss settle so the old engine unmounts first.
+        setTimeout(() => {
+          router.push({ pathname: '/voice-room', params: { roomId } } as any);
+        }, 80);
+        return;
+      }
+      router.push({ pathname: '/voice-room', params: { roomId } } as any);
+    });
+  }, []);
   const [profileChecked, setProfileChecked] = useState(false);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
@@ -409,7 +440,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // notifications so tapping them navigates directly to the voice room.
     registerNotificationOpenedHandler(
       (chatId) => stashPendingLink(() => router.push(`/inbox/${chatId}` as any)),
-      (roomId) => stashPendingLink(() => router.push({ pathname: '/voice-room', params: { roomId } } as any)),
+      (roomId) => handleRoomInviteTap(roomId),
       () => stashPendingLink(() => router.push('/chat' as any)),
       // Incoming call: just bring app to foreground; the call UI is driven by
       // the live call listener (app/_layout.tsx handleIncomingCall), not by params.
