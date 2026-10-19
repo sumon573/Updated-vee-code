@@ -62,11 +62,15 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     refreshNobleState(user.uid).catch(() => {});
     // 2026-10-15 (Sumon): fetch RTDB profile name — must match profile screen.
     // 2026-10-17 (Sumon): also fetch RTDB photoURL realtime — real DP, not placeholder.
+    // 2026-10-19 (Sumon): capture the unsubscribe — the previous code dropped
+    // this handle, leaking one permanent users/{uid} listener per mount (Nobel
+    // is the default Decoration tab, so this leaked fast in normal use).
+    let unsubProfile: (() => void) | null = null;
     (async () => {
       try {
         const { ref, onValue } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
-        onValue(ref(database, `users/${user.uid}`), (snap) => {
+        unsubProfile = onValue(ref(database, `users/${user.uid}`), (snap) => {
           const v = snap.val();
           if (v) {
             if (typeof v.name === 'string' && v.name.trim()) setProfileName(v.name.trim());
@@ -88,7 +92,13 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       },
     );
     const timeout = setTimeout(() => setLoading(false), 8000);
-    return () => { clearTimeout(timeout); unsub(); };
+    return () => {
+      clearTimeout(timeout);
+      unsub();
+      // 2026-10-19 (Sumon): also detach the profile listener (may still be
+      // null if the async import hasn't finished — unsubProfile guards that).
+      try { unsubProfile?.(); } catch { /* non-critical */ }
+    };
   }, [user?.uid]);
 
   const showAbout = () => {
