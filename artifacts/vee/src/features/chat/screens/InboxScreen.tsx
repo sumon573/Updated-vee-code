@@ -703,6 +703,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           style: 'destructive',
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            // FIX (2026-10-19): a failed block must NEVER report success.
+            // On failure show the real cause and STAY in the chat (no
+            // router.back()) so the user can retry; success UI only runs
+            // after blockUser actually succeeds.
             try {
               await blockUser(
                 myUid,
@@ -710,7 +714,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 displayName,
                 participantPhotoURL ?? undefined,
               );
-            } catch { /* নিচে success দেখাই */ }
+            } catch (err) {
+              Alert.alert(t('chat.error'), getErrorCause(err));
+              return;
+            }
             Alert.alert(
               t('chat.done'),
               t('chat.blockSuccess', { name: displayName }),
