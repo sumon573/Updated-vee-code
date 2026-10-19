@@ -703,6 +703,17 @@ async function sendGiftViaFirebase(
     }
   }
 
+  // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy on the fallback
+  // path too. Self-gifts excluded (anti-farming).
+  {
+    const me = auth.currentUser;
+    if (me && toUid !== fromUid && price > 0) {
+      import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
+        recordIntimacy(fromUid, toUid, price).catch(() => {}),
+      ).catch(() => {});
+    }
+  }
+
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
 }
 
@@ -790,6 +801,14 @@ export async function sendGift({
             // Non-critical
           });
         }
+      }
+      // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy — gift already
+      // completed on the server; must not block the gift UI's return. Self-gifts
+      // excluded (anti-farming), mirroring noble XP.
+      if (serverFromUid && toUid !== serverFromUid && serverPrice) {
+        import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
+          recordIntimacy(serverFromUid, toUid, serverPrice).catch(() => {}),
+        ).catch(() => {});
       }
       return {
         ok: true,

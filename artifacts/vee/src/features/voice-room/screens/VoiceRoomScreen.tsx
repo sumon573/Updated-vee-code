@@ -43,6 +43,12 @@ import { SeatQueueModal } from '../components/SeatQueueModal';
 import { RoomRankModal } from '../components/RoomRankModal';
 import { RoomPropsSheet } from '../components/RoomPropsSheet';
 import { RoomGamesModal } from '../components/games/RoomGamesModal';
+import { RoomAnnouncementModal } from '../components/RoomAnnouncementModal';
+import { IntimacyModal } from '../components/IntimacyModal';
+import { PropsBackpackModal } from '../components/PropsBackpackModal';
+import {
+  subscribeAnnouncement, type RoomAnnouncement,
+} from '../services/roomAnnouncementService';
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
@@ -721,8 +727,21 @@ export default function VoiceRoomScreen() {
   const [gamesOpen,       setGamesOpen]       = useState(false);
   const [rankOpen,        setRankOpen]        = useState(false);
   const [propsOpen,       setPropsOpen]       = useState(false);
+  // 2026-10-19 (IMO gap fill): announcement + intimacy + backpack
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [intimacyOpen,     setIntimacyOpen]     = useState(false);
+  const [backpackOpen,     setBackpackOpen]     = useState(false);
+  const [announcement,     setAnnouncement]     = useState<RoomAnnouncement | null>(null);
   const [gameNav,         setGameNav]         = useState<{ kind: GameType; gameId: string | null } | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
+  // 2026-10-19 (IMO gap fill): live room announcement banner.
+  useEffect(() => {
+    if (!roomId) {
+      setAnnouncement(null);
+      return;
+    }
+    return subscribeAnnouncement(roomId, setAnnouncement);
+  }, [roomId]);
   useEffect(() => {
     if (!activeMember) return;
     const fresh =
@@ -2122,6 +2141,57 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
+            {/* 2026-10-19 (IMO gap fill): announcement / intimacy / backpack */}
+            {announcement && (
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: 'rgba(255,193,7,0.18)',
+                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                  maxWidth: 180,
+                }}>
+                  <Text style={{ fontSize: 16 }}>📢</Text>
+                  <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 13, fontWeight: '700', flexShrink: 1 }}>
+                    {announcement.content}
+                  </Text>
+                </View>
+              </ScalePress>
+            )}
+            {!announcement && isOwnerOrAdmin && (
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
+                  <Text style={{ fontSize: 16 }}>📢</Text>
+                  <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                    {t('voiceRoom.announcement.post')}
+                  </Text>
+                </View>
+              </ScalePress>
+            )}
+            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIntimacyOpen(true); }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Text style={{ fontSize: 16 }}>💕</Text>
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                  {t('voiceRoom.intimacy.title')}
+                </Text>
+              </View>
+            </ScalePress>
+            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBackpackOpen(true); }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Text style={{ fontSize: 16 }}>🎒</Text>
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                  {t('voiceRoom.backpack.title')}
+                </Text>
+              </View>
+            </ScalePress>
             {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>
@@ -2580,6 +2650,27 @@ export default function VoiceRoomScreen() {
         isOwner={myRole === 'host'}
         onClose={() => setPropsOpen(false)}
         onOpenStore={() => { setPropsOpen(false); router.push('/store'); }}
+      />
+      {/* ── 2026-10-19 (IMO gap fill): announcement + intimacy + backpack ── */}
+      <RoomAnnouncementModal
+        visible={announcementOpen}
+        roomId={roomId}
+        announcement={announcement}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        myUid={myUid}
+        myName={myName}
+        onClose={() => setAnnouncementOpen(false)}
+      />
+      <IntimacyModal
+        visible={intimacyOpen}
+        myUid={myUid}
+        onClose={() => setIntimacyOpen(false)}
+      />
+      <PropsBackpackModal
+        visible={backpackOpen}
+        myUid={myUid}
+        onClose={() => setBackpackOpen(false)}
+        onOpenStore={() => router.push('/store')}
       />
       {gameNav?.kind === 'vote' && (
         <VoteGameModal
