@@ -1,26 +1,28 @@
 /**
- * GiftFlyAnimation.tsx — Track 3: Bigo/TikTok-style gift showpiece.
+ * GiftFlyAnimation.tsx — IMO gift showpiece, exact behavior rebuild (2026-10-19).
  *
- * Two pieces, both driven ONLY by the react-native Animated API
- * (timing/spring/parallel/sequence) with useNativeDriver: true so the
- * whole showpiece stays at 60fps (transforms + opacity only).
+ * IMO behavior (from APK jadx — gift/giftpanel, gift/giftsshow, banner/giftbroadcast):
+ * - Fullscreen SVGA-style animation plays for premium gifts (vr_full_anim)
+ * - ComboState: the same gift re-sent within the combo window stacks xN on the
+ *   RUNNING animation instead of starting a new one
+ * - Blast gifts = multi-target: ONE animation hits all recipients
+ * - Big gifts trigger the room-wide gold broadcast banner (GiftAwardsBroadcast)
+ * - Fullscreen animations QUEUE — they never overlap or break each other
  *
- *  1) <GiftFlyAnimation ref> — SENDER side. The sender's own client plays a
- *     large gift emoji flying from the bottom-center of the screen on an
- *     arc up to the recipient's seat, followed by a banner
- *     (sender → gift → recipient + diamonds).
- *     Events queue internally and play ONE at a time. Triggered via
- *     ref.playFly(...). The seat target comes from `target` (screen coords);
- *     when null/unknown the gift lands at a graceful top-center point.
- *
- *  2) <GiftReceiveBanners roomId> — RECEIVER side. Subscribes to
- *     rooms/{roomId}/giftFeed and sweeps a combo-counting banner across the
- *     top of the screen for every gift any member sends.
+ * Two pieces:
+ *  1) <GiftFlyAnimation ref> — SENDER side. playFly() merges rapid re-sends of
+ *     the same gift into a combo (xN) and queues shows one-at-a-time:
+ *     3.4s fullscreen center display -> 1.5s fly to recipient seat ->
+ *     banner (sender -> gift xN -> recipients). Gifts >= 2000 coins get IMO's
+ *     gold room-wide broadcast banner instead of the small banner.
+ *  2) <GiftReceiveBanners roomId> — RECEIVER side (unchanged): subscribes to
+ *     rooms/{roomId}/giftFeed, combo-counting banners, queued.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   Animated, Dimensions, Easing, Image, StyleSheet, Text, View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
@@ -31,6 +33,7 @@ import { database } from '@/src/config/firebase';
    Shared types + avatar helper
 ═══════════════════════════════════════════ */
 
+/** Input shape — UNCHANGED (VoiceRoomScreen.handleGiftSent calls this per recipient). */
 export type GiftFlyEvent = {
   key: string;
   fromName: string;
@@ -52,19 +55,17 @@ export type GiftFlyHandle = {
   playFly: (e: Omit<GiftFlyEvent, 'key'>) => void;
 };
 
-/** Gift tier by coin value — drives animation scale (small gift = small
- *  animation, big gift = big dramatic animation). */
+/** IMO big-gift broadcast threshold (server decides in IMO; Vee: blast tier). */
+const BIG_GIFT_COINS = 2000;
+/** IMO combo window — re-sends inside it stack xN on the running animation. */
+const SHOW_COMBO_WINDOW_MS = 6000;
+
+/** Gift tier by coin value — drives animation scale. */
 export function giftTier(coins: number): 'small' | 'medium' | 'large' {
   if (coins >= 500) return 'large';
   if (coins >= 100) return 'medium';
   return 'small';
 }
-
-const TIER_STYLE = {
-  small:  { emojiSize: 40, flyMs: 700,  bannerScale: 0.75 },
-  medium: { emojiSize: 80, flyMs: 1200, bannerScale: 1 },
-  large:  { emojiSize: 130, flyMs: 1800, bannerScale: 1.25 },
-} as const;
 
 /** Deterministic pastel-ish color from a name (avatar fallback). */
 function hashColor(name: string): string {
@@ -74,10 +75,6 @@ function hashColor(name: string): string {
   return `hsl(${h}, 62%, 44%)`;
 }
 
-/**
- * Small round avatar: photo when available, otherwise a colored
- * initial-letter circle. Never crashes on missing/empty values.
- */
 export function GiftAvatar({
   photoURL, name, size,
 }: {
@@ -104,24 +101,44 @@ export function GiftAvatar({
 }
 
 /* ═══════════════════════════════════════════
-   1) SENDER-SIDE fly animation (ref-driven)
+   1) SENDER-SIDE queued showpiece (IMO behavior)
 ═══════════════════════════════════════════ */
 
-const FLY_MS_DEFAULT = 1300;   // fallback emoji flight duration
-const TOTAL_MS_DEFAULT = 2600; // fallback whole showpiece per event
+type ShowRecipient = {
+  uid: string; name: string; photoURL?: string;
+  target?: { x: number; y: number } | null;
+};
 
-function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => void }) {
+/** One queued fullscreen show — possibly a merged combo of several sends. */
+type QueuedShow = {
+  giftId: string;
+  emoji: string;
+  coins: number;
+  fromName: string;
+  fromAvatar?: string;
+  animationUrl?: string;
+  animationType?: string;
+  videoSize?: number;
+  videoFullscreen?: boolean;
+  recipients: ShowRecipient[];
+  count: number;
+  startedAt: number;
+};
+
+const DISPLAY_MS = 3400; // IMO fullscreen SVGA display
+const FLY_MS = 1500;     // fly to recipient seat
+const BANNER_MS = 1600;  // follow-up banner
+const BIG_BANNER_MS = 4200; // IMO gold broadcast for big gifts
+
+function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void }) {
   const { width: W, height: H } = Dimensions.get('window');
-  // 2026-10-17 (Sumon): Luxury centered animation — 4s fullscreen centered display
-  // with sparkling effect, then 2s fly to recipient's seat. Total 6s.
-  const DISPLAY_MS = 4000; // centered fullscreen display
-  const FLY_MS = 2000;     // fly to seat
-  const TOTAL_MS = DISPLAY_MS + FLY_MS;
-  // Fullscreen centered size: 90% width, 60% height (exact center)
-  const displaySize = Math.min(W * 0.9, H * 0.6);
+  const { t } = useTranslation();
+  const isBig = show.coins >= BIG_GIFT_COINS;
+  const displaySize = Math.min(W * 0.92, H * 0.62);
   const centerX = W / 2;
   const centerY = H / 2;
-  const end = event.target ?? { x: W / 2, y: 110 }; // seat or top-center fallback
+  // IMO blast = multi-target: fly toward the first recipient's seat.
+  const end = show.recipients[0]?.target ?? { x: W / 2, y: 110 };
   const dx = end.x - centerX;
   const dy = end.y - centerY;
 
@@ -131,9 +148,13 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
   const flyScale = useRef(new Animated.Value(1)).current;
   const bannerOp = useRef(new Animated.Value(0)).current;
   const bannerY = useRef(new Animated.Value(26)).current;
+  const comboPop = useRef(new Animated.Value(1)).current;
 
   const flyX = flyP.interpolate({ inputRange: [0, 1], outputRange: [0, dx] });
   const flyY = flyP.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, dy * 0.7, dy] });
+
+  const bannerDuration = isBig ? BIG_BANNER_MS : BANNER_MS;
+  const totalMs = DISPLAY_MS + FLY_MS + bannerDuration + 600;
 
   useEffect(() => {
     const entrance = Animated.parallel([
@@ -152,26 +173,38 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
         Animated.timing(bannerOp, { toValue: 1, duration: 260, useNativeDriver: true }),
         Animated.timing(bannerY, { toValue: 0, duration: 320, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }),
       ]),
-      Animated.delay(800),
+      Animated.delay(bannerDuration),
       Animated.parallel([
         Animated.timing(bannerOp, { toValue: 0, duration: 320, useNativeDriver: true }),
         Animated.timing(bannerY, { toValue: -18, duration: 320, useNativeDriver: true }),
       ]),
     ]);
-    const anim = Animated.sequence([entrance, hold, fly]);
-    Animated.parallel([anim, banner]).start();
-    const timer = setTimeout(onDone, TOTAL_MS);
-    return () => {
-      clearTimeout(timer);
-    };
+    Animated.parallel([Animated.sequence([entrance, hold, fly]), banner]).start();
+    const timer = setTimeout(onDone, totalMs);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Combo bump: pop the xN badge when the count grows mid-show.
+  const prevCount = useRef(show.count);
+  useEffect(() => {
+    if (show.count !== prevCount.current) {
+      prevCount.current = show.count;
+      Animated.sequence([
+        Animated.spring(comboPop, { toValue: 1.6, friction: 3.5, useNativeDriver: true }),
+        Animated.spring(comboPop, { toValue: 1, friction: 5, useNativeDriver: true }),
+      ]).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show.count]);
+
   const combinedScale = Animated.multiply(scale, flyScale);
+  const shownRecipients = show.recipients.slice(0, 3);
+  const extraCount = show.recipients.length - shownRecipients.length;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* 2026-10-17 (Sumon): Centered fullscreen gift — sparkling luxury display */}
+      {/* IMO fullscreen center display */}
       <Animated.View style={{
         position: 'absolute',
         left: centerX - displaySize / 2,
@@ -183,56 +216,184 @@ function GiftFlyPlayer({ event, onDone }: { event: GiftFlyEvent; onDone: () => v
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        {/* 2026-10-17 (Sumon): Per-gift DISTINCT luxury effect */}
-        <GiftLuxuryEffect giftId={event.giftId} size={displaySize} />
-        <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={displaySize} animationUrl={event.animationUrl} animationType={event.animationType} videoSize={displaySize} videoFullscreen={true} />
+        <GiftLuxuryEffect giftId={show.giftId} size={displaySize} />
+        <AnimatedGift
+          giftId={show.giftId} emoji={show.emoji} size={displaySize}
+          animationUrl={show.animationUrl} animationType={show.animationType}
+          videoSize={displaySize} videoFullscreen
+        />
+        {show.count > 1 && (
+          <Animated.View style={{
+            position: 'absolute', bottom: 8, transform: [{ scale: comboPop }],
+            backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999,
+            paddingHorizontal: 14, paddingVertical: 6,
+          }}>
+            <Text style={{ color: '#ffd700', fontSize: 22, fontWeight: '900' }}>×{show.count}</Text>
+          </Animated.View>
+        )}
       </Animated.View>
-{/* follow-up banner: sender → gift → recipient */}
+
+      {/* Sender pill during display */}
       <Animated.View style={{
-        position: 'absolute', top: 96, alignSelf: 'center',
-        opacity: bannerOp, transform: [{ translateY: bannerY }],
+        position: 'absolute', top: 60, alignSelf: 'center',
+        opacity: displayOp, flexDirection: 'row', alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 999,
+        paddingHorizontal: 10, paddingVertical: 6, gap: 8,
       }}>
-        <View style={[styles.banner, { maxWidth: W - 48 }]}>
-          <GiftAvatar photoURL={event.fromAvatar} name={event.fromName} size={30} />
-          <Text style={styles.bannerName} numberOfLines={1}>{event.fromName}</Text>
-          <Text style={styles.bannerArrow}>→</Text>
-          <AnimatedGift giftId={event.giftId} emoji={event.emoji} size={30} animationUrl={event.animationUrl} animationType={event.animationType} />
-          <Text style={styles.bannerArrow}>→</Text>
-          <GiftAvatar photoURL={event.toAvatar} name={event.toName} size={30} />
-          <Text style={styles.bannerName} numberOfLines={1}>@{event.toName}</Text>
-          <Text style={styles.bannerCoins}>💎{event.coins}</Text>
-        </View>
+        <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={26} />
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }} numberOfLines={1}>
+          {show.fromName}
+        </Text>
       </Animated.View>
+
+      {/* IMO big-gift gold broadcast (room-wide) */}
+      {isBig ? (
+        <Animated.View style={{
+          position: 'absolute', top: 100, left: 24, right: 24,
+          opacity: bannerOp, transform: [{ translateY: bannerY }],
+        }}>
+          <LinearGradient
+            colors={['#ffe27a', '#ffb62e']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={{
+              borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10,
+              flexDirection: 'row', alignItems: 'center',
+              shadowColor: '#ffb62e', shadowOpacity: 0.5, shadowRadius: 12,
+              shadowOffset: { width: 0, height: 4 }, elevation: 8,
+            }}>
+            <Text style={{ fontSize: 22, marginRight: 8 }}>🎉</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#4a2f00', fontSize: 13, fontWeight: '900' }} numberOfLines={2}>
+                {show.fromName} → {shownRecipients.map((r) => r.name).join(', ')}
+                {extraCount > 0 ? ` +${extraCount}` : ''}
+              </Text>
+              <Text style={{ color: '#4a2f00', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+                {t('voiceRoom.gifts.bigGiftSent', { coins: show.coins })}
+                {show.count > 1 ? ` ×${show.count}` : ''}
+              </Text>
+            </View>
+            <AnimatedGift
+              giftId={show.giftId} emoji={show.emoji} size={44}
+              animationUrl={show.animationUrl} animationType={show.animationType}
+            />
+          </LinearGradient>
+        </Animated.View>
+      ) : (
+        /* follow-up banner: sender -> gift xN -> recipients */
+        <Animated.View style={{
+          position: 'absolute', top: 96, alignSelf: 'center',
+          opacity: bannerOp, transform: [{ translateY: bannerY }],
+        }}>
+          <View style={[styles.banner, { maxWidth: W - 48 }]}>
+            <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={30} />
+            <Text style={styles.bannerName} numberOfLines={1}>{show.fromName}</Text>
+            <Text style={styles.bannerArrow}>→</Text>
+            <AnimatedGift
+              giftId={show.giftId} emoji={show.emoji} size={30}
+              animationUrl={show.animationUrl} animationType={show.animationType}
+            />
+            {show.count > 1 && <Text style={styles.comboInline}>×{show.count}</Text>}
+            <Text style={styles.bannerArrow}>→</Text>
+            {shownRecipients.map((r) => (
+              <View key={r.uid} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+                <GiftAvatar photoURL={r.photoURL} name={r.name} size={26} />
+              </View>
+            ))}
+            {extraCount > 0 && <Text style={styles.bannerName}>+{extraCount}</Text>}
+            <Text style={styles.bannerCoins}>💎{show.coins}</Text>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
 
 export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAnimation(_props, fwdRef) {
-  // 2026-10-17 (Sumon): SIMULTANEOUS animations — all gifts play at once, not queued
-  const [activeEvents, setActiveEvents] = useState<GiftFlyEvent[]>([]);
+  // IMO: fullscreen shows QUEUE — one at a time, never overlapping.
+  const [queue, setQueue] = useState<QueuedShow[]>([]);
+  const [active, setActive] = useState<QueuedShow | null>(null);
+  const queueRef = useRef<QueuedShow[]>([]);
+  const activeRef = useRef<QueuedShow | null>(null);
+
+  const setActiveBoth = useCallback((s: QueuedShow | null) => {
+    activeRef.current = s;
+    setActive(s);
+  }, []);
+
+  const enqueueOrMerge = useCallback((e: Omit<GiftFlyEvent, 'key'>) => {
+    const now = Date.now();
+    const recipient: ShowRecipient = {
+      uid: e.toUid, name: e.toName, photoURL: e.toAvatar, target: e.target ?? null,
+    };
+    const mergeInto = (s: QueuedShow): boolean => {
+      if (s.giftId === e.giftId && now - s.startedAt < SHOW_COMBO_WINDOW_MS) {
+        if (!s.recipients.some((r) => r.uid === recipient.uid)) {
+          s.recipients.push(recipient);
+        }
+        s.count += 1;
+        return true;
+      }
+      return false;
+    };
+    // IMO ComboState: stack xN onto the running animation first …
+    if (activeRef.current && mergeInto(activeRef.current)) {
+      setActive({ ...activeRef.current });
+      return;
+    }
+    // … then onto a queued show of the same gift …
+    const queued = queueRef.current.find((s) => s.giftId === e.giftId && now - s.startedAt < SHOW_COMBO_WINDOW_MS);
+    if (queued && mergeInto(queued)) {
+      setQueue([...queueRef.current]);
+      return;
+    }
+    // … otherwise enqueue a fresh fullscreen show.
+    const fresh: QueuedShow = {
+      giftId: e.giftId, emoji: e.emoji, coins: e.coins,
+      fromName: e.fromName, fromAvatar: e.fromAvatar,
+      animationUrl: e.animationUrl, animationType: e.animationType,
+      videoSize: e.videoSize, videoFullscreen: e.videoFullscreen,
+      recipients: [recipient], count: 1, startedAt: now,
+    };
+    queueRef.current = [...queueRef.current, fresh];
+    setQueue(queueRef.current);
+  }, []);
 
   useImperativeHandle(fwdRef, () => ({
-    playFly: (e: Omit<GiftFlyEvent, 'key'>) => {
-      const event = { ...e, key: `${Date.now()}_${Math.random().toString(36).slice(2)}` };
-      setActiveEvents(prev => [...prev, event]);
-    },
-  }), []);
+    playFly: (e: Omit<GiftFlyEvent, 'key'>) => { enqueueOrMerge(e); },
+  }), [enqueueOrMerge]);
 
-  const handleDone = useCallback((key: string) => {
-    setActiveEvents(prev => prev.filter(e => e.key !== key));
-  }, []);
+  // Pump the queue: one show at a time.
+  useEffect(() => {
+    if (!active && queue.length > 0) {
+      const [next, ...rest] = queue;
+      queueRef.current = rest;
+      setQueue(rest);
+      next.startedAt = Date.now();
+      setActiveBoth(next);
+    }
+  }, [active, queue, setActiveBoth]);
+
+  const handleDone = useCallback(() => { setActiveBoth(null); }, [setActiveBoth]);
+
+  // Re-render the active player when its combo count grows (for the xN pop).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (active) {
+      const t = setInterval(() => setTick((x) => x + 1), 500);
+      return () => clearInterval(t);
+    }
+  }, [active]);
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]} pointerEvents="none">
-      {activeEvents.map(event => (
-        <GiftFlyPlayer key={event.key} event={event} onDone={() => handleDone(event.key)} />
-      ))}
+      {active ? <GiftShowPlayer show={active} onDone={handleDone} /> : null}
     </View>
   );
 });
 
 /* ═══════════════════════════════════════════
    2) RECEIVER-SIDE banners (Firebase giftFeed)
+   — combo xN, queued, unchanged IMO-matching behavior
 ═══════════════════════════════════════════ */
 
 type ReceiveEntry = {
@@ -479,6 +640,7 @@ const styles = StyleSheet.create({
   },
   bannerArrow: { color: '#ffd700', fontSize: 16, fontWeight: '800', marginHorizontal: 4 },
   bannerCoins: { color: '#ffd700', fontSize: 13, fontWeight: '800', marginLeft: 6 },
+  comboInline: { color: '#ffd700', fontSize: 14, fontWeight: '900', marginLeft: 2 },
   recvBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(12,14,20,0.94)',
