@@ -19,7 +19,7 @@
 import {
   ref, push, set, update, onValue, get, increment,
   serverTimestamp, DataSnapshot, onDisconnect as fbOnDisconnect,
-  query, orderByKey, limitToLast, endBefore,
+  query, orderByKey, limitToLast, endBefore, startAfter,
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { DmMessage, DmReplyPreview } from '../types/dm';
@@ -346,35 +346,56 @@ async function incrementUnread(
 /**
  * Mark recent messages from the other user as 'seen'.
  *
- * RC8-A: Limited to the 100 most recent messages instead of the entire
- * history. This covers all practical unread counts (users don't typically
- * have 100+ unread messages) while eliminating expensive full-history reads
- * that could download thousands of messages just to flip status fields.
+ * 2026-10-19 (stability): this used to do a 100-message read + up to 100
+ * writes on EVERY new message — and it also marked messages seen while the
+ * user was scrolled up reading history (wrongly clearing the unread badge).
+ * Now:
+ * - The caller only invokes this when the user is actually at the bottom
+ *   (visible) and throttles calls — see InboxScreen's markSeenThrottled.
+ * - Only messages newer than `afterKey` (the newest key covered by the
+ *   previous mark) are read. The first call in a session falls back to the
+ *   recent 100-message window, which covers all practical unread counts.
+ *
+ * @returns the newest message key observed — pass it as `afterKey` next time.
  */
-export async function markAllSeen(chatId: string, myUid: string): Promise<void> {
-  const recentQuery = query(
-    ref(database, `chats/${chatId}/messages`),
-    orderByKey(),
-    limitToLast(100),
-  );
+export async function markAllSeen(
+  chatId: string,
+  myUid: string,
+  afterKey?: string | null,
+): Promise<string | null> {
+  const recentQuery = afterKey
+    ? query(
+        ref(database, `chats/${chatId}/messages`),
+        orderByKey(),
+        startAfter(afterKey),
+      )
+    : query(
+        ref(database, `chats/${chatId}/messages`),
+        orderByKey(),
+        limitToLast(100),
+      );
 
   const snap = await get(recentQuery);
-  if (!snap.exists()) return;
 
-  const updates: Record<string, string> = {};
-  snap.forEach((child) => {
-    const v = child.val() as { senderId: string; status: string };
-    if (v.senderId !== myUid && v.status !== 'seen') {
-      updates[`chats/${chatId}/messages/${child.key}/status`] = 'seen';
+  let newestKey: string | null = afterKey ?? null;
+  if (snap.exists()) {
+    const updates: Record<string, string> = {};
+    snap.forEach((child) => {
+      newestKey = child.key;
+      const v = child.val() as { senderId: string; status: string };
+      if (v.senderId !== myUid && v.status !== 'seen') {
+        updates[`chats/${chatId}/messages/${child.key}/status`] = 'seen';
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      await update(ref(database), updates);
     }
-  });
-
-  if (Object.keys(updates).length > 0) {
-    await update(ref(database), updates);
   }
 
   // Reset my unread count
   await update(ref(database, `userChats/${myUid}/${chatId}`), { unreadCount: 0 });
+  return newestKey;
 }
 
 // ─── Typing indicator ────────────────────────────────────────────────────────

@@ -240,6 +240,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const shouldScrollRef = useRef(true);
   const typingDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-10-19 (stability): seen-receipt gating — mark seen ONLY while the
+  // user is actually viewing the bottom of the chat (atBottomRef), throttle
+  // marks to one per 5s, and remember the newest key already marked
+  // (lastMarkedKeyRef) so each mark reads only the newer-than-last-seen
+  // delta instead of the last 100 messages every time.
+  const atBottomRef       = useRef(true);
+  const lastMarkSeenAtRef = useRef(0);
+  const lastMarkedKeyRef  = useRef<string | null>(null);
+  const markedChatRef     = useRef<string | null>(null);
   // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ থাকতে হবে। image/media
   // async load হয়ে content height বদলালে scroll position নষ্ট হয় — তাই
   // initial load phase-এ onContentSizeChange-এও scroll to end করি।
@@ -363,12 +372,30 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const isSystemChat = isVeeTeam(effectiveParticipantId);
 
   // ── Mark seen on open ──────────────────────────────────────────────────
+  // 2026-10-19 (stability): throttled + gated — only when the user is
+  // actually at the bottom (visible); never while scrolled up reading
+  // history (that wrongly cleared the unread badge). Each invocation reads
+  // only messages newer than the last marked key.
+  const markSeenThrottled = useCallback(() => {
+    if (!atBottomRef.current) return;
+    const now = Date.now();
+    if (now - lastMarkSeenAtRef.current < 5000) return;
+    lastMarkSeenAtRef.current = now;
+    const afterKey = markedChatRef.current === chatId ? lastMarkedKeyRef.current : null;
+    markedChatRef.current = chatId;
+    // background: safe to swallow — seen receipts are best-effort
+    markAllSeen(chatId, myUid, afterKey)
+      .then((newestKey) => {
+        if (newestKey) lastMarkedKeyRef.current = newestKey;
+      })
+      .catch(() => {});
+  }, [chatId, myUid]);
+
   useEffect(() => {
     if (messages.length > 0) {
-      // background: safe to swallow — seen receipts are best-effort
-      markAllSeen(chatId, myUid).catch(() => {});
+      markSeenThrottled();
     }
-  }, [chatId, myUid, messages.length]);
+  }, [chatId, myUid, messages.length, markSeenThrottled]);
 
   // ── Block status: check on open and refresh when returning ────────────────
   useEffect(() => {
@@ -418,8 +445,13 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const handleScroll = useCallback((e: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
     const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
+    const wasAtBottom = atBottomRef.current;
+    atBottomRef.current = isAtBottom;
     setShowScrollBtn(!isAtBottom);
-  }, []);
+    // 2026-10-19: user scrolled back to the bottom after reading history —
+    // messages that arrived meanwhile are now visible; mark them seen.
+    if (isAtBottom && !wasAtBottom) markSeenThrottled();
+  }, [markSeenThrottled]);
 
   const scrollToBottom = useCallback(() => {
     flatRef.current?.scrollToEnd({ animated: true });
