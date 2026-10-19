@@ -10,7 +10,7 @@
  * - Rooms: shortIds/rooms/{id} → {ownerUid, ...}, rooms/{roomId}/info/shortId → id
  */
 
-import { ref, get, runTransaction, set } from 'firebase/database';
+import { ref, get, set } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
 import { getApiBase } from '@/src/utils/platform';
 
@@ -140,42 +140,13 @@ export async function isShortIdAvailable(
 
 /**
  * Admin: grant a custom short ID (digits only, any length).
- * Only works if the caller is in admins/{uid} (enforced by Firebase rules).
+ *
+ * REMOVED 2026-10-19 (CRASH-RISK audit): the client grant path was dead —
+ * Firebase rules set ".write": "false" on shortIds/{users,rooms}, so no
+ * client write can ever succeed here. Short IDs are granted via the admin
+ * panel / VPS only. If an in-app admin grant is ever needed, it must go
+ * through a server endpoint, never a direct client write.
  */
-export async function adminGrantShortId(
-  kind: ShortIdKind,
-  shortId: string,
-  ownerId: string,
-): Promise<{ success: boolean; error?: string }> {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return { success: false, error: 'Not signed in' };
-
-  // Digits only, 1-8 digits (admin can grant any length)
-  if (!/^[0-9]{1,8}$/.test(shortId)) {
-    return { success: false, error: 'ID must be digits only' };
-  }
-
-  const registryRef = ref(database, `shortIds/${kind}/${shortId}`);
-
-  // Admin can overwrite (rules allow admins to write even if taken)
-  const result = await runTransaction(registryRef, () => ownerId);
-
-  if (!result.committed) {
-    return { success: false, error: 'Failed to grant ID' };
-  }
-
-  try {
-    if (kind === 'users') {
-      await set(ref(database, `users/${ownerId}/shortId`), shortId);
-    } else {
-      await set(ref(database, `rooms/${ownerId}/info/shortId`), shortId);
-    }
-  } catch {
-    return { success: false, error: 'Failed to save ID' };
-  }
-
-  return { success: true };
-}
 
 /**
  * Admin: grant official verified badge to a user.
