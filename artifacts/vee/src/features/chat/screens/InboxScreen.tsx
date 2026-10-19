@@ -44,6 +44,10 @@ import { DmMessage, DmReplyPreview } from '../types/dm';
 // NOTE 5 (2026-10-11): every error must show its actual cause.
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { uploadImage } from '@/src/services/cloudinaryService';
+// 2026-10-19 OOM fix: fullscreen chat image viewer uses expo-image
+// (disk cache + native downsampling). RN core Image decodes full-resolution
+// originals (Telegram serves originals; 20–50MB photos → OOM). Same size.
+import { Image as ExpoImage } from 'expo-image';
 import { useAuth } from '@/src/context/AuthContext';
 import { submitReport } from '@/src/services/reportService';
 // RC6 fix Issue 5 + Issue 8
@@ -1233,10 +1237,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               <Feather name="download" size={24} color="#fff" />
             </Pressable>
             {mediaViewerUri && (
-              <Image
+              <ExpoImage
                 source={{ uri: mediaViewerUri }}
                 style={{ width, height: height * 0.75 }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="disk"
               />
             )}
           </View>

@@ -1,8 +1,13 @@
 import { memo, useRef, useState } from 'react';
 import {
   View, Text, Pressable, Animated, Alert,
-  ActionSheetIOS, Platform, Image, Dimensions,
+  ActionSheetIOS, Platform, Dimensions,
 } from 'react-native';
+// 2026-10-19 OOM fix: chat thumbnails use expo-image (disk cache + native
+// downsampling) instead of RN core Image, which decodes full-resolution
+// originals into bitmap memory (Telegram serves originals; a few 20–50MB
+// photos = hundreds of MB → OOM kill). Same layout/sizes, no behavior change.
+import { Image } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library';
 // NOTE 12 (2026-10-11): modern expo-file-system API (SDK 54). Remote media
 // must be downloaded to a local file first — MediaLibrary.saveToLibraryAsync
@@ -261,7 +266,8 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
               <Image
                 source={{ uri: message.content }}
                 style={{ width: 220, height: 220, borderRadius: 16 }}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="disk"
               />
             </Pressable>
           ) : message.type === 'video' ? (
