@@ -602,32 +602,63 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // 2026-10-18 (Sumon): confirmed send — uploads each selected asset then
   // sends as individual messages, in order. Superfast: uploads run sequentially
   // but the modal closes immediately for instant feel.
-  const confirmAndSendMedia = useCallback(async () => {
-    const assets = pendingMedia;
-    if (!assets.length || uploadingMediaRef.current) return;
-    setPendingMedia([]);
+  // 2026-10-19 (stability): per-asset try/catch — one failed upload/send no
+  // longer drops the remaining assets. Failed ones are reported with a Retry.
+  const sendMediaAssets = useCallback(async (assets: ImagePicker.ImagePickerAsset[]) => {
+    if (!assets.length || uploadingMediaRef.current) {
+      return { failed: [] as ImagePicker.ImagePickerAsset[], firstCause: null as string | null };
+    }
     uploadingMediaRef.current = true;
     setUploadingMedia(true);
     shouldScrollRef.current = true;
+    const failed: ImagePicker.ImagePickerAsset[] = [];
+    let firstCause: string | null = null;
     try {
       for (const asset of assets) {
-        const isVideo = asset.type === 'video';
-        const uploaded = await uploadImage(asset.uri, {
-          folder: 'vee/dm',
-          mimeHint: isVideo ? 'video/mp4' : undefined,
-        });
-        await sendMessage(
-          chatId, myUid, effectiveParticipantId, uploaded.url,
-          isVideo ? 'video' : 'image', undefined, uploaded.publicId,
-          myRealName || user?.displayName || undefined);
+        try {
+          const isVideo = asset.type === 'video';
+          const uploaded = await uploadImage(asset.uri, {
+            folder: 'vee/dm',
+            mimeHint: isVideo ? 'video/mp4' : undefined,
+          });
+          await sendMessage(
+            chatId, myUid, effectiveParticipantId, uploaded.url,
+            isVideo ? 'video' : 'image', undefined, uploaded.publicId,
+            myRealName || user?.displayName || undefined);
+        } catch (err) {
+          failed.push(asset);
+          if (!firstCause) firstCause = getErrorCause(err);
+        }
       }
-    } catch (err) {
-      Alert.alert(t('chat.uploadFailed'), err instanceof Error ? err.message : t('chat.photoSendFailed'));
     } finally {
       uploadingMediaRef.current = false;
       setUploadingMedia(false);
     }
-  }, [pendingMedia, chatId, myUid, effectiveParticipantId, t, user, myRealName]);
+    return { failed, firstCause };
+  }, [chatId, myUid, effectiveParticipantId, user, myRealName]);
+
+  const confirmAndSendMedia = useCallback(async () => {
+    const assets = pendingMedia;
+    if (!assets.length || uploadingMediaRef.current) return;
+    setPendingMedia([]);
+    const { failed, firstCause } = await sendMediaAssets(assets);
+    if (failed.length > 0) {
+      const summary = failed.length === 1
+        ? t('chat.mediaOneFailed', { defaultValue: '1 item failed to send.' })
+        : t('chat.mediaSomeFailed', { count: failed.length, defaultValue: '{{count}} items failed to send.' });
+      Alert.alert(
+        t('chat.uploadFailed'),
+        firstCause ? `${summary}\n${firstCause}` : summary,
+        [
+          { text: t('chat.cancel'), style: 'cancel' },
+          {
+            text: t('chat.retry', { defaultValue: 'Retry' }),
+            onPress: () => { void sendMediaAssets(failed); },
+          },
+        ],
+      );
+    }
+  }, [pendingMedia, sendMediaAssets, t]);
 
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
