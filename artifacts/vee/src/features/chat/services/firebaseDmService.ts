@@ -401,6 +401,12 @@ export async function markAllSeen(
 // ─── Typing indicator ────────────────────────────────────────────────────────
 
 const typingTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
+// 2026-10-19 perf: throttle typing indicator writes — at most one RTDB
+// `isTyping:true` write per 3s while typing continuously (was: a write per
+// keystroke). The auto-clear timer below is still refreshed on every call so
+// the existing clear debounce keeps working unchanged.
+const lastTypingTrueWrite: Record<string, number> = {};
+const TYPING_WRITE_THROTTLE_MS = 3000;
 // 2026-10-13 (Sumon): onDisconnect একবারই register হবে প্রতি chat+uid-এ — প্রতিটি
 // keystroke-এ নতুন onDisconnect write schedule করা হতো, যা অপ্রয়োজনীয় write জমাতো।
 const typingDisconnectRegistered = new Set<string>();
@@ -410,14 +416,21 @@ export function setTyping(chatId: string, myUid: string, isTyping: boolean): voi
   const typingRef = ref(database, `chats/${chatId}/typing/${myUid}`);
 
   if (isTyping) {
-    set(typingRef, { isTyping: true, lastTypedAt: Date.now() }).catch(() => {/* fire-and-forget */});
+    const key = `${chatId}_${myUid}`;
+    const now = Date.now();
+    if (now - (lastTypingTrueWrite[key] || 0) >= TYPING_WRITE_THROTTLE_MS) {
+      lastTypingTrueWrite[key] = now;
+      set(typingRef, { isTyping: true, lastTypedAt: now }).catch(() => {/* fire-and-forget */});
+    }
     // Auto-clear after 4 seconds
-    clearTimeout(typingTimeouts[`${chatId}_${myUid}`]);
-    typingTimeouts[`${chatId}_${myUid}`] = setTimeout(() => {
+    clearTimeout(typingTimeouts[key]);
+    typingTimeouts[key] = setTimeout(() => {
+      lastTypingTrueWrite[key] = 0;
       set(typingRef, { isTyping: false, lastTypedAt: Date.now() }).catch(() => {/* background: safe to swallow — typing indicator is ephemeral */});
     }, 4000);
   } else {
     clearTimeout(typingTimeouts[`${chatId}_${myUid}`]);
+    lastTypingTrueWrite[`${chatId}_${myUid}`] = 0;
     set(typingRef, { isTyping: false, lastTypedAt: Date.now() }).catch(() => {/* fire-and-forget */});
   }
 
