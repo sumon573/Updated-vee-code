@@ -28,6 +28,10 @@ export function useActiveFrame(uid: string | undefined | null): string | null {
       const val = snap.val();
       // Frame ID is a string; null/empty means no active frame
       setFrameId(typeof val === 'string' && val.trim().length > 0 ? val.trim() : null);
+    }, () => {
+      // 2026-10-19 polish: fall back to no frame instead of a silently
+      // dead listener.
+      setFrameId(null);
     });
 
     return () => unsub();

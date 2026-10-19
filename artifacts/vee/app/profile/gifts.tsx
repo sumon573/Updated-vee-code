@@ -173,6 +173,12 @@ export default function GiftDisplayScreen() {
         });
       }
       setServerCatalog(catalog);
+    }, (e) => {
+      // 2026-10-19 polish: a dead catalog listener must not leave the gift
+      // display empty — fall back to the hardcoded catalog (mergedCatalog
+      // below already prefers server entries when present).
+      console.warn('[gifts] gift_catalog listener error:', (e as Error)?.message || e);
+      setServerCatalog({});
     });
     return () => unsub();
   }, []);

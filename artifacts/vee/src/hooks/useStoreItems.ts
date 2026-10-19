@@ -32,6 +32,10 @@ function useEquippedNode(uid: string | undefined | null, node: string): Equipped
     }
     const unsub = onValue(ref(database, `users/${uid}/${node}`), (snap) => {
       setItem(sanitizeEquipped(snap.val()));
+    }, () => {
+      // 2026-10-19 polish: fall back to empty (no equipped item) instead of
+      // a silently dead listener.
+      setItem(null);
     });
     return () => unsub();
   }, [uid, node]);
@@ -69,10 +73,16 @@ export function useStoreRoomDecor(roomId: string | undefined | null): RoomDecor 
       const ok = v && typeof v.imageUrl === 'string' && v.imageUrl &&
         (typeof v.expiresAt !== 'number' || v.expiresAt > Date.now());
       setDecor((d) => ({ ...d, backgroundUrl: ok ? v.imageUrl : null }));
+    }, () => {
+      // 2026-10-19 polish: fall back to no background on listener error.
+      setDecor((d) => ({ ...d, backgroundUrl: null }));
     });
     const unsubMic = onValue(ref(database, `rooms/${roomId}/activeMicDecor`), (snap) => {
       const v = sanitizeEquipped(snap.val());
       setDecor((d) => ({ ...d, micDecorUrl: v ? v.imageUrl : null }));
+    }, () => {
+      // 2026-10-19 polish: fall back to no mic decor on listener error.
+      setDecor((d) => ({ ...d, micDecorUrl: null }));
     });
     return () => {
       unsubBg();

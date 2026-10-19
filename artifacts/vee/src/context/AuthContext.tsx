@@ -228,6 +228,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setIsBanned(false);
                     setBanReason(null);
                   }
+                }, (e) => {
+                  // 2026-10-19 polish: a dead ban listener must not silently
+                  // disable ban enforcement. Log, then do ONE delayed one-shot
+                  // re-check (no resubscribe loop — a permanent error like
+                  // permission-denied would spin forever).
+                  console.warn('[AuthContext] ban listener error:', (e as Error)?.message || e);
+                  setTimeout(() => {
+                    if (banListenerUidRef.current !== subscribeUid || bannedSessionRef.current) return;
+                    import('firebase/database').then(({ get }) => {
+                      get(banRef).then((s) => {
+                        if (s.val() === true) {
+                          bannedSessionRef.current = true;
+                          bannedUidRef.current = subscribeUid;
+                          setIsBanned(true);
+                          firebaseLogout().catch(() => {});
+                          setUser(null);
+                        }
+                      }).catch(() => {});
+                    }).catch(() => {});
+                  }, 10000);
                 });
                 // The UID may have moved on while the dynamic import was
                 // resolving — the newer subscribe path owns the ref now, so

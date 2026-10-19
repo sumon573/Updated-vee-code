@@ -70,6 +70,10 @@ function ensureProfileSubscription(uid: string): ProfileEntry {
         try { cb(next); } catch { /* one bad listener must not break the rest */ }
       }
     }
+  }, (e) => {
+    // 2026-10-19 polish: never let a listener error silently freeze every
+    // row on a stale profile — keep serving the last-known value and log.
+    console.warn('[useLiveUserProfile] listener error:', (e as Error)?.message || e);
   });
 
   profileCache.set(uid, entry);

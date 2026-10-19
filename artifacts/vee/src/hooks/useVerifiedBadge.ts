@@ -67,15 +67,20 @@ function ensureBadgeSubscription(uid: string): BadgeEntry {
   };
 
   // Listen to both paths — either change updates the verified state live.
+  // 2026-10-19 polish: on listener error keep the last-known verified state
+  // (a transient error must not flip a real badge off) and log.
+  const onBadgeError = (e: Error) => {
+    console.warn('[useVerifiedBadge] listener error:', e?.message || e);
+  };
   entry.unsubs = [
     onValue(ref(database, `users/${uid}/officialBadge`), (snap) => {
       entry.officialExists = snap.exists();
       recompute();
-    }),
+    }, onBadgeError),
     onValue(ref(database, `users/${uid}/badges`), (snap) => {
       entry.badgesVal = snap.exists() ? snap.val() : null;
       recompute();
-    }),
+    }, onBadgeError),
   ];
 
   badgeCache.set(uid, entry);

@@ -631,7 +631,26 @@ export function sanitizeChat(chatId: string, raw: any): Chat | null {
 // 2026-10-13 (Sumon): কোন uid-এর profile fetch একবার চেষ্টা করা হয়েছে সেটা মনে
 // রাখি — প্রতিটি userChats snapshot-এ (প্রতিটি নতুন message-এ) অস্তিত্বহীন/
 // খালি profile-এর জন্য বারবার get() করে read amplification হতো।
-const profileRefreshAttempted = new Set<string>();
+// 2026-10-19 polish: entries TTL (10 min) — the first attempt can fail
+// (network blip, profile not yet created); without expiry the name stayed
+// "Unknown" for the whole session. Expired entries are pruned so the map
+// stays bounded. A successfully refreshed profile writes name/avatar back
+// to userChats, so it naturally stops matching the retry condition.
+const PROFILE_REFRESH_TTL_MS = 10 * 60 * 1000;
+const profileRefreshAttempted = new Map<string, number>();
+
+function shouldRefreshProfile(uid: string): boolean {
+  const ts = profileRefreshAttempted.get(uid);
+  if (ts !== undefined && Date.now() - ts < PROFILE_REFRESH_TTL_MS) return false;
+  profileRefreshAttempted.set(uid, Date.now());
+  if (profileRefreshAttempted.size > 500) {
+    const cutoff = Date.now() - PROFILE_REFRESH_TTL_MS;
+    for (const [k, v] of profileRefreshAttempted) {
+      if (v < cutoff) profileRefreshAttempted.delete(k);
+    }
+  }
+  return true;
+}
 
 /**
  * Subscribe to the logged-in user's chat list.
@@ -656,8 +675,7 @@ export function subscribeUserChats(
         // Session-এ একবারই চেষ্টা — resolve না হলে পরের snapshot-এ আবার get() নয়।
         if (((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar)
           && sanitized.participantId
-          && !profileRefreshAttempted.has(sanitized.participantId)) {
-          profileRefreshAttempted.add(sanitized.participantId);
+          && shouldRefreshProfile(sanitized.participantId)) {
           refreshPromises.push((async () => {
               try {
                 const userSnap = await get(ref(database, `users/${sanitized.participantId}`));
