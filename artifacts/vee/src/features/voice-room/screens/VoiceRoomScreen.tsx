@@ -1609,12 +1609,49 @@ export default function VoiceRoomScreen() {
     });
   }, [seats, audience, roomId, t]);
 
+  /** SVIP kick-out privilege state (checked once per room session). */
+  const [canSvipKickOut, setCanSvipKickOut] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getActiveSvipTier } = await import('@/src/features/svip/svipKickService');
+        const tier = await getActiveSvipTier(myUid);
+        if (!cancelled) setCanSvipKickOut(tier >= 3);
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [myUid, roomId]);
+
+  /** SVIP kick-out: spends points, enforces hierarchy + anti-kick. */
+  const svipKickOut = useCallback((memberId: string) => {
+    const inSeat = seats.find((s: Participant | null) => s?.id === memberId);
+    const seatIdx = inSeat ? seats.findIndex((s: Participant | null) => s?.id === memberId) : -1;
+    (async () => {
+      try {
+        const { svipKickUser } = await import('@/src/features/svip/svipKickService');
+        const res = await svipKickUser(roomId, myUid, memberId, seatIdx);
+        if (res.ok) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert('Kicked', 'User removed from the room.');
+        } else {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          Alert.alert(t('voiceRoom.screen.error'), res.message);
+        }
+      } catch (e) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(t('voiceRoom.screen.error'), getErrorCause(e));
+      }
+    })();
+  }, [seats, roomId, myUid, t]);
+
   const blockUser = useCallback((memberId: string, action: 'room-block' | 'comment-block') => {
     const inSeat = seats.find((s: Participant | null) => s?.id === memberId);
     const inAud  = audience.find((m: Participant) => m.id === memberId);
     const member = inSeat ?? inAud;
     if (!member) return;
 
+    const doBlockUser = () => {
     const demoteUid = action === 'room-block' && member.role === 'admin' ? memberId : undefined;
 
     const kick = (async () => {
@@ -1663,6 +1700,24 @@ export default function VoiceRoomScreen() {
         t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
       );
     });
+    };
+
+    // SVIP anti-kick (IMO: "Cannot block the user due to SVIP anti-kick privilege").
+    // Checked async before any removal; higher-tier blockers overrule.
+    (async () => {
+      try {
+        const { isAntiKickProtected } = await import('@/src/features/svip/svipKickService');
+        if (await isAntiKickProtected(myUid, memberId)) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          Alert.alert(
+            t('voiceRoom.screen.error'),
+            'Cannot block this user due to SVIP anti-kick privilege.',
+          );
+          return;
+        }
+      } catch { /* non-critical — proceed with block attempt */ }
+      doBlockUser();
+    })();
   }, [seats, audience, roomId, myUid, myName, t]);
 
   const unblockUser = useCallback((userId: string) => {
@@ -2605,6 +2660,8 @@ export default function VoiceRoomScreen() {
         dismissAdmin={dismissAdmin}
         blockUser={blockUser}
         unblockUser={unblockUser}
+        svipKickOut={svipKickOut}
+        canSvipKickOut={canSvipKickOut}
         lockSeat={lockSeat}
         unlockSeat={unlockSeat}
         inviteToSeat={inviteToSeat}
