@@ -18,27 +18,35 @@ import { isExpoGo } from '../utils/platform';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let OneSignal: any = null;
-
-// 2026-10-13: Init-ready flag — loginOneSignal() waits for initializeOneSignal()
-// to complete first (fixes race where login ran before initialize).
-let initPromise: Promise<void> | null = null;
-let initDone = false;
+// 2026-10-19 perf: cache the ABSENCE of the native module too. The old code
+// retried require('react-native-onesignal') on every call, and worse —
+// loginOneSignal() ran waitForInit()'s 500ms×20 poll (up to 10s) on every
+// app foreground, only to discover init never ran because the module isn't
+// in the build. Native modules are fixed at build time, so one check is
+// enough for the process lifetime.
+let oneSignalChecked = false;
 
 async function getOneSignal() {
   // BUG 13: Never attempt to load the native module in Expo Go
   if (isExpoGo()) return null;
 
-  if (OneSignal) return OneSignal;
+  if (oneSignalChecked) return OneSignal;
+  oneSignalChecked = true;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('react-native-onesignal');
     OneSignal = mod.default ?? mod.OneSignal ?? mod;
-    return OneSignal;
   } catch {
     // EAS Dev Build ছাড়া native module পাওয়া যাবে না — graceful fallback
-    return null;
+    OneSignal = null;
   }
+  return OneSignal;
 }
+
+// 2026-10-13: Init-ready flag — loginOneSignal() waits for initializeOneSignal()
+// to complete first (fixes race where login ran before initialize).
+let initPromise: Promise<void> | null = null;
+let initDone = false;
 
 /** App start-এ একবার call করুন (app/_layout.tsx-এ) */
 export async function initializeOneSignal(appId: string): Promise<void> {
@@ -118,6 +126,13 @@ async function waitForInit(): Promise<void> {
 export async function loginOneSignal(uid: string): Promise<void> {
   // BUG 13: Skip entirely in Expo Go
   if (isExpoGo()) return;
+
+  // 2026-10-19 perf: when the native module is absent (cached after the
+  // first check), skip everything — especially waitForInit()'s 10s poll,
+  // which used to run on every app foreground for a module that will never
+  // initialize. This kills the dead retry storm.
+  const osEarly = await getOneSignal();
+  if (!osEarly) return;
 
   // 2026-10-13: initialize() শেষ হওয়া পর্যন্ত wait (race condition fix)
   await waitForInit();
