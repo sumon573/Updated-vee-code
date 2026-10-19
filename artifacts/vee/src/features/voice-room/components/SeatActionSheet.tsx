@@ -4,14 +4,14 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
-import { Participant, Role } from '../types/room';
+import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../types/room';
 
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
-export function SeatActionSheet({ visible, seatIdx, member, myRole, myId, locked, audience, onClose,
+export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel, myId, locked, audience, onClose,
   onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onUnblock, onMention, accent,
   isRoomBlocked }: {
   visible: boolean; seatIdx: number; member?: Participant | null;
-  myRole: Role; myId: string; locked: boolean; audience: Participant[];
+  myRole: Role; myRoleLevel?: number; myId: string; locked: boolean; audience: Participant[];
   onClose: () => void;
   onInvite: () => void; onLock: () => void; onUnlock: () => void;
   onDown: () => void; onJoin: () => void; onMute: () => void;
@@ -33,10 +33,14 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myId, locked
   const targetIsOwner = member?.role === 'host';
   const targetIsAdmin = member?.role === 'admin';
 
-  // Can manage this member?
-  const canManage = occupied && !isMe && !targetIsOwner && (isOwner || (isAdminMe && !targetIsAdmin));
-  const canSetAdmin = isOwner && occupied && !isMe && !targetIsOwner && !targetIsAdmin;
-  const canDismissAdmin = isOwner && targetIsAdmin && !isMe;
+  // 2026-10-19 (IMO port Phase 1): numeric hierarchy gates.
+  // myRoleLevel (9000/8000/7000) preferred; falls back to string-role derivation.
+  const myLevel = myRoleLevel ?? roleToLevel(myRole);
+  const targetLevel = member ? (member.roleLevel ?? roleToLevel(member.role)) : ChannelRole.PASSERBY;
+  // Can manage this member? — strictly higher numeric level, never self, never the owner.
+  const canManage = occupied && !isMe && !targetIsOwner && canModerate(myLevel, targetLevel);
+  const canSetAdmin = myLevel >= ChannelRole.OWNER && occupied && !isMe && !targetIsOwner && !targetIsAdmin;
+  const canDismissAdmin = myLevel >= ChannelRole.OWNER && targetIsAdmin && !isMe;
   // "Join Seat" only makes sense for empty seats.
   const canJoin = !occupied;
 

@@ -34,6 +34,43 @@ export type VoiceRoom = {
 
 export type Role = 'host' | 'admin' | 'member';
 
+/* ─── 2026-10-19 (IMO port Phase 1): numeric ChannelRole hierarchy ───
+   IMO uses numeric roles: OWNER 9000 / ADMIN 8000 / MEMBER 7000 / PASSERBY 0.
+   Vee keeps the string Role for backward compat; roleLevel is written going
+   forward and read with dual-read fallback (roleLevel ?? derived from role). */
+export const ChannelRole = {
+  OWNER: 9000,
+  ADMIN: 8000,
+  MEMBER: 7000,
+  PASSERBY: 0,
+} as const;
+export type ChannelRoleLevel = (typeof ChannelRole)[keyof typeof ChannelRole];
+
+/** String role → numeric level. Unknown/missing → MEMBER. */
+export function roleToLevel(role: string | null | undefined): number {
+  if (role === 'host' || role === 'owner') return ChannelRole.OWNER;
+  if (role === 'admin') return ChannelRole.ADMIN;
+  if (role === 'passerby') return ChannelRole.PASSERBY;
+  return ChannelRole.MEMBER;
+}
+
+/** Numeric level → display string role. */
+export function levelToRole(level: number | null | undefined): Role {
+  if (level === ChannelRole.OWNER) return 'host';
+  if (level === ChannelRole.ADMIN) return 'admin';
+  return 'member';
+}
+
+/** True when actor's level meets or exceeds the required level. */
+export function roleAtLeast(actorLevel: number | null | undefined, required: number): boolean {
+  return (actorLevel ?? ChannelRole.MEMBER) >= required;
+}
+
+/** True when actor may moderate target (strictly higher level). Host > admin > member. */
+export function canModerate(actorLevel: number | null | undefined, targetLevel: number | null | undefined): boolean {
+  return (actorLevel ?? ChannelRole.MEMBER) > (targetLevel ?? ChannelRole.MEMBER);
+}
+
 export type Participant = {
   id: string;
   name: string;
@@ -43,6 +80,9 @@ export type Participant = {
   speaking: boolean; // true ONLY when the voice engine signals real audio — no fake pulse
   muted: boolean;
   role: Role;
+  /** 2026-10-19 (IMO port Phase 1): numeric role level (9000/8000/7000/0).
+      Written going forward; read with dual-read fallback to string role. */
+  roleLevel?: number;
   /** 2026-10-13 (Sumon): active frame id for frame display */
   activeFrame?: string;
   /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank speaking ripple */

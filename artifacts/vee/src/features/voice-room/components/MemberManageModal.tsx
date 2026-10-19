@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
-import { Participant, Role } from '../types/room';
+import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../types/room';
 import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
@@ -16,12 +16,12 @@ import { database } from '@/src/config/firebase';
 
 /* ─────────────────────────── Member Manage Modal ─────────────────────────── */
 export function MemberManageModal({
-  member, myRole, myId, onClose, onGift, onMention, onBlock, onUnblock, onReport, onSetAdmin, onDismissAdmin,
+  member, myRole, myRoleLevel, myId, onClose, onGift, onMention, onBlock, onUnblock, onReport, onSetAdmin, onDismissAdmin,
   onViewProfile, onViewOtherProfile, onEditProfile,
   onDown, onDownFromSeat, isSeated,
   isCommentBlocked, isRoomBlocked,
 }: {
-  member: Participant | null; myRole: Role; myId: string; onClose: () => void;
+  member: Participant | null; myRole: Role; myRoleLevel?: number; myId: string; onClose: () => void;
   onGift: () => void; onMention: (name: string) => void;
   onBlock: (action: 'room-block' | 'comment-block') => void;
   /** Unblock the member (shown as a toggle when they are currently blocked) */
@@ -99,15 +99,17 @@ export function MemberManageModal({
   }, [member?.id, (member as any)?.activeNameplate]);
 
   if (!member) return null;
-  const isOwnerMe = myRole === 'host';
-  const isAdminMe = myRole === 'admin';
   const targetIsOwner = member.role === 'host';
   const targetIsAdmin = member.role === 'admin';
   const isMe = member.id === myId;
 
-  const canManage = !isMe && !targetIsOwner && (isOwnerMe || (isAdminMe && !targetIsAdmin));
-  const canSetAdmin  = isOwnerMe && !isMe && !targetIsOwner && !targetIsAdmin;
-  const canDismissAdmin = isOwnerMe && targetIsAdmin;
+  // 2026-10-19 (IMO port Phase 1): numeric hierarchy gates (same semantics as
+  // the string checks: strictly higher level may manage; only owner promotes).
+  const myLevel = myRoleLevel ?? roleToLevel(myRole);
+  const targetLevel = member.roleLevel ?? roleToLevel(member.role);
+  const canManage = !isMe && !targetIsOwner && canModerate(myLevel, targetLevel);
+  const canSetAdmin  = myLevel >= ChannelRole.OWNER && !isMe && !targetIsOwner && !targetIsAdmin;
+  const canDismissAdmin = myLevel >= ChannelRole.OWNER && targetIsAdmin;
 
   const roleLabel = member.role === 'host'
     ? t('voiceRoom.memberManage.roleOwner')

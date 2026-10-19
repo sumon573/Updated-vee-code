@@ -48,7 +48,10 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   // user's ripples collection and use its custom colors/particles.
   const mistColors = theme ? theme.rippleMist : MIST_COLORS;
   const particleChars = theme ? theme.rippleParticles : FLOWER_CHARS;
-  const waveColor = theme ? theme.rippleWave : '#FFFFFF';
+  // 2026-10-19 (IMO port Phase 1): IMO brand blue #05b5fa for the default
+  // speaking halo — matches IMO's VrCircledRippleImageView ripple color.
+  // Noble/equipped themes keep their own wave colors (sacred).
+  const waveColor = theme ? theme.rippleWave : '#05b5fa';
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
@@ -247,17 +250,36 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
   initials: string; color: string; size: number; speaking: boolean; accent: string;
   photoURL?: string; frameType?: string; nobleRankIndex?: number; activeRipple?: string;
 }) {
+  // 2026-10-19 (IMO port Phase 1): IMO-style speaking halo — normal users get
+  // the #05b5fa blue halo ring; noble/equipped-ripple users keep their theme.
+  const isFancy = nobleRankIndex != null || !!activeRipple;
+  const haloColor = isFancy ? C.gold : '#05b5fa';
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       {/* Ripple BEHIND the avatar — expands outward */}
       <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} activeRipple={activeRipple} />
+      {/* 2026-10-19 (IMO port Phase 1): IMO halo ring — static #05b5fa glow
+          ring hugging the avatar while speaking (normal users only; noble
+          themes have their own). Placed behind the DP so overflow stays clean. */}
+      {speaking && !isFancy && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
+            borderWidth: 2, borderColor: '#05b5fa',
+            shadowColor: '#05b5fa', shadowOpacity: 0.8, shadowRadius: 10,
+            shadowOffset: { width: 0, height: 0 }, elevation: 5,
+          }}
+        />
+      )}
       {/* DP — completely stable, no animation */}
       <View style={{
         width: size, height: size, borderRadius: size / 2,
         alignItems: 'center', justifyContent: 'center',
         backgroundColor: color + '2A',
         borderWidth: speaking ? 2.5 : 1.5,
-        borderColor: speaking ? C.gold : (accent + '55'),
+        borderColor: speaking ? haloColor : (accent + '55'),
         overflow: 'hidden',
       }}>
         {photoURL ? (

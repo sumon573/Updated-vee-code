@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
 import { View, Text, Pressable, Animated, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
@@ -32,12 +33,17 @@ function useServerBadgeIcon() {
 }
 
 /* ─────────────────────────── Seat Card ───────────────────────────
-   Premium themed seat card.
-   - Occupied seat: colored avatar ring (speaking → gold pulse, idle → accent ring)
-     + colored owner/admin badge + subtle shadow glow
-   - Empty seat: accent-colored dashed border, accent-tinted background
-   - Locked seat: gold styling (unchanged)
+   2026-10-19 (IMO port Phase 1): IMO look —
+   - 62dp circles, 4-column grid, 11.5sp seat names
+   - Speaking → #05b5fa halo ripple (Avatar)
+   - Mic badge bottom-right: white when live, red when muted
+   - Empty seat: dashed circle with +
+   - HOST: gold gradient pill (#ffe27a→#ffb62e)
+   - Occupied: avatar + name + verified badge (unchanged behavior)
+   - Locked: lock overlay on empty seats only (unchanged behavior)
    Memoized so a single chat message doesn't re-render all 10 seats. */
+// IMO seat avatar diameter (design tokens: ~62dp)
+const SEAT_SIZE = 62;
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
 }: {
@@ -128,7 +134,7 @@ export const SeatCard = memo(function SeatCard({
             <Avatar
               initials={member.initials}
               color={member.color}
-              size={52}
+              size={SEAT_SIZE}
               speaking={member.speaking}
               accent={accent}
               photoURL={member.photoURL}
@@ -148,17 +154,18 @@ export const SeatCard = memo(function SeatCard({
                 resizeMode="cover"
               />
             )}
-            {/* Mic status dot (+ 2026-10-16 Store mic decor overlay) */}
+            {/* 2026-10-19 (IMO port Phase 1): mic badge bottom-right —
+                white when live, red when muted (IMO) */}
             <View style={{
-              position: 'absolute', bottom: 0, left: 0,
-              width: 16, height: 16, borderRadius: 8,
-              backgroundColor: member.muted ? C.red : C.mic,
+              position: 'absolute', bottom: 0, right: 0,
+              width: 18, height: 18, borderRadius: 9,
+              backgroundColor: member.muted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 1.5, borderColor: C.bg,
-              shadowColor: member.muted ? C.red : C.mic,
+              shadowColor: member.muted ? C.red : '#000',
               shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
             }}>
-              <Feather name={member.muted ? 'mic-off' : 'mic'} size={8} color="#fff" />
+              <Feather name={member.muted ? 'mic-off' : 'mic'} size={9} color={member.muted ? '#fff' : '#333'} />
             </View>
             {micDecorUrl && (
               <Image
@@ -174,9 +181,10 @@ export const SeatCard = memo(function SeatCard({
 
           {/* Name — 2026-10-13 (Sumon): verified badge next to name */}
           {/* 2026-10-14: use live hasVerifiedBadge, not stale (member as any).verified */}
+          {/* 2026-10-19 (IMO port Phase 1): 11.5sp seat name (IMO) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
             <Text style={{
-              color: C.text, fontSize: 10, fontWeight: '700',
+              color: C.text, fontSize: 11.5, fontWeight: '700',
               textAlign: 'center',
             }} numberOfLines={1}>{seatName(member.name)}</Text>
             {hasVerifiedBadge && (
@@ -188,18 +196,20 @@ export const SeatCard = memo(function SeatCard({
             )}
           </View>
 
-          {/* Role badge */}
+          {/* Role badge — 2026-10-19 (IMO port Phase 1): HOST = gold gradient pill */}
           {isOwner && (
-            <View style={{
-              backgroundColor: C.gold + '33', borderRadius: 8,
-              paddingHorizontal: 7, paddingVertical: 2, marginTop: 2,
-              borderWidth: 1, borderColor: C.gold + '66',
-              shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 4,
-            }}>
-              <Text style={{ color: C.gold, fontSize: 8, fontWeight: '900' }}>
+            <LinearGradient
+              colors={['#ffe27a', '#ffb62e']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={{
+                borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginTop: 2,
+                shadowColor: '#ffb62e', shadowOpacity: 0.3, shadowRadius: 4,
+              }}
+            >
+              <Text style={{ color: '#5a3c00', fontSize: 8, fontWeight: '900' }}>
                 {t('voiceRoom.seatCard.owner')}
               </Text>
-            </View>
+            </LinearGradient>
           )}
           {isAdmin && (
             <View style={{
@@ -215,23 +225,23 @@ export const SeatCard = memo(function SeatCard({
           )}
         </>
       ) : (
-        /* ── Empty / locked seat ── */
+        /* ── Empty / locked seat — 2026-10-19 (IMO port Phase 1): dashed circle with + */
         <>
           <View style={{
             marginTop: 6,
-            width: 52, height: 52, borderRadius: 26,
+            width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
             backgroundColor: locked ? C.gold + '11' : accent + '0D',
-            borderWidth: locked ? 1.5 : 1.5,
+            borderWidth: 1.5,
             borderColor: locked ? C.gold + '55' : accent + '44',
-            borderStyle: locked ? 'solid' : 'dashed',
+            borderStyle: 'dashed',
             alignItems: 'center', justifyContent: 'center',
             shadowColor: locked ? C.gold : accent,
             shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
             elevation: 2,
           }}>
             <Feather
-              name={locked ? 'lock' : 'user-plus'}
-              size={16}
+              name={locked ? 'lock' : 'plus'}
+              size={20}
               color={locked ? C.gold : accent + 'BB'}
             />
           </View>
