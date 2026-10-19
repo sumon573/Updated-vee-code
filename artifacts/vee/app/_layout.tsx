@@ -133,6 +133,44 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // always calls the latest stashPendingLink without re-running.
   const stashPendingLinkRef = useRef(stashPendingLink);
   stashPendingLinkRef.current = stashPendingLink;
+  // 2026-10-19 CRASH-RISK fix (incoming-call tap dead end): seeds the ringing
+  // modal when an incoming-call push is tapped. Incoming-call pushes carry no
+  // chatId, so the FCM tap handler used to no-op — with the app killed that
+  // tap is the ONLY entry point and the call was silently missed.
+  // The seeder verifies the RTDB call signal is STILL ALIVE before seeding
+  // (a dead signal → stay silent), and applies the same guards as the live
+  // IncomingCallListener path (audio-call screen, minimized call, voice-room
+  // audio owner, block list). It NEVER pushes /audio-call with partial
+  // params — the modal (and its own accept-time liveness check) owns the
+  // transition to the call screen.
+  const [pendingIncomingCall, setPendingIncomingCall] = useState<IncomingCall | null>(null);
+  const seedPendingIncomingCallFromTap = useCallback(async (d: Record<string, any>) => {
+    try {
+      const uid = user?.uid;
+      if (!uid) return;
+      const callerUid = typeof d?.callerUid === 'string' ? d.callerUid : '';
+      if ((segments as string[])?.[0] === 'audio-call') return;
+      if (getMinimizedCall()) return;
+      if (isVoiceRoomAudioActive()) return;
+      if (callerUid) {
+        const blocked = await isInteractionBlocked(uid, callerUid).catch(() => false);
+        if (blocked) return;
+      }
+      const { get, ref } = await import('firebase/database');
+      const { database } = await import('@/src/config/firebase');
+      const snap = await get(ref(database, `calls/${uid}`));
+      if (!snap.exists()) return; // caller cancelled/timed out — stay silent
+      const call = snap.val() as IncomingCall;
+      if ((call as { status?: string })?.status === 'accepted' &&
+          (isCallMinimizing() || getMinimizedCall())) {
+        return;
+      }
+      setPendingIncomingCall(call);
+    } catch { /* non-critical — no modal is better than a crash */ }
+  }, [user?.uid, segments]);
+  // Ref mirror — the mount-once FCM effect calls the latest seeder.
+  const seedPendingIncomingCallFromTapRef = useRef(seedPendingIncomingCallFromTap);
+  seedPendingIncomingCallFromTapRef.current = seedPendingIncomingCallFromTap;
   const [profileChecked, setProfileChecked] = useState(false);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
@@ -300,18 +338,44 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     import('../src/services/fcmPushService').then(({ ensureAndroidChannel, setupNotificationListeners, setupNotificationHandler }) => {
       setupNotificationHandler();
       ensureAndroidChannel().catch(() => {});
-      setupNotificationListeners((data) => {
+      const handleFcmTap = (data: Record<string, any>) => {
         try {
+          const d = data as any;
+          // 2026-10-19 CRASH-RISK fix: incoming-call pushes carry no chatId —
+          // route them through stashPendingLink to the ringing-modal seeder
+          // (same cold-start guard the chat-tap path uses).
+          if (d?.type === 'incoming-call') {
+            stashPendingLinkRef.current(() => {
+              void seedPendingIncomingCallFromTapRef.current(d || {});
+            });
+            return;
+          }
           // Navigate to the chat when notification is tapped.
           // 2026-10-19 stability fix: route through stashPendingLink (same
           // guard as the OneSignal path) — direct router.push() is lost on
           // cold start when navigation isn't ready yet.
-          const chatId = (data as any)?.chatId;
+          const chatId = d?.chatId;
           if (chatId && typeof chatId === 'string') {
             stashPendingLinkRef.current(() => router.push(`/inbox/${chatId}` as any));
           }
         } catch {}
-      });
+      };
+      setupNotificationListeners(handleFcmTap);
+      // 2026-10-19 CRASH-RISK fix: a tap that launches a KILLED app is NOT
+      // re-fired to addNotificationResponseReceivedListener — it is only
+      // visible via getLastNotificationResponseAsync. Route it through the
+      // identical handler so the incoming-call dead end is closed on cold
+      // start too. (Idempotent: the seeder verifies the RTDB signal is alive,
+      // so a stale tap can never pop a phantom modal.)
+      import('expo-notifications').then(async ({ getLastNotificationResponseAsync }) => {
+        try {
+          const last = await getLastNotificationResponseAsync();
+          const d = last?.notification?.request?.content?.data as Record<string, any> | undefined;
+          if (d && typeof d === 'object' && Object.keys(d).length > 0) {
+            handleFcmTap(d);
+          }
+        } catch { /* non-critical */ }
+      }).catch(() => {});
     });
 
     // RC8-B2: Warm up the API server (Render free tier sleeps when idle;
@@ -432,6 +496,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         <IncomingCallListener
           uid={user.uid}
           myName={user.displayName || 'Vee User'}
+          pendingCall={pendingIncomingCall}
+          onPendingCallConsumed={() => setPendingIncomingCall(null)}
         />
       )}
       {/* NOTE 1 (2026-10-11): Return-to-room bar — renders only when a room is
@@ -457,9 +523,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 // Decline removes the Firebase signal.
 
 function IncomingCallListener({
-  uid, myName }: {
+  uid, myName, pendingCall, onPendingCallConsumed }: {
   uid: string;
   myName: string;
+  // 2026-10-19 CRASH-RISK fix: push-tap-seeded incoming call (RTDB-verified
+  // alive by the seeder in AuthGuard) — surfaces the ringing modal on cold
+  // start, where the live RTDB subscribe may not have delivered yet.
+  pendingCall: IncomingCall | null;
+  onPendingCallConsumed: () => void;
 }) {
   const router    = useRouter();
   const segmentsRef = useRef<string[]>([]);
@@ -500,6 +571,17 @@ function IncomingCallListener({
     incomingRef.current = call;
     setIncoming(call);
   }, []);
+
+  // 2026-10-19 CRASH-RISK fix: consume the push-tap-seeded incoming call so
+  // the ringing modal renders on launch. The live RTDB subscribe (below)
+  // takes over from here — including the caller-cancelled path, which logs
+  // the missed call via the existing watcher.
+  useEffect(() => {
+    if (pendingCall) {
+      setIncomingState(pendingCall);
+      onPendingCallConsumed();
+    }
+  }, [pendingCall, onPendingCallConsumed, setIncomingState]);
 
   // Shared missed-call logger — decline path and caller-cancel path both
   // record an 'incoming / missed' entry in the chat inbox, like IMO.
