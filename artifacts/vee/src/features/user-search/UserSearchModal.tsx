@@ -12,7 +12,7 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { ref, get } from 'firebase/database';
+import { ref, get, query, orderByChild, startAt, endAt, limitToFirst } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { VeeUser, subscribeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { useAuth } from '@/src/context/AuthContext';
@@ -97,7 +97,6 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // H2 fix: cache users snapshot per modal-open instead of re-downloading
   // the entire users node on every keystroke.
-  const usersCacheRef = useRef<VeeUser[] | null>(null);
   // H3 fix: ignore stale search completions (race condition guard).
   const searchIdRef = useRef(0);
 
@@ -140,38 +139,55 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
     setLoading(true);
     setSearched(true);
     try {
-      // H2: use cached users list (fetched once per modal-open).
-      let allUsers = usersCacheRef.current;
-      if (!allUsers) {
-        const snap = await get(ref(database, 'users'));
+      // 2026-10-19 (batch 2D): NO full `users` download — scoped queries only.
+      // - Numeric query  → Short-ID lookup via the readable shortIds registry
+      //                    (shortIds/users/{id} → {ownerUid}), then ONE user read.
+      // - Anything else  → Vee-ID prefix search on the indexed `vId` field
+      //                    (rules .indexOn: ["vId", ...]).
+      // NOTE: name-contains search is intentionally dropped — it cannot be
+      // scoped without a new indexed field (would require a data-model
+      // change + rules deploy); the modal header copy now says so.
+      const q = text.trim();
+      const found: VeeUser[] = [];
+      if (/^\d+$/.test(q)) {
+        const regSnap = await get(ref(database, `shortIds/users/${q}`));
         if (searchId !== searchIdRef.current) return; // stale
-        allUsers = [];
-        if (snap.exists()) {
-          snap.forEach((child) => {
-            const sanitized = sanitizeVeeUser(child.key!, child.val());
-            if (sanitized) allUsers!.push(sanitized);
-          });
+        const ownerUid = regSnap.exists() ? (regSnap.val() as any)?.ownerUid : null;
+        if (typeof ownerUid === 'string' && ownerUid) {
+          const uSnap = await get(ref(database, `users/${ownerUid}`));
+          if (searchId !== searchIdRef.current) return; // stale
+          const sanitized = uSnap.exists() ? sanitizeVeeUser(uSnap.key!, uSnap.val()) : null;
+          if (sanitized) found.push(sanitized);
         }
-        usersCacheRef.current = allUsers;
+      } else {
+        const vq = q.toLowerCase();
+        const qRef = query(
+          ref(database, 'users'),
+          orderByChild('vId'),
+          startAt(vq),
+          endAt(vq + '\uf8ff'),
+          limitToFirst(20),
+        );
+        const snap = await get(qRef);
+        if (searchId !== searchIdRef.current) return; // stale
+        snap.forEach((child) => {
+          const sanitized = sanitizeVeeUser(child.key!, child.val());
+          if (sanitized) found.push(sanitized);
+        });
       }
       if (searchId !== searchIdRef.current) return; // stale
 
-      const q = text.trim().toLowerCase();
-      const found: VeeUser[] = [];
-      for (const u of allUsers) {
+      const filtered: VeeUser[] = [];
+      for (const u of found) {
         // FIX: always use child.key as uid — guarantees uid is never undefined
         if (u.uid === me?.uid) continue;
         // 2026-10-13 (Sumon): আমি ব্লক করেছি এমন ইউজার সার্চে দেখা যাবে না
         // (byThem সার্ভিস-লেভেল গার্ডে পরিষ্কার এরর দিয়ে ব্লক হয়)।
         if (blockedUids.has(u.uid)) continue;
-        const nameMatch        = u.name?.toLowerCase().includes(q);
-        const displayNameMatch = (u as any).displayName?.toLowerCase().includes(q);
-        const vidMatch         = u.vId?.toLowerCase().includes(q);
-        const shortIdMatch     = (u as any).shortId?.toLowerCase().includes(q);
-        if (nameMatch || displayNameMatch || vidMatch || shortIdMatch) found.push(u);
+        filtered.push(u);
       }
 
-      const slice = found.slice(0, 20);
+      const slice = filtered.slice(0, 20);
       if (searchId !== searchIdRef.current) return; // stale
       setResults(slice);
 
@@ -207,8 +223,6 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
       setResults([]);
       setSearched(false);
       setUserActions({});
-      // H2: clear users cache when modal closes so next open gets fresh data.
-      usersCacheRef.current = null;
     }
   }, [visible]);
 

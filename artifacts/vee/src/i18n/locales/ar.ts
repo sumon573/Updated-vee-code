@@ -704,9 +704,9 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
   },
   userSearch: {
     title: 'رسالة جديدة',
-    searchPlaceholder: 'ابحث بالاسم أو Vee ID...',
+    searchPlaceholder: 'ابحث بـ Vee ID أو Short ID...',
     noResults: 'لم يُعثر على مستخدمين',
-    searchHint: 'ابحث بالاسم أو Vee ID\n(حرفان على الأقل)',
+    searchHint: 'ابحث بـ Vee ID أو Short ID\n(حرفان على الأقل)',
     tapHint: 'اضغط الاسم للملف الشخصي · 💬 للرسالة',
     searchActionHint: '👆 اضغط الاسم · ➕ تابع · 👥 طلب صداقة · 👁 عرض',
   },
