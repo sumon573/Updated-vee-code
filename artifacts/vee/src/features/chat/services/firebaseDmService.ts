@@ -110,7 +110,9 @@ export function subscribeMessages(
       if (msg) msgs.push(msg);
     });
 
-    msgs.sort((a, b) => a.createdAt - b.createdAt);
+    // 2026-10-19 polish: push-key tiebreak — Firebase push keys are
+    // chronologically ordered, so same-ms messages keep a stable order.
+    msgs.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     callback(msgs, firstKey);
   });
 }
@@ -146,7 +148,9 @@ export async function loadOlderMessages(
     if (msg) msgs.push(msg);
   });
 
-  msgs.sort((a, b) => a.createdAt - b.createdAt);
+  // 2026-10-19 polish: push-key tiebreak — Firebase push keys are
+    // chronologically ordered, so same-ms messages keep a stable order.
+    msgs.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return { messages: msgs, hasMore: msgs.length === DM_PAGE_SIZE };
 }
 
@@ -299,6 +303,10 @@ export async function logCallToChat(
 
     const myUpdate: Record<string, unknown> = { ...meta, unreadCount: 0 };
     const participantUpdate: Record<string, unknown> = { ...meta };
+    // 2026-10-19 polish: a call log is a new chat event — restore a hidden
+    // chat, exactly like sendMessage does (isHidden:false).
+    myUpdate.isHidden = false;
+    participantUpdate.isHidden = false;
     if (shouldIncrementUnread) {
       participantUpdate.unreadCount = increment(1);
     }
@@ -442,12 +450,17 @@ export function setTyping(chatId: string, myUid: string, isTyping: boolean): voi
     // Auto-clear after 4 seconds
     clearTimeout(typingTimeouts[key]);
     typingTimeouts[key] = setTimeout(() => {
+      // 2026-10-19 polish: delete the key — the old code never removed map
+      // entries, leaking one key per chat session.
+      delete typingTimeouts[key];
       lastTypingTrueWrite[key] = 0;
       set(typingRef, { isTyping: false, lastTypedAt: Date.now() }).catch(() => {/* background: safe to swallow — typing indicator is ephemeral */});
     }, 4000);
   } else {
-    clearTimeout(typingTimeouts[`${chatId}_${myUid}`]);
-    lastTypingTrueWrite[`${chatId}_${myUid}`] = 0;
+    const stopKey = `${chatId}_${myUid}`;
+    clearTimeout(typingTimeouts[stopKey]);
+    delete typingTimeouts[stopKey];
+    lastTypingTrueWrite[stopKey] = 0;
     set(typingRef, { isTyping: false, lastTypedAt: Date.now() }).catch(() => {/* fire-and-forget */});
   }
 

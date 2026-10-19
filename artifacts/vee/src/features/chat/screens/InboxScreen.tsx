@@ -62,6 +62,11 @@ import { VerifiedName } from '@/src/components/VerifiedName';
 import { getUserPrivacy } from '@/src/services/privacyService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
+// 2026-10-19 polish: FlatList row union — day separators interleaved with messages.
+type ChatRow =
+  | { kind: 'sep'; dayKey: string; label: string }
+  | { kind: 'msg'; message: DmMessage };
+
 const { width, height } = Dimensions.get('window');
 
 const C = {
@@ -817,11 +822,29 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, [chatId, myUid, t]);
 
   // ── Render message ─────────────────────────────────────────────────────────
-  const renderItem = useCallback(({ item }: { item: DmMessage }) => {
-    if (item.deletedForMe) return null;
+  // 2026-10-19 polish: day-grouped date separators — chatRows (computed
+  // below, after allVisibleMessages) interleaves {kind:'sep'} divider rows
+  // with {kind:'msg'} message rows.
+  const renderItem = useCallback(({ item }: { item: ChatRow }) => {
+    if (item.kind === 'sep') {
+      return (
+        <View style={{ alignItems: 'center', marginVertical: 10 }}>
+          <View style={{
+            backgroundColor: 'rgba(0,0,0,0.06)',
+            borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4,
+          }}>
+            <Text style={{ color: C.muted, fontSize: 11, fontWeight: '600' }}>
+              {item.label}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    const msg = item.message;
+    if (msg.deletedForMe) return null;
     return (
       <MessageBubble
-        message={item}
+        message={msg}
         chatId={chatId}
         myUid={myUid}
         onReply={handleReply}
@@ -833,7 +856,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     );
   }, [chatId, myUid, handleReply]);
 
-  const keyExtractor = useCallback((item: DmMessage) => item.id, []);
+  const keyExtractor = useCallback((item: ChatRow) => (
+    item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
+  ), []);
 
   // RC6 fix Issue 8: navigate to real audio-call screen instead of Alert
   const handleVoiceCall = useCallback(async () => {
@@ -891,6 +916,45 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       return true;
     });
   }, [olderMessages, messages, pendingMsgs]);
+
+  // 2026-10-19 polish: day-grouped date separators — interleave {kind:'sep'}
+  // divider rows with {kind:'msg'} message rows for the FlatList.
+  const chatRows = useMemo<ChatRow[]>(() => {
+    const rows: ChatRow[] = [];
+    let lastDayKey = '';
+    for (const m of allVisibleMessages) {
+      const ts = m.createdAt;
+      const dayKey = Number.isFinite(ts)
+        ? (() => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; })()
+        : 'unknown';
+      if (dayKey !== lastDayKey) {
+        lastDayKey = dayKey;
+        const label = dayLabel(ts);
+        if (label) rows.push({ kind: 'sep', dayKey, label });
+      }
+      rows.push({ kind: 'msg', message: m });
+    }
+    return rows;
+  }, [allVisibleMessages]);
+
+  function dayLabel(ts: number): string {
+    if (!Number.isFinite(ts)) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const startOfDay = (x: Date) => {
+      const c = new Date(x);
+      c.setHours(0, 0, 0, 0);
+      return c.getTime();
+    };
+    const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+    if (diffDays <= 0) return t('chat.today', { defaultValue: 'Today' });
+    if (diffDays === 1) return t('chat.yesterday', { defaultValue: 'Yesterday' });
+    return d.toLocaleDateString([], {
+      day: 'numeric',
+      month: 'short',
+      ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' as const }),
+    });
+  }
 
   // ── "Load earlier messages" header ────────────────────────────────────────
   const ListHeaderComponent = useMemo(() => {
@@ -1039,12 +1103,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            // 2026-10-19 polish: 'height' on Android — the old code used
+            // 'padding' on both platforms (identical branches).
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
           >
             <FlatList
               ref={flatRef}
-              data={allVisibleMessages}
+              data={chatRows}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               contentContainerStyle={{ paddingVertical: 12 }}

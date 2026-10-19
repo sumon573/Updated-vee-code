@@ -394,8 +394,9 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               data={regularChats}
               keyExtractor={(item) => item.id}
               renderItem={renderChatItem}
-              // H4: fixed row height (~76) enables getItemLayout for smooth scroll.
-              getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })}
+              // H4: fixed row height (73 = 52 avatar + 20 vertical padding +
+              // 1 divider) enables getItemLayout for smooth scroll.
+              getItemLayout={(_, index) => ({ length: 73, offset: 73 * index, index })}
               ListHeaderComponent={ListHeader}
               ListEmptyComponent={pinnedChats.length === 0 ? <EmptyState /> : null}
               contentContainerStyle={{ paddingBottom: 120 }}

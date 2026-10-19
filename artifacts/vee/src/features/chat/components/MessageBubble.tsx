@@ -39,6 +39,8 @@ const C = {
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
 
 function formatMsgTime(ts: number): string {
+  // 2026-10-19 polish: malformed timestamps rendered as "NaN:NaN PM".
+  if (!Number.isFinite(ts)) return '';
   const d = new Date(ts);
   const h = d.getHours();
   const m = d.getMinutes().toString().padStart(2, '0');
@@ -87,6 +89,7 @@ export async function saveRemoteMediaToGallery(
       return;
     }
     let localUri = uri;
+    let tempFile: File | null = null;
     if (/^https?:\/\//i.test(uri)) {
       // FIX (2026-10-18): robust extension detection. The old logic
       // (uri.split('.').pop()) broke on extension-less URLs like
@@ -105,12 +108,18 @@ export async function saveRemoteMediaToGallery(
         if (valid.includes(candidate)) ext = candidate === 'jpeg' ? 'jpg' : candidate;
       }
       const dest = new File(Paths.cache, `vee_dl_${Date.now()}.${ext}`);
+      tempFile = dest;
       // Rejects with UnableToDownload (incl. HTTP status) on non-2xx.
       const downloaded = await File.downloadFileAsync(uri, dest);
       if (!downloaded.exists) throw new Error('Downloaded file not found on device');
       localUri = downloaded.uri;
     }
     await MediaLibrary.saveToLibraryAsync(localUri);
+    // 2026-10-19 polish: delete the temp download — vee_dl_* files were
+    // accumulating in the cache directory forever after every gallery save.
+    if (tempFile) {
+      try { tempFile.delete(); } catch { /* best-effort cleanup */ }
+    }
     Alert.alert(s.saved, s.msgSaveToGallery);
   } catch (err) {
     Alert.alert(s.error, `${s.saveToGalleryFailed}\n\nReason: ${getErrorCause(err)}`);
@@ -307,6 +316,27 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                 </Text>
                 <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
                   {message.callInfo?.direction === 'outgoing' ? 'Outgoing' : 'Incoming'}
+                </Text>
+              </View>
+            </View>
+          ) : message.type === 'voice' ? (
+            // 2026-10-19 polish: voice messages are not playable yet (open
+            // feature request — do NOT build it here). Render a graceful
+            // placeholder instead of falling through to the raw audio URL.
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+              <View style={{
+                width: 38, height: 38, borderRadius: 19,
+                backgroundColor: 'rgba(0,122,255,0.15)',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Feather name="mic" size={18} color="#007AFF" />
+              </View>
+              <View>
+                <Text style={{ color: textColor, fontSize: 14, fontWeight: '600' }}>
+                  Voice message
+                </Text>
+                <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                  Update the app to play
                 </Text>
               </View>
             </View>
