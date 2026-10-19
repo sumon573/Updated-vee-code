@@ -866,6 +866,23 @@
         ".validate": "newData.hasChildren(['tier', 'expiry']) && newData.child('tier').isNumber() && newData.child('expiry').isNumber()"
       }
     },
+    // ─────────────────────────────────────────────────────────────────────
+    // svipPoints — SVIP Points (integral) system (2026-10-19, IMO model).
+    // Points expire after 30 days (checked client-side on read).
+    // Owner-only read/write; validate structure + monotonic history.
+    // ─────────────────────────────────────────────────────────────────────
+    "svipPoints": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['balance', 'expiresAt']) && newData.child('balance').isNumber() && newData.child('balance').val() >= 0 && newData.child('expiresAt').isNumber()",
+        "history": {
+          "$entryId": {
+            ".validate": "newData.hasChildren(['amount', 'reason', 'ts']) && newData.child('amount').isNumber() && newData.child('reason').isString() && newData.child('ts').isNumber()"
+          }
+        }
+      }
+    },
     "svipWaitlist": {
       ".read": "auth != null && root.child(\"admins\").child(auth.uid).exists()",
       "$uid": {
