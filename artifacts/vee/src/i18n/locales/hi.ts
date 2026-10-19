@@ -764,9 +764,9 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
   },
   userSearch: {
     title: 'नया संदेश',
-    searchPlaceholder: 'नाम या Vee ID से खोजें...',
+    searchPlaceholder: 'Vee ID या Short ID से खोजें...',
     noResults: 'कोई उपयोगकर्ता नहीं मिला',
-    searchHint: 'नाम या Vee ID से खोजें\n(कम से कम 2 अक्षर)',
+    searchHint: 'Vee ID या Short ID से खोजें\n(कम से कम 2 अक्षर)',
     tapHint: 'प्रोफ़ाइल देखने के लिए नाम टैप करें · 💬 संदेश के लिए',
     searchActionHint: '👆 नाम टैप करें · ➕ Follow · 👥 Friend Request · 👁 View',
   },
