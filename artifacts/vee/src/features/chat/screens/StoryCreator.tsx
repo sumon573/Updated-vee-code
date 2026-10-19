@@ -114,6 +114,10 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [privacy, setPrivacy]   = useState<'public' | 'contacts'>('public');
+  // FIX (2026-10-19): sync double-tap guard. `disabled={publishing}` only
+  // takes effect after a re-render — a second tap in the same frame would
+  // start a second upload+publish. The ref flips synchronously.
+  const publishingRef = useRef(false);
 
   // Real Firebase contacts (from userChats)
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -154,6 +158,9 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
     if (tab === 'photo' && !photoUri) {
       Alert.alert(t('chat.storyNoPhotoAlert'), t('chat.storyNoPhotoMsg')); return;
     }
+    // Sync guard: ignore re-entrant taps while a publish is in flight.
+    if (publishingRef.current) return;
+    publishingRef.current = true;
     setPublishing(true);
     try {
       let content = text.trim();
@@ -178,6 +185,7 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
     } catch {
       Alert.alert(t('chat.error'), t('chat.storyPublishError'));
     } finally {
+      publishingRef.current = false;
       setPublishing(false);
     }
   };
