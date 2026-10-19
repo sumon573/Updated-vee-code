@@ -16,10 +16,15 @@ interface CrashInfo {
   message: string;
   stack?: string;
   timestamp: string;
+  fatal?: boolean;
 }
 
 let crashListeners: Array<(crash: CrashInfo) => void> = [];
 let lastCrash: CrashInfo | null = null;
+// 2026-10-19 stability fix: rate-limit server reports — a crash loop must
+// never spam Firebase (or itself, if the report write throws).
+let lastServerReportAt = 0;
+const SERVER_REPORT_MIN_GAP_MS = 60_000;
 
 export function getLastCrash(): CrashInfo | null {
   return lastCrash;
@@ -44,6 +49,48 @@ function notifyCrash(crash: CrashInfo): void {
 }
 
 /**
+ * 2026-10-19 stability fix — report the crash to Firebase so the NEXT crash
+ * leaves evidence even if the user can't screenshot it. Fire-and-forget:
+ * never throws, never blocks, rate-limited. Writes to
+ * `clientCrashReports/{uid}/{pushId}` (rules: owner-write only).
+ */
+function reportCrashToServer(crash: CrashInfo): void {
+  try {
+    const now = Date.now();
+    if (now - lastServerReportAt < SERVER_REPORT_MIN_GAP_MS) return;
+    lastServerReportAt = now;
+    // Lazy imports — this module loads before Firebase is initialized.
+    Promise.all([
+      import('@/src/config/firebase'),
+      import('firebase/database'),
+      import('@/src/features/voice-room/utils/voiceCrashBreadcrumb'),
+    ])
+      .then(([{ auth, database }, { ref, push, set }, { getVoiceBreadcrumb }]) => {
+        const uid = auth?.currentUser?.uid;
+        if (!uid || !database) return;
+        // 2026-10-19: include the voice breadcrumb if present — pinpoints
+        // which native stage died when the crash was in a voice room.
+        getVoiceBreadcrumb()
+          .catch(() => null)
+          .then((breadcrumb) => {
+            const reportRef = push(ref(database, `clientCrashReports/${uid}`));
+            set(reportRef, {
+              message: String(crash.message || 'Unknown error').slice(0, 2000),
+              stack: String(crash.stack || '').slice(0, 4000),
+              timestamp: crash.timestamp,
+              fatal: crash.fatal === true,
+              voiceStage: breadcrumb ? breadcrumb.stage : null,
+              voiceRoomId: breadcrumb ? breadcrumb.roomId : null,
+            }).catch(() => {});
+          });
+      })
+      .catch(() => {});
+  } catch {
+    // never break the crash path
+  }
+}
+
+/**
  * Install the global JS error handler. Call once at app startup,
  * before any other imports that might throw.
  */
@@ -60,8 +107,11 @@ export function installGlobalCrashHandler(): void {
       message: error?.message || String(error) || 'Unknown error',
       stack: error?.stack || undefined,
       timestamp: new Date().toISOString(),
+      fatal: isFatal === true,
     };
     notifyCrash(crash);
+    // 2026-10-19 stability fix: leave server-side evidence for the next crash.
+    reportCrashToServer(crash);
 
     if (defaultHandler) {
       try {
@@ -71,6 +121,38 @@ export function installGlobalCrashHandler(): void {
       }
     }
   });
+
+  // 2026-10-19 stability fix: explicit unhandled-rejection safety net. Most
+  // RN/Hermes versions route these through ErrorUtils already, but if the
+  // global supports the DOM-style event, listen directly too. Harmless if
+  // unsupported — never throws.
+  try {
+    const g = global as unknown as {
+      addEventListener?: (type: string, listener: (e: unknown) => void) => void;
+    };
+    if (typeof g.addEventListener === 'function') {
+      g.addEventListener('unhandledrejection', (e: unknown) => {
+        try {
+          const reason = (e as { reason?: unknown })?.reason;
+          const crash: CrashInfo = {
+            message:
+              reason instanceof Error
+                ? reason.message
+                : `Unhandled promise rejection: ${String(reason)}`,
+            stack: reason instanceof Error ? reason.stack : undefined,
+            timestamp: new Date().toISOString(),
+            fatal: false,
+          };
+          notifyCrash(crash);
+          reportCrashToServer(crash);
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

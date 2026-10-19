@@ -77,6 +77,7 @@ import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBa
 import {
   isCallMinimizing,
   getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
+import { isVoiceRoomAudioActive } from '@/src/services/audioOwner';
 
 // Expo can reject this call when the native splash screen has already been
 // dismissed (for example after a fast reload). Never leave that rejection
@@ -107,6 +108,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // 2026-10-12 audit fix (HIGH PUSH-1): pending notification deep link,
   // consumed once navigation is ready (see effect below).
   const pendingDeepLinkRef = useRef<(() => void) | null>(null);
+  // 2026-10-19 stability fix: hoisted from the OneSignal effect so the FCM
+  // tap handler uses the same guard. On cold start router.push() can be lost
+  // (navigation not ready) — stash the deep link; the auth-redirect effect
+  // consumes it once rootNavigationState is ready.
+  const stashPendingLink = useCallback((fn: () => void) => {
+    if (rootNavigationState?.key) {
+      fn();
+    } else {
+      pendingDeepLinkRef.current = fn;
+    }
+  }, [rootNavigationState?.key]);
+  // 2026-10-19 stability fix: ref mirror so the mount-once FCM effect below
+  // always calls the latest stashPendingLink without re-running.
+  const stashPendingLinkRef = useRef(stashPendingLink);
+  stashPendingLinkRef.current = stashPendingLink;
   const [profileChecked, setProfileChecked] = useState(false);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
@@ -276,10 +292,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       ensureAndroidChannel().catch(() => {});
       setupNotificationListeners((data) => {
         try {
-          // Navigate to the chat when notification is tapped
+          // Navigate to the chat when notification is tapped.
+          // 2026-10-19 stability fix: route through stashPendingLink (same
+          // guard as the OneSignal path) — direct router.push() is lost on
+          // cold start when navigation isn't ready yet.
           const chatId = (data as any)?.chatId;
           if (chatId && typeof chatId === 'string') {
-            router.push(`/inbox/${chatId}` as any);
+            stashPendingLinkRef.current(() => router.push(`/inbox/${chatId}` as any));
           }
         } catch {}
       });
@@ -309,15 +328,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     // 2026-10-12 audit fix (HIGH PUSH-1): on cold start, router.push() can be
-    // lost (navigation not ready). Stash the pending deep link; the
-    // auth-redirect effect below consumes it once rootNavigationState is ready.
-    const stashPendingLink = (fn: () => void) => {
-      if (rootNavigationState?.key) {
-        fn();
-      } else {
-        pendingDeepLinkRef.current = fn;
-      }
-    };
+    // lost (navigation not ready). Uses the hoisted stashPendingLink (same
+    // guard the FCM path now shares).
 
     // RC8-B2: Added onRoom handler for seat-approved / room-invite / seat-invite
     // notifications so tapping them navigates directly to the voice room.
@@ -521,6 +533,14 @@ function IncomingCallListener({
       // /audio-call and orphan the minimized session (leaked mic + peer
       // connection). Auto-decline as busy instead.
       if (call && (call as { status?: string }).status !== 'accepted' && getMinimizedCall()) {
+        removeCallSignal(uid).catch(() => {});
+        return;
+      }
+      // 2026-10-19 stability fix: mutual exclusion — auto-decline an incoming
+      // 1-to-1 call while a voice room holds the native audio pipeline.
+      // Accepting would run two mic captures on one audio session (native
+      // contention = hard crash). The caller sees it as busy/declined.
+      if (call && (call as { status?: string }).status !== 'accepted' && isVoiceRoomAudioActive()) {
         removeCallSignal(uid).catch(() => {});
         return;
       }

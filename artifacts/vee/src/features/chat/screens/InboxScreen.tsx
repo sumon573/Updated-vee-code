@@ -50,6 +50,7 @@ import { submitReport } from '@/src/services/reportService';
 import { subscribeUser } from '@/src/services/userService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
+import { isVoiceRoomAudioActive } from '@/src/services/audioOwner';
 // RC8-A: actual block user implementation
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 import { isVeeTeam } from '../services/veeTeamService';
@@ -727,6 +728,13 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     // P1 fix (2026-10-12): busy guard — dialing while a call is minimized
     // would create a second WebRTC session and orphan the first (leaked mic).
     if (getMinimizedCall()) {
+      Alert.alert(t('audioCall.alreadyInCallTitle'), t('audioCall.alreadyInCallMsg'));
+      return;
+    }
+    // 2026-10-19 stability fix: mutual exclusion — never start a 1-to-1 call
+    // while a voice room holds the native audio pipeline. Two mic captures
+    // on one audio session = native contention (hard crash).
+    if (isVoiceRoomAudioActive()) {
       Alert.alert(t('audioCall.alreadyInCallTitle'), t('audioCall.alreadyInCallMsg'));
       return;
     }
