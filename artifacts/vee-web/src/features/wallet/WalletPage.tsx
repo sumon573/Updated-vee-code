@@ -1,17 +1,21 @@
 /**
- * Wallet page: live diamond balance, transaction history, gift sending,
+ * Wallet page: live diamond balance, transaction history,
  * and a link to the top-up page.
  *
  * Balance comes from the RTDB subscription `wallets/{uid}/balance` (live);
  * the wallet is created (500 diamonds) via POST /api/wallet/init on first
  * view when the node is absent — handled inside subscribeBalance.
+ *
+ * 2026-10-19 (Sumon): gift sending was REMOVED from this page. HARD RULE —
+ * gifts may be sent ONLY inside voice rooms; the public /wallet page must
+ * never offer out-of-room gifting. GiftPanel now requires a roomId and is
+ * only embedded in room/admin contexts.
  */
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
 import { getTransactions, subscribeBalance, type WalletTransaction } from './walletService';
-import GiftPanel from './GiftPanel';
 
 export default function WalletPage(): React.JSX.Element {
   const { user, loading } = useAuth();
@@ -72,20 +76,6 @@ export default function WalletPage(): React.JSX.Element {
           ➕ Top up diamonds
         </Link>
       </div>
-
-      <GiftPanel
-        fromName={user.displayName ?? user.email ?? 'Vee user'}
-        fromAvatar={user.photoURL ?? undefined}
-        onSent={() => {
-          // Balance updates live via the RTDB subscription; refresh the
-          // transaction history so the new gift shows up.
-          void getTransactions(user.uid)
-            .then(setTransactions)
-            .catch(() => {
-              /* non-critical */
-            });
-        }}
-      />
 
       <div className="card">
         <h2>Recent activity</h2>

@@ -49,6 +49,12 @@ export default function GiftPanel({
 
   const myUid = auth.currentUser?.uid ?? '';
 
+  // 2026-10-19 (Sumon): HARD RULE — gifts may be sent ONLY inside voice
+  // rooms. The panel refuses to render without a roomId, so no page can
+  // re-introduce out-of-room gifting by embedding it (the public /wallet
+  // page no longer embeds it at all).
+  if (!roomId) return null;
+
   function resolveRecipient(): GiftRecipient | null {
     const uid = recipientUid.trim();
     if (!uid) return null;
