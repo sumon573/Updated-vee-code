@@ -41,3 +41,29 @@ export function subscribeMinimizedRoom(
     _listeners = _listeners.filter((l) => l !== listener);
   };
 }
+
+/* ── current-room API (2026-10-14 design, restored 2026-10-19) ──
+ * Tracks the actively-open voice room separately from the minimized one.
+ * setCurrentRoom accepts the minimal {id, myUid, mySeatIdx} shape used by
+ * call sites; remaining MinimizedRoom fields default sensibly. */
+
+let _currentRoom: MinimizedRoom = null;
+
+export function setCurrentRoom(room: { id: string; myUid: string; mySeatIdx: number }): void {
+  _currentRoom = {
+    id: room.id,
+    name: '',
+    topic: '',
+    myUid: room.myUid,
+    mySeatIdx: room.mySeatIdx,
+    muted: false,
+  };
+}
+
+export function getCurrentRoom(): MinimizedRoom {
+  return _currentRoom;
+}
+
+export function clearCurrentRoom(): void {
+  _currentRoom = null;
+}

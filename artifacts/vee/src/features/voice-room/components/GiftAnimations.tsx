@@ -238,11 +238,11 @@ function YachtFloat({ emoji }: { emoji: string }) {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(y, { toValue: -4, duration: 1200, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+          Animated.timing(y, { toValue: -4, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
           Animated.timing(rotate, { toValue: 1, duration: 1200, useNativeDriver: true }),
         ]),
         Animated.parallel([
-          Animated.timing(y, { toValue: 4, duration: 1200, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+          Animated.timing(y, { toValue: 4, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
           Animated.timing(rotate, { toValue: -1, duration: 1200, useNativeDriver: true }),
         ]),
       ])
@@ -342,8 +342,8 @@ function RoyalCrownFloat({ emoji }: { emoji: string }) {
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(y, { toValue: -8, duration: 900, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
-        Animated.timing(y, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+        Animated.timing(y, { toValue: -8, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(y, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
     loop.start();

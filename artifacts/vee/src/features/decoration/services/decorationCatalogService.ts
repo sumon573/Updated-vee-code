@@ -61,7 +61,7 @@ function normalizeDecoration(
     description: data.description ? String(data.description) : undefined,
     imageUrl: String(data.imageUrl || ''),
     animationUrl: data.animationUrl ? String(data.animationUrl) : undefined,
-    animationType: data.animationType ? String(data.animationType) : 'none',
+    animationType: (data.animationType ? String(data.animationType) : 'none') as 'image' | 'video' | 'none',
     price: Number(data.price) || 0,
     currency: data.currency || 'diamond',
     sortOrder: Number(data.sortOrder) || 0,
