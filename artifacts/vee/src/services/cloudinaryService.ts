@@ -10,8 +10,89 @@
  */
 
 import { auth } from '../config/firebase';
+import { File } from 'expo-file-system';
 
 const MEDIA_BASE = 'https://vee-club.duckdns.org';
+
+/**
+ * FIX (2026-10-19): the media server posts through the Telegram Bot API,
+ * which caps files at 50 MB. Stat the file upfront and fail fast with a
+ * clear message instead of a long upload that dies server-side.
+ */
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+async function assertUploadSizeOk(localUri: string): Promise<void> {
+  try {
+    const f = new File(localUri);
+    if (!f.exists) return; // stat unavailable (remote URI etc.) — let the server decide
+    const size = f.size;
+    if (typeof size === 'number' && size > MAX_UPLOAD_BYTES) {
+      const mb = (size / (1024 * 1024)).toFixed(1);
+      throw new Error(
+        `File too large (${mb} MB). Maximum upload size is 50 MB — please pick a smaller file.`,
+      );
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('File too large')) throw e;
+    // Stat failed for any other reason — proceed; the server decides.
+  }
+}
+
+function buildFormData(localUri: string, mime: string, fileName: string, type: string): FormData {
+  const formData = new FormData();
+  formData.append('file', {
+    uri: localUri,
+    type: mime,
+    name: fileName,
+  } as unknown as Blob);
+  formData.append('type', type);
+  return formData;
+}
+
+/**
+ * FIX (2026-10-19): POST with one retry on transient failure.
+ * - Network-level failure (fetch throws before a response): one retry.
+ * - HTTP 5xx: one retry. HTTP 4xx (auth/validation): fail fast, no retry.
+ * - Aborted (caller cancelled, e.g. screen unmounted): always throws
+ *   'Upload cancelled' immediately, never retried.
+ * The body is rebuilt per attempt — a consumed FormData cannot be re-sent.
+ */
+async function postUpload(
+  buildBody: () => FormData,
+  idToken: string,
+  signal: AbortSignal | undefined,
+  label: string,
+): Promise<any> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) throw new Error('Upload cancelled');
+    let response: Response;
+    try {
+      response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: buildBody(),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (e) {
+      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
+        throw new Error('Upload cancelled');
+      }
+      if (attempt === 0) continue; // transient network failure — one retry
+      throw e;
+    }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = err?.error ?? `${label} upload failed (${response.status})`;
+      if (response.status >= 500 && attempt === 0) continue; // transient server error — one retry
+      throw new Error(msg);
+    }
+    return await response.json();
+  }
+  // Unreachable: both attempts either returned or threw.
+  throw new Error(`${label} upload failed`);
+}
 
 export type CloudinaryUploadResult = {
   url: string;
@@ -25,6 +106,8 @@ type UploadOptions = {
   folder?: string;       // e.g. 'vee/avatars', 'vee/stories' — mapped to Telegram type
   transformation?: string; // ignored (Telegram serves originals; kept for interface compat)
   mimeHint?: string;     // 2026-10-18: explicit MIME (e.g. 'video/mp4') when URI has no extension
+  /** 2026-10-19: AbortController signal — lets the caller cancel an in-flight upload. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -65,6 +148,8 @@ export async function uploadImage(
   localUri: string,
   options: UploadOptions = {},
 ): Promise<CloudinaryUploadResult> {
+  // 2026-10-19: fail fast on oversize files before spending bandwidth.
+  await assertUploadSizeOk(localUri);
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {
     throw new Error('Not authenticated — cannot upload media');
@@ -74,29 +159,15 @@ export async function uploadImage(
   // 2026-10-18: mimeHint (from picker asset.type) wins — gallery URIs often
   // lack extensions, and defaulting a video to image/jpeg breaks playback.
   const mime = options.mimeHint || guessMime(localUri, 'image/jpeg');
+  const fileName = `upload_${Date.now()}.${mime.split('/')[1] || 'jpg'}`;
 
-  const formData = new FormData();
-  formData.append('file', {
-    uri: localUri,
-    type: mime,
-    name: `upload_${Date.now()}.${mime.split('/')[1] || 'jpg'}`,
-  } as unknown as Blob);
-  formData.append('type', type);
+  const data = await postUpload(
+    () => buildFormData(localUri, mime, fileName, type),
+    idToken,
+    options.signal,
+    'Media',
+  );
 
-  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error ?? `Media upload failed (${response.status})`);
-  }
-
-  const data = await response.json();
   const url = data.url as string;
   const mediaId = data.mediaId as string;
   if (!url || !mediaId) {
@@ -122,41 +193,38 @@ export async function uploadProfilePhoto(localUri: string): Promise<CloudinaryUp
 /**
  * Story image upload.
  */
-export async function uploadStoryImage(localUri: string): Promise<CloudinaryUploadResult> {
-  return uploadImage(localUri, { folder: 'vee/stories' });
+export async function uploadStoryImage(
+  localUri: string,
+  options: UploadOptions = {},
+): Promise<CloudinaryUploadResult> {
+  return uploadImage(localUri, { folder: 'vee/stories', ...options });
 }
 
 /**
  * Story video upload.
  * Throws with the actual cause on failure.
  */
-export async function uploadStoryVideo(localUri: string): Promise<CloudinaryUploadResult> {
+export async function uploadStoryVideo(
+  localUri: string,
+  signal?: AbortSignal,
+): Promise<CloudinaryUploadResult> {
+  // 2026-10-19: gallery videos were uncapped — fail fast on oversize files.
+  await assertUploadSizeOk(localUri);
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {
     throw new Error('Not authenticated — cannot upload video story');
   }
 
   const mime = guessMime(localUri, 'video/mp4');
-  const formData = new FormData();
-  formData.append('file', {
-    uri: localUri,
-    type: mime,
-    name: `story_${Date.now()}.mp4`,
-  } as unknown as Blob);
-  formData.append('type', 'story');
+  const fileName = `story_${Date.now()}.mp4`;
 
-  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${idToken}` },
-    body: formData,
-  });
+  const data = await postUpload(
+    () => buildFormData(localUri, mime, fileName, 'story'),
+    idToken,
+    signal,
+    'Video',
+  );
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error ?? `Video upload failed (${response.status})`);
-  }
-
-  const data = await response.json();
   const url = data.url as string;
   if (!url) throw new Error('Video upload returned no URL');
   return {
@@ -176,7 +244,10 @@ export async function uploadStoryAudio(
   localUri: string,
   fileName?: string,
   mimeType?: string,
+  signal?: AbortSignal,
 ): Promise<CloudinaryUploadResult> {
+  // 2026-10-19: fail fast on oversize files before spending bandwidth.
+  await assertUploadSizeOk(localUri);
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {
     throw new Error('Not authenticated — cannot upload audio story');
@@ -185,26 +256,13 @@ export async function uploadStoryAudio(
   const mime = mimeType || guessMime(localUri, 'audio/mpeg');
   const safeName = (fileName || `story_audio_${Date.now()}.mp3`).replace(/[^\w.\-]/g, '_');
 
-  const formData = new FormData();
-  formData.append('file', {
-    uri: localUri,
-    type: mime,
-    name: safeName,
-  } as unknown as Blob);
-  formData.append('type', 'story');
+  const data = await postUpload(
+    () => buildFormData(localUri, mime, safeName, 'story'),
+    idToken,
+    signal,
+    'Audio',
+  );
 
-  const response = await fetch(`${MEDIA_BASE}/api/media/upload`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${idToken}` },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error ?? `Audio upload failed (${response.status})`);
-  }
-
-  const data = await response.json();
   const url = data.url as string;
   if (!url) throw new Error('Audio upload returned no URL');
   return {

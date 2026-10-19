@@ -370,6 +370,21 @@ export default function StoryShareScreen() {
   }, []);
 
   // ── REAL share: upload + publish to Firebase ──
+  // FIX (2026-10-19): track mount state + an AbortController for the in-flight
+  // share. Leaving the screen mid-upload cancels the upload instead of letting
+  // it finish in the background, and the success Alert / router.back() only
+  // run while still mounted.
+  const mountedRef = useRef(true);
+  const shareAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      shareAbortRef.current?.abort();
+      shareAbortRef.current = null;
+    };
+  }, []);
+
   const handleShare = useCallback(async () => {
     if (!user?.uid) {
       Alert.alert(
@@ -378,6 +393,10 @@ export default function StoryShareScreen() {
       );
       return;
     }
+    // Fresh AbortController per share; unmounting the screen aborts it.
+    const aborter = new AbortController();
+    shareAbortRef.current = aborter;
+    const signal = aborter.signal;
     if (posting) return;
 
     // Validation per mode (before any upload)
@@ -434,7 +453,7 @@ export default function StoryShareScreen() {
         let musicUrl: string | undefined;
         let musicNameOut: string | undefined;
         if (musicUri) {
-          const up = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined);
+          const up = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined, signal);
           musicUrl = up.url;
           musicNameOut = musicName || 'Music';
         }
@@ -445,7 +464,7 @@ export default function StoryShareScreen() {
           ...common });
       } else if (isMusicMode) {
         // REAL audio upload — the file is uploaded and its URL stored so it plays.
-        const up = await uploadStoryAudio(musicUri!, musicName || undefined, musicMimeType || undefined);
+        const up = await uploadStoryAudio(musicUri!, musicName || undefined, musicMimeType || undefined, signal);
         await publishStory(user.uid, userName, userAvatar, {
           type: 'audio',
           content: up.url,
@@ -453,9 +472,13 @@ export default function StoryShareScreen() {
           cloudinaryId: up.publicId,
           ...common });
       } else if (isCollageMode) {
-        // REAL collage: upload every selected photo, publish each as a story.
-        for (const a of collageAssets) {
-          const up = await uploadStoryImage(a.uri);
+        // REAL collage: upload every selected photo in parallel (2026-10-19:
+        // was sequential — one slow upload blocked all others), then publish
+        // each as a story in the original selection order.
+        const uploads = await Promise.all(
+          collageAssets.map((a) => uploadStoryImage(a.uri, { signal })),
+        );
+        for (const up of uploads) {
           await publishStory(user.uid, userName, userAvatar, {
             type: 'image',
             content: up.url,
@@ -475,7 +498,7 @@ export default function StoryShareScreen() {
         // Gallery picks report mediaType; camera captures track their own flag.
         const isVideo = cameraUri ? cameraIsVideo : assetType === 'video';
         if (isVideo) {
-          const up = await uploadStoryVideo(mediaUri);
+          const up = await uploadStoryVideo(mediaUri, signal);
           await publishStory(user.uid, userName, userAvatar, {
             type: 'video',
             content: up.url,
@@ -487,12 +510,12 @@ export default function StoryShareScreen() {
             locationName: location?.name,
             effect: effectIdx === 0 ? undefined : effectIdx });
         } else {
-          const up = await uploadStoryImage(mediaUri);
+          const up = await uploadStoryImage(mediaUri, { signal });
           // 2026-10-11: Photo + music — upload selected music as background.
           let musicUrl: string | undefined;
           let musicNameOut: string | undefined;
           if (musicUri) {
-            const mUp = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined);
+            const mUp = await uploadStoryAudio(musicUri, musicName || undefined, musicMimeType || undefined, signal);
             musicUrl = mUp.url;
             musicNameOut = musicName || 'Music';
           }
@@ -511,6 +534,10 @@ export default function StoryShareScreen() {
         }
       }
 
+      // FIX (2026-10-19): only touch UI when still mounted — leaving the
+      // screen mid-upload used to fire the success dialog + back navigation
+      // on an unmounted screen.
+      if (!mountedRef.current) return;
       Alert.alert(
         t('story.success', { defaultValue: 'Success' }),
         t('story.posted', { defaultValue: 'Story posted!' }),
@@ -518,9 +545,12 @@ export default function StoryShareScreen() {
       );
     } catch (error) {
       // Standing rule: show the ACTUAL cause, never a generic message.
-      Alert.alert(t('story.error', { defaultValue: 'Error' }), getErrorCause(error));
+      // A cancelled upload (user left the screen) is not an error to report.
+      if (mountedRef.current && getErrorCause(error) !== 'Upload cancelled') {
+        Alert.alert(t('story.error', { defaultValue: 'Error' }), getErrorCause(error));
+      }
     } finally {
-      setPosting(false);
+      if (mountedRef.current) setPosting(false);
     }
   }, [
     user, posting, isTextMode, isMusicMode, isCollageMode,
