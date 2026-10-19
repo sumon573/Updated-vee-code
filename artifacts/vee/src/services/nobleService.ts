@@ -590,35 +590,23 @@ export async function refreshNobleState(uid: string): Promise<NobleState | null>
   if (!uid) return null;
   try {
     const nobleRef = ref(database, `users/${uid}/noble`);
-    const snap = await get(nobleRef);
-    if (!snap.exists()) return null;
-    const cur = coerceState(snap.val());
-    if (!cur) return null;
     const now = Date.now();
-    let s: NobleState = cur;
-    let guard = 0;
-    let changed = false;
-    while (now > s.maintenanceDeadline && guard++ < 240) {
-      const prev: NobleState = s;
-      const maintained: boolean = prev.maintenanceXP >= prev.maintenanceRequired;
-      changed = true;
-      if (maintained) {
-        s = { xp: prev.xp, rankIndex: prev.rankIndex, maintenanceRequired: prev.maintenanceRequired,
-              maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS, maintenanceXP: 0, lapsed: false };
-      } else {
-        const newRank = Math.max(0, prev.rankIndex - 1);
-        s = { xp: Math.min(prev.xp, NOBLE_RANKS[newRank].maxXP), rankIndex: newRank,
-              maintenanceRequired: maintenanceFor(newRank),
-              maintenanceDeadline: prev.maintenanceDeadline + NOBLE_WINDOW_MS, maintenanceXP: 0, lapsed: false };
-      }
-    }
-    if (changed) {
-      await set(nobleRef, s).catch(() => {});
-    }
+    // 2026-10-19 (Sumon): the rollover now runs INSIDE a transaction (same
+    // pattern as checkNobleMaintenance). The old get → local roll → set()
+    // could silently lose a concurrent gift's XP committed between the read
+    // and the write. applyNobleGift(cur, 0, now) performs the identical
+    // window rollover with price 0 (no rank-up possible from a refresh).
+    const result = await runTransaction(nobleRef, (cur) => {
+      const s = coerceState(cur);
+      if (!s) return undefined; // no noble state — abort, nothing to roll
+      if (now <= s.maintenanceDeadline) return undefined; // no expiry — abort, no write
+      return applyNobleGift(cur, 0, now);
+    });
+    const next = coerceState(result.snapshot.val());
     /* 2026-10-15 (Sumon): Self-heal — grant any missing rank rewards.
      * Non-blocking: runs in background, never fails the refresh. */
     healMissingNobleItems(uid).catch(() => {});
-    return s;
+    return next;
   } catch {
     return null;
   }
