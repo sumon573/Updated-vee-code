@@ -275,6 +275,41 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   private participants: VoiceParticipant[] = [];
   private events: VoiceEngineEvents = {};
 
+  /**
+   * 2026-10-19 perf fix — throttled participant refresh. Track events and
+   * ActiveSpeakersChanged fire in bursts (dozens/second); rebuilding +
+   * emitting the full participant array each time re-rendered the whole seat
+   * grid. Throttle: one leading emit, then a trailing flush at most every
+   * 250ms, and skip the emit when the rebuilt list is identical to the last
+   * emitted one. Behavior unchanged — the screen still always converges to
+   * the latest room state.
+   */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastRefreshAt = 0;
+  private lastEmittedKey = '';
+
+  private scheduleParticipantsRefresh(): void {
+    const now = Date.now();
+    if (now - this.lastRefreshAt >= 250) {
+      this.lastRefreshAt = now;
+      this.refreshParticipants();
+      return;
+    }
+    if (this.refreshTimer) return; // trailing flush already scheduled
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.lastRefreshAt = Date.now();
+      this.refreshParticipants();
+    }, 250);
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
   /* ── internal emit helpers ── */
 
   private snapshot(): VoiceLocalState {
@@ -351,6 +386,14 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       });
     });
     this.participants = list;
+    // 2026-10-19 perf fix — diff before emitting: if nothing material
+    // changed (ids + speaking + mute + subscribed + name), skip the emit so
+    // the seat grid does not re-render on no-op track events.
+    const key = list
+      .map((p) => `${p.userId}|${p.userName}|${p.speaking ? 1 : 0}|${p.muted === true ? 1 : p.muted === false ? 0 : '-'}|${p.subscribed ? 1 : 0}`)
+      .join(',');
+    if (key === this.lastEmittedKey) return;
+    this.lastEmittedKey = key;
     try {
       this.events.onParticipantsChange?.(list);
     } catch {
@@ -376,7 +419,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         this.emitSpeaking(id, true);
       }
     });
-    this.refreshParticipants();
+    this.scheduleParticipantsRefresh();
   }
 
   private handleConnectionState(state: ConnectionState): void {
@@ -402,13 +445,13 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   private registerRoomListeners(room: Room): void {
     const { RoomEvent, ParticipantEvent, Track } = this.lk!;
     room
-      .on(RoomEvent.ParticipantConnected, () => this.refreshParticipants())
+      .on(RoomEvent.ParticipantConnected, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
         this.speakingIds.delete(p.identity);
-        this.refreshParticipants();
+        this.scheduleParticipantsRefresh();
       })
       .on(RoomEvent.TrackPublished, (pub, participant) => {
-        this.refreshParticipants();
+        this.scheduleParticipantsRefresh();
         // C12 FIX: Apply mute state when local audio track is published.
         // The track may not exist when setMicrophoneEnabled() is called,
         // so apply the current mute state when publication completes.
@@ -419,11 +462,11 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
           }
         } catch { /* non-critical: mute apply is best-effort */ }
       })
-      .on(RoomEvent.TrackUnpublished, () => this.refreshParticipants())
-      .on(RoomEvent.TrackSubscribed, () => this.refreshParticipants())
-      .on(RoomEvent.TrackUnsubscribed, () => this.refreshParticipants())
-      .on(RoomEvent.TrackMuted, () => this.refreshParticipants())
-      .on(RoomEvent.TrackUnmuted, () => this.refreshParticipants())
+      .on(RoomEvent.TrackUnpublished, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.TrackSubscribed, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.TrackUnsubscribed, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.TrackMuted, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.TrackUnmuted, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.ActiveSpeakersChanged, (speakers: Array<Participant>) =>
         this.handleActiveSpeakers(speakers),
       )
@@ -495,6 +538,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   }
 
   private async teardownRoom(): Promise<void> {
+    // 2026-10-19 perf fix: drop any pending throttled refresh — leave paths
+    // set their own final state; a trailing emit would be stale work.
+    this.clearRefreshTimer();
     const room = this.room;
     this.room = null;
     if (!room) return;
