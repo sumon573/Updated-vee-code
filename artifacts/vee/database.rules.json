@@ -849,6 +849,29 @@
         ".write": "auth != null && (root.child(\"rooms\").child($roomId).child(\"info\").child(\"ownerId\").val() === auth.uid || auth.token.role === \"superAdmin\" || auth.token.role === \"admin\")",
         ".validate": "!newData.exists() || (newData.child(\"hashedPin\").isString() && newData.child(\"updatedAt\").isNumber())"
       }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SVIP membership (2026-10-19) — Vee's paid premium club, IMO-SVIP style.
+    // `svip/{uid}` = { tier, expiry, points, updatedAt }.
+    // - READ: any authenticated user (badges + room display need it).
+    // - WRITE: admins ONLY (boss grants manually until pricing + payment
+    //   method are decided — see svipConfig.ts).
+    // `svipWaitlist/{uid}` = { createdAt } — users add themselves only.
+    // ─────────────────────────────────────────────────────────────────────
+    "svip": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && root.child(\"admins\").child(auth.uid).exists()",
+        ".validate": "newData.hasChildren(['tier', 'expiry']) && newData.child('tier').isNumber() && newData.child('expiry').isNumber()"
+      }
+    },
+    "svipWaitlist": {
+      ".read": "auth != null && root.child(\"admins\").child(auth.uid).exists()",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['createdAt']) && newData.child('createdAt').isNumber()"
+      }
     }
   }
 }
