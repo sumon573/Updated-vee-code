@@ -39,6 +39,14 @@ import {
 import { database } from '@/src/config/firebase';
 import { Story, StoryComment, StoryMediaType, DrawingStroke, UserStories } from '../types';
 
+/**
+ * 2026-10-19 perf: cap on live per-author story subscriptions. One socket per
+ * active author is unbounded at scale; only the most recently active authors
+ * keep a live subscription (LRU by newest-story recency). Never binds at
+ * current scale — visible behavior unchanged.
+ */
+const MAX_LIVE_STORY_AUTHORS = 40;
+
 // ─── Publish ─────────────────────────────────────────────────────────────────
 
 export interface PublishPayload {
@@ -223,6 +231,9 @@ export function subscribeAllStories(
   // ── State shared between both subscriptions ──────────────────────────────
   const publicGroupsMap  = new Map<string, UserStories>();
   const contactGroupsMap = new Map<string, UserStories>();
+  // 2026-10-19 perf: LRU bookkeeping for the public-author cap below —
+  // newest-story timestamp per subscribed author (recency proxy).
+  const publicLastActive = new Map<string, number>();
 
   function mergeAndEmit() {
     // Merge public and contact maps, deduplicating stories by id
@@ -253,6 +264,13 @@ export function subscribeAllStories(
   //
   // Subscribe to publicStoryIndex/ (tiny metadata) rather than stories/ (full data).
   // Per-UID listeners are created/destroyed dynamically as the index changes.
+  // 2026-10-19 perf: LRU-CAPPED. publicStoryIndex can list hundreds of authors
+  // at scale — one socket per author is unbounded. Live subscriptions are kept
+  // for the MAX_LIVE_STORY_AUTHORS most recently active authors only; the cap
+  // never binds at current scale (tens of authors), so visible behavior is
+  // unchanged, while worst-case socket count stays bounded. Evicted authors'
+  // groups are dropped from the map (same as index-departed authors) and
+  // re-subscribed if the set shrinks back under the cap.
   const perUidPublicUnsubs = new Map<string, () => void>();
 
   const indexUnsub = onValue(ref(database, 'publicStoryIndex'), (indexSnap) => {
@@ -267,11 +285,28 @@ export function subscribeAllStories(
         unsub();
         perUidPublicUnsubs.delete(uid);
         publicGroupsMap.delete(uid);
+        publicLastActive.delete(uid);
       }
     }
 
-    // Add subscriptions for new UIDs
-    for (const uid of activeUids) {
+    // 2026-10-19 perf: LRU-rank candidates — most recently active first.
+    // Never-subscribed authors count as newest (they just appeared).
+    const ranked = [...activeUids].sort((a, b) =>
+      (publicLastActive.get(b) ?? Date.now()) - (publicLastActive.get(a) ?? Date.now()));
+    const keep = new Set(ranked.slice(0, MAX_LIVE_STORY_AUTHORS));
+
+    // Evict subscribed authors that fell out of the LRU window.
+    for (const [uid, unsub] of perUidPublicUnsubs) {
+      if (!keep.has(uid)) {
+        unsub();
+        perUidPublicUnsubs.delete(uid);
+        publicGroupsMap.delete(uid);
+        publicLastActive.delete(uid);
+      }
+    }
+
+    // Add subscriptions for new UIDs (within the LRU window)
+    for (const uid of keep) {
       if (!perUidPublicUnsubs.has(uid)) {
         const unsub = onValue(ref(database, `stories/${uid}`), (userSnap) => {
           const stories: Story[] = [];
@@ -289,6 +324,8 @@ export function subscribeAllStories(
             });
           }
           stories.sort((a, b) => b.createdAt - a.createdAt);
+          // LRU recency: newest story's timestamp (or now for empty).
+          publicLastActive.set(uid, stories.length > 0 ? stories[0].createdAt : Date.now());
           if (stories.length > 0) {
             publicGroupsMap.set(uid, {
               userId: uid,
@@ -387,6 +424,8 @@ export function subscribePlanetStories(
 ): () => void {
   const perUidUnsubs = new Map<string, () => void>();
   const storiesMap   = new Map<string, UserStories>();
+  // 2026-10-19 perf: LRU recency per author (see MAX_LIVE_STORY_AUTHORS).
+  const lastActive = new Map<string, number>();
 
   // FIX (2026-10-19): the old emit() re-sorted ALL groups and fired the
   // callback on every per-UID update — including each view-count increment —
@@ -464,11 +503,26 @@ export function subscribePlanetStories(
         unsub();
         perUidUnsubs.delete(uid);
         storiesMap.delete(uid);
+        lastActive.delete(uid);
       }
     }
 
-    // Add subscriptions for new UIDs
-    for (const uid of activeUids) {
+    // 2026-10-19 perf: LRU cap — keep live sockets for the most recently
+    // active authors only (unbounded otherwise). Never binds at current scale.
+    const ranked = [...activeUids].sort((a, b) =>
+      (lastActive.get(b) ?? Date.now()) - (lastActive.get(a) ?? Date.now()));
+    const keep = new Set(ranked.slice(0, MAX_LIVE_STORY_AUTHORS));
+    for (const [uid, unsub] of perUidUnsubs) {
+      if (!keep.has(uid)) {
+        unsub();
+        perUidUnsubs.delete(uid);
+        storiesMap.delete(uid);
+        lastActive.delete(uid);
+      }
+    }
+
+    // Add subscriptions for new UIDs (within the LRU window)
+    for (const uid of keep) {
       if (!perUidUnsubs.has(uid)) {
         // Cap per-user stories (2026-10-19): stories expire after 24h so a
         // user realistically holds a handful; this bounds download size.
@@ -482,6 +536,7 @@ export function subscribePlanetStories(
             });
           }
           stories.sort((a, b) => b.createdAt - a.createdAt);
+          lastActive.set(uid, stories.length > 0 ? stories[0].createdAt : Date.now());
           if (stories.length > 0) {
             storiesMap.set(uid, {
               userId: uid,
