@@ -25,7 +25,7 @@ const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 8000;
 
 /** Real video playback for video-type stories (expo-video). */
-function StoryVideoPlayer({ uri }: { uri: string }) {
+function StoryVideoPlayer({ uri, onDuration }: { uri: string; onDuration?: (durationMs: number) => void }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.play();
@@ -35,6 +35,26 @@ function StoryVideoPlayer({ uri }: { uri: string }) {
       try { player.pause(); } catch { /* ignore */ }
     };
   }, [player]);
+  // 2026-10-19 polish: report the real video duration (seconds → ms) so the
+  // story timer can match the video instead of the fixed 8s. duration becomes
+  // available once the source loads — poll briefly, report once.
+  useEffect(() => {
+    if (!onDuration) return;
+    let tries = 0;
+    let reported = false;
+    const timer = setInterval(() => {
+      if (reported || ++tries > 20) { clearInterval(timer); return; }
+      try {
+        const d = (player as { duration?: number }).duration;
+        if (d && d > 0) {
+          reported = true;
+          clearInterval(timer);
+          onDuration(d * 1000);
+        }
+      } catch { /* player not ready yet */ }
+    }, 400);
+    return () => clearInterval(timer);
+  }, [player, onDuration]);
   return (
     <VideoView
       player={player}
@@ -154,18 +174,32 @@ function ProgressBars({
 }: {
   total: number; current: number; progress: Animated.Value;
 }) {
+  // 2026-10-19 polish: native-driver-safe fill. Animating `width` can't run
+  // on the native driver, so the fill is a full-width bar "wiped" in from the
+  // left via translateX (natively animatable). Track width measured once —
+  // all bars share flex:1 so widths are equal.
+  const [trackW, setTrackW] = useState(0);
   return (
     <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 12, paddingTop: 8 }}>
       {Array.from({ length: total }, (_, i) => (
         <View key={i} style={{
           flex: 1, height: 2.5, borderRadius: 2,
           backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden',
-        }}>
+        }}
+          onLayout={(e) => {
+            if (i === 0) setTrackW(e.nativeEvent.layout.width);
+          }}
+        >
           {i < current && <View style={{ flex: 1, backgroundColor: '#fff' }} />}
-          {i === current && (
+          {i === current && trackW > 0 && (
             <Animated.View style={{
-              height: '100%', backgroundColor: '#fff',
-              width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+              width: '100%', height: '100%', backgroundColor: '#fff',
+              transform: [{
+                translateX: progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-trackW, 0],
+                }),
+              }],
             }} />
           )}
         </View>
@@ -188,18 +222,19 @@ type StoryCardProps = {
   onClose: () => void;
   currentUserId?: string;
   currentUserName?: string;
-  onDelete?: (storyId: string, userId: string) => void;
+  onDelete?: (storyId: string, userId: string) => void | Promise<void>;
   onCommentFocus?: () => void;
   onCommentBlur?: () => void;
   onReact?: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
   onComment?: (authorUid: string, storyId: string, text: string) => Promise<void>;
+  onVideoDuration?: (storyId: string, durationMs: number) => void;
 };
 
 function StoryCard({
   story, userStories, storyIndex, totalStories,
   progressAnim, onTapLeft, onTapRight, onClose,
   currentUserId, currentUserName, onDelete, onCommentFocus, onCommentBlur,
-  onReact, onComment,
+  onReact, onComment, onVideoDuration,
 }: StoryCardProps) {
   const { t } = useTranslation();
   // Real author name/avatar (2026-10-11): resolves from RTDB if stored name is placeholder.
@@ -215,11 +250,17 @@ function StoryCard({
   const isOwn = !!currentUserId && story.userId === currentUserId;
 
   // Sync comments/reaction when the story changes or new data arrives via subscription.
+  // 2026-10-19 polish: the signature also catches IN-PLACE comment edits
+  // (text changed, same id, same count) — the old [story.id, length] deps
+  // missed those entirely.
+  const commentsSignature = (story.comments ?? [])
+    .map((c: any) => `${c.id}:${c.text}:${c.ts}`)
+    .join('|');
   useEffect(() => {
     setComments(story.comments);
     setUserReaction(currentUserId ? story.reactions?.[currentUserId] ?? null : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [story.id, story.comments.length]);
+  }, [story.id, commentsSignature]);
 
   const timeAgo = (ts: number): string => {
     const diff = Date.now() - ts;
@@ -372,7 +413,10 @@ function StoryCard({
           </Text>
         ) : story.type === 'video' && story.content ? (
           // NOTE 2 (Batch C): video stories play with expo-video
-          <StoryVideoPlayer uri={story.content} />
+          <StoryVideoPlayer
+            uri={story.content}
+            onDuration={onVideoDuration ? (ms) => onVideoDuration(story.id, ms) : undefined}
+          />
         ) : story.type === 'audio' && story.content ? (
           // NOTE 2 (Batch C): audio stories play the uploaded file with expo-audio
           <StoryAudioPlayer uri={story.content} audioName={story.audioName} />
@@ -585,9 +629,18 @@ function StoryCard({
                         {
                           text: t('chat.storyDeleteConfirm', { defaultValue: 'Delete' }),
                           style: 'destructive',
-                          onPress: () => {
-                            onDelete?.(story.id, story.userId);
-                            onClose();
+                          // 2026-10-19 polish: await the delete and surface a
+                          // failure instead of fire-and-forget + blind close.
+                          onPress: async () => {
+                            try {
+                              await onDelete?.(story.id, story.userId);
+                              onClose();
+                            } catch (error) {
+                              Alert.alert(
+                                t('chat.storyDeleteFailed', { defaultValue: 'Delete failed' }),
+                                getErrorCause(error),
+                              );
+                            }
                           },
                         },
                       ],
@@ -645,11 +698,24 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
   useEffect(() => { storyIndexRef.current = storyIndex; }, [storyIndex]);
 
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
-  const pausedProgress = useRef(0);
+  // 2026-10-19 polish: keep stories/onClose in refs so the timer callbacks
+  // (advance/startTimer/resumeTimer) stay referentially stable — otherwise the
+  // timer-restart effect below would re-run on every subscription data tick.
+  const storiesRef = useRef(stories);
+  useEffect(() => { storiesRef.current = stories; }, [stories]);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  // 2026-10-19 polish: timestamp-driven pause/resume with the native driver —
+  // no private __getValue. elapsedRef accumulates wall-clock run time across
+  // pauses; segmentStartRef marks the current running segment (null = paused).
+  const elapsedRef = useRef(0);
+  const segmentStartRef = useRef<number | null>(null);
+  const durationRef = useRef(STORY_DURATION);
 
   const stopTimer = useCallback(() => {
     animRef.current?.stop();
     animRef.current = null;
+    segmentStartRef.current = null;
     progressAnim.setValue(0);
   }, [progressAnim]);
 
@@ -660,40 +726,44 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
   const advance = useCallback(() => {
     const ui = userIndexRef.current;
     const si = storyIndexRef.current;
-    const currentUser = stories[ui];
-    if (!currentUser) { onClose(); return; }
+    const currentUser = storiesRef.current[ui];
+    if (!currentUser) { onCloseRef.current(); return; }
 
     if (si < currentUser.stories.length - 1) {
       // next story within same user
       storyIndexRef.current = si + 1;
       setStoryIndex(si + 1);
-    } else if (ui < stories.length - 1) {
+    } else if (ui < storiesRef.current.length - 1) {
       // next user
       userIndexRef.current  = ui + 1;
       storyIndexRef.current = 0;
       setUserIndex(ui + 1);
       setStoryIndex(0);
     } else {
-      onClose();
+      onCloseRef.current();
     }
-  }, [stories, onClose]);
+  }, []);
 
   const pauseTimer = useCallback(() => {
+    if (segmentStartRef.current == null) return; // already paused
     animRef.current?.stop();
     animRef.current = null;
-    // Save current progress for resume
-    pausedProgress.current = (progressAnim as any).__getValue?.() ?? 0;
-  }, [progressAnim]);
+    // Wall-clock elapsed of this segment — no __getValue needed.
+    elapsedRef.current += Date.now() - segmentStartRef.current;
+    segmentStartRef.current = null;
+  }, []);
 
   const resumeTimer = useCallback(() => {
-    if (animRef.current) return; // already running
-    const remaining = Math.max(0, 1 - pausedProgress.current);
+    if (segmentStartRef.current != null) return; // already running
+    const duration = durationRef.current;
+    const remaining = Math.max(0, duration - elapsedRef.current);
     if (remaining <= 0) { advance(); return; }
-    progressAnim.setValue(pausedProgress.current);
+    segmentStartRef.current = Date.now();
+    progressAnim.setValue(elapsedRef.current / duration);
     const anim = Animated.timing(progressAnim, {
       toValue: 1,
-      duration: STORY_DURATION * remaining,
-      useNativeDriver: false,
+      duration: remaining,
+      useNativeDriver: true,
     });
     animRef.current = anim;
     anim.start(({ finished }) => {
@@ -701,19 +771,44 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
     });
   }, [progressAnim, advance]);
 
-  const startTimer = useCallback(() => {
+  const startTimer = useCallback((durationMs: number) => {
     stopTimer();
+    durationRef.current = durationMs;
+    elapsedRef.current = 0;
+    segmentStartRef.current = Date.now();
     progressAnim.setValue(0);
     const anim = Animated.timing(progressAnim, {
       toValue: 1,
-      duration: STORY_DURATION,
-      useNativeDriver: false,
+      duration: durationMs,
+      useNativeDriver: true,
     });
     animRef.current = anim;
     anim.start(({ finished }) => {
       if (finished) advance();
     });
   }, [progressAnim, stopTimer, advance]);
+
+  // 2026-10-19 polish: video stories run for their REAL duration, not the
+  // fixed 8s. Durations arrive asynchronously from the video player; when the
+  // current story's duration lands, its timer restarts with the real value.
+  const storyDurationsRef = useRef<Record<string, number>>({});
+  const handleVideoDuration = useCallback((storyId: string, durationMs: number) => {
+    if (!durationMs || durationMs <= 0) return;
+    if (storyDurationsRef.current[storyId] === durationMs) return;
+    storyDurationsRef.current[storyId] = durationMs;
+    const cur = storiesRef.current[userIndexRef.current]?.stories[storyIndexRef.current];
+    if (cur?.id === storyId) {
+      startTimer(durationMs);
+    }
+  }, [startTimer]);
+
+  const durationForStory = useCallback((story: Story): number => {
+    if (story.type === 'video') {
+      const known = storyDurationsRef.current[story.id];
+      if (known && known > 0) return known;
+    }
+    return STORY_DURATION;
+  }, []);
 
   const goPrev = useCallback(() => {
     const ui = userIndexRef.current;
@@ -736,9 +831,13 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
     const user  = stories[userIndex];
     const story = user?.stories[storyIndex];
     if (!user || !story) { onClose(); return; }
-    startTimer();
+    // 2026-10-19 polish: video stories use their real duration when known.
+    startTimer(durationForStory(story));
     return () => stopTimer();
-  }, [visible, userIndex, storyIndex]);
+    // stories/onClose intentionally omitted: data-only subscription ticks must
+    // NOT restart the timer (same as before this change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, userIndex, storyIndex, startTimer, durationForStory]);
 
   // Reset indices when viewer is (re-)opened
   useEffect(() => {
@@ -781,6 +880,7 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
           onCommentBlur={resumeTimer}
           onReact={onReact}
           onComment={onComment}
+          onVideoDuration={handleVideoDuration}
         />
       </View>
     </Modal>

@@ -36,8 +36,8 @@ import {
   onValue, get, serverTimestamp, runTransaction,
   query, limitToLast,
 } from 'firebase/database';
-import { database } from '@/src/config/firebase';
-import { Story, StoryComment, StoryMediaType, DrawingStroke, UserStories } from '../types';
+import { database, auth } from '@/src/config/firebase';
+import { Story, StoryComment, StoryMediaType, StoryPrivacy, DrawingStroke, UserStories } from '../types';
 
 /**
  * 2026-10-19 perf: cap on live per-author story subscriptions. One socket per
@@ -336,6 +336,20 @@ export function subscribeAllStories(
             });
           } else {
             publicGroupsMap.delete(uid);
+            // 2026-10-19 polish: stale index entry — this author has zero
+            // stories but the per-UID listener would otherwise stay alive
+            // forever. Drop the socket now; prune my OWN index entry
+            // (rules allow owner-only writes) so it never re-subscribes.
+            // A fresh publish re-sets the index and re-subscribes.
+            const staleUnsub = perUidPublicUnsubs.get(uid);
+            if (staleUnsub) {
+              staleUnsub();
+              perUidPublicUnsubs.delete(uid);
+              publicLastActive.delete(uid);
+            }
+            if (viewerUid && uid === viewerUid) {
+              remove(ref(database, `publicStoryIndex/${uid}`)).catch(() => {});
+            }
           }
           mergeAndEmit();
         });
@@ -455,15 +469,16 @@ export function subscribePlanetStories(
       ordered = groups.sort((a, b) => {
         // TRENDING (2026-10-09): rank by engagement + recency, not just time.
         // Score = views + (reactions × 3) + recency bonus (decays over 24h).
-        const score = (g: UserStories): number => {
-          const s = g.stories[0];
-          if (!s) return 0;
-          const views = s.viewCount ?? 0;
-          const reactions = Object.keys(s.reactions ?? {}).length;
-          const ageHours = (now - (s.createdAt ?? now)) / 3_600_000;
-          const recencyBonus = Math.max(0, 100 - ageHours * 4); // 100 → 0 over 25h
-          return views + reactions * 3 + recencyBonus;
-        };
+        // 2026-10-19 polish: aggregate across ALL active stories of the
+        // group — scoring only the newest story under-valued prolific authors.
+        const score = (g: UserStories): number =>
+          g.stories.reduce((total, s) => {
+            const views = s.viewCount ?? 0;
+            const reactions = Object.keys(s.reactions ?? {}).length;
+            const ageHours = (now - (s.createdAt ?? now)) / 3_600_000;
+            const recencyBonus = Math.max(0, 100 - ageHours * 4); // 100 → 0 over 25h
+            return total + views + reactions * 3 + recencyBonus;
+          }, 0);
         return score(b) - score(a);
       });
       lastSignature = signature;
@@ -547,6 +562,21 @@ export function subscribePlanetStories(
             });
           } else {
             storiesMap.delete(uid);
+            // 2026-10-19 polish: stale index entry — this author has zero
+            // public stories but the per-UID listener would otherwise stay
+            // alive forever. Drop the socket now; prune my OWN index entry
+            // (rules allow owner-only writes) so it never re-subscribes.
+            // A fresh publish re-sets the index and re-subscribes.
+            const staleUnsub = perUidUnsubs.get(uid);
+            if (staleUnsub) {
+              staleUnsub();
+              perUidUnsubs.delete(uid);
+              lastActive.delete(uid);
+            }
+            const myUid = auth.currentUser?.uid;
+            if (myUid && uid === myUid) {
+              remove(ref(database, `publicStoryIndex/${uid}`)).catch(() => {});
+            }
           }
           emit();
         });
@@ -688,8 +718,26 @@ export function subscribeMyStories(
  *
  * Fire-and-forget; failures are non-critical.
  */
-export function recordStoryView(authorUid: string, storyId: string, viewerUid?: string): void {
-  const tryPath = async (basePath: string) => {
+export function recordStoryView(
+  authorUid: string,
+  storyId: string,
+  viewerUid?: string,
+  privacy?: StoryPrivacy,
+): void {
+  // 2026-10-19 polish: write ONLY the correct path. The old code always
+  // wrote to both stories/ and contactStories/ — the wrong path fails the
+  // permission check every time (caught, but a wasted write + transaction
+  // on every single view). Unknown privacy keeps the legacy dual-path
+  // behavior so no view is ever lost.
+  const basePaths =
+    privacy === 'contacts' ? ['contactStories']
+    : privacy === 'public' ? ['stories']
+    : ['stories', 'contactStories'];
+  for (const basePath of basePaths) {
+    tryPath(basePath);
+  }
+
+  async function tryPath(basePath: string) {
     try {
       // Dedup: mark viewer (succeeds only if not already recorded).
       if (viewerUid) {
@@ -714,10 +762,7 @@ export function recordStoryView(authorUid: string, storyId: string, viewerUid?: 
         },
       );
     } catch { /* non-critical */ }
-  };
-
-  tryPath('stories');
-  tryPath('contactStories');
+  }
 }
 
 // ─── Share ────────────────────────────────────────────────────────────────────
@@ -917,6 +962,24 @@ export async function cleanExpiredStories(uid: string): Promise<void> {
   }
 
   await Promise.all(deletions);
+
+  // 2026-10-19 polish: storySeen markers grow unbounded per viewer — prune
+  // entries older than 48h (stories themselves expire after 24h, so a
+  // 2-day-old seen marker can never match a live story). Best-effort.
+  try {
+    const seenSnap = await get(ref(database, `storySeen/${uid}`));
+    if (seenSnap.exists()) {
+      const cutoff = now - 48 * 3_600_000;
+      const stale: Promise<void>[] = [];
+      seenSnap.forEach((child) => {
+        const ts = child.val();
+        if (typeof ts === 'number' && ts < cutoff && child.key) {
+          stale.push(remove(ref(database, `storySeen/${uid}/${child.key}`)));
+        }
+      });
+      if (stale.length > 0) await Promise.all(stale);
+    }
+  } catch { /* non-critical — seen markers are best-effort */ }
 
   // After deletions, recheck and clean up publicStoryIndex if needed
   const remaining = await get(ref(database, `stories/${uid}`));

@@ -3,7 +3,11 @@ import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
 // Cache to avoid refetching the same user repeatedly.
-const authorCache = new Map<string, { name: string; avatar?: string }>();
+// 2026-10-19 polish: entries carry a timestamp — the old cache never
+// invalidated, so a profile rename/avatar change was invisible until app
+// restart. (clearAuthorCache still exists for explicit invalidation.)
+const authorCache = new Map<string, { name: string; avatar?: string; at: number }>();
+const AUTHOR_CACHE_TTL_MS = 10 * 60_000; // 10 minutes
 
 const PLACEHOLDER_NAMES = new Set(['Vee User', 'You', '', 'Vee user', 'vee user']);
 
@@ -29,10 +33,10 @@ export function useRealAuthor(
       setResolved({ name: fallbackName, avatar: fallbackAvatar });
       return;
     }
-    // Check cache.
+    // Check cache (TTL-guarded).
     const cached = authorCache.get(userId);
-    if (cached) {
-      setResolved(cached);
+    if (cached && Date.now() - cached.at < AUTHOR_CACHE_TTL_MS) {
+      setResolved({ name: cached.name, avatar: cached.avatar });
       return;
     }
     // Fetch real name/avatar from RTDB.
@@ -46,9 +50,9 @@ export function useRealAuthor(
         if (cancelled) return;
         const name = nameSnap.exists() && nameSnap.val() ? (nameSnap.val() as string) : fallbackName;
         const avatar = avatarSnap.exists() && avatarSnap.val() ? (avatarSnap.val() as string) : fallbackAvatar;
-        const result = { name, avatar };
+        const result = { name, avatar, at: Date.now() };
         authorCache.set(userId, result);
-        setResolved(result);
+        setResolved({ name, avatar });
       } catch {
         // Keep fallback on error.
       }

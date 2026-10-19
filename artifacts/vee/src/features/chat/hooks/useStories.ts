@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/src/context/AuthContext';
 import { ref, onValue, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
-import { UserStories, Story } from '../types';
+import { UserStories, Story, StoryPrivacy } from '../types';
 import {
   subscribeAllStories,
   subscribeMyStories,
@@ -28,7 +28,7 @@ export interface UseStoriesResult {
   myStories: Story[];              // current user's own stories
   loading: boolean;
   publish: (payload: PublishPayload) => Promise<void>;
-  recordView: (authorUid: string, storyId: string) => void;
+  recordView: (authorUid: string, storyId: string, privacy?: StoryPrivacy) => void;
   react: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
   comment: (authorUid: string, storyId: string, text: string) => Promise<void>;
   remove: (storyId: string) => Promise<void>;
@@ -109,26 +109,25 @@ export function useStories(): UseStoriesResult {
     // Issue 8: Prefer RTDB photoURL over Firebase Auth photoURL.
     // Auth photoURL is only set for Google sign-in; profile photo edits inside
     // Vee go to RTDB (users/{uid}/photoURL) and do NOT update Auth photoURL.
-    let avatarUrl: string | undefined = user.photoURL ?? undefined;
-    let displayName = user.displayName ?? 'You';
+    // 2026-10-19 polish: ONE users/{uid} read for both fields — the old code
+    // did two sequential reads (photoURL, then name).
+    let avatarUrl: string | undefined = user.photoURL || undefined;
+    let displayName = user.displayName || 'You';
     try {
-      const snap = await get(ref(database, `users/${user.uid}/photoURL`));
-      if (snap.exists() && snap.val()) {
-        avatarUrl = snap.val() as string;
+      const profileSnap = await get(ref(database, `users/${user.uid}`));
+      if (profileSnap.exists()) {
+        const p = profileSnap.val() as any;
+        if (p.photoURL) avatarUrl = p.photoURL as string;
+        // Real name from RTDB (2026-10-11): Auth displayName may be unset/stale.
+        // || not ?? — empty-string names must fall back.
+        displayName = p.name || displayName;
       }
-    } catch { /* non-critical — fallback to Auth photoURL */ }
-    try {
-      // Real name from RTDB (2026-10-11): Auth displayName may be unset/stale.
-      const nameSnap = await get(ref(database, `users/${user.uid}/name`));
-      if (nameSnap.exists() && nameSnap.val()) {
-        displayName = nameSnap.val() as string;
-      }
-    } catch { /* non-critical — fallback to Auth displayName */ }
+    } catch { /* non-critical — fallback to Auth values */ }
     await publishStory(user.uid, displayName, avatarUrl, payload);
   }, [user]);
 
-  const recordView = useCallback((authorUid: string, storyId: string) => {
-    recordStoryView(authorUid, storyId, user?.uid);
+  const recordView = useCallback((authorUid: string, storyId: string, privacy?: StoryPrivacy) => {
+    recordStoryView(authorUid, storyId, user?.uid, privacy);
   }, [user?.uid]);
 
   const react = useCallback(async (authorUid: string, storyId: string, emoji: string) => {

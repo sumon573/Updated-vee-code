@@ -3,8 +3,8 @@
  * Exact replication of IMO home: TopBar + StoryRow + ChatList + BottomBar.
  * Uses existing data hooks (subscribeUserChats, useStories) — UI only.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, FlatList, Text, Alert } from 'react-native';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, FlatList, Text, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -48,6 +48,11 @@ export default function IMOHomeScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // 2026-10-19 polish: pull-to-refresh + empty state on the chat list.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+  const [chatsReady, setChatsReady] = useState(false);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
@@ -102,18 +107,45 @@ export default function IMOHomeScreen() {
     if (!uid) return;
     let cancelled = false;
     loadChatList(uid).then((cached) => {
-      if (!cancelled && cached) setChats(cached);
+      if (!cancelled && cached) {
+        setChats(cached);
+        setChatsReady(true);
+      }
     });
     const unsub = subscribeUserChats(uid, (live) => {
       if (cancelled) return;
       setChats(live);
+      setChatsReady(true);
+      // 2026-10-19 polish: pull-to-refresh re-subscribes, which fires this
+      // callback immediately with fresh data — end the spinner here.
+      if (refreshingRef.current) {
+        refreshingRef.current = false;
+        setRefreshing(false);
+      }
       saveChatList(uid, live);
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [user?.uid]);
+    // refreshTick forces a fresh subscription = a real re-pull on refresh.
+  }, [user?.uid, refreshTick]);
+
+  // 2026-10-19 polish: pull-to-refresh. Re-subscribing re-reads userChats
+  // immediately (onValue fires on subscribe); the spinner ends in the
+  // callback above. Backstop clears it if the callback never fires.
+  const handleRefresh = useCallback(() => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshTick((t) => t + 1);
+    setTimeout(() => {
+      if (refreshingRef.current) {
+        refreshingRef.current = false;
+        setRefreshing(false);
+      }
+    }, 8000);
+  }, []);
 
   // Stories (already loaded above via useStories)
   // Convert to IMO format — live profile name/DP wins over cached values
@@ -339,6 +371,22 @@ export default function IMOHomeScreen() {
         data={imoChats}
         keyExtractor={(item) => item.id}
         getItemLayout={getRowLayout}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        // 2026-10-19 polish: empty state — only after the first load so the
+        // cached/live fetch doesn't flash "no chats" while loading.
+        ListEmptyComponent={chatsReady ? (
+          <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 52, marginBottom: 14 }}>💬</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#111111' }}>
+              No chats yet
+            </Text>
+            <Text style={{ fontSize: 13, color: '#666666', marginTop: 6, textAlign: 'center' }}>
+              Start a conversation from the Contacts tab
+            </Text>
+          </View>
+        ) : null}
         renderItem={({ item }) => (
           <IMOChatListItem
             chat={item}
@@ -379,7 +427,9 @@ export default function IMOHomeScreen() {
         currentUserName={user?.displayName ?? undefined}
         onReact={react}
         onComment={comment}
-        onDelete={(storyId) => remove(storyId)}
+        // 2026-10-19 polish: await the delete — StoryViewer awaits this and
+        // surfaces a failure alert; a rejection must not be swallowed here.
+        onDelete={async (storyId) => { await remove(storyId); }}
       />
       <StoryCreator
         visible={storyCreatorVisible}

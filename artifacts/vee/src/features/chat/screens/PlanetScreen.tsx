@@ -371,7 +371,7 @@ export default function PlanetScreen() {
       const viewKey = `${item.userId}/${item.story.id}`;
       if (!recordedViews.current.has(viewKey)) {
         recordedViews.current.add(viewKey);
-        recordStoryView(item.userId, item.story.id, user?.uid);
+        recordStoryView(item.userId, item.story.id, user?.uid, 'public');
       }
     }
   }).current;
