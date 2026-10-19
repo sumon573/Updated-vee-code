@@ -34,6 +34,7 @@
 import {
   ref, push, set, update, remove,
   onValue, get, serverTimestamp, runTransaction,
+  query, limitToLast,
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Story, StoryComment, StoryMediaType, DrawingStroke, UserStories } from '../types';
@@ -387,11 +388,32 @@ export function subscribePlanetStories(
   const perUidUnsubs = new Map<string, () => void>();
   const storiesMap   = new Map<string, UserStories>();
 
-  function emit() {
+  // FIX (2026-10-19): the old emit() re-sorted ALL groups and fired the
+  // callback on every per-UID update — including each view-count increment —
+  // so the feed reshuffled under the finger and the whole list re-rendered.
+  // New behavior: trailing-debounced emit (~1.2s), and the trending sort runs
+  // ONLY when the feed's structure changed (story added/removed). Pure
+  // data updates (viewCount/reactions) keep the previous order with fresh
+  // story objects, so counts stay live without any reshuffle.
+  let emitTimer: ReturnType<typeof setTimeout> | null = null;
+  let cachedOrder: UserStories[] = [];
+  let lastSignature = '';
+
+  function structuralSignature(groups: UserStories[]): string {
+    return groups
+      .map((g) => `${g.userId}:${g.stories.map((s) => s.id).join(',')}`)
+      .sort()
+      .join('|');
+  }
+
+  function emitNow() {
     const now = Date.now();
     const groups = Array.from(storiesMap.values())
-      .filter((g) => g.stories.length > 0)
-      .sort((a, b) => {
+      .filter((g) => g.stories.length > 0);
+    const signature = structuralSignature(groups);
+    let ordered: UserStories[];
+    if (signature !== lastSignature) {
+      ordered = groups.sort((a, b) => {
         // TRENDING (2026-10-09): rank by engagement + recency, not just time.
         // Score = views + (reactions × 3) + recency bonus (decays over 24h).
         const score = (g: UserStories): number => {
@@ -405,7 +427,29 @@ export function subscribePlanetStories(
         };
         return score(b) - score(a);
       });
-    callback(groups);
+      lastSignature = signature;
+    } else {
+      // Data-only update: preserve the last sorted order, swap in the fresh
+      // story objects so view/like counts stay current without a reshuffle.
+      const prevIds = new Set(cachedOrder.map((g) => g.userId));
+      ordered = cachedOrder
+        .map((prev) => storiesMap.get(prev.userId))
+        .filter((g): g is UserStories => !!g && g.stories.length > 0);
+      for (const g of groups) {
+        if (!prevIds.has(g.userId)) ordered.push(g);
+      }
+    }
+    cachedOrder = ordered;
+    callback(ordered);
+  }
+
+  function emit() {
+    if (emitTimer) return; // trailing debounce already pending
+    emitNow(); // leading edge keeps the first load snappy
+    emitTimer = setTimeout(() => {
+      emitTimer = null;
+      emitNow();
+    }, 1200);
   }
 
   const indexUnsub = onValue(ref(database, 'publicStoryIndex'), (indexSnap) => {
@@ -426,7 +470,9 @@ export function subscribePlanetStories(
     // Add subscriptions for new UIDs
     for (const uid of activeUids) {
       if (!perUidUnsubs.has(uid)) {
-        const unsub = onValue(ref(database, `stories/${uid}`), (userSnap) => {
+        // Cap per-user stories (2026-10-19): stories expire after 24h so a
+        // user realistically holds a handful; this bounds download size.
+        const unsub = onValue(query(ref(database, `stories/${uid}`), limitToLast(10)), (userSnap) => {
           const stories: Story[] = [];
           if (userSnap.exists()) {
             userSnap.forEach((storySnap) => {
@@ -457,6 +503,7 @@ export function subscribePlanetStories(
   });
 
   return () => {
+    if (emitTimer) { clearTimeout(emitTimer); emitTimer = null; }
     indexUnsub();
     for (const unsub of perUidUnsubs.values()) unsub();
   };
