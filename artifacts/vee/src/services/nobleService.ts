@@ -43,7 +43,9 @@ export type PrivilegeKey =
   | 'avatarFrame'
   | 'entryEffects'
   | 'micRipple'
-  | 'seatPriority';
+  | 'seatPriority'
+  | 'upgradeBanner'
+  | 'homepageSkin';
 
 export interface PrivilegeDef {
   key: PrivilegeKey;
@@ -62,7 +64,9 @@ export const PRIVILEGES: PrivilegeDef[] = [
   { key: 'avatarFrame',  name: 'Avatar Frame',      icon: '🖼️', minRankIndex: 3, enforced: true  },
   { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 4, enforced: true },
   { key: 'micRipple',    name: 'Microphone Ripple', icon: '🎤', minRankIndex: 6, enforced: false },
-  { key: 'seatPriority', name: 'Seat Priority',     icon: '💺', minRankIndex: 9, enforced: false },
+  { key: 'seatPriority', name: 'Seat Priority',     icon: '💺', minRankIndex: 9, enforced: true  },
+  { key: 'upgradeBanner', name: 'Upgrade Banner',   icon: '🚩', minRankIndex: 5, enforced: false },
+  { key: 'homepageSkin',  name: 'Homepage Skin',    icon: '🏠', minRankIndex: 6, enforced: false },
 ];
 
 export interface NobleRank {
@@ -86,12 +90,12 @@ export const NOBLE_RANKS: NobleRank[] = [
   { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 41999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift'] },
   { key: 'count',     name: 'Count',      minXP: 42000,     maxXP: 251999,     color: '#7E57C2', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame'] },
   { key: 'marquis',   name: 'Marquis',    minXP: 252000,    maxXP: 587999,    color: '#EC407A', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'] },
-  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'] },
-  { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple'] },
-  { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 41999999,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple'] },
-  { key: 'sking',     name: 'SKing',      minXP: 42000000,  maxXP: 419999999, color: '#E65100', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple'] },
+  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
+  { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 41999999,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'sking',     name: 'SKing',      minXP: 42000000,  maxXP: 419999999, color: '#E65100', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
   { key: 'ssking',    name: 'SSKing',     minXP: 420000000, maxXP: Number.MAX_SAFE_INTEGER, color: '#BF360C',
-    privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'seatPriority'] },
+    privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin', 'seatPriority'] },
 ];
 
 /**
@@ -665,6 +669,27 @@ export function hasPrivilege(state: NobleState | null, key: PrivilegeKey): boole
   if (!state || state.lapsed) return false;
   const p = PRIVILEGES.find((d) => d.key === key);
   return !!p && p.enforced && state.rankIndex >= p.minRankIndex;
+}
+
+/**
+ * Seat Priority (IMO "Seat Priority" privilege, SSKing).
+ * When a voice-room seat opens, nobles outrank non-nobles: the highest-ranked
+ * noble requesting the seat is seated first; ties break on noble XP.
+ *
+ * `requests` = each seat request as { uid, nobleRankIndex, nobleXP }.
+ * Returns the uid that should take the seat (null when empty).
+ *
+ * NOTE: this is the pure ranking rule. The voice-room seat-claim integration
+ * (calling this when seats open) is owned by the voice-room agent — flag it
+ * to the parent for assignment.
+ */
+export function pickSeatByNoblePriority(
+  requests: Array<{ uid: string; nobleRankIndex: number; nobleXP: number }>,
+): string | null {
+  if (!requests.length) return null;
+  const sorted = [...requests].sort((a, b) =>
+    b.nobleRankIndex - a.nobleRankIndex || b.nobleXP - a.nobleXP);
+  return sorted[0].uid;
 }
 
 /** "1260", "12K", "4.2M" — matches the IMO reference formatting. */

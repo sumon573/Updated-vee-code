@@ -1,27 +1,31 @@
 /**
- * NobelScreen — "My Noble" (NOTE 10, 2026-10-11).
+ * NobelScreen — "My Noble" (IMO-exact, 2026-10-19).
  *
- * IMO-exact noble level screen. Noble XP grows from REAL diamonds sent as
- * gifts in voice rooms (users/{uid}/noble, written atomically on every gift
- * send — see nobleService). Self-gifts never count.
+ * Replicates IMO's My Noble screen pixel-structure from the reference
+ * (noble-rewards-ref.jpg):
+ * - Title bar: back arrow + "My Noble" + ? + trophy
+ * - Name, rank badge art, I/II/III progress with 👑 XP markers
+ * - "Need 👑X to secure your current noble level {Rank} {I/II/III} (Deadline: …)"
+ * - Rank tabs with crown icons, orange selected underline
+ * - "— Noble Privileges —" + "Experience: {min}K~{max}K"
+ * - 9 privileges, 3-col grid, IMO reward artwork (assets/nobel/)
  *
- * Maintenance is REAL and persisted: each rank-up (or first gift) opens a
- * 30-day window (maintenanceDeadline) with a required amount
- * (maintenanceRequired = ceil(rankMinXP / 2)). Gifts inside the window add
- * to maintenanceXP; a window that expires unmet DEMOTES the rank one step
- * suspends privileges until the requirement is met again.
+ * Vee's Nobel ECONOMY is unchanged (10 ranks Knight…SSKing, XP = lifetime
+ * diamonds sent, 30-day validity, miss maintenance → drop one rank).
+ * Only the UI/UX is IMO's.
  *
- * Privileges render honestly: enforced privileges show active (✓) once the
- * rank is reached; privileges with no real code path yet (Noble Gift,
- * Microphone Ripple, Seat Priority) show locked (🔒) — never unlocked-but-dead.
+ * Privilege honesty: locked (0.3 alpha, IMO) when the user's rank is below
+ * the viewing rank; 🔒 badge when earned but not yet enforced in code.
+ * Never unlocked-but-dead.
  *
  * Light mode only. Errors show their actual cause.
  */
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, Image, ScrollView, Alert, Dimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
@@ -32,11 +36,44 @@ import NobleRankPreview from './NobleRankPreview';
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
 
+// IMO reward artwork (extracted from IMO's APK/reference — assets/nobel/)
+const PRIV_ART: Record<string, any> = {
+  nameplate: require('@/assets/nobel/priv-nameplate.png'),
+  badge: require('@/assets/nobel/priv-badge.png'),
+  gift: require('@/assets/nobel/priv-gift.png'),
+  avatarFrame: require('@/assets/nobel/priv-frame.png'),
+  entryEffects: require('@/assets/nobel/priv-entry.png'),
+  seatPriority: require('@/assets/nobel/priv-seat.png'),
+  upgradeBanner: require('@/assets/nobel/priv-banner.png'),
+  micRipple: require('@/assets/nobel/priv-ripple.png'),
+  homepageSkin: require('@/assets/nobel/priv-skin.png'),
+};
+
+// Rank tab crown art (IMO). Ranks without a dedicated crown reuse the badge art.
+const RANK_CROWN: Record<string, any> = {
+  king: require('@/assets/nobel/crown-king.png'),
+  sking: require('@/assets/nobel/crown-sking.png'),
+  ssking: require('@/assets/nobel/crown-ssking.png'),
+};
+const RANK_CROWN_FALLBACK = require('@/assets/nobel/priv-badge.png');
+// IMO's own "Baron I" badge art (reference screenshot)
+const RANK_BADGE_BARON = require('@/assets/nobel/rank-badge-baron.png');
+
+const IMO_TEAL = '#1FB5A6';
+const IMO_ORANGE = '#FF9800';
+const IMO_GRAY = '#9E9E9E';
+
 function subLevelFor(xp: number, rankIdx: number): number {
   const r = NOBLE_RANKS[rankIdx];
   const span = r.maxXP - r.minXP;
   if (!Number.isFinite(span) || span <= 0) return 1;
   return Math.min(3, Math.floor(((xp - r.minXP) / span) * 3) + 1);
+}
+
+/** IMO experience format: "42000K~1000000000000K" */
+function formatExpK(xp: number): string {
+  if (!Number.isFinite(xp)) return 'MAX';
+  return `${Math.round(xp / 1000)}K`;
 }
 
 export default function NobelScreen({ embedded = false }: { embedded?: boolean }) {
@@ -46,31 +83,17 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRankIdx, setSelectedRankIdx] = useState(0);
-  // 2026-10-19 polish: the realtime noble callback must NOT snap the tab back
-  // on every XP update while the user is browsing another rank. Initialize
-  // the selection once (first non-null state); after the user picks a tab
-  // themselves, later callbacks leave the selection alone.
   const userPickedTabRef = useRef(false);
   const tabInitializedRef = useRef(false);
-  // 2026-10-15 (Sumon): Rank preview modal
   const [previewRankIdx, setPreviewRankIdx] = useState<number | null>(null);
-  // 2026-10-15 (Sumon): profile name from RTDB — Nobel tab must show the SAME
-  // name as the profile screen (profile uses RTDB profile.name, not auth).
   const [profileName, setProfileName] = useState<string | null>(null);
-  // 2026-10-17 (Sumon): profile photo from RTDB — must show real DP realtime
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
     setLoading(true);
     setError(null);
-    // 2026-10-15 (Sumon): lazy demotion — roll over expired windows on view.
     refreshNobleState(user.uid).catch(() => {});
-    // 2026-10-15 (Sumon): fetch RTDB profile name — must match profile screen.
-    // 2026-10-17 (Sumon): also fetch RTDB photoURL realtime — real DP, not placeholder.
-    // 2026-10-19 (Sumon): capture the unsubscribe — the previous code dropped
-    // this handle, leaking one permanent users/{uid} listener per mount (Nobel
-    // is the default Decoration tab, so this leaked fast in normal use).
     let unsubProfile: (() => void) | null = null;
     (async () => {
       try {
@@ -89,8 +112,6 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       user.uid,
       (s) => {
         setNoble(s);
-        // 2026-10-19 polish: initialize the tab once — never yank it back
-        // while the user is browsing (see refs above).
         if (s && !tabInitializedRef.current && !userPickedTabRef.current) {
           tabInitializedRef.current = true;
           setSelectedRankIdx(s.rankIndex);
@@ -106,8 +127,6 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     return () => {
       clearTimeout(timeout);
       unsub();
-      // 2026-10-19 (Sumon): also detach the profile listener (may still be
-      // null if the async import hasn't finished — unsubProfile guards that).
       try { unsubProfile?.(); } catch { /* non-critical */ }
     };
   }, [user?.uid]);
@@ -120,6 +139,11 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       'deadline to keep your rank secured — otherwise privileges are suspended ' +
       'until you catch up.',
     );
+  };
+
+  const showRanking = () => {
+    // Noble leaderboard lives in the Leaderboard screen.
+    router.push('/leaderboard' as any);
   };
 
   if (loading) {
@@ -142,73 +166,96 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     : Math.min(1, Math.max(0, (xp - rank.minXP) / span));
 
   const remaining = noble ? Math.max(0, noble.maintenanceRequired - noble.maintenanceXP) : 0;
+  // IMO-exact maintenance line
   const maintenanceLine = !noble
     ? 'Send diamonds as gifts in voice rooms to earn Noble XP.'
-    : remaining > 0
-      ? `Need 👑${formatXP(remaining)} to secure your current noble level ${rank.name} ${ROMAN[sub - 1]} (Deadline: ${formatDeadline(noble.maintenanceDeadline)})`
-      : `Your ${rank.name} ${ROMAN[sub - 1]} level is secured until ${formatDeadline(noble.maintenanceDeadline)}.`;
+    : `Need 👑${formatXP(remaining)} to secure your current noble level ${rank.name} ${ROMAN[sub - 1]} (Deadline: ${formatDeadline(noble.maintenanceDeadline)})`;
 
   const renderPrivilege = (key: string) => {
     const def = PRIVILEGES.find((p) => p.key === key) as PrivilegeDef;
-    // Earned = user reached the rank that grants it.
+    // IMO: viewing a rank tab shows that rank's privileges; locked (0.3 alpha)
+    // when the user's own rank is below the viewed rank.
+    const rankLocked = rankIdx < selectedRankIdx;
     const earned = rankIdx >= def.minRankIndex;
-    const active = earned && def.enforced;
-    const locked = earned && !active;
+    const enforcedLocked = earned && !def.enforced;
+    const art = PRIV_ART[def.key];
     return (
-      <View key={def.key} style={{ width: (width - 64) / 3, alignItems: 'center', marginBottom: 20 }}>
-        <View style={{
-          width: 56, height: 56, borderRadius: 28,
-          backgroundColor: locked ? '#F2F2F7' : '#FFF8E1',
-          alignItems: 'center', justifyContent: 'center',
-          marginBottom: 8, opacity: locked ? 0.6 : 1 }}>
-          <Text style={{ fontSize: 28 }}>{def.icon}</Text>
-          {locked && (
+      <View key={def.key} style={{ width: (width - 48) / 3, alignItems: 'center', marginBottom: 24 }}>
+        <View style={{ opacity: rankLocked ? 0.3 : 1, alignItems: 'center' }}>
+          {art ? (
+            <Image source={art} style={{ width: 84, height: 84 }} resizeMode="contain" />
+          ) : (
             <View style={{
-              position: 'absolute', bottom: -2, right: -2,
-              backgroundColor: '#fff', borderRadius: 10, padding: 2 }}>
-              <Feather name="lock" size={12} color="#8E8E93" />
+              width: 84, height: 84, borderRadius: 42,
+              backgroundColor: '#FFF8E1', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 36 }}>{def.icon}</Text>
             </View>
           )}
-          {active && (
+          {enforcedLocked && !rankLocked && (
             <View style={{
-              position: 'absolute', bottom: -2, right: -2,
-              backgroundColor: '#4CAF50', borderRadius: 10, padding: 2 }}>
-              <Feather name="check" size={12} color="#fff" />
+              position: 'absolute', bottom: 2, right: 8,
+              backgroundColor: '#fff', borderRadius: 10, padding: 3,
+              borderWidth: 1, borderColor: '#E0E0E0' }}>
+              <Feather name="lock" size={12} color="#8E8E93" />
             </View>
           )}
         </View>
         <Text style={{
-          fontSize: 12, color: locked ? '#8E8E93' : '#333',
-          textAlign: 'center', fontWeight: '500' }}>
+          fontSize: 14, color: rankLocked ? IMO_GRAY : '#212121',
+          textAlign: 'center', fontWeight: '500', marginTop: 8, lineHeight: 18 }}>
           {def.name}
         </Text>
       </View>
     );
   };
 
-  const anyLocked = selectedRank.privileges.some((k) => {
+  const anyEnforcedLocked = selectedRank.privileges.some((k) => {
     const def = PRIVILEGES.find((p) => p.key === k) as PrivilegeDef;
-    return rankIdx >= def.minRankIndex && !def.enforced;
+    return rankIdx >= def.minRankIndex && !def.enforced && rankIdx >= selectedRankIdx;
   });
+
+  const renderRankBadge = () => {
+    // IMO shows per-rank badge art; we have Baron's actual art.
+    if (rank.key === 'baron') {
+      return (
+        <Image source={RANK_BADGE_BARON} style={{ width: 150, height: 52 }} resizeMode="contain" />
+      );
+    }
+    const crown = RANK_CROWN[rank.key] || RANK_CROWN_FALLBACK;
+    return (
+      <View style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#2AA198', borderWidth: 2, borderColor: '#C9A227',
+        borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 }}>
+        <Image source={crown} style={{ width: 26, height: 26 }} resizeMode="contain" />
+        <Text style={{ fontSize: 17, fontWeight: '800', fontStyle: 'italic', color: '#fff', marginLeft: 8 }}>
+          {rank.name} {ROMAN[sub - 1]}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Header — hidden when embedded in the Decoration tab (2026-10-11) */}
+      {/* Title bar — IMO: back + "My Noble" + ? + trophy */}
       {!embedded && (
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Feather name="arrow-left" size={24} color="#000" />
-        </Pressable>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#000', marginLeft: 12, flex: 1 }}>
-          My Noble
-        </Text>
-        <Pressable hitSlop={12} style={{ marginRight: 16 }} onPress={showAbout}>
-          <Feather name="help-circle" size={22} color="#000" />
-        </Pressable>
-
-      </View>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
+          borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+          <Pressable onPress={() => router.back()} hitSlop={12}>
+            <Feather name="arrow-left" size={28} color="#000" />
+          </Pressable>
+          <Text style={{ fontSize: 28, fontWeight: '700', color: '#000', marginLeft: 16, flex: 1 }}>
+            My Noble
+          </Text>
+          <Pressable hitSlop={12} style={{ marginRight: 20 }} onPress={showAbout}>
+            <Feather name="help-circle" size={26} color="#000" />
+          </Pressable>
+          <Pressable hitSlop={12} onPress={showRanking}>
+            <MaterialIcons name="emoji-events" size={26} color="#000" />
+          </Pressable>
+        </View>
       )}
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -218,69 +265,64 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           </View>
         ) : (
           <>
-            {/* Profile */}
-            <View style={{ alignItems: 'center', paddingTop: 8 }}>
-              {(profilePhoto || user?.photoURL) ? (
-                <Image source={{ uri: profilePhoto || user?.photoURL }} style={{ width: 72, height: 72, borderRadius: 36 }} />
-              ) : (
-                <View style={{
-                  width: 72, height: 72, borderRadius: 36, backgroundColor: '#E0E0E0',
-                  alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 24, fontWeight: '700', color: '#757575' }}>
-                    {((profileName || user?.displayName || '?').charAt(0).toUpperCase())}
-                  </Text>
-                </View>
-              )}
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#000', marginTop: 10 }}>
+            {/* User section — IMO: name + rank badge art */}
+            <View style={{ alignItems: 'center', paddingTop: 20 }}>
+              <Text style={{ fontSize: 28, fontWeight: '700', color: '#000' }}>
                 {profileName || user?.displayName || 'Vee User'}
               </Text>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center',
-                backgroundColor: rank.color + '22',
-                borderWidth: 1.5, borderColor: rank.color,
-                borderRadius: 14, paddingHorizontal: 12, paddingVertical: 4,
-                marginTop: 8 }}>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: rank.color }}>
-                  {rank.name} {ROMAN[sub - 1]}
-                </Text>
+              <View style={{ marginTop: 10 }}>
+                {renderRankBadge()}
               </View>
             </View>
 
-            {/* Progress bar */}
-            <View style={{ paddingHorizontal: 24, marginTop: 16 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#26A69A' }}>{ROMAN[sub - 1]}</Text>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#BDBDBD' }}>
-                  {isTop ? 'MAX' : ROMAN[Math.min(2, sub)]}
+            {/* Progress — IMO: I/II markers, 👑XP bar with knob */}
+            <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
+              <View style={{ flexDirection: 'row', paddingLeft: 52 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', fontStyle: 'italic', color: IMO_TEAL }}>
+                  {ROMAN[sub - 1]}
                 </Text>
+                {!isTop && (
+                  <Text style={{ fontSize: 15, fontWeight: '800', fontStyle: 'italic', color: '#D5DBDB', marginLeft: width * 0.32 }}>
+                    {ROMAN[Math.min(2, sub)]}
+                  </Text>
+                )}
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FF9800', marginRight: 8 }}>
-                  👑{formatXP(xp)}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: IMO_TEAL, marginRight: 6 }}>
+                  👑{formatXP(rank.minXP)}
                 </Text>
-                <View style={{ flex: 1, height: 8, backgroundColor: '#F0F0F0', borderRadius: 4, overflow: 'hidden' }}>
+                <View style={{ flex: 1, height: 10, backgroundColor: '#ECEFF1', borderRadius: 5 }}>
                   <View style={{
-                    width: `${progress * 100}%`, height: 8,
-                    backgroundColor: '#26A69A', borderRadius: 4 }} />
+                    width: `${progress * 100}%`, height: 10,
+                    backgroundColor: IMO_TEAL, borderRadius: 5 }} />
+                  <View style={{
+                    position: 'absolute',
+                    left: `${progress * 100}%`, top: 1,
+                    width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff',
+                    marginLeft: -4,
+                    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, elevation: 2,
+                  }} />
                 </View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FF9800', marginLeft: 8 }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: IMO_TEAL, marginLeft: 6 }}>
                   👑{isTop ? 'MAX' : formatXP(rank.maxXP)}
                 </Text>
               </View>
-              <Text style={{ fontSize: 12, color: '#757575', textAlign: 'center', marginTop: 8, lineHeight: 18 }}>
+              <Text style={{ fontSize: 14, color: '#9E9E9E', textAlign: 'center', marginTop: 10, lineHeight: 20 }}>
                 {maintenanceLine}
               </Text>
             </View>
 
-            {/* Rank tabs */}
+            {/* Rank tabs — IMO: crown icon + name, orange selected */}
+            <View style={{ borderTopWidth: 8, borderTopColor: '#F7F7F7', marginTop: 16 }} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 16 }}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
+              contentContainerStyle={{ paddingHorizontal: 8, alignItems: 'center' }}
+              style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}
             >
               {NOBLE_RANKS.map((r, idx) => {
                 const activeTab = idx === selectedRankIdx;
+                const crown = RANK_CROWN[r.key] || RANK_CROWN_FALLBACK;
                 return (
                   <Pressable
                     key={r.key}
@@ -291,17 +333,15 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                     hitSlop={{ top: 8, bottom: 8 }}
                     style={{
                       flexDirection: 'row', alignItems: 'center',
-                      paddingHorizontal: 12, paddingVertical: 8, marginRight: 4,
-                      borderBottomWidth: activeTab ? 2.5 : 0,
-                      borderBottomColor: '#FF9800' }}
+                      paddingHorizontal: 14, paddingVertical: 12, marginRight: 2,
+                      borderBottomWidth: activeTab ? 3 : 0,
+                      borderBottomColor: IMO_ORANGE }}
                   >
-                    <View style={{
-                      width: 10, height: 10, borderRadius: 5,
-                      backgroundColor: r.color, marginRight: 6 }} />
+                    <Image source={crown} style={{ width: 30, height: 30, marginRight: 6 }} resizeMode="contain" />
                     <Text style={{
-                      fontSize: 14,
+                      fontSize: 17,
                       fontWeight: activeTab ? '700' : '400',
-                      color: activeTab ? '#FF9800' : '#9E9E9E' }}>
+                      color: activeTab ? IMO_ORANGE : '#7F8C8D' }}>
                       {r.name}
                     </Text>
                   </Pressable>
@@ -309,19 +349,24 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               })}
             </ScrollView>
 
-            {/* Privileges */}
-            <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
+            {/* Privileges header — IMO: — Noble Privileges — */}
+            <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ width: 40, height: 1.5, backgroundColor: '#FFB74D' }} />
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#FF9800', marginHorizontal: 12 }}>
+                <LinearGradient
+                  colors={['transparent', IMO_ORANGE]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{ width: 70, height: 2.5, borderRadius: 1.5 }} />
+                <Text style={{ fontSize: 21, fontWeight: '700', color: IMO_ORANGE, marginHorizontal: 14 }}>
                   Noble Privileges
                 </Text>
-                <View style={{ width: 40, height: 1.5, backgroundColor: '#FFB74D' }} />
+                <LinearGradient
+                  colors={[IMO_ORANGE, 'transparent']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{ width: 70, height: 2.5, borderRadius: 1.5 }} />
               </View>
-              <Text style={{ fontSize: 13, color: '#757575', marginTop: 6 }}>
-                Experience: {formatXP(selectedRank.minXP)}~{formatXP(selectedRank.maxXP)}
+              <Text style={{ fontSize: 15, color: '#7F8C8D', marginTop: 8 }}>
+                Experience: {formatExpK(selectedRank.minXP)}~{formatExpK(selectedRank.maxXP)}
               </Text>
-              {/* 2026-10-15 (Sumon): Preview how this rank looks on your profile */}
               <Pressable
                 onPress={() => setPreviewRankIdx(selectedRankIdx)}
                 style={{
@@ -337,12 +382,13 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               </Pressable>
             </View>
 
+            {/* 9 privileges, 3-col grid — IMO reward artwork */}
             <View style={{
               flexDirection: 'row', flexWrap: 'wrap',
-              paddingHorizontal: 32, paddingTop: 12, justifyContent: 'flex-start' }}>
+              paddingHorizontal: 24, paddingTop: 16, justifyContent: 'flex-start' }}>
               {selectedRank.privileges.map(renderPrivilege)}
             </View>
-            {anyLocked && (
+            {anyEnforcedLocked && (
               <Text style={{ fontSize: 11, color: '#8E8E93', textAlign: 'center', paddingHorizontal: 40, paddingBottom: 8 }}>
                 🔒 = privilege not available yet — it will activate here when it ships.
               </Text>
@@ -352,7 +398,6 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
         )}
       </ScrollView>
 
-      {/* 2026-10-15 (Sumon): Rank preview modal */}
       {previewRankIdx !== null && (
         <NobleRankPreview
           visible={previewRankIdx !== null}
