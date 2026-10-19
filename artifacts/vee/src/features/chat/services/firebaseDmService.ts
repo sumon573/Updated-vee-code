@@ -483,42 +483,57 @@ export function subscribeTyping(
  * Subscribe to a user's online/offline presence from users/{uid}.
  * Respects the participant's privacy settings: if they have hidden their
  * online status or last-seen timestamp, those values are masked.
+ * 2026-10-19 perf: `prefetchedPrivacy` — when the caller already fetched
+ * users/{uid}/privacy, pass it here to skip the internal re-fetch.
  */
 export function subscribePresence(
   participantUid: string,
   callback: (online: boolean, lastSeen: number | null) => void,
+  prefetchedPrivacy?: { showOnlineStatus?: boolean; showLastSeen?: boolean },
 ): () => void {
   let realUnsub: (() => void) | null = null;
   let cancelled = false;
 
-  // Fetch privacy once — privacy changes are rare; UI re-mounts apply them.
-  get(ref(database, `users/${participantUid}/privacy`))
-    .then((privacySnap) => {
-      if (cancelled) return;
-      const p = privacySnap.exists()
-        ? (privacySnap.val() as { showOnlineStatus?: boolean; showLastSeen?: boolean })
-        : {};
-      const showOnline   = p.showOnlineStatus  !== false;
-      const showLastSeen = p.showLastSeen !== false;
+  const startLive = (p: { showOnlineStatus?: boolean; showLastSeen?: boolean }) => {
+    if (cancelled) return;
+    const showOnline   = p.showOnlineStatus  !== false;
+    const showLastSeen = p.showLastSeen !== false;
 
-      realUnsub = onValue(ref(database, `users/${participantUid}`), (snap) => {
-        if (!snap.exists()) { callback(false, null); return; }
-        const v = snap.val() as { online?: boolean; lastSeen?: number };
-        callback(
-          showOnline   ? v.online === true : false,
-          showLastSeen ? (typeof v.lastSeen === 'number' ? v.lastSeen : null) : null,
-        );
-      });
-    })
-    .catch(() => {
-      // Privacy fetch failed — fall back to showing presence normally.
-      if (cancelled) return;
-      realUnsub = onValue(ref(database, `users/${participantUid}`), (snap) => {
-        if (!snap.exists()) { callback(false, null); return; }
-        const v = snap.val() as { online?: boolean; lastSeen?: number };
-        callback(v.online === true, typeof v.lastSeen === 'number' ? v.lastSeen : null);
-      });
+    realUnsub = onValue(ref(database, `users/${participantUid}`), (snap) => {
+      if (!snap.exists()) { callback(false, null); return; }
+      const v = snap.val() as { online?: boolean; lastSeen?: number };
+      callback(
+        showOnline   ? v.online === true : false,
+        showLastSeen ? (typeof v.lastSeen === 'number' ? v.lastSeen : null) : null,
+      );
     });
+  };
+
+  const startLivePermissive = () => {
+    // Privacy fetch failed — fall back to showing presence normally.
+    if (cancelled) return;
+    realUnsub = onValue(ref(database, `users/${participantUid}`), (snap) => {
+      if (!snap.exists()) { callback(false, null); return; }
+      const v = snap.val() as { online?: boolean; lastSeen?: number };
+      callback(v.online === true, typeof v.lastSeen === 'number' ? v.lastSeen : null);
+    });
+  };
+
+  if (prefetchedPrivacy) {
+    startLive(prefetchedPrivacy);
+  } else {
+    // Fetch privacy once — privacy changes are rare; UI re-mounts apply them.
+    get(ref(database, `users/${participantUid}/privacy`))
+      .then((privacySnap) => {
+        if (cancelled) return;
+        startLive(privacySnap.exists()
+          ? (privacySnap.val() as { showOnlineStatus?: boolean; showLastSeen?: boolean })
+          : {});
+      })
+      .catch(() => {
+        startLivePermissive();
+      });
+  }
 
   return () => {
     cancelled = true;

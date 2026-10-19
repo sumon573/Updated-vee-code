@@ -59,7 +59,7 @@ import { isVoiceRoomAudioActive } from '@/src/services/audioOwner';
 import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError } from '@/src/services/blockService';
 import { isVeeTeam } from '../services/veeTeamService';
 import { VerifiedName } from '@/src/components/VerifiedName';
-import { canViewOnlineStatus, canViewLastSeen } from '@/src/services/privacyService';
+import { getUserPrivacy } from '@/src/services/privacyService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
 const { width, height } = Dimensions.get('window');
@@ -334,11 +334,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     let unsub: (() => void) | null = null;
     let cancelled = false;
     (async () => {
-      const [showOnline, showSeen] = await Promise.all([
-        canViewOnlineStatus(effectiveParticipantId).catch(() => true),
-        canViewLastSeen(effectiveParticipantId).catch(() => true),
-      ]);
+      // 2026-10-19 perf: ONE privacy read per chat open, passed into
+      // subscribePresence below — previously this did two reads here plus a
+      // third re-fetch inside subscribePresence. getUserPrivacy never rejects
+      // (fail-closed on error), so semantics match the old canView* calls.
+      const privacy = await getUserPrivacy(effectiveParticipantId);
       if (cancelled) return;
+      const showOnline = privacy.showOnlineStatus;
+      const showSeen = privacy.showLastSeen;
       if (!showOnline && !showSeen) {
         // Privacy: hide both — don't subscribe at all.
         setIsOnline(false);
@@ -348,7 +351,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       unsub = subscribePresence(effectiveParticipantId, (online, seen) => {
         setIsOnline(showOnline ? online : false);
         setLastSeen(showSeen ? seen : null);
-      });
+      }, privacy);
     })();
     return () => { cancelled = true; unsub?.(); };
   }, [effectiveParticipantId]);
