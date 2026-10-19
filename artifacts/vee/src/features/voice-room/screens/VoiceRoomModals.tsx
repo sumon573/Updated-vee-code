@@ -110,6 +110,10 @@ export interface VoiceRoomModalsProps {
   dismissAdmin: (uid: string) => void;
   blockUser: (uid: string, action: "room-block" | "comment-block") => void;
   unblockUser: (uid: string) => void;
+  /** SVIP kick-out (spends points). */
+  svipKickOut: (uid: string) => void;
+  /** True when the viewer holds the SVIP kick-out privilege. */
+  canSvipKickOut: boolean;
   lockSeat: (idx: number) => void;
   unlockSeat: (idx: number) => void;
   inviteToSeat: (memberId: string, seatIdx: number) => void;
@@ -216,6 +220,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onMention={() => { if (p.seatActionMember) { p.handleMention(p.seatActionMember.name); p.setSeatActionOpen(false); } }}
         onBlock={() => { if (p.seatActionMember) { p.blockUser(p.seatActionMember!.id, 'room-block'); p.setSeatActionOpen(false); } }}
         onUnblock={() => { if (p.seatActionMember) { p.unblockUser(p.seatActionMember!.id); p.setSeatActionOpen(false); } }}
+        onKickOut={() => { if (p.seatActionMember) { p.svipKickOut(p.seatActionMember!.id); p.setSeatActionOpen(false); } }}
+        canKickOut={p.canSvipKickOut}
         isRoomBlocked={!!p.seatActionMember && p.blockedRecs.some((r: BlockRecord) => r.id === p.seatActionMember!.id && r.isActive && r.action === 'room-block')}
         onLock={() => { p.lockSeat(p.seatActionIdx); p.setSeatActionOpen(false); }}
         onUnlock={() => { p.unlockSeat(p.seatActionIdx); p.setSeatActionOpen(false); }}
