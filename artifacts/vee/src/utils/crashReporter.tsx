@@ -11,6 +11,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, StyleSheet } from 'react-native';
+import { reloadAppAsync } from 'expo';
 
 interface CrashInfo {
   message: string;
@@ -180,8 +181,14 @@ export function CrashOverlay(): React.ReactElement | null {
   return (
     <Modal visible transparent={false} animationType="slide">
       <View style={styles.container}>
-        <Text style={styles.title}>⚠️ App Error</Text>
-        <Text style={styles.subtitle}>The app hit a problem. Here is the real cause:</Text>
+        {/* 2026-10-19 polish: label fatal vs non-fatal — fatal means the JS
+            context was torn down, so a restart is the only way forward. */}
+        <Text style={styles.title}>
+          ⚠️ App Error{crash.fatal ? ' (Fatal)' : ''}
+        </Text>
+        <Text style={styles.subtitle}>
+          The app hit a problem{crash.fatal ? ' and had to stop' : ''}. Here is the real cause:
+        </Text>
         <ScrollView style={styles.scroll}>
           <Text style={styles.message}>{crash.message}</Text>
           {crash.stack ? (
@@ -189,6 +196,15 @@ export function CrashOverlay(): React.ReactElement | null {
           ) : null}
           <Text style={styles.time}>{crash.timestamp}</Text>
         </ScrollView>
+        <Pressable
+          style={[styles.button, styles.restartButton]}
+          onPress={() => {
+            // Same restart util as the route-level ErrorFallback.
+            reloadAppAsync().catch(() => setCrash(null));
+          }}
+        >
+          <Text style={styles.buttonText}>Restart App</Text>
+        </Pressable>
         <Pressable
           style={styles.button}
           onPress={() => setCrash(null)}
@@ -246,6 +262,11 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
     marginTop: 16,
+  },
+  // 2026-10-19 polish: Restart button — uses the app-wide blue so the
+  // primary recovery action is visually distinct from Dismiss.
+  restartButton: {
+    backgroundColor: '#007AFF',
   },
   buttonText: {
     color: '#fff',
