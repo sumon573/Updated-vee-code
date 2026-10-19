@@ -5,7 +5,11 @@
  * UTC-based so every client computes the same week id.
  */
 export function getCurrentWeekId(d: Date = new Date()): string {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  // 2026-10-19 polish: the old code built the UTC date from LOCAL
+  // year/month/date — two clients in different timezones could compute
+  // different week ids for the same instant near midnight. UTC components
+  // so every client on earth agrees on the current week.
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   // ISO: Thursday of the current week determines the week-year.
   const dayNum = date.getUTCDay() || 7; // Mon=1 … Sun=7
   date.setUTCDate(date.getUTCDate() + 4 - dayNum);

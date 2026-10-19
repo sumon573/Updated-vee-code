@@ -341,18 +341,34 @@ export async function recordWeeklyLeaderboardStats(args: {
   if (!(price > 0) || !(recipientAmount > 0)) return;
   try {
     const { getCurrentWeekId } = await import('@/src/utils/weekId');
-    const { ref, update, increment } = await import('firebase/database');
+    const { ref, update, increment, runTransaction } = await import('firebase/database');
     const { database } = await import('@/src/config/firebase');
     const weekId = getCurrentWeekId();
-    const updates: Record<string, unknown> = {};
     const sBase = `leaderboard_senders/${weekId}/${fromUid}`;
-    updates[`${sBase}/weeklySent`] = increment(price);
-    updates[`${sBase}/name`] = args.senderName || 'Vee User';
-    if (args.senderPhotoURL) updates[`${sBase}/photoURL`] = args.senderPhotoURL;
     const rBase = `leaderboard/${weekId}/${toUid}`;
+    // 2026-10-19 polish: name/photoURL are written ONLY when the weekly node
+    // is first created. This runs on the SENDER's client, whose cached copy
+    // of the receiver's name/photo may be stale — overwriting on every gift
+    // corrupted the receiver's leaderboard display name. Counters still
+    // increment server-side on every gift (unchanged).
+    const ensureIdentity = (
+      base: string,
+      name?: string | null,
+      photoURL?: string | null,
+    ) =>
+      runTransaction(ref(database, base), (cur) => {
+        if (cur !== null) return; // node exists — never overwrite the stored identity
+        const v: Record<string, unknown> = { name: name || 'Vee User' };
+        if (photoURL) v.photoURL = photoURL;
+        return v;
+      }).catch(() => {});
+    await Promise.all([
+      ensureIdentity(sBase, args.senderName, args.senderPhotoURL),
+      ensureIdentity(rBase, args.receiverName, args.receiverPhotoURL),
+    ]);
+    const updates: Record<string, unknown> = {};
+    updates[`${sBase}/weeklySent`] = increment(price);
     updates[`${rBase}/weeklyEarned`] = increment(recipientAmount);
-    updates[`${rBase}/name`] = args.receiverName || 'Vee User';
-    if (args.receiverPhotoURL) updates[`${rBase}/photoURL`] = args.receiverPhotoURL;
     await update(ref(database), updates);
   } catch {
     // Best-effort — the gift already succeeded; leaderboard stats are non-critical.

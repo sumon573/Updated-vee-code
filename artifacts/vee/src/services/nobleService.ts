@@ -534,6 +534,17 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
     } catch {
       // Non-critical — items will be cleaned on next heal.
     }
+    // 2026-10-19 polish: the demoted-TO rank's reward validity was left stale
+    // (up to ~30 days) — renew it to the new maintenance deadline so the
+    // kept rank's frame/badge/plate/ripple/entryEffect don't expire early.
+    // renewNobleRankValidity skips when the deadline is already correct.
+    try {
+      if (next.maintenanceDeadline > Date.now()) {
+        await renewNobleRankValidity(uid, nextRank, next.maintenanceDeadline);
+      }
+    } catch {
+      // Non-critical
+    }
   }
   // 2026-10-16 (Sumon): Rank MAINTAINED — renew reward validity to new deadline.
   if (next && nextRank === prevRank && next.maintenanceDeadline > Date.now()) {

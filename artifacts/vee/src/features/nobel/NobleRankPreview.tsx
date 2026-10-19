@@ -211,7 +211,7 @@ export default function NobleRankPreview({
                       {r.label}
                     </Text>
                     <Text style={{ fontSize: 12, color: '#888' }}>
-                      Permanent • Auto-granted on rank up
+                      30-day validity • renews with maintenance
                     </Text>
                   </View>
                   {isUnlocked ? (

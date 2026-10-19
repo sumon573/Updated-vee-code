@@ -21,6 +21,7 @@ import { get, ref, query, orderByChild, limitToLast, onValue } from 'firebase/da
 import { auth, database } from '@/src/config/firebase';
 import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
 import { getCurrentWeekId } from '@/src/utils/weekId';
+import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { router } from 'expo-router';
 
 // ─── Light premium palette ───────────────────────────────────────────────────
@@ -56,9 +57,12 @@ type Tab = 'rooms' | 'live' | 'senders' | 'receivers';
 
 /** Compact diamond amounts: 1250 → "1.2k", 10992450 → "11m" (Sumon, 2026-10-13). */
 function fmtCompact(n: number): string {
-  if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
-  if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
-  if (n >= 1_000) return `${parseFloat((n / 1_000).toFixed(1))}k`;
+  // 2026-10-19 polish: round-then-carry — 999999 must render "1m", never
+  // "1000k". Thresholds sit half a unit below each boundary so toFixed(1)
+  // can never round up to 1000 of the current unit.
+  if (n >= 999_500_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
+  if (n >= 999_500) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
+  if (n >= 999.5) return `${parseFloat((n / 1_000).toFixed(1))}k`;
   return `${n}`;
 }
 
@@ -166,13 +170,19 @@ export function LeaderboardModal({
      entering the top-40 set are subscribed, only rooms leaving it are
      unsubscribed. Ground-truth semantics unchanged. */
   const [liveCounts, setLiveCounts] = useState<Record<string, number>>({});
+  // 2026-10-19 polish: Top Live must differ from Top Rooms — it ranks rooms
+  // by SEATED members (people on mic = genuinely live content), not total
+  // members. Tracked alongside liveCounts in the same subscriptions.
+  const [seatedCounts, setSeatedCounts] = useState<Record<string, number>>({});
   const liveSubsRef = useRef(new Map<string, () => void>());
   const liveCountsRef = useRef<Record<string, number>>({});
+  const seatedCountsRef = useRef<Record<string, number>>({});
 
   const teardownLiveCounts = () => {
     liveSubsRef.current.forEach((u) => { try { u(); } catch { /* noop */ } });
     liveSubsRef.current.clear();
     liveCountsRef.current = {};
+    seatedCountsRef.current = {};
   };
 
   useEffect(() => {
@@ -180,6 +190,7 @@ export function LeaderboardModal({
       if (liveSubsRef.current.size > 0) {
         teardownLiveCounts();
         setLiveCounts({});
+        setSeatedCounts({});
       }
       return;
     }
@@ -196,9 +207,13 @@ export function LeaderboardModal({
         try { unsub(); } catch { /* noop */ }
         subs.delete(id);
         delete counts[id];
+        delete seatedCountsRef.current[id];
       }
     });
-    const push = () => setLiveCounts({ ...counts });
+    const push = () => {
+      setLiveCounts({ ...counts });
+      setSeatedCounts({ ...seatedCountsRef.current });
+    };
     let seededAny = false;
     // Seed newly-added rooms from stored values so the list never flashes
     // empty/wrong before the first ground-truth snapshot lands.
@@ -223,6 +238,7 @@ export function LeaderboardModal({
         });
         const aud = audSnap.exists() ? audSnap.numChildren() : 0;
         counts[room.id] = seated + aud;
+        seatedCountsRef.current[room.id] = seated;
         push();
       };
       const tryCompute = () => { if (seatsSnap && audSnap) recompute(); };
@@ -238,8 +254,10 @@ export function LeaderboardModal({
   // Unmount safety: never leak the delta-managed subscriptions.
   useEffect(() => () => { teardownLiveCounts(); }, []);
 
-  /* Rooms ranked by REAL live count. Top Live = genuinely occupied rooms only,
-     so the LIVE badge never shows on an empty room (Sumon 2026-10-16). */
+  /* Rooms ranked by REAL live count. Top Live = rooms with ≥1 SEATED member
+     (people on mic = genuinely live content), ranked by seated count — so the
+     two tabs are never identical (Sumon 2026-10-16: LIVE badge never on an
+     empty room; 2026-10-19: Top Live differentiated from Top Rooms). */
   const rankedRooms = useMemo(() => {
     // 2026-10-16 (Sumon): Top Rooms = ONLY rooms with real members.
     // Empty rooms (0 members) are not "top" — filter them out so the
@@ -250,7 +268,13 @@ export function LeaderboardModal({
       .sort((a, b) => b.realCount - a.realCount)
       .slice(0, 30);
   }, [rooms, liveCounts]);
-  const liveRankedRooms = useMemo(() => rankedRooms.filter((r) => r.realCount > 0), [rankedRooms]);
+  const liveRankedRooms = useMemo(() => {
+    return rooms
+      .map((r) => ({ ...r, seatedCount: seatedCounts[r.id] ?? 0 }))
+      .filter((r) => r.seatedCount > 0)
+      .sort((a, b) => b.seatedCount - a.seatedCount)
+      .slice(0, 30);
+  }, [rooms, seatedCounts]);
 
   // ── Top Senders — REAL weekly data ─────────────────────────────────────────
   const [senders, setSenders] = useState<LeaderboardEntry[]>([]);
@@ -423,8 +447,13 @@ export function LeaderboardModal({
     return i >= 0 ? i + 1 : 0;
   }, [liveRankedRooms, myUid]);
 
-  const myName = auth.currentUser?.displayName || 'Vee User';
-  const myPhoto = auth.currentUser?.photoURL ?? undefined;
+  // 2026-10-19 polish: the pinned bar must show the viewer's LIVE profile
+  // from users/{myUid} — auth.currentUser's displayName/photoURL go stale
+  // (e.g. after an in-app profile edit) while the leaderboard rows are live.
+  // Falls back to the auth snapshot, then 'Vee User'.
+  const myLiveProfile = useLiveUserProfile(myUid);
+  const myName = myLiveProfile.name || auth.currentUser?.displayName || 'Vee User';
+  const myPhoto = myLiveProfile.avatar || auth.currentUser?.photoURL || undefined;
 
   const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [
     { key: 'rooms',     label: t('leaderboard.topRooms', { defaultValue: 'Top Rooms' }),         icon: 'home' },

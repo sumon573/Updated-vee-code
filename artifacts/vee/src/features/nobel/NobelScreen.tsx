@@ -17,7 +17,7 @@
  *
  * Light mode only. Errors show their actual cause.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, Image, ScrollView, Alert, Dimensions } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
@@ -46,6 +46,12 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRankIdx, setSelectedRankIdx] = useState(0);
+  // 2026-10-19 polish: the realtime noble callback must NOT snap the tab back
+  // on every XP update while the user is browsing another rank. Initialize
+  // the selection once (first non-null state); after the user picks a tab
+  // themselves, later callbacks leave the selection alone.
+  const userPickedTabRef = useRef(false);
+  const tabInitializedRef = useRef(false);
   // 2026-10-15 (Sumon): Rank preview modal
   const [previewRankIdx, setPreviewRankIdx] = useState<number | null>(null);
   // 2026-10-15 (Sumon): profile name from RTDB — Nobel tab must show the SAME
@@ -83,7 +89,12 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       user.uid,
       (s) => {
         setNoble(s);
-        setSelectedRankIdx(s ? s.rankIndex : 0);
+        // 2026-10-19 polish: initialize the tab once — never yank it back
+        // while the user is browsing (see refs above).
+        if (s && !tabInitializedRef.current && !userPickedTabRef.current) {
+          tabInitializedRef.current = true;
+          setSelectedRankIdx(s.rankIndex);
+        }
         setLoading(false);
       },
       (e) => {
@@ -273,7 +284,10 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                 return (
                   <Pressable
                     key={r.key}
-                    onPress={() => setSelectedRankIdx(idx)}
+                    onPress={() => {
+                      userPickedTabRef.current = true;
+                      setSelectedRankIdx(idx);
+                    }}
                     hitSlop={{ top: 8, bottom: 8 }}
                     style={{
                       flexDirection: 'row', alignItems: 'center',
