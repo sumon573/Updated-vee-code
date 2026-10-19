@@ -27,6 +27,30 @@ export function getShortIdPrice(shortId: string): number {
   return SHORT_ID_PRICES[shortId] ?? 1000;
 }
 
+// 2026-10-19 CRASH-RISK fix (random Short-ID overcharge): the random-ID card
+// is advertised at a FLAT 1000 (RANDOM_SHORT_ID_PRICE), but the random pool
+// used to include tier-priced IDs (8888/6666/1234/1000…) — a user could be
+// charged 50,000 for a "random 1000" claim. Tier-priced IDs are now excluded
+// from random draws, so a random claim can never be a premium ID.
+// NOTE: server-side charge verification for random claims is still pending
+// (out of client scope) — confirm VPS charges flat 1000 for random claims.
+const PREMIUM_SHORT_IDS = new Set(Object.keys(SHORT_ID_PRICES));
+
+/** Draw a random 4-digit ID that is NOT in any priced tier. */
+function drawNonPremiumRandomId(): string {
+  // Only ~0.15% of 4-digit IDs are tier-priced; bounded retry never spins.
+  for (let i = 0; i < 100; i++) {
+    const id = String(Math.floor(1000 + Math.random() * 9000));
+    if (!PREMIUM_SHORT_IDS.has(id)) return id;
+  }
+  // Fallback (effectively unreachable): first non-premium ID in sequence.
+  for (let n = 1000; n <= 9999; n++) {
+    const id = String(n);
+    if (!PREMIUM_SHORT_IDS.has(id)) return id;
+  }
+  return '1001'; // keeps tsc happy; unreachable
+}
+
 /**
  * Purchase a specific 4-digit short ID via the server (atomic).
  * @returns { success, error } — error is a user-friendly message.
@@ -81,7 +105,8 @@ export async function claimShortId(
 }
 
 /**
- * Assign a random available 4-digit ID (1000-9999).
+ * Assign a random available 4-digit ID (1000-9999), flat-priced at 1000.
+ * Tier-priced IDs are excluded from the pool (see PREMIUM_SHORT_IDS).
  * Retries up to 10 times to find an unclaimed ID.
  */
 export async function claimRandomShortId(
@@ -89,7 +114,7 @@ export async function claimRandomShortId(
   ownerId: string,
 ): Promise<{ success: boolean; shortId?: string; error?: string }> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    const randomId = String(Math.floor(1000 + Math.random() * 9000));
+    const randomId = drawNonPremiumRandomId();
     const result = await claimShortId(kind, randomId, ownerId);
     if (result.success) {
       return { success: true, shortId: randomId };
