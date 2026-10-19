@@ -71,33 +71,59 @@ function resolveGiftId(giftId: string): string {
   return LEGACY_GIFT_ID_MAP[giftId] || giftId;
 }
 
-// IMO light-mode colors
+// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
+// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
 const C = {
-  bg: '#FFFFFF',
-  text: '#000000',
-  muted: '#8E8E93',
+  bg: '#F4F5F5',
+  card: '#FFFFFF',
+  tile: '#F4F5F5',
+  text: '#25292D',
+  muted: '#788187',
   mutedLight: '#C7C7CC',
-  border: '#E5E5EA',
-  card: '#F2F2F7',
+  border: '#F0F1F2',
   blue: '#007AFF',
   blueLight: '#E3F2FD',
-  green: '#34C759' } as const;
+  green: '#34C759',
+  goldBg: '#FFF8E6',
+  goldBorder: '#F5D67B',
+  goldText: '#B8860B' } as const;
 
-// ─── Section Header (IMO style: title left, count + arrow right) ───
+// ─── Card Header (IMO Me-tab: 16sp semibold title, count + chevron right) ───
 
 function SectionHeader({ title, count, onPress }: { title: string; count?: number; onPress?: () => void }) {
   return (
-    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 }}>
-      <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }}>{title}</Text>
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 6 }}>
+      <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>{title}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {count !== undefined && (
-          <Text style={{ fontSize: 15, color: C.muted, marginRight: 4 }}>{count}</Text>
+          <Text style={{ fontSize: 14, color: C.muted, marginRight: 4 }}>{count}</Text>
         )}
         <Feather name="chevron-right" size={18} color={C.mutedLight} />
       </View>
     </Pressable>
   );
 }
+
+// ─── IMO menu row (BIUIItemView): ~56dp, 30dp rounded icon, 16sp label, chevron ───
+
+function MenuRow({ icon, iconBg, iconColor, label, onPress, last }: {
+  icon: string; iconBg: string; iconColor: string; label: string; onPress: () => void; last?: boolean }) {
+  return (
+    <View>
+      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name={icon as never} size={16} color={iconColor} />
+        </View>
+        <Text style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }} numberOfLines={1}>{label}</Text>
+        <Feather name="chevron-right" size={18} color={C.mutedLight} />
+      </Pressable>
+      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
+    </View>
+  );
+}
+
+// IMO card container: white, 12dp radius, 15dp side margins
+const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
 
 // ─── Badge Pill (IMO style) ───
 
@@ -142,42 +168,6 @@ const TIER_STYLE: Record<LevelTier, { colors: [string, string, string]; label: s
     label: 'Max',
     glow: 'rgba(157,78,221,0.5)' } };
 
-/** One drifting mist particle. */
-function MistParticle({ delay, size, left, duration }: { delay: number; size: number; left: number; duration: number }) {
-  const drift = useRef(new Animated.Value(0)).current;
-  const fade = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.parallel([
-          Animated.timing(drift, { toValue: -1, duration, useNativeDriver: true }),
-          Animated.sequence([
-            Animated.timing(fade, { toValue: 0.55, duration: duration * 0.4, useNativeDriver: true }),
-            Animated.timing(fade, { toValue: 0, duration: duration * 0.6, useNativeDriver: true }),
-          ]),
-        ]),
-        Animated.timing(drift, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [delay, duration, drift, fade]);
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        left,
-        bottom: 2,
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: '#FFFFFF',
-        opacity: fade,
-        transform: [{ translateY: drift.interpolate({ inputRange: [-1, 0], outputRange: [-22, 0] }) }] }}
-    />
-  );
-}
 
 // 2026-10-16 (Sumon): Animated level badges — Bronze static, Silver shimmer,
 // Gold sparkle, Max PREMIUM dazzling. Animation ONLY inside the 100x20 box.
@@ -464,7 +454,6 @@ export default function ProfileScreen({
   // (Gift History section removed 2026-10-10 per Sumon: gifts live ONLY inside
   // /profile/gifts with x2/x3 aggregation, not on the profile screen.)
   const [vidCopied, setVidCopied] = useState(false);
-  const [showVidMenu, setShowVidMenu] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // NOTE 11 (2026-10-11): full-screen DP viewer + Change flow
   const [showDpViewer, setShowDpViewer] = useState(false); // DEPRECATED 2026-10-13: DP viewer is now /profile/dp-viewer route
@@ -876,172 +865,172 @@ export default function ProfileScreen({
   // NOTE 7 (2026-10-11): demo badges removed — grantedBadges comes from the
   // Firebase subscription above (official/event grants only).
 
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/home' as never);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-        {/* ─── Top Bar (IMO style: back + icons only) ─── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.bg }}>
-          <Pressable
-            onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace('/home' as never);
-            }}
-            style={{ padding: 8 }}
-            hitSlop={12}
-          >
-            <Feather name="arrow-left" size={24} color={C.text} />
-          </Pressable>
-          <View style={{ flexDirection: 'row' }}>
-            {isMe && (
-              <Pressable onPress={() => router.push('/profile/settings')} style={{ padding: 8 }} hitSlop={8}>
-                <Feather name="settings" size={22} color={C.text} />
-              </Pressable>
-            )}
-            <Pressable onPress={() => setShowVidMenu(true)} style={{ padding: 8 }} hitSlop={8}>
-              <Feather name="more-horizontal" size={22} color={C.text} />
-            </Pressable>
-          </View>
-        </View>
-
-        {/* ─── Cover (tappable to change via Edit — own profile only) ─── */}
-        <Pressable onPress={() => { if (isMe) router.push('/profile/edit'); }}>
-          <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
-            {profileSkin ? (
-              <Image source={{ uri: profileSkin.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            ) : profile?.coverImageUrl ? (
-              <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            ) : (
-              <View style={{ flex: 1, backgroundColor: '#EFEFF4', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 48 }}>🌅</Text>
-              </View>
-            )}
-          </View>
+      {/* ─── IMO title bar: 56dp, back left, title centered 17sp semibold, gear right ─── */}
+      <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+        <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+          <Feather name="chevron-left" size={24} color={C.text} />
         </Pressable>
+        <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
+          {isMe ? t('profile.me', 'Me') : displayName}
+        </Text>
+        {isMe ? (
+          <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Feather name="settings" size={22} color={C.text} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
+      </View>
 
-        {/* ─── Avatar (overlapping) — NOTE 11 (2026-10-11): tap opens full-screen DP viewer ─── */}
-        {/* P1-4 (2026-10-12): equipped avatar frame renders as an overlay. URL
-            frames overlay the image; emoji frames get a gold ring. Expired
-            frames never reach here (expiry-filtered in subscribeFrames). */}
-        <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <Pressable
-              onPress={() => {
-                // 2026-10-13 (Sumon): DP viewer is now a dedicated route —
-                // the Modal was showing 404 on other users' profiles.
-                if (isMe) {
-                  router.push('/profile/dp-viewer');
-                } else {
-                  router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
-                }
-              }}
-              hitSlop={6}
-            >
-              <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
-                {photoURL ? (
-                  <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.bg }} />
-                ) : (
-                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
-                  </View>
-                )}
-                {(() => {
-                  const activeFrameId = profile?.activeFrame;
-                  if (!activeFrameId) return null;
-                  // Official animated frame — pure RN AnimatedFrame (no native modules)
-                  if (activeFrameId === 'official' || (typeof activeFrameId === 'string' && activeFrameId.toLowerCase().includes('official'))) {
-                    return (
-                      <View style={{ position: 'absolute', width: 110, height: 110, top: -9, left: -9, alignItems: 'center', justifyContent: 'center' }}>
-                        {/* 2026-10-14 (Sumon): frameId pass করতে হবে — না হলে server APNG load হয় না */}
-                        <AnimatedFrame size={80} frameId={activeFrameId} />
-                      </View>
-                    );
-                  }
-                  const activeFrameObj = grantedFrames.find((f) => f.id === activeFrameId);
-                  if (!activeFrameObj) return null;
-                  if (/^https?:\/\//i.test(activeFrameObj.icon)) {
-                    // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
-                    // 2026-10-16 (Sumon): Nobel frames have COUNT text + crown ON TOP.
-                    // Shift UP 8.25px so the frame covers the DP fully (no white space on top).
-                    const isNobleFrame = activeFrameId.startsWith('noble-frame-');
-                    const frameSize = isNobleFrame ? 110 : 92;
-                    const nobleOffsetY = isNobleFrame ? -8.25 : 0;
-                    return (
-                      <Image
-                        source={{ uri: activeFrameObj.icon }}
-                        style={{
-                          position: 'absolute',
-                          width: frameSize, height: frameSize,
-                          top: (92 - frameSize) / 2 + nobleOffsetY,
-                          left: (92 - frameSize) / 2,
-                        }}
-                        resizeMode="contain"
-                      />
-                    );
-                  }
-                  return (
-                    <View style={{ position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#FFD54A' }} />
-                  );
-                })()}
-              </View>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* ─── Name ─── */}
-        {/* P1-6 (2026-10-12): official verified blue tick — shown only when
-            Sumon granted officialBadge. Other badges live in the Badge section.
-            2026-10-13 (Sumon): Vee Official badge from badges node also shows
-            verified logo next to name for the badge's validity duration. */}
-        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ fontSize: 24, fontWeight: '800', color: C.text }}>{displayName}</Text>
-            {(profile?.officialBadge || isOfficial) ? (
-              // 2026-10-13 (Sumon): his badge design from server (not Feather icon)
-              <Image
-                source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
-                style={{ width: 22, height: 22, marginLeft: 6 }}
-                resizeMode="contain"
-              />
-            ) : null}
-          </View>
-          {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{bio}</Text> : null}
-        </View>
-
-        {/* ─── Badge Pills ─── */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 12 }}>
-          {/* 2026-10-15 (Sumon): Equipped nameplate IS the rank display. Final — no old pill. */}
-          {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
-            nameplateMist ? (
-              // 2026-10-15 (Sumon): Same size as Level/Follower pills — 100x20
-              <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
-            ) : (
-              <Image
-                source={{ uri: activeNameplate.icon }}
-                style={{ width: 100, height: 20 }}
-                resizeMode="contain"
-              />
-            )
-          ) : null}
-          <LevelBadge level={userLevel} />
-          <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
-            {/* Follower: ocean blue gradient (premium) */}
-            <PremiumPill
-              label={`${fmtCompact(followCounts.followers)} Follower`}
-              icon="⭐"
-              colors={['#0EA5E9', '#38BDF8']}
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+        {/* ─── Optional cover (IMO ProfileStudio pattern: 148dp, only when skin/cover set) ─── */}
+        {(profileSkin || profile?.coverImageUrl) && (
+          <Pressable onPress={() => { if (isMe) router.push('/profile/edit'); }}>
+            <Image
+              source={{ uri: (profileSkin ? profileSkin.imageUrl : profile?.coverImageUrl) as string }}
+              style={{ width: '100%', height: 148 }}
+              resizeMode="cover"
             />
           </Pressable>
+        )}
+
+        {/* ─── Header card: avatar + name/ID chain + pills ─── */}
+        <View style={[cardStyle, { padding: 15 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Pressable
+                onPress={() => {
+                  // 2026-10-13 (Sumon): DP viewer is now a dedicated route —
+                  // the Modal was showing 404 on other users' profiles.
+                  if (isMe) {
+                    router.push('/profile/dp-viewer');
+                  } else {
+                    router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
+                  }
+                }}
+                hitSlop={6}
+              >
+                <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
+                  {photoURL ? (
+                    <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.card }} />
+                  ) : (
+                    <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
+                    </View>
+                  )}
+                  {(() => {
+                    const activeFrameId = profile?.activeFrame;
+                    if (!activeFrameId) return null;
+                    // Official animated frame — pure RN AnimatedFrame (no native modules)
+                    if (activeFrameId === 'official' || (typeof activeFrameId === 'string' && activeFrameId.toLowerCase().includes('official'))) {
+                      return (
+                        <View style={{ position: 'absolute', width: 110, height: 110, top: -9, left: -9, alignItems: 'center', justifyContent: 'center' }}>
+                          {/* 2026-10-14 (Sumon): frameId pass করতে হবে — না হলে server APNG load হয় না */}
+                          <AnimatedFrame size={80} frameId={activeFrameId} />
+                        </View>
+                      );
+                    }
+                    const activeFrameObj = grantedFrames.find((f) => f.id === activeFrameId);
+                    if (!activeFrameObj) return null;
+                    if (/^https?:\/\//i.test(activeFrameObj.icon)) {
+                      // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
+                      // 2026-10-16 (Sumon): Nobel frames have COUNT text + crown ON TOP.
+                      // Shift UP 8.25px so the frame covers the DP fully (no white space on top).
+                      const isNobleFrame = activeFrameId.startsWith('noble-frame-');
+                      const frameSize = isNobleFrame ? 110 : 92;
+                      const nobleOffsetY = isNobleFrame ? -8.25 : 0;
+                      return (
+                        <Image
+                          source={{ uri: activeFrameObj.icon }}
+                          style={{
+                            position: 'absolute',
+                            width: frameSize, height: frameSize,
+                            top: (92 - frameSize) / 2 + nobleOffsetY,
+                            left: (92 - frameSize) / 2,
+                          }}
+                          resizeMode="contain"
+                        />
+                      );
+                    }
+                    return (
+                      <View style={{ position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#FFD54A' }} />
+                    );
+                  })()}
+                </View>
+              </Pressable>
+            <View style={{ flex: 1, marginLeft: 15, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 18, fontWeight: '500', color: C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
+                {(profile?.officialBadge || isOfficial) ? (
+                  <Image
+                    source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
+                    style={{ width: 20, height: 20, marginLeft: 6 }}
+                    resizeMode="contain"
+                  />
+                ) : null}
+              </View>
+              {/* Vee ID — NO # prefix (sacred). Tap copies. */}
+              {vId ? (
+                <Pressable onPress={handleCopyVid} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }} hitSlop={8}>
+                  <Text style={{ fontSize: 14, color: C.muted }}>{vId}</Text>
+                  <Feather name={vidCopied ? 'check' : 'copy'} size={13} color={vidCopied ? C.blue : C.mutedLight} style={{ marginLeft: 6 }} />
+                </Pressable>
+              ) : null}
+              {/* Short-ID gold badge (sacred) */}
+              {profile?.shortId ? (
+                <View style={{ flexDirection: 'row', marginTop: 5 }}>
+                  <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: C.goldText }}>{profile.shortId}</Text>
+                  </View>
+                </View>
+              ) : null}
+              {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 3 }} numberOfLines={2}>{bio}</Text> : null}
+            </View>
+            {isMe ? (
+              <Pressable onPress={() => router.push('/profile/edit')} style={{ padding: 6, alignSelf: 'center' }} hitSlop={10}>
+                <Feather name="chevron-right" size={20} color={C.mutedLight} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* ─── Pills: nameplate + Level + Follower — 100x20 uniform, one line (sacred) ─── */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}>
+            {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
+              nameplateMist ? (
+                <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
+              ) : (
+                <Image
+                  source={{ uri: activeNameplate.icon }}
+                  style={{ width: 100, height: 20 }}
+                  resizeMode="contain"
+                />
+              )
+            ) : null}
+            <LevelBadge level={userLevel} />
+            <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
+              <PremiumPill
+                label={`${fmtCompact(followCounts.followers)} Follower`}
+                icon="⭐"
+                colors={['#0EA5E9', '#38BDF8']}
+              />
+            </Pressable>
+          </View>
         </View>
 
-        {/* ─── VoiceClub Room ─── */}
+        {/* ─── VoiceClub Room card ─── */}
         {rooms.length > 0 && (
-          <>
+          <View style={[cardStyle, { paddingBottom: 12 }]}>
             <SectionHeader title="VoiceClub Room" count={rooms.length} onPress={() => router.push(isMe ? '/profile/rooms' : `/profile/rooms?uid=${displayUid}`)} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
-              // Smooth nested scrolling
+              contentContainerStyle={{ paddingHorizontal: 15 }}
               nestedScrollEnabled
               directionalLockEnabled
             >
@@ -1053,22 +1042,21 @@ export default function ProfileScreen({
                 />
               ))}
             </ScrollView>
-          </>
+          </View>
         )}
 
-        {/* ─── Gifts — 1 LINE ONLY: top 4 biggest by total diamond value.
-            Tap anywhere → full gifts page. ─── */}
+        {/* ─── Gifts card — 1 line: top 4 by diamond value ─── */}
         {giftEntries.length > 0 && (
-          <>
+          <View style={[cardStyle, { paddingBottom: 12 }]}>
             <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} />
             <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
-              <View style={{ flexDirection: 'row', paddingHorizontal: 12 }}>
+              <View style={{ flexDirection: 'row', paddingHorizontal: 11 }}>
                 {[...giftEntries]
                   .sort((a, b) => (GIFT_RANK_PRICE[b[0]] || 0) * b[1] - (GIFT_RANK_PRICE[a[0]] || 0) * a[1])
                   .slice(0, 4)
                   .map(([giftId, count]) => (
                   <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.card, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.tile, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                       {giftCatalog[giftId]?.thumbnailUrl ? (
                         <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
                       ) : (
@@ -1080,80 +1068,91 @@ export default function ProfileScreen({
                 ))}
               </View>
             </Pressable>
-          </>
+          </View>
         )}
 
-        {/* ─── Honor — NOTE 7 (2026-10-11): demo badges removed. Shows only
-            real granted badges from Firebase; empty state until any exist. ─── */}
-        <SectionHeader
-          title="Honor"
-          count={grantedBadges.length}
-          onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
-        />
-        {grantedBadges.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16 }}
-            nestedScrollEnabled
-            directionalLockEnabled
-          >
-            <Pressable
-              onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
-              style={{ flexDirection: 'row' }}
+        {/* ─── Honor card — real granted badges only (sacred: official badge stays next to name) ─── */}
+        <View style={[cardStyle, { paddingBottom: 12 }]}>
+          <SectionHeader
+            title="Honor"
+            count={grantedBadges.length}
+            onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
+          />
+          {grantedBadges.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 15 }}
+              nestedScrollEnabled
+              directionalLockEnabled
             >
-              {grantedBadges.map((h) => (
-                <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
-                  <View style={{ width: 72, aspectRatio: 1, backgroundColor: '#FFF8E6', borderWidth: 1, borderColor: '#F5D67B', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                    {/^https?:\/\//i.test(h.icon || '') ? (
-                      <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
-                    ) : (
-                      <Text style={{ fontSize: 36 }}>{h.icon}</Text>
-                    )}
+              <Pressable
+                onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
+                style={{ flexDirection: 'row' }}
+              >
+                {grantedBadges.map((h) => (
+                  <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: 72, aspectRatio: 1, backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      {/^https?:\/\//i.test(h.icon || '') ? (
+                        <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
+                      ) : (
+                        <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
                   </View>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
-                </View>
-              ))}
+                ))}
+              </Pressable>
+            </ScrollView>
+          ) : (
+            <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}>
+              <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
+                No badges yet
+              </Text>
             </Pressable>
-          </ScrollView>
-        ) : (
-          <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}>
-            <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
-              No badges yet
-            </Text>
-          </Pressable>
-        )}
-
-        {/* ─── Decoration ─── */}
-        <SectionHeader title="Decoration" count={grantedFrames.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
-          <Pressable
-            onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
-            style={{ width: '25%', padding: 4, alignItems: 'center' }}
-          >
-            {/* Frames: premium gradient tile with white frame icon */}
-            <LinearGradient
-              colors={['#8B5CF6', '#A78BFA']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Feather name="image" size={32} color="#FFFFFF" />
-            </LinearGradient>
-            <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
-            <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
-          </Pressable>
+          )}
         </View>
 
-        {/* ─── Bottom padding for Edit button ─── */}
-        <View style={{ height: 90 }} />
+        {/* ─── Decoration card ─── */}
+        <View style={[cardStyle, { paddingBottom: 12 }]}>
+          <SectionHeader title="Decoration" count={grantedFrames.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 11 }}>
+            <Pressable
+              onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
+              style={{ width: '25%', padding: 4, alignItems: 'center' }}
+            >
+              <LinearGradient
+                colors={['#8B5CF6', '#A78BFA']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Feather name="image" size={32} color="#FFFFFF" />
+              </LinearGradient>
+              <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Frames</Text>
+              <Text style={{ fontSize: 11, color: C.mutedLight }}>{grantedFrames.length} owned</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ─── Menu card (own profile): IMO-style rows → existing routes ─── */}
+        {isMe && (
+          <View style={[cardStyle, { paddingVertical: 4 }]}>
+            <MenuRow icon="credit-card" iconBg="#FFF8E6" iconColor="#B8860B" label={t('profile.menuWallet', 'Wallet')} onPress={() => router.push('/profile/wallet')} />
+            <MenuRow icon="zap" iconBg="#E3F2FD" iconColor="#007AFF" label={t('profile.menuTopUp', 'Top Up')} onPress={() => router.push('/profile/topup')} />
+            <MenuRow icon="bell" iconBg="#EDE9FE" iconColor="#8B5CF6" label={t('profile.menuNotifications', 'Notifications')} onPress={() => router.push('/profile/notifications')} />
+            <MenuRow icon="lock" iconBg="#F4F5F5" iconColor="#788187" label={t('profile.menuPrivacy', 'Privacy')} onPress={() => router.push('/profile/privacy')} />
+            <MenuRow icon="help-circle" iconBg="#E8F5E9" iconColor="#34C759" label={t('profile.menuHelp', 'Help & Feedback')} onPress={() => router.push('/profile/help')} />
+            <MenuRow icon="info" iconBg="#F4F5F5" iconColor="#788187" label={t('profile.menuAbout', 'About')} onPress={() => router.push('/profile/about')} last />
+          </View>
+        )}
       </ScrollView>
 
       {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
       {pinDialog}
 
       {/* ─── Bottom Action: Edit (own) or Chat/Add + Follow (other user) ─── */}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border }}>
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
         {isMe ? (
           <Pressable
             onPress={() => router.push('/profile/edit')}
@@ -1200,7 +1199,7 @@ export default function ProfileScreen({
               onPress={handleRightAction}
               disabled={actionLoading}
               style={{
-                flex: 1, backgroundColor: isFollowingTarget ? C.card : C.blueLight,
+                flex: 1, backgroundColor: isFollowingTarget ? C.tile : C.blueLight,
                 borderRadius: 16, paddingVertical: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                 opacity: actionLoading ? 0.6 : 1 }}
@@ -1213,33 +1212,6 @@ export default function ProfileScreen({
           </View>
         )}
       </View>
-
-      {/* ─── vId Menu Modal ─── */}
-      {showVidMenu && (
-        <Pressable
-          onPress={() => setShowVidMenu(false)}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-start', alignItems: 'flex-end' }}
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            // NOTE 6 (2026-10-11): polished — no "Vee ID" label, compact badge
-            // with just the ID number + copy icon.
-            style={{ backgroundColor: C.bg, borderRadius: 14, marginTop: 60, marginRight: 12, paddingHorizontal: 14, paddingVertical: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: 0.5 }}>{vId}</Text>
-              <Pressable
-                onPress={handleCopyVid}
-                style={{ backgroundColor: C.blueLight, borderRadius: 10, padding: 8, marginLeft: 10 }}
-                hitSlop={8}
-              >
-                <Feather name={vidCopied ? 'check' : 'copy'} size={16} color={C.blue} />
-              </Pressable>
-            </View>
-            {vidCopied && <Text style={{ fontSize: 12, color: C.blue, marginTop: 4 }}>Copied!</Text>}
-          </Pressable>
-        </Pressable>
-      )}
     </SafeAreaView>
   );
 }
