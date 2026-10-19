@@ -40,6 +40,8 @@ export type DmMessage = {
     /** call duration in seconds (0 for missed/rejected) */
     durationSec: number;
   };
+  /** Voice message duration in seconds (type='voice' only) */
+  durationSec?: number;
 };
 
 export type TypingState = {
