@@ -33,6 +33,8 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/services/voiceForegroundService';
+import { setVoiceRoomAudioActive } from '@/src/services/audioOwner';
+import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { useTranslation } from 'react-i18next';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
@@ -166,6 +168,26 @@ export function destroyPersistedVoiceRoomEngine(): void {
   });
 }
 
+/**
+ * 2026-10-19 stability fix — awaited variant of
+ * destroyPersistedVoiceRoomEngine(). Resolves only after the old engine's
+ * leave() (disconnect() + stopAudioSession()) has FULLY completed.
+ * Use when switching to a DIFFERENT room: starting the new room's
+ * AudioSession.startAudioSession() + room.connect() while the old engine is
+ * still tearing down is a classic Android SIGSEGV source.
+ */
+export async function destroyPersistedVoiceRoomEngineAsync(): Promise<void> {
+  if (!_persistedRoom) return;
+  const { engine } = _persistedRoom;
+  _persistedRoom = null;
+  _isMinimized = false;
+  try {
+    await engine.leave();
+  } catch {
+    // non-critical — teardown must never throw to callers
+  }
+}
+
 // ─── Mic Permission Helper ───────────────────────────────────────────────────
 
 async function requestMicPermission(strings: {
@@ -222,6 +244,32 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   private error: string | null = null;
   private leaveInitiated = false;
 
+  /**
+   * 2026-10-19 stability fix — native-op serialization.
+   * All native WebRTC mutations (setMicrophoneEnabled / room.disconnect) are
+   * funneled through this promise chain. On Android, overlapping a
+   * setMicrophoneEnabled() call with room.disconnect() causes a native
+   * SIGSEGV that try/catch cannot catch — the "kicked out of the room"
+   * crash. The chain never breaks on rejection.
+   */
+  private opChain: Promise<void> = Promise.resolve();
+
+  /**
+   * 2026-10-19 stability fix — join/leave generation.
+   * Incremented in leave(). join() captures it at entry and bails out (via
+   * teardown) after every await if it changed — so a join in flight during
+   * leave() can never resurrect a leaked, permanently-connected Room.
+   */
+  private opGeneration = 0;
+
+  /**
+   * 2026-10-19 stability fix — synchronous double-join guard.
+   * Set at the very top of join() (before any await); the old
+   * `if (this.room) return` check ran after several awaits, so two
+   * overlapping join() calls could both pass and leak a Room.
+   */
+  private joining = false;
+
   /** Identities currently flagged as speaking (remote only). */
   private speakingIds = new Set<string>();
   private participants: VoiceParticipant[] = [];
@@ -254,6 +302,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     } catch {
       // non-critical
     }
+  }
+
+  /**
+   * 2026-10-19 stability fix — serialize a native WebRTC mutation behind
+   * every previously-enqueued one. Returns the op's own promise; the shared
+   * chain is always continued (never left broken by a rejection).
+   */
+  private enqueueNativeOp<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.opChain.then(op, op);
+    this.opChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  /**
+   * 2026-10-19 stability fix — true when the join that captured
+   * `myGeneration` must abort because leave() ran meanwhile.
+   */
+  private joinAborted(myGeneration: number): boolean {
+    return myGeneration !== this.opGeneration || this.leaveInitiated;
   }
 
   private refreshParticipants(): void {
@@ -319,6 +389,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       this.connection = 'reconnecting';
     } else if (state === cs.Disconnected) {
       this.connection = this.leaveInitiated ? 'ended' : 'failed';
+      // 2026-10-19 stability fix: unexpected disconnect releases the audio
+      // pipeline too (leave() may never run for a network drop).
+      if (!this.leaveInitiated) setVoiceRoomAudioActive(false);
       if (!this.leaveInitiated && !this.error) {
         this.error = 'Disconnected from the voice room';
       }
@@ -368,6 +441,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       })
       .on(RoomEvent.Disconnected, () => {
         this.connection = this.leaveInitiated ? 'ended' : 'failed';
+        // 2026-10-19 stability fix: see handleConnectionState.
+        if (!this.leaveInitiated) setVoiceRoomAudioActive(false);
         if (!this.leaveInitiated && !this.error) {
           this.error = 'Disconnected from the voice room';
         }
@@ -443,7 +518,27 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   /* ── VoiceEngine interface ── */
 
   async join(roomId: string, identity: { userId: string; userName: string }): Promise<void> {
-    if (this.room) return; // idempotent
+    // 2026-10-19 stability fix: synchronous double-join guard. The old
+    // `if (this.room) return` ran after several awaits, so two overlapping
+    // join() calls (Retry double-tap, effect re-run) could both pass and
+    // leak a Room.
+    if (this.room || this.joining) return; // idempotent
+    this.joining = true;
+    // 2026-10-19 stability fix — mutual exclusion: never join a voice room
+    // while a 1-to-1 call is active. Two native audio pipelines on one mic =
+    // native WebRTC contention (hard crash). The minimized-call case is the
+    // reachable one (an on-screen call owns the route already).
+    if (getMinimizedCall()) {
+      this.joining = false;
+      this.connection = 'failed';
+      this.error = 'Please end your current call before joining a voice room';
+      this.emitLocal();
+      return;
+    }
+    // 2026-10-19 stability fix: capture the generation. If leave() runs
+    // while this join is in flight, every await below bails out instead of
+    // resurrecting a leaked, permanently-connected Room.
+    const myGeneration = this.opGeneration;
     this.leaveInitiated = false;
     this.localIdentity = identity.userId;
     this.connection = 'connecting';
@@ -475,6 +570,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       const fbUser = auth.currentUser;
       if (!fbUser) throw new Error('Not signed in');
       const idToken = await fbUser.getIdToken();
+      if (this.joinAborted(myGeneration)) return;
       const tokenCtrl = new AbortController();
       const tokenTimeout = setTimeout(() => tokenCtrl.abort(), 20000);
       let res: Response;
@@ -503,6 +599,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       }
       if (!res.ok) throw new Error(`Voice server request failed (${res.status})`);
       const data = (await res.json()) as { token?: string; url?: string };
+      if (this.joinAborted(myGeneration)) return;
       if (!data.token || !data.url) {
         throw new Error('Voice server returned an invalid response');
       }
@@ -511,6 +608,14 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
       // 2. Audio session + connect. The URL comes ONLY from the server response.
       await rnSdk.AudioSession.startAudioSession();
+      if (this.joinAborted(myGeneration)) {
+        try {
+          await rnSdk.AudioSession.stopAudioSession();
+        } catch {
+          // non-critical
+        }
+        return;
+      }
       // 2026-10-15 (Sumon): BACKGROUND AUDIO — foreground service (microphone)
       // keeps talking + hearing alive when the app is backgrounded (like IMO).
       // Without it Android suspends the app and the mic dies.
@@ -524,9 +629,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       markVoiceStage('listeners_registered', roomId);
       markVoiceStage('connect_started', roomId);
       await room.connect(data.url, data.token);
+      if (this.joinAborted(myGeneration)) {
+        // leave() ran during connect() — tear down this Room NOW so it can
+        // never leak as a ghost participant with a stuck audio session.
+        try {
+          await this.teardownRoom();
+        } catch {
+          // non-critical
+        }
+        try {
+          await rnSdk.AudioSession.stopAudioSession();
+        } catch {
+          // non-critical
+        }
+        stopVoiceForegroundService();
+        return;
+      }
 
       this.connection = 'connected';
       this.error = null;
+      // 2026-10-19 stability fix: this engine now owns the native audio
+      // pipeline — block 1-to-1 calls until leave()/disconnect.
+      setVoiceRoomAudioActive(true);
       // Voice is up — the join survived every native stage; clear the breadcrumb
       // so a later unrelated crash is not misattributed to voice-room entry.
       markVoiceStage('room_connected', roomId);
@@ -551,16 +675,25 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       stopVoiceForegroundService();
       this.lk = null;
       this.rnSdk = null;
+    } finally {
+      this.joining = false;
     }
     this.emitLocal();
   }
 
   async leave(): Promise<void> {
+    // 2026-10-19 stability fix: invalidate any in-flight join() FIRST, so
+    // its generation checks bail out instead of resurrecting a leaked Room.
+    this.opGeneration++;
     this.leaveInitiated = true;
+    this.joining = false;
     this.speakingIds.clear();
     this.participants = [];
+    // 2026-10-19 stability fix: serialize the disconnect behind any
+    // in-flight publish()/unpublish(). room.disconnect() overlapping a
+    // native setMicrophoneEnabled() is an Android SIGSEGV.
     try {
-      await this.teardownRoom();
+      await this.enqueueNativeOp(() => this.teardownRoom());
     } catch {
       // non-critical
     }
@@ -571,6 +704,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     }
     // 2026-10-15 (Sumon): voice over — drop the foreground service.
     stopVoiceForegroundService();
+    // 2026-10-19 stability fix: release the audio pipeline — 1-to-1 calls
+    // are allowed again.
+    setVoiceRoomAudioActive(false);
     this.lk = null;
     this.rnSdk = null;
     this.connection = 'ended';
@@ -589,10 +725,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     // the mic live with nothing tracking it.
     this.publishing = true;
     try {
-      // DTX enabled on the mic publish path (matches getCapabilities()).
-      await room.localParticipant.setMicrophoneEnabled(true, undefined, { dtx: true });
-      // Start muted — the user unmutes explicitly (mirrors previous behavior).
-      await this.applyTrackMute(this.muted);
+      // 2026-10-19 stability fix: serialize behind leave()/unpublish().
+      // setMicrophoneEnabled() overlapping room.disconnect() natively
+      // crashes Android (SIGSEGV) — this await guarantees ordering.
+      await this.enqueueNativeOp(async () => {
+        // DTX enabled on the mic publish path (matches getCapabilities()).
+        await room.localParticipant.setMicrophoneEnabled(true, undefined, { dtx: true });
+        // Start muted — the user unmutes explicitly (mirrors previous behavior).
+        await this.applyTrackMute(this.muted);
+      });
     } catch (err) {
       this.publishing = false;
       this.error = err instanceof Error ? err.message : 'Failed to enable microphone';
@@ -605,7 +746,10 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     if (!room) return;
     if (!this.publishing) return; // idempotent
     try {
-      await room.localParticipant.setMicrophoneEnabled(false);
+      // 2026-10-19 stability fix: serialize — see publish().
+      await this.enqueueNativeOp(() =>
+        room.localParticipant.setMicrophoneEnabled(false),
+      );
     } catch {
       // non-critical
     }

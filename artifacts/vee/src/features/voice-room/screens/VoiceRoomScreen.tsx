@@ -13,7 +13,7 @@ import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
-import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
+import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
@@ -542,25 +542,31 @@ export default function VoiceRoomScreen() {
       setMinimizedRoom(null);
       return;
     }
-    // Different room — tear down the old one.
-    try {
-      destroyPersistedVoiceRoomEngine();
-    } catch { /* non-critical */ }
-    if (prev.mySeatIdx >= 0) {
-      // 2026-10-12: revoke admin powers too if the user was an admin —
-      // otherwise the admins-node entry goes stale with live powers.
-      const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
-      removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
-      // 2026-10-12 audit fix (HIGH): clean audience record on room switch —
-      // seated users keep it, leaving a ghost in the old room.
-      leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
-    } else {
-      leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
-      if (prev.role === 'admin') {
-        revokeRoomAdmin(prev.id, prev.myUid || myUid).catch(() => {});
+    // Different room — tear down the old one. 2026-10-19 stability fix:
+    // WAIT for the old engine's leave() (disconnect() + stopAudioSession())
+    // to FULLY complete before proceeding. Starting the new room's
+    // AudioSession.startAudioSession() + room.connect() while the old engine
+    // is still tearing down is a classic Android SIGSEGV source.
+    (async () => {
+      try {
+        await destroyPersistedVoiceRoomEngineAsync();
+      } catch { /* non-critical */ }
+      if (prev.mySeatIdx >= 0) {
+        // 2026-10-12: revoke admin powers too if the user was an admin —
+        // otherwise the admins-node entry goes stale with live powers.
+        const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
+        removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
+        // 2026-10-12 audit fix (HIGH): clean audience record on room switch —
+        // seated users keep it, leaving a ghost in the old room.
+        leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
+      } else {
+        leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
+        if (prev.role === 'admin') {
+          revokeRoomAdmin(prev.id, prev.myUid || myUid).catch(() => {});
+        }
       }
-    }
-    setMinimizedRoom(null);
+      setMinimizedRoom(null);
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
