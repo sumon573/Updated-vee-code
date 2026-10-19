@@ -598,6 +598,13 @@ function IncomingCallListener({
   // True when the modal was dismissed by the user's own tap (accept/decline).
   // Distinguishes user action from the caller cancelling remotely.
   const userDismissedRef = useRef(false);
+  // 2026-10-19 stability fix (double-tap race): accept is async — the RTDB
+  // liveness get() leaves a window where a second tap starts a second accept
+  // (double updateCallSignal + double router.push → two stacked call modals).
+  // Claimed synchronously as the first line of handleAccept; the Pressable
+  // is also disabled while in flight.
+  const acceptInFlightRef = useRef(false);
+  const [accepting, setAccepting] = useState(false);
   const setIncomingState = useCallback((call: IncomingCall | null) => {
     incomingRef.current = call;
     setIncoming(call);
@@ -686,16 +693,29 @@ function IncomingCallListener({
         }
         userDismissedRef.current = false;
         setIncomingState(null);
+        // 2026-10-19: a stale accept claim must not block the next call.
+        acceptInFlightRef.current = false;
+        setAccepting(false);
         return;
       }
       userDismissedRef.current = false;
+      // 2026-10-19: fresh incoming call — release any stale accept claim so
+      // the new modal's Accept is immediately tappable.
+      acceptInFlightRef.current = false;
+      setAccepting(false);
       setIncomingState(call);
     });
   }, [uid, logMissedCall, setIncomingState]);
 
   const handleAccept = useCallback(async () => {
-    const call = incomingRef.current;
-    if (!call) return;
+    // 2026-10-19 stability fix: claim the accept synchronously, BEFORE any
+    // await — a second rapid tap must see the in-flight flag and bail out.
+    if (acceptInFlightRef.current) return;
+    acceptInFlightRef.current = true;
+    setAccepting(true);
+    try {
+      const call = incomingRef.current;
+      if (!call) return;
     // P1 fix (2026-10-12): last-moment busy guard — never accept over a
     // minimized call (race: modal popped just before minimize completed).
     if (getMinimizedCall()) {
@@ -731,6 +751,12 @@ function IncomingCallListener({
     router.push(
       `/audio-call?roomId=${encodeURIComponent(call.roomId)}&role=callee&remoteUid=${encodeURIComponent(call.callerId)}&remoteName=${encodeURIComponent(call.callerName)}&calleeUid=${encodeURIComponent(uid)}&myUid=${encodeURIComponent(uid)}&myName=${encodeURIComponent(myName)}${call.callerPhotoURL ? `&remotePhotoURL=${encodeURIComponent(call.callerPhotoURL)}` : ''}` as never,
     );
+    } finally {
+      // Release the claim — the modal is gone (accepted) or the accept
+      // bailed out early; the next incoming call starts clean.
+      acceptInFlightRef.current = false;
+      setAccepting(false);
+    }
   }, [uid, myName, router, logMissedCall, setIncomingState]);
 
   const handleDecline = useCallback(() => {
@@ -816,12 +842,16 @@ function IncomingCallListener({
             <View style={{ alignItems: 'center', gap: 8 }}>
               <Pressable
                 onPress={handleAccept}
+                // 2026-10-19 stability fix (double-tap race): no second
+                // accept while one is in flight.
+                disabled={accepting}
                 style={{
                   width: 68, height: 68, borderRadius: 34,
                   backgroundColor: '#22C55E',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#22C55E', shadowOpacity: 0.5, shadowRadius: 14,
-                  elevation: 8 }}
+                  elevation: 8,
+                  opacity: accepting ? 0.5 : 1 }}
               >
                 <Feather name="phone" size={28} color="#fff" />
               </Pressable>
