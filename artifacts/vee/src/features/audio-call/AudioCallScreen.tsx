@@ -25,6 +25,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+// IMO port (2026-10-19): IMO call-screen design tokens + CallOptView control
+// pattern (48dp icon circle + label below), extracted from IMO v2026.09.1051.
+import { IMO_CALL } from './components/ImoCallTheme';
+import CallOptButton from './components/CallOptButton';
 import { useRouter, useNavigation } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -803,162 +808,135 @@ export default function AudioCallScreen({
 
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
+  // ── IMO port (2026-10-19): call screen rebuilt in IMO's style.
+  // Layout mirrors IMO's in-call screen (aly.xml): gradient background,
+  // top-centered avatar (72dp) + name + status, bottom CallOptView controls
+  // (48dp icon circles with labels below), IMO red #fa5353 end button (65dp).
+  // All call logic (WebRTC, timers, mute sync, minimize, audioOwner guard)
+  // is untouched — this is a pure UI reskin.
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <SafeAreaView
-        style={{
-          flex: 1, alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: topPad + 20, paddingBottom: 48,
-        }}
-        edges={['top', 'bottom']}
+    <View style={{ flex: 1 }}>
+      <StatusBar barStyle="light-content" backgroundColor="#07020F" />
+      <LinearGradient
+        colors={[IMO_CALL.bgGradient[0], IMO_CALL.bgGradient[1]]}
+        style={{ flex: 1 }}
       >
+        <SafeAreaView
+          style={{
+            flex: 1, alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: topPad + 12, paddingBottom: 40,
+          }}
+          edges={['top', 'bottom']}
+        >
 
-        {/* ── Remote party info ── */}
-        <View style={{ alignItems: 'center', marginTop: 32 }}>
-          {/* Avatar */}
-          <View style={{
-            width: 120, height: 120, borderRadius: 60,
-            backgroundColor: 'rgba(124,58,237,0.25)',
-            borderWidth: 3, borderColor: C.glow,
-            alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden',
-            shadowColor: C.glow, shadowOpacity: 0.45,
-            shadowRadius: 28, shadowOffset: { width: 0, height: 8 },
-            elevation: 12,
-          }}>
-            {remotePhoto ? (
-              <Image
-                source={{ uri: remotePhoto }}
-                style={{ width: 120, height: 120, borderRadius: 60 }}
-              />
-            ) : (
-              <Text style={{ color: C.text, fontSize: 44, fontWeight: '900' }}>
-                {displayName[0]?.toUpperCase() ?? '?'}
-              </Text>
-            )}
-          </View>
-
-          {/* Name */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22 }}>
-            <Text style={{
-              color: C.text, fontSize: 28, fontWeight: '900',
-              letterSpacing: 0.2,
-            }}>
-              {displayName || 'Vee User'}
-            </Text>
-            {remoteMuted && (
-              <View style={{
-                marginLeft: 8, backgroundColor: 'rgba(239,68,68,0.2)',
-                borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4,
-                flexDirection: 'row', alignItems: 'center',
-              }}>
-                <Feather name="mic-off" size={12} color="#EF4444" />
-                <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '700', marginLeft: 4 }}>
-                  Muted
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Status / timer */}
-          <Text style={{
-            color: statusColor, fontSize: 15,
-            fontWeight: callState === 'connected' ? '700' : '500',
-            marginTop: 8,
-          }}>
-            {statusText}
-          </Text>
-        </View>
-
-        {/* ── Call controls ── */}
-        <View style={{ alignItems: 'center', gap: 36, width: '100%' }}>
-          {/* Mic + Speaker row */}
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 32 }}>
-            {/* Mute / Unmute */}
-            <Pressable
-              onPress={handleToggleMic}
-              hitSlop={10}
-              style={{
-                width: 68, height: 68, borderRadius: 34,
-                backgroundColor: muted
-                  ? C.primary
-                  : 'rgba(255,255,255,0.10)',
-                borderWidth: 1.5,
-                borderColor: muted ? C.glow : 'rgba(255,255,255,0.2)',
-                alignItems: 'center', justifyContent: 'center',
-                shadowColor: muted ? C.glow : 'transparent',
-                shadowOpacity: 0.5, shadowRadius: 14,
-              }}
-            >
-              <Feather name={muted ? 'mic-off' : 'mic'} size={26} color={C.text} />
-            </Pressable>
-
-            {/* Speaker toggle — DISABLED (2026-10-19): react-native-webrtc
-                exposes no JS API for audio-route switching without the
-                react-native-incall-manager native module (Sumon hasn't
-                approved new native modules), so setSpeakerphone is a no-op
-                and audio follows the OS default route. The button stays as
-                an honest greyed placeholder — never pretend it works. */}
-            <View style={{ alignItems: 'center' }}>
-              <Pressable
-                disabled
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: true }}
-                accessibilityLabel="Speaker follows system audio route"
-                style={{
-                  width: 68, height: 68, borderRadius: 34,
-                  backgroundColor: 'rgba(255,255,255,0.04)',
-                  borderWidth: 1.5,
-                  borderColor: 'rgba(255,255,255,0.12)',
-                  alignItems: 'center', justifyContent: 'center',
-                  opacity: 0.45,
-                }}
-              >
-                <Feather name="volume-2" size={26} color={C.muted} />
-              </Pressable>
-              <Text style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>
-                {t('audioCall.followsSystem')}
-              </Text>
-            </View>
-          </View>
-
-          {/* Minimize (2026-10-11 Issue #8) — only during connected calls */}
-          {callState === 'connected' && (
-            <Pressable
-              onPress={minimizeCall}
-              hitSlop={10}
-              style={{
-                width: 56, height: 56, borderRadius: 28,
-                backgroundColor: 'rgba(255,255,255,0.10)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(255,255,255,0.2)',
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Feather name="chevron-down" size={26} color={C.text} />
-            </Pressable>
-          )}
-
-          {/* End call */}
-          <Pressable
-            onPress={handleEndCall}
-            hitSlop={8}
-            style={{
-              width: 76, height: 76, borderRadius: 38,
-              backgroundColor: C.red,
+          {/* ── Remote party header (IMO aly.xml: avatar + name + status) ── */}
+          <View style={{ alignItems: 'center', marginTop: 48 }}>
+            <View style={{
+              width: IMO_CALL.inCallAvatar,
+              height: IMO_CALL.inCallAvatar,
+              borderRadius: IMO_CALL.inCallAvatar / 2,
+              backgroundColor: 'rgba(255,255,255,0.08)',
               alignItems: 'center', justifyContent: 'center',
-              shadowColor: C.red, shadowOpacity: 0.65,
-              shadowRadius: 22, shadowOffset: { width: 0, height: 6 },
-              elevation: 12,
-            }}
-          >
-            <Feather name="phone-off" size={30} color={C.text} />
-          </Pressable>
-        </View>
-      </SafeAreaView>
+              overflow: 'hidden',
+            }}>
+              {remotePhoto ? (
+                <Image
+                  source={{ uri: remotePhoto }}
+                  style={{
+                    width: IMO_CALL.inCallAvatar,
+                    height: IMO_CALL.inCallAvatar,
+                    borderRadius: IMO_CALL.inCallAvatar / 2,
+                  }}
+                />
+              ) : (
+                <Text style={{ color: IMO_CALL.text, fontSize: 30, fontWeight: '700' }}>
+                  {displayName[0]?.toUpperCase() ?? '?'}
+                </Text>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}>
+              <Text style={{
+                color: IMO_CALL.text, fontSize: 22, fontWeight: '700',
+                letterSpacing: 0.2,
+              }}>
+                {displayName || 'Vee User'}
+              </Text>
+              {remoteMuted && (
+                <View style={{
+                  marginLeft: 8, backgroundColor: 'rgba(250,83,83,0.18)',
+                  borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4,
+                  flexDirection: 'row', alignItems: 'center',
+                }}>
+                  <Feather name="mic-off" size={12} color={IMO_CALL.declineRed} />
+                  <Text style={{ color: IMO_CALL.declineRed, fontSize: 11, fontWeight: '700', marginLeft: 4 }}>
+                    Muted
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={{
+              color: statusColor === C.green ? IMO_CALL.answerGreen
+                : (statusColor === C.red ? IMO_CALL.declineRed : IMO_CALL.mutedText),
+              fontSize: 14, fontWeight: callState === 'connected' ? '600' : '400',
+              marginTop: 6,
+            }}>
+              {statusText}
+            </Text>
+          </View>
+
+          {/* ── Call controls (IMO CallOptView: icon + label) ── */}
+          <View style={{ alignItems: 'center', width: '100%' }}>
+            <View style={{
+              flexDirection: 'row', justifyContent: 'center',
+              alignItems: 'flex-start', marginBottom: 28,
+            }}>
+              <CallOptButton
+                icon={muted ? 'mic-off' : 'mic'}
+                label={muted ? t('audioCall.unmute') : t('audioCall.mute')}
+                onPress={handleToggleMic}
+                active={muted}
+              />
+              {/* Speaker — DISABLED (2026-10-19): react-native-webrtc exposes
+                  no JS API for audio-route switching without the
+                  react-native-incall-manager native module (not approved), so
+                  audio follows the OS default route. Honest greyed placeholder
+                  in IMO's control style — never pretend it works. */}
+              <CallOptButton
+                icon="volume-2"
+                label={t('audioCall.followsSystem')}
+                disabled
+              />
+              {callState === 'connected' && (
+                <CallOptButton
+                  icon="chevron-down"
+                  label={t('audioCall.minimize')}
+                  onPress={minimizeCall}
+                />
+              )}
+            </View>
+
+            {/* End call — IMO red #fa5353, 65dp (a7m.xml / h5) */}
+            <Pressable
+              onPress={handleEndCall}
+              hitSlop={8}
+              style={{
+                width: IMO_CALL.actionSize, height: IMO_CALL.actionSize,
+                borderRadius: IMO_CALL.actionSize / 2,
+                backgroundColor: IMO_CALL.declineRed,
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: IMO_CALL.declineRed, shadowOpacity: 0.5,
+                shadowRadius: 18, shadowOffset: { width: 0, height: 6 },
+                elevation: 10,
+              }}
+            >
+              <Feather name="phone-off" size={28} color="#fff" />
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
     </View>
   );
 }

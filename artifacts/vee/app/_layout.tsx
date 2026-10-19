@@ -72,6 +72,7 @@ import {
   logoutOneSignal,
   registerNotificationOpenedHandler } from '@/src/services/pushNotificationService';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
   subscribeIncomingCall,
@@ -874,92 +875,121 @@ function IncomingCallListener({
 
   if (!incoming) return null;
 
+  // ── IMO port (2026-10-19): incoming call rebuilt in IMO's style.
+  // IMO's incoming call is a FULL-SCREEN activity (not a bottom sheet):
+  // blurred caller avatar as background, centered avatar + name + status,
+  // bottom answer/decline circles — green #04be5a / red #fa5353 (65-72dp).
+  // All logic (ringtone, accept/decline, fallbackPhoto, audioOwner guard)
+  // is untouched — pure UI reskin.
+  const callerPhoto = incoming.callerPhotoURL || fallbackPhoto;
   return (
     <Modal
       visible
-      animationType="slide"
-      transparent
+      animationType="fade"
+      transparent={false}
       onRequestClose={handleDecline}
     >
-      <View style={{
-        flex: 1, justifyContent: 'flex-end',
-        backgroundColor: 'rgba(0,0,0,0.55)' }}>
+      <View style={{ flex: 1, backgroundColor: '#0A0612' }}>
+        {/* Blurred-avatar background (IMO alr.xml: full-screen avatar bg).
+            No expo-blur — avatar image at low opacity + dark overlay. */}
+        {callerPhoto ? (
+          <Image
+            source={{ uri: callerPhoto as string }}
+            style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              width: '100%', height: '100%', opacity: 0.28,
+            }}
+            resizeMode="cover"
+          />
+        ) : null}
         <View style={{
-          backgroundColor: '#0F0A1E',
-          borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          paddingHorizontal: 28, paddingTop: 28, paddingBottom: 48,
-          alignItems: 'center',
-          borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
-          borderColor: 'rgba(139,92,246,0.3)' }}>
-          {/* Caller avatar */}
-          <View style={{
-            width: 84, height: 84, borderRadius: 42,
-            backgroundColor: 'rgba(124,58,237,0.25)',
-            borderWidth: 2, borderColor: '#8B5CF6',
-            alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden', marginBottom: 14,
-            shadowColor: '#8B5CF6', shadowOpacity: 0.4,
-            shadowRadius: 18, shadowOffset: { width: 0, height: 4 } }}>
-            {(incoming.callerPhotoURL || fallbackPhoto) ? (
-              <Image
-                source={{ uri: (incoming.callerPhotoURL || fallbackPhoto) as string }}
-                style={{ width: 84, height: 84 }}
-              />
-            ) : (
-              <Text style={{ color: '#fff', fontSize: 32, fontWeight: '900' }}>
-                {incoming.callerName[0]?.toUpperCase() ?? '?'}
-              </Text>
-            )}
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(6,3,12,0.62)',
+        }} />
+
+        <SafeAreaView
+          style={{
+            flex: 1, alignItems: 'center', justifyContent: 'space-between',
+            paddingTop: 72, paddingBottom: 64,
+          }}
+          edges={['top', 'bottom']}
+        >
+          {/* Caller info — centered (IMO: 72-96dp avatar, name, status) */}
+          <View style={{ alignItems: 'center' }}>
+            <View style={{
+              width: 96, height: 96, borderRadius: 48,
+              backgroundColor: 'rgba(255,255,255,0.12)',
+              alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden',
+              borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)',
+            }}>
+              {callerPhoto ? (
+                <Image
+                  source={{ uri: callerPhoto as string }}
+                  style={{ width: 96, height: 96 }}
+                />
+              ) : (
+                <Text style={{ color: '#fff', fontSize: 38, fontWeight: '800' }}>
+                  {incoming.callerName[0]?.toUpperCase() ?? '?'}
+                </Text>
+              )}
+            </View>
+            <Text style={{
+              color: '#fff', fontSize: 24, fontWeight: '800',
+              marginTop: 18, textAlign: 'center', paddingHorizontal: 32,
+            }}>
+              {incoming.callerName}
+            </Text>
+            <Text style={{
+              color: 'rgba(255,255,255,0.6)', fontSize: 14,
+              marginTop: 6, fontWeight: '500',
+            }}>
+              Incoming voice call
+            </Text>
           </View>
 
-          <Text style={{ color: '#fff', fontSize: 21, fontWeight: '900' }}>
-            {incoming.callerName}
-          </Text>
-          <Text style={{
-            color: 'rgba(255,255,255,0.55)', fontSize: 14,
-            marginTop: 5, marginBottom: 32, fontWeight: '500' }}>
-            Incoming Voice Call
-          </Text>
-
-          {/* Accept / Decline */}
-          <View style={{ flexDirection: 'row', gap: 36, alignItems: 'center' }}>
-            {/* Decline */}
-            <View style={{ alignItems: 'center', gap: 8 }}>
+          {/* Answer / Decline — IMO green #04be5a / red #fa5353 */}
+          <View style={{ flexDirection: 'row', gap: 56, alignItems: 'flex-start' }}>
+            <View style={{ alignItems: 'center' }}>
               <Pressable
                 onPress={handleDecline}
                 style={{
-                  width: 68, height: 68, borderRadius: 34,
-                  backgroundColor: '#EF4444',
+                  width: 72, height: 72, borderRadius: 36,
+                  backgroundColor: '#fa5353',
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 14,
-                  elevation: 8 }}
+                  shadowColor: '#fa5353', shadowOpacity: 0.5, shadowRadius: 16,
+                  elevation: 8,
+                }}
               >
-                <Feather name="phone-off" size={28} color="#fff" />
+                <Feather name="phone-off" size={30} color="#fff" />
               </Pressable>
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Decline</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 8 }}>
+                Decline
+              </Text>
             </View>
-
-            {/* Accept */}
-            <View style={{ alignItems: 'center', gap: 8 }}>
+            <View style={{ alignItems: 'center' }}>
               <Pressable
                 onPress={handleAccept}
                 // 2026-10-19 stability fix (double-tap race): no second
                 // accept while one is in flight.
                 disabled={accepting}
                 style={{
-                  width: 68, height: 68, borderRadius: 34,
-                  backgroundColor: '#22C55E',
+                  width: 72, height: 72, borderRadius: 36,
+                  backgroundColor: '#04be5a',
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: '#22C55E', shadowOpacity: 0.5, shadowRadius: 14,
+                  shadowColor: '#04be5a', shadowOpacity: 0.5, shadowRadius: 16,
                   elevation: 8,
-                  opacity: accepting ? 0.5 : 1 }}
+                  opacity: accepting ? 0.5 : 1,
+                }}
               >
-                <Feather name="phone" size={28} color="#fff" />
+                <Feather name="phone" size={30} color="#fff" />
               </Pressable>
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Accept</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 8 }}>
+                Accept
+              </Text>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
