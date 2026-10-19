@@ -133,6 +133,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // always calls the latest stashPendingLink without re-running.
   const stashPendingLinkRef = useRef(stashPendingLink);
   stashPendingLinkRef.current = stashPendingLink;
+  // 2026-10-19 stability fix (batch 2D): uid mirror for the mount-once FCM
+  // tap handler below — official-notification routing needs the current uid
+  // for buildChatId(uid, 'vee_team').
+  const uidRef = useRef<string | null>(user?.uid || null);
+  uidRef.current = user?.uid || null;
   // 2026-10-19 CRASH-RISK fix (incoming-call tap dead end): seeds the ringing
   // modal when an incoming-call push is tapped. Incoming-call pushes carry no
   // chatId, so the FCM tap handler used to no-op — with the app killed that
@@ -396,7 +401,36 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           const chatId = d?.chatId;
           if (chatId && typeof chatId === 'string') {
             stashPendingLinkRef.current(() => router.push(`/inbox/${chatId}` as any));
+            return;
           }
+          // 2026-10-19 stability fix (batch 2D): Vee Team / official broadcasts
+          // carry category:"official" and NO chatId — tapping them did nothing.
+          // Route them to the Vee Team chat (buildChatId keeps the canonical
+          // uid-vee_team chat id used everywhere else).
+          if (d?.category === 'official') {
+            const uid = uidRef.current;
+            if (uid) {
+              stashPendingLinkRef.current(() => {
+                import('@/src/features/chat/services/firebaseDmService').then(({ buildChatId }) => {
+                  router.push(`/inbox/${buildChatId(uid, 'vee_team')}` as any);
+                }).catch(() => {
+                  router.push('/chat' as any);
+                });
+              });
+            }
+            return;
+          }
+          // 2026-10-19 stability fix (batch 2D): room-invite pushes carry a
+          // roomId — mirror the OneSignal path (never stack a second
+          // voice-room modal over an active room).
+          const roomId = d?.roomId;
+          if (roomId && typeof roomId === 'string') {
+            stashPendingLinkRef.current(() => handleRoomInviteTap(roomId));
+            return;
+          }
+          // 2026-10-19 stability fix (batch 2D): unknown notification types
+          // must never fail silently — land on the chat list.
+          stashPendingLinkRef.current(() => router.push('/chat' as any));
         } catch {}
       };
       setupNotificationListeners(handleFcmTap);
