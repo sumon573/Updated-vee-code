@@ -109,7 +109,7 @@ const queryClient = new QueryClient({
 //   4. Language selected, user present, in auth group → go to home.
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading: authLoading, isBanned, banReason } = useAuth();
+  const { user, loading: authLoading, authTimedOut, isBanned, banReason } = useAuth();
   const { isLanguageSelected, isLoading: langLoading } = useLanguage();
   const segments = useSegments();
   const router = useRouter();
@@ -224,7 +224,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } catch { /* non-critical */ }
   }, []);
 
-  // Check if the authenticated user has a Firestore profile.
+  // Check if the authenticated user has an RTDB profile.
   // New users (Google/email) land on complete-profile; existing users go home.
   useEffect(() => {
     if (!user || authLoading) {
@@ -274,6 +274,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // loading indicator mounted forever.
     if (authLoading || langLoading || !rootNavigationState?.key) return;
 
+    // 2026-10-19 polish: the 10s auth fail-open timeout fires before any real
+    // auth callback on slow networks — hold a neutral "retrying" state and
+    // NEVER flash /auth/login here. The first real callback clears the flag
+    // and routing proceeds normally below.
+    if (authTimedOut && !user) return;
+
     const segs             = segments as string[];
     const inAuthGroup      = segs[0] === 'auth';
     const onRoot           = segs.length === 0 || segs[0] === 'index';
@@ -322,6 +328,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [
     user,
     authLoading,
+    authTimedOut,
     segments,
     isLanguageSelected,
     isBanned,
@@ -555,6 +562,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       // P1 fix (2026-10-12): white loading screen per the light-mode-everywhere rule.
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
         <PremiumLoader size="large" />
+      </View>
+    );
+  }
+
+  // 2026-10-19 polish: the auth fail-open timeout fired before any real auth
+  // callback (slow network). Hold a neutral "retrying" state — the auth
+  // redirect effect above is guarded so /auth/login never flashes here.
+  if (authTimedOut && !user) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        <PremiumLoader size="large" />
+        <Text style={{ marginTop: 16, fontSize: 14, color: '#666' }}>
+          Connecting… retrying
+        </Text>
       </View>
     );
   }

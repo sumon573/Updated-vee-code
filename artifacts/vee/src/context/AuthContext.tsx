@@ -56,6 +56,13 @@ async function backfillVIdIfMissing(uid: string, shared: SharedProfile): Promise
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
+  /**
+   * 2026-10-19 polish: true when the 10s fail-open safety timeout fired
+   * BEFORE any onAuthStateChanged callback arrived (slow network, offline
+   * start). Callers must hold a neutral "retrying" state — never route to
+   * /auth/login — until the first real auth callback clears this flag.
+   */
+  authTimedOut: boolean;
   logout: () => Promise<void>;
   isBanned: boolean;
   banReason: string | null;
@@ -64,6 +71,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
+  authTimedOut: false,
   logout: async () => {},
   isBanned: false,
   banReason: null,
@@ -72,6 +80,7 @@ const AuthContext = createContext<AuthContextValue>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
   const loadingDoneRef = useRef(false);
   // BAN ENFORCEMENT (2026-10-13): real-time ban check. When admin bans a user
   // via the admin panel, the app blocks them immediately with a banned screen.
@@ -98,10 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
     // (offline start, corrupted token, etc.) force-unblock the loading screen
     // after AUTH_LOADING_TIMEOUT_MS so the app never stays permanently stuck.
+    // 2026-10-19 polish: the timeout sets authTimedOut, NOT a route to
+    // /auth/login — a slow network must not flash the login screen before the
+    // first real auth callback arrives. _layout holds a neutral "retrying"
+    // state while authTimedOut && !user.
     const timeoutId = setTimeout(() => {
       if (!loadingDoneRef.current) {
         loadingDoneRef.current = true;
         setLoading(false);
+        setAuthTimedOut(true);
       }
     }, AUTH_LOADING_TIMEOUT_MS);
 
@@ -247,6 +261,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           clearTimeout(timeoutId);
         }
         setLoading(false);
+        // 2026-10-19 polish: the first real auth callback ends the neutral
+        // "retrying" state — routing may now proceed normally.
+        setAuthTimedOut(false);
 
         // Set up real-time presence when user logs in. These are deliberately
         // non-blocking: presence/profile repair must never gate navigation.
@@ -424,7 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, isBanned, banReason }}>
+    <AuthContext.Provider value={{ user, loading, authTimedOut, logout, isBanned, banReason }}>
       {children}
     </AuthContext.Provider>
   );

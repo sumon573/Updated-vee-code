@@ -68,7 +68,8 @@ export async function getGoogleIdToken(): Promise<string> {
 
 /**
  * Start Google sign-in via system browser OAuth.
- * Opens Google's account picker, returns after Firebase session is established.
+ * Opens the system browser for Google OAuth, returns after the Firebase
+ * session is established via the redirect deep link.
  */
 export async function signInWithGoogle(): Promise<User> {
   const idToken = await getGoogleIdToken();

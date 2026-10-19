@@ -1,7 +1,7 @@
 /**
  * Auth Service — Firebase Auth (Production)
  * Supports: Email/Password, Password Reset
- * Google Sign-In removed.
+ * Google Sign-In moved to googleAuthService.ts (system-browser OAuth flow).
  */
 
 import {

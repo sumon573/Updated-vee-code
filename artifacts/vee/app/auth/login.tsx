@@ -18,7 +18,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  signInWithGoogle, getGoogleAuthErrorKey } from '@/src/services/googleAuthService';
+  signInWithGoogle, getGoogleAuthErrorKey, GOOGLE_AUTH_CANCELLED } from '@/src/services/googleAuthService';
 import { withTimeout } from '@/src/utils/withTimeout';
 
 const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
@@ -139,7 +139,13 @@ export default function ImoLoginScreen() {
       }
       // Real wiring lands here signed-in; AuthGuard routes onward.
     } catch (err) {
-      showNotice('info', t(getGoogleAuthErrorKey(err) as any));
+      // 2026-10-19 polish: user-cancelled sign-in is informational; real
+      // failures (network, OAuth errors) render as errors.
+      const code = (err as { code?: string })?.code ?? '';
+      const message = (err as { message?: string })?.message ?? '';
+      const cancelled =
+        code === GOOGLE_AUTH_CANCELLED || /cancelled/i.test(code + message);
+      showNotice(cancelled ? 'info' : 'error', t(getGoogleAuthErrorKey(err) as any));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setGoogleLoading(false);
