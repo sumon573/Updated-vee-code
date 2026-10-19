@@ -11,7 +11,7 @@ import { View, Text, TextInput, Pressable, FlatList, Platform, Alert } from 'rea
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import StoryBar from '@/src/features/chat/components/StoryBar';
@@ -61,6 +61,14 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     const timeout = setTimeout(() => setLoadingChats(false), 3000);
     return () => { unsub(); clearTimeout(timeout); };
   }, [user?.uid]);
+
+  // 2026-10-19 stability fix (batch 2D): clear the app icon badge whenever
+  // the chat list gains focus — the user has seen the conversations.
+  useFocusEffect(useCallback(() => {
+    import('@/src/services/fcmPushService').then(({ clearAppBadge }) => {
+      clearAppBadge().catch(() => {});
+    }).catch(() => {});
+  }, []));
 
   // ── Stories (Firebase, ধাপ ৫) ─────────────────────────────────────────────
   const {

@@ -531,6 +531,22 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [user?.uid]);
 
+  // 2026-10-19 stability fix (batch 2D): the app badge is set on every push
+  // (shouldSetBadge:true) but was NEVER cleared — clear it on foreground and
+  // on cold start so a stale count never sticks.
+  useEffect(() => {
+    const clear = () => {
+      import('../src/services/fcmPushService').then(({ clearAppBadge }) => {
+        clearAppBadge().catch(() => {});
+      }).catch(() => {});
+    };
+    const sub = AppState.addEventListener('change', (state: string) => {
+      if (state === 'active') clear();
+    });
+    clear(); // cold start (e.g. launched from a notification tap)
+    return () => sub.remove();
+  }, []);
+
   // BUG 17 fix: Never show an infinite spinner — the loading states already
   // have internal timeouts (AuthContext: 10s, LanguageContext: 6s) so this
   // block will always resolve in a bounded amount of time.

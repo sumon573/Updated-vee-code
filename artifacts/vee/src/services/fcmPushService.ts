@@ -39,6 +39,20 @@ export function setupNotificationHandler() {
 }
 
 /**
+ * 2026-10-19 (batch 2D): clear the app icon badge. setupNotificationHandler
+ * sets shouldSetBadge:true so every push increments the badge, but nothing
+ * ever cleared it — a stale count stuck forever. Call on app foreground and
+ * on chat-list focus (user has seen the conversations).
+ */
+export async function clearAppBadge(): Promise<void> {
+  try {
+    await Notifications.setBadgeCountAsync(0);
+  } catch {
+    // non-critical — badge may be unsupported on this platform
+  }
+}
+
+/**
  * Register for push and save FCM token to Firebase.
  * Call after user login. Safe to call multiple times.
  */
