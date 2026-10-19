@@ -770,9 +770,9 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
   },
   userSearch: {
     title: 'নতুন বার্তা',
-    searchPlaceholder: 'নাম বা Vee ID দিয়ে খুঁজুন...',
+    searchPlaceholder: 'Vee ID বা Short ID দিয়ে খুঁজুন...',
     noResults: 'কোনো ব্যবহারকারী পাওয়া যায়নি',
-    searchHint: 'নাম বা Vee ID দিয়ে খুঁজুন\n(কমপক্ষে ২ অক্ষর)',
+    searchHint: 'Vee ID বা Short ID দিয়ে খুঁজুন\n(কমপক্ষে ২ অক্ষর)',
     tapHint: 'নামে ট্যাপ করুন প্রোফাইল দেখতে · 💬 মেসেজের জন্য',
     searchActionHint: '👆 নামে ট্যাপ · ➕ ফলো · 👥 ফ্রেন্ড রিকোয়েস্ট · 👁 প্রোফাইল',
   },
