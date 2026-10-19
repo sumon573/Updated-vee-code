@@ -182,6 +182,8 @@ export async function sendMessage(
   // 2026-10-19 perf: optional client-generated key (see newMessageKey) —
   // the optimistic bubble and the real message share one id.
   clientKey?: string,
+  // 2026-10-19 voice messages: duration in seconds (type='voice' only).
+  durationSec?: number,
 ): Promise<void> {
   // Block enforcement: neither side can message if blocked either way.
   const direction = await getBlockDirection(myUid, participantUid);
@@ -214,6 +216,7 @@ export async function sendMessage(
     reactions: {},
     ...(replyTo ? { replyTo } : {}),
     ...(cloudinaryId ? { cloudinaryId } : {}),
+    ...(typeof durationSec === 'number' ? { durationSec } : {}),
     deletedForMe: false,
     deletedForEveryone: false,
   };
@@ -227,7 +230,13 @@ export async function sendMessage(
   // Update chat list metadata for both users
   const meta = {
     id: chatId,
-    lastMessage: type === 'text' ? content : type === 'image' ? '📷 Photo' : '🎥 Video',
+    lastMessage: type === 'text' ? content
+      : type === 'image' ? '📷 Photo'
+      : type === 'video' ? '🎥 Video'
+      : type === 'voice' ? '🎤 Voice message'
+      : type === 'call' ? '📞 Call'
+      : type === 'sticker' ? '😊 Sticker'
+      : '📎 Attachment',
     lastMessageType: type,
     lastMessageTime: Date.now(),
     unreadCount: 1, // participant's unread count
