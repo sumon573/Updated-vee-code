@@ -337,6 +337,17 @@ export default function AudioCallScreen({
     }
   }, [role, calleeUid, roomId, router]);
 
+  // 2026-10-19 (Sumon): MOUNT-ONCE init support — route params are immutable
+  // for a screen instance; the WebRTC init effect snapshots them at mount and
+  // never re-runs (re-running would drop the live call via the cleanup's
+  // endCall). endCall/t are re-created by hooks, so the mount-once effect
+  // routes them through refs instead of depending on them.
+  const paramsRef = useRef({ roomId, role, remoteUid, calleeUid, myUid, myName, myPhotoURL, isReturning });
+  const endCallRef = useRef(endCall);
+  endCallRef.current = endCall;
+  const tRef = useRef(t);
+  tRef.current = t;
+
   // ── Minimize call (2026-10-11 Issue #8, hardened 2026-10-11) ───────────────
   // Keeps the WebRTC session alive at module level, shows the floating
   // CallMinimizeBar, and navigates back. Audio continues. Returning via the
@@ -425,7 +436,17 @@ export default function AudioCallScreen({
   }, [remoteUid, remotePhotoURL]);
 
   // ── WebRTC P2P engine init ──────────────────────────────────────────────
+  // 2026-10-19 (Sumon): MOUNT-ONCE. Route params are immutable for a screen
+  // instance, and the cleanup below ends the live call — re-running init on
+  // a param change would drop the call. So params are snapshotted at mount
+  // (paramsRef) and every other mutable input routes through refs
+  // (endCallRef, tRef). Deps are intentionally [updateCallState, startTimer]
+  // — both stable useCallbacks — so this runs exactly once per screen
+  // instance. No eslint-disable: the dep list is complete for stable inputs.
   useEffect(() => {
+    const { roomId, role, remoteUid, calleeUid, myUid, myName, myPhotoURL, isReturning } = paramsRef.current;
+    const endCall = endCallRef.current;
+    const t = tRef.current;
     mountedRef.current   = true;
     cleaningUpRef.current = false;
     // 2026-10-11 FIX: track mount state at module level so endCall only
@@ -714,8 +735,7 @@ export default function AudioCallScreen({
       // back-handler race).
       if (!cleaningUpRef.current && !isMinimizingRef.current && !isCallMinimizing()) endCall(false);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, myUid, myName]);
+  }, [updateCallState, startTimer]);
 
   // ── Remote mute sync listener (2026-10-09) ──────────────────────────────
   // Shows a muted indicator when the other side mutes.
