@@ -67,6 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
   const banUnsubscribeRef = useRef<(() => void) | null>(null);
+  // 2026-10-19 stability fix: the auth callback re-fires on token refresh —
+  // the ban listener must be subscribed once per UID, not torn down and
+  // re-subscribed on every callback. Tracks which UID owns the live listener.
+  const banListenerUidRef = useRef<string | null>(null);
   // 2026-10-13 (Sumon): ban race fix — setUser(null) triggers onUserStateChanged(null)
   // which would reset isBanned. This ref preserves the banned state.
   const bannedSessionRef = useRef(false);
@@ -142,10 +146,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }).catch(() => {});
           }).catch(() => {});
         }
-        if (!bannedSessionRef.current && banUnsubscribeRef.current) {
-          banUnsubscribeRef.current();
-          banUnsubscribeRef.current = null;
-        }
         if (firebaseUser) {
           // Reset ban state on new login, then subscribe
           // 2026-10-13: banned session থেকে logout হলে reset করি না
@@ -153,41 +153,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsBanned(false);
             setBanReason(null);
           }
-          import('../config/firebase').then(({ database }) => {
-            import('firebase/database').then(({ ref, onValue }) => {
-              const banRef = ref(database, `users/${firebaseUser.uid}/banned`);
-              const reasonRef = ref(database, `users/${firebaseUser.uid}/banReason`);
-              const unsubBan = onValue(banRef, (snap) => {
-                const banned = snap.val() === true;
-                if (banned) {
-                  // 2026-10-13 (Sumon): ban race fix — banned session mark করি
-                  // যাতে setUser(null) → onUserStateChanged(null) isBanned reset না করে।
-                  bannedSessionRef.current = true;
-                  bannedUidRef.current = firebaseUser.uid;
-                  // Fetch reason, then force logout and show banned screen
-                  import('firebase/database').then(({ get }) => {
-                    get(reasonRef).then((rSnap) => {
-                      setBanReason(typeof rSnap.val() === 'string' ? rSnap.val() : null);
+          // 2026-10-19 stability fix: subscribe the ban listener ONCE per
+          // UID. The auth callback re-fires on token refresh — the old code
+          // tore the listener down and re-subscribed on every callback.
+          if (banListenerUidRef.current !== firebaseUser.uid) {
+            const prevUnsub = banUnsubscribeRef.current;
+            banUnsubscribeRef.current = null;
+            if (prevUnsub) prevUnsub();
+            const subscribeUid = firebaseUser.uid;
+            banListenerUidRef.current = subscribeUid;
+            import('../config/firebase').then(({ database }) => {
+              import('firebase/database').then(({ ref, onValue }) => {
+                const banRef = ref(database, `users/${subscribeUid}/banned`);
+                const reasonRef = ref(database, `users/${subscribeUid}/banReason`);
+                const unsubBan = onValue(banRef, (snap) => {
+                  const banned = snap.val() === true;
+                  if (banned) {
+                    // 2026-10-13 (Sumon): ban race fix — banned session mark করি
+                    // যাতে setUser(null) → onUserStateChanged(null) isBanned reset না করে।
+                    bannedSessionRef.current = true;
+                    bannedUidRef.current = subscribeUid;
+                    // Fetch reason, then force logout and show banned screen
+                    import('firebase/database').then(({ get }) => {
+                      get(reasonRef).then((rSnap) => {
+                        setBanReason(typeof rSnap.val() === 'string' ? rSnap.val() : null);
+                      }).catch(() => {});
                     }).catch(() => {});
-                  }).catch(() => {});
-                  setIsBanned(true);
-                  // Sign out silently — banned screen takes over
-                  firebaseLogout().catch(() => {});
-                  setUser(null);
-                } else if (bannedSessionRef.current) {
-                  // Unbanned while banned screen showing — clear and allow re-login
-                  bannedSessionRef.current = false;
-                  bannedUidRef.current = null;
-                  setIsBanned(false);
-                  setBanReason(null);
+                    setIsBanned(true);
+                    // Sign out silently — banned screen takes over
+                    firebaseLogout().catch(() => {});
+                    setUser(null);
+                  } else if (bannedSessionRef.current) {
+                    // Unbanned while banned screen showing — clear and allow re-login
+                    bannedSessionRef.current = false;
+                    bannedUidRef.current = null;
+                    setIsBanned(false);
+                    setBanReason(null);
+                  }
+                });
+                // The UID may have moved on while the dynamic import was
+                // resolving — the newer subscribe path owns the ref now, so
+                // drop this stale subscription instead of orphaning it.
+                if (banListenerUidRef.current === subscribeUid) {
+                  if (banUnsubscribeRef.current) banUnsubscribeRef.current();
+                  banUnsubscribeRef.current = unsubBan;
+                } else {
+                  unsubBan();
                 }
-              });
-              banUnsubscribeRef.current = unsubBan;
+              }).catch(() => {});
             }).catch(() => {});
-          }).catch(() => {});
+          }
         } else {
-          // 2026-10-13: banned session-এ logout হলে ban screen ধরে রাখি
+          // 2026-10-13: banned session-এ logout হলে ban screen ধরে রাখি —
+          // listener alive রাখি যাতে unban detect হয়।
           if (!bannedSessionRef.current) {
+            if (banUnsubscribeRef.current) {
+              banUnsubscribeRef.current();
+              banUnsubscribeRef.current = null;
+            }
+            banListenerUidRef.current = null;
             setIsBanned(false);
             setBanReason(null);
           }
