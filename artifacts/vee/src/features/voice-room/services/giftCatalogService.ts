@@ -28,6 +28,8 @@ export interface CatalogGift {
   videoFullscreen?: boolean; // 2026-10-17 (Sumon): server-driven fullscreen flag
   /** 2026-10-19 SVIP: minimum SVIP tier (1-based) required to send. IMO: "Available to SVIP %d or above". */
   minSvipLevel?: number;
+  /** 2026-10-19 Nobel: minimum noble rank index (0-based, NOBLE_RANKS) required to send. */
+  minNobleRank?: number;
   metadata?: Record<string, unknown>;
 }
 

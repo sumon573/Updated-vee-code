@@ -55,6 +55,31 @@ function fmtCompact(n: number): string {
   return `${n}`;
 }
 
+/** Small noble rank mark next to name (IMO: noble info in contribution rank rows). */
+function NobleMark({ rankIndex }: { rankIndex: number }) {
+  const [rank, setRank] = useState<{ name: string; color: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { NOBLE_RANKS } = await import('@/src/services/nobleService');
+        const r = NOBLE_RANKS[rankIndex];
+        if (!cancelled && r) setRank({ name: r.name, color: r.color });
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [rankIndex]);
+  if (!rank) return null;
+  return (
+    <View style={{
+      marginLeft: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8,
+      backgroundColor: rank.color + '22', borderWidth: 1, borderColor: rank.color + '66',
+    }}>
+      <Text style={{ color: rank.color, fontSize: 10, fontWeight: '800' }}>♛ {rank.name}</Text>
+    </View>
+  );
+}
+
 export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
   visible: boolean;
   roomId: string;
@@ -70,6 +95,8 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
     online: t('voiceRoom.rank.tab_online'),
   };
   const [contrib, setContrib] = useState<{ uid: string; coins: number }[]>([]);
+  /** Noble rank index per uid (IMO: noble mark next to name in contribution rank). */
+  const [nobleRanks, setNobleRanks] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -101,6 +128,26 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
     member: nameOf.get(c.uid) ?? null,
   })), [contrib, nameOf]);
 
+  useEffect(() => {
+    if (!visible || rows.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getNobleState } = await import('@/src/services/nobleService');
+        const entries = await Promise.all(
+          rows.slice(0, 50).map(async (r) => {
+            try {
+              const s = await getNobleState(r.uid);
+              return [r.uid, s && s.rankIndex >= 0 ? s.rankIndex : -1] as const;
+            } catch { return [r.uid, -1] as const; }
+          }),
+        );
+        if (!cancelled) setNobleRanks(new Map(entries));
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [visible, rows]);
+
   const myRank = useMemo(() => {
     if (!myUid) return -1;
     return rows.findIndex((r) => r.uid === myUid) + 1;
@@ -108,23 +155,29 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
 
   const myRow = myRank > 0 ? rows[myRank - 1] : null;
 
-  const renderRow = (uid: string, name: string, photoURL: string | null | undefined, color: string | undefined, initials: string | undefined, rank: number, right: string) => (
-    <View key={uid} style={{
-      flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-      borderBottomWidth: 0.5, borderBottomColor: '#E5E5EA',
-    }}>
-      <RankBadge rank={rank} />
-      {photoURL ? (
-        <Image source={{ uri: photoURL }} style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: '#F2F2F7' }} />
-      ) : (
-        <View style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: (color || '#05b5fa') + '22', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{initials || '?'}</Text>
+  const renderRow = (uid: string, name: string, photoURL: string | null | undefined, color: string | undefined, initials: string | undefined, rank: number, right: string) => {
+    const nobleIdx = nobleRanks.get(uid) ?? -1;
+    return (
+      <View key={uid} style={{
+        flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+        borderBottomWidth: 0.5, borderBottomColor: '#E5E5EA',
+      }}>
+        <RankBadge rank={rank} />
+        {photoURL ? (
+          <Image source={{ uri: photoURL }} style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: '#F2F2F7' }} />
+        ) : (
+          <View style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: (color || '#05b5fa') + '22', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{initials || '?'}</Text>
+          </View>
+        )}
+        <View style={{ flex: 1, marginLeft: 12, flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#000', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+          {nobleIdx >= 0 && <NobleMark rankIndex={nobleIdx} />}
         </View>
-      )}
-      <Text style={{ flex: 1, marginLeft: 12, fontSize: 15, fontWeight: '600', color: '#000' }} numberOfLines={1}>{name}</Text>
-      <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>{right}</Text>
-    </View>
-  );
+        <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>{right}</Text>
+      </View>
+    );
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

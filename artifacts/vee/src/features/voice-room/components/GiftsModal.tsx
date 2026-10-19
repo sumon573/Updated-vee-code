@@ -88,6 +88,8 @@ interface GiftItem {
   videoFullscreen?: boolean;
   /** Minimum SVIP tier required (IMO: "Available to SVIP %d or above") */
   minSvipLevel?: number;
+  /** Minimum noble rank index (0-based, NOBLE_RANKS) required to send */
+  minNobleRank?: number;
 }
 
 function catalogToGiftItem(cg: CatalogGift): GiftItem {
@@ -102,6 +104,7 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
     videoSize: cg.videoSize,
     videoFullscreen: cg.videoFullscreen,
     minSvipLevel: cg.minSvipLevel,
+    minNobleRank: cg.minNobleRank,
   };
 }
 
@@ -137,6 +140,8 @@ export function GiftsModal({
   const [recentIds, setRecentIds] = useState<string[]>([]);
   /** Sender's active SVIP tier (0 = none) — for SVIP-gated gifts. */
   const [mySvipTier, setMySvipTier] = useState(0);
+  /** Sender's noble rank index (-1 = none) — for noble-gated gifts. */
+  const [myNobleRank, setMyNobleRank] = useState(-1);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,6 +151,11 @@ export function GiftsModal({
         const tier = await getActiveSvipTier(myUid);
         if (!cancelled) setMySvipTier(tier);
       } catch { /* non-critical — treated as no SVIP */ }
+      try {
+        const { getNobleState } = await import('@/src/services/nobleService');
+        const noble = await getNobleState(myUid);
+        if (!cancelled) setMyNobleRank(noble && noble.rankIndex >= 0 ? noble.rankIndex : -1);
+      } catch { /* non-critical — treated as no noble rank */ }
     })();
     return () => { cancelled = true; };
   }, [myUid, visible]);
@@ -246,6 +256,18 @@ export function GiftsModal({
           ? 'Cannot send because you are not SVIP.'
           : `Available to SVIP ${g.minSvipLevel} or above.`,
       );
+      return;
+    }
+
+    // Noble gating (IMO noble exclusive gifts)
+    if (g.minNobleRank != null && g.minNobleRank >= 0 && myNobleRank < g.minNobleRank) {
+      try {
+        const { NOBLE_RANKS } = await import('@/src/services/nobleService');
+        const rankName = NOBLE_RANKS[g.minNobleRank]?.name || 'Noble';
+        Alert.alert('Noble Gift', `Available to ${rankName} or above.`);
+      } catch {
+        Alert.alert('Noble Gift', 'Available to noble members or above.');
+      }
       return;
     }
 
@@ -430,6 +452,8 @@ export function GiftsModal({
   const renderGiftTile = ({ item: g }: { item: GiftItem }) => {
     const isSelected = selectedGift?.id === g.id;
     const svipLocked = !!g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel;
+    const nobleLocked = g.minNobleRank != null && g.minNobleRank >= 0 && myNobleRank < g.minNobleRank;
+    const locked = svipLocked || nobleLocked;
     return (
       <Pressable
         onPress={() => {
@@ -441,7 +465,7 @@ export function GiftsModal({
           width: (screenW - 40 - 24) / 4,
           alignItems: 'center',
           marginBottom: 14,
-          opacity: svipLocked ? 0.55 : 1,
+          opacity: locked ? 0.55 : 1,
         }}>
         <View style={{
           width: 64, height: 64, borderRadius: 18,
@@ -460,14 +484,14 @@ export function GiftsModal({
           ) : (
             <Feather name="gift" size={26} color={IMO_SUB} />
           )}
-          {svipLocked && (
+          {locked && (
             <View style={{
               position: 'absolute', top: 2, right: 2,
               backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8,
               paddingHorizontal: 4, paddingVertical: 1,
             }}>
               <Text style={{ color: '#FFD54F', fontSize: 9, fontWeight: '700' }}>
-                👑{g.minSvipLevel}
+                {nobleLocked ? '♛' : `👑${g.minSvipLevel}`}
               </Text>
             </View>
           )}

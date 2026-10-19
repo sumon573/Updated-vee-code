@@ -60,7 +60,7 @@ export interface PrivilegeDef {
 export const PRIVILEGES: PrivilegeDef[] = [
   { key: 'nameplate',    name: 'Noble Nameplate',   icon: '🎖️', minRankIndex: 0, enforced: true  },
   { key: 'badge',        name: 'Noble Badge',       icon: '🛡️', minRankIndex: 1, enforced: true  },
-  { key: 'gift',         name: 'Noble Gift',        icon: '🎁', minRankIndex: 1, enforced: false },
+  { key: 'gift',         name: 'Noble Gift',        icon: '🎁', minRankIndex: 1, enforced: true  },
   { key: 'avatarFrame',  name: 'Avatar Frame',      icon: '🖼️', minRankIndex: 3, enforced: true  },
   { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 4, enforced: true },
   { key: 'micRipple',    name: 'Microphone Ripple', icon: '🎤', minRankIndex: 6, enforced: false },
