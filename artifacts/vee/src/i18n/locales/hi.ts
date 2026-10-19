@@ -904,6 +904,9 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
     alreadyInCallTitle: 'पहले से ही कॉल पर हैं',
     alreadyInCallMsg: 'आप पहले से ही एक कॉल पर हैं। नई कॉल शुरू करने से पहले वर्तमान कॉल समाप्त करें।',
     followsSystem: 'सिस्टम का पालन करता है',
+    mute: 'म्यूट',
+    unmute: 'अनम्यूट',
+    minimize: 'मिनिमाइज़',
   },
 } as const;
 
