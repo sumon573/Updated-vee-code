@@ -93,7 +93,7 @@ function PlanetVideoItem({ item, active, overlay }: { item: PlanetItem; active: 
   );
 }
 
-function PlanetAudioItem({ item, overlay }: { item: PlanetItem; overlay: React.ReactNode }) {
+function PlanetAudioItem({ item, active, overlay }: { item: PlanetItem; active: boolean; overlay: React.ReactNode }) {
   const player = useAudioPlayer(item.story.content);
   const [playing, setPlaying] = useState(false);
 
@@ -108,6 +108,16 @@ function PlanetAudioItem({ item, overlay }: { item: PlanetItem; overlay: React.R
       }
     } catch { /* ignore */ }
   }, [player, playing]);
+
+  // FIX (2026-10-19): pause the audio when this item scrolls out of view,
+  // matching PlanetVideoItem's active handling. Also resets the play/pause
+  // icon so it reflects reality when the user scrolls back.
+  useEffect(() => {
+    if (!active) {
+      try { player.pause(); } catch { /* ignore */ }
+      setPlaying(false);
+    }
+  }, [active, player]);
 
   useEffect(() => {
     return () => {
@@ -391,7 +401,7 @@ export default function PlanetScreen() {
       return <PlanetImageItem item={item} active={active} overlay={overlay} />;
     }
     if (item.story.type === 'audio') {
-      return <PlanetAudioItem item={item} overlay={overlay} />;
+      return <PlanetAudioItem item={item} active={active} overlay={overlay} />;
     }
     return <PlanetTextItem item={item} active={active} overlay={overlay} />;
   };
