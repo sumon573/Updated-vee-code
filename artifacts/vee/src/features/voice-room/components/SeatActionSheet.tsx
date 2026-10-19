@@ -9,7 +9,7 @@ import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../typ
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
 export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel, myId, locked, audience, onClose,
   onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onUnblock, onMention, accent,
-  isRoomBlocked }: {
+  isRoomBlocked, onKickOut, canKickOut }: {
   visible: boolean; seatIdx: number; member?: Participant | null;
   myRole: Role; myRoleLevel?: number; myId: string; locked: boolean; audience: Participant[];
   onClose: () => void;
@@ -24,6 +24,10 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   /** Inserts "@MemberName " into the chat input. */
   onMention: () => void;
   accent: string;
+  /** SVIP kick-out (spends points, temporary removal). */
+  onKickOut?: () => void;
+  /** True when the viewer holds the SVIP kick-out privilege. */
+  canKickOut?: boolean;
 }) {
   const { t } = useTranslation();
   const isOwner = myRole === 'host';
@@ -161,6 +165,19 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
       bg: isRoomBlocked ? '#22C55E18' : C.red + '18',
       border: isRoomBlocked ? '#22C55E44' : C.red + '44',
       onPress: isRoomBlocked ? onUnblock : onBlock,
+    });
+  }
+
+  // SVIP Kick-out (2026-10-19): spends 50 SVIP points, temporary removal.
+  // Available to SVIP 3+ even without room moderation rights (IMO model).
+  if (canKickOut && onKickOut && member && member.id !== myId) {
+    actions.push({
+      icon: 'zap',
+      label: 'SVIP Kick-Out',
+      sub: 'Remove from room • 50 SVIP points',
+      color: '#FF9800',
+      bg: '#FF980018', border: '#FF980044',
+      onPress: onKickOut,
     });
   }
 

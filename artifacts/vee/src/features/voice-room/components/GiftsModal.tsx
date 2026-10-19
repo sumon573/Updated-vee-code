@@ -86,6 +86,8 @@ interface GiftItem {
   animationType?: string;
   videoSize?: number;
   videoFullscreen?: boolean;
+  /** Minimum SVIP tier required (IMO: "Available to SVIP %d or above") */
+  minSvipLevel?: number;
 }
 
 function catalogToGiftItem(cg: CatalogGift): GiftItem {
@@ -99,6 +101,7 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
     animationType: cg.animationType,
     videoSize: cg.videoSize,
     videoFullscreen: cg.videoFullscreen,
+    minSvipLevel: cg.minSvipLevel,
   };
 }
 
@@ -132,6 +135,20 @@ export function GiftsModal({
   const [serverGifts, setServerGifts] = useState<GiftItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
   const [recentIds, setRecentIds] = useState<string[]>([]);
+  /** Sender's active SVIP tier (0 = none) — for SVIP-gated gifts. */
+  const [mySvipTier, setMySvipTier] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getActiveSvipTier } = await import('@/src/features/svip/svipKickService');
+        const tier = await getActiveSvipTier(myUid);
+        if (!cancelled) setMySvipTier(tier);
+      } catch { /* non-critical — treated as no SVIP */ }
+    })();
+    return () => { cancelled = true; };
+  }, [myUid, visible]);
 
   useEffect(() => {
     if (visible) {
@@ -220,6 +237,18 @@ export function GiftsModal({
   const handleSend = async () => {
     const g = selectedGift;
     if (!g || selectedMembers.length === 0 || sending) return;
+
+    // SVIP gating (IMO: "Available to SVIP %d or above" / "Cannot send because you are not SVIP")
+    if (g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel) {
+      Alert.alert(
+        'SVIP Gift',
+        g.minSvipLevel === 1
+          ? 'Cannot send because you are not SVIP.'
+          : `Available to SVIP ${g.minSvipLevel} or above.`,
+      );
+      return;
+    }
+
     const totalCost = g.coins * quantity * selectedMembers.length;
 
     try {
@@ -400,6 +429,7 @@ export function GiftsModal({
 
   const renderGiftTile = ({ item: g }: { item: GiftItem }) => {
     const isSelected = selectedGift?.id === g.id;
+    const svipLocked = !!g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel;
     return (
       <Pressable
         onPress={() => {
@@ -411,6 +441,7 @@ export function GiftsModal({
           width: (screenW - 40 - 24) / 4,
           alignItems: 'center',
           marginBottom: 14,
+          opacity: svipLocked ? 0.55 : 1,
         }}>
         <View style={{
           width: 64, height: 64, borderRadius: 18,
@@ -428,6 +459,17 @@ export function GiftsModal({
             />
           ) : (
             <Feather name="gift" size={26} color={IMO_SUB} />
+          )}
+          {svipLocked && (
+            <View style={{
+              position: 'absolute', top: 2, right: 2,
+              backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8,
+              paddingHorizontal: 4, paddingVertical: 1,
+            }}>
+              <Text style={{ color: '#FFD54F', fontSize: 9, fontWeight: '700' }}>
+                👑{g.minSvipLevel}
+              </Text>
+            </View>
           )}
         </View>
         <Text

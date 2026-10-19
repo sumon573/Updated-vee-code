@@ -26,6 +26,8 @@ export interface CatalogGift {
   active: boolean;
   videoSize?: number; // 2026-10-17 (Sumon): server-driven video size (px)
   videoFullscreen?: boolean; // 2026-10-17 (Sumon): server-driven fullscreen flag
+  /** 2026-10-19 SVIP: minimum SVIP tier (1-based) required to send. IMO: "Available to SVIP %d or above". */
+  minSvipLevel?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -48,7 +50,7 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
   const safeCategory = rawCategory || 'classic';
 
   const knownKeys = new Set(['name', 'price', 'category', 'thumbnailUrl', 'animationUrl',
-    'animationType', 'sortOrder', 'active', 'videoSize', 'videoFullscreen']);
+    'animationType', 'sortOrder', 'active', 'videoSize', 'videoFullscreen', 'minSvipLevel']);
   const metadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (!knownKeys.has(k)) metadata[k] = v;
@@ -66,6 +68,7 @@ function normalizeGift(id: string, data: any): CatalogGift | null {
     active: true,
     videoSize: data.videoSize ? Number(data.videoSize) : undefined,
     videoFullscreen: data.videoFullscreen === true,
+    minSvipLevel: data.minSvipLevel ? Number(data.minSvipLevel) : undefined,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
   };
 }
