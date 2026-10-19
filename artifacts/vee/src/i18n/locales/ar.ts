@@ -841,6 +841,9 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
     alreadyInCallTitle: 'أنت في مكالمة بالفعل',
     alreadyInCallMsg: 'أنت في مكالمة حالياً. أنهِ المكالمة الحالية قبل بدء مكالمة جديدة.',
     followsSystem: 'يتبع النظام',
+    mute: 'كتم',
+    unmute: 'إلغاء الكتم',
+    minimize: 'تصغير',
   },
 } as const;
 
