@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, Pressable, Image, Dimensions, Alert } from 'react-native';
+import { View, Text, FlatList, Pressable, Dimensions, Alert } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -154,10 +155,15 @@ export default function CreateStoryScreen() {
           margin: 1,
           opacity: isSelected ? 0.7 : 1 }}
       >
-        <Image
+        {/* 2026-10-19 perf: expo-image instead of RN Image — the native
+            loader downsamples to the ~130px cell size (Glide on Android)
+            instead of decoding the full-resolution asset into every cell,
+            plus memory+disk caching for fast grid scrolls. */}
+        <ExpoImage
           source={{ uri: item.uri }}
           style={{ width: '100%', height: '100%' }}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
         />
         {item.mediaType === 'video' && (
           <View style={{
