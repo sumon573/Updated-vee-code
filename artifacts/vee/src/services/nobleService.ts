@@ -489,19 +489,23 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
 export async function recordNobleXP(uid: string, price: number): Promise<void> {
   if (!uid || !(price > 0)) return;
   const nobleRef = ref(database, `users/${uid}/noble`);
-  let existed = false;
-  let prevRank = 0;
-  try {
-    const snap = await get(nobleRef);
-    existed = snap.exists();
-    if (existed) prevRank = coerceState(snap.val())?.rankIndex ?? 0;
-  } catch {
-    // Read failed — the transaction below still applies safely.
-  }
   const now = Date.now();
-  const result = await runTransaction(nobleRef, (cur) => applyNobleGift(cur, price, now));
+  // 2026-10-19 (Sumon): before/after state is captured INSIDE the transaction
+  // update function — never from a pre-read. The old get() before
+  // runTransaction could return a stale rank (a concurrent gift committing in
+  // between), causing skipped rank-item grants or wrong revokes. (The update
+  // fn may run more than once on retry; the last run's `before` is the
+  // committed write's true pre-image. Boxed in an object so TS keeps the
+  // declared type — a bare `let` would be narrowed to `null`.)
+  const box: { before: NobleState | null } = { before: null };
+  const result = await runTransaction(nobleRef, (cur) => {
+    box.before = coerceState(cur);
+    return applyNobleGift(cur, price, now);
+  });
   if (!result.committed) return;
   const next = coerceState(result.snapshot.val());
+  const prevRank = box.before?.rankIndex ?? 0;
+  const existed = box.before !== null;
   const nextRank = next?.rankIndex ?? 0;
   // First gift (node created → Knight) or any rank-up: grant rank items.
   if (next && (nextRank > prevRank || !existed)) {
