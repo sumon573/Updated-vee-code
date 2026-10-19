@@ -30,6 +30,8 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import MessageBubble, { saveRemoteMediaToGallery } from '../components/MessageBubble';
+// 2026-10-19 (IMO port): animated waves for the voice recording bar.
+import VoiceWaves from '../components/VoiceWaves';
 import {
   subscribeMessages, sendMessage, markAllSeen, newMessageKey,
   subscribeTyping, subscribePresence, setTyping,
@@ -44,6 +46,9 @@ import { DmMessage, DmReplyPreview } from '../types/dm';
 // NOTE 5 (2026-10-11): every error must show its actual cause.
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { uploadImage } from '@/src/services/cloudinaryService';
+// 2026-10-19 (IMO port): IMO-style voice messages — record in chat,
+// upload to Vee's Telegram storage, playable bubble.
+import { useVoiceRecorder, formatVoiceDuration } from '../hooks/useVoiceRecorder';
 // 2026-10-19 OOM fix: fullscreen chat image viewer uses expo-image
 // (disk cache + native downsampling). RN core Image decodes full-resolution
 // originals (Telegram serves originals; 20–50MB photos → OOM). Same size.
@@ -242,6 +247,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [moreOptionsVisible, setMoreOptionsVisible] = useState(false);
   // 2026-10-14 (Sumon): scroll-to-bottom floating button — উপরে scroll করলে দেখাবে।
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  // 2026-10-19 (IMO port): voice message recording state.
+  const voice = useVoiceRecorder();
+  const [uploadingVoice, setUploadingVoice] = useState(false);
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -596,6 +604,67 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }
     }
   }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, displayName, t, user]);
+
+  // ── IMO-style voice messages ─────────────────────────────────────────────
+  // Mic button (in the send circle, IMO beb.xml) → recording bar with timer +
+  // waves → send uploads to Telegram storage and sends a 'voice' message.
+  const handleMicPress = useCallback(async () => {
+    if (!user?.uid) return;
+    if (isVeeTeam(effectiveParticipantId)) return;
+    if (blockDirection !== 'none') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const started = await voice.startRecording();
+    if (!started) {
+      // Permission denied or recorder failed — ensurePermission already alerted.
+    }
+  }, [user?.uid, effectiveParticipantId, blockDirection, voice]);
+
+  const handleVoiceCancel = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await voice.cancelRecording();
+  }, [voice]);
+
+  const handleVoiceSend = useCallback(async () => {
+    if (!user?.uid || uploadingVoice) return;
+    if (isVeeTeam(effectiveParticipantId)) return;
+    const rec = await voice.stopRecording();
+    if (!rec) return; // nothing recorded (or stop failed)
+    setUploadingVoice(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      // Telegram-backed storage, type='chat' (folder 'vee/dm' maps to chat).
+      const uploaded = await uploadImage(rec.uri, {
+        folder: 'vee/dm',
+        mimeHint: 'audio/mp4',
+      });
+      const messageKey = newMessageKey(chatId);
+      const optimistic: DmMessage = {
+        id: messageKey,
+        chatId,
+        senderId: myUid,
+        type: 'voice',
+        content: uploaded.url,
+        durationSec: rec.durationSec,
+        createdAt: Date.now(),
+        status: 'sending',
+        reactions: {},
+      };
+      setPendingMsgs((prev) => [...prev, optimistic]);
+      shouldScrollRef.current = true;
+      await sendMessage(
+        chatId, myUid, effectiveParticipantId, uploaded.url, 'voice',
+        undefined, uploaded.publicId,
+        myRealName || user?.displayName || undefined,
+        messageKey, rec.durationSec,
+      );
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+    } catch (e) {
+      // Upload/send failed — surface the ACTUAL cause, nothing half-sent.
+      Alert.alert(t('chat.error'), `${t('chat.sendError')}\n\nReason: ${getErrorCause(e)}`);
+    } finally {
+      setUploadingVoice(false);
+    }
+  }, [user?.uid, uploadingVoice, effectiveParticipantId, voice, chatId, myUid, t, myRealName, user?.displayName]);
 
   // ── Typing detection ──────────────────────────────────────────────────────
   const handleInputChange = useCallback((text: string) => {
@@ -1158,7 +1227,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                       : t('chat.replyingTo', { name: displayName })}
                   </Text>
                   <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
-                    {replyTarget.type !== 'text' ? '📷 Media' : replyTarget.content}
+                    {replyTarget.type !== 'text'
+                      ? (replyTarget.type === 'voice' ? '🎤 Voice message' : '📷 Media')
+                      : replyTarget.content}
                   </Text>
                 </View>
                 <Pressable onPress={() => setReplyTarget(null)} hitSlop={10}>
@@ -1203,7 +1274,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               </Pressable>
             )}
 
-            {/* ── Input bar ──────────────────────────────────────────────── */}
+            {/* ── Input bar (IMO style) ──────────────────────────────────── */}
             {/* 2026-10-17 (Sumon): Vee Team system account — no reply input. */}
             {isSystemChat ? (
               <View style={{
@@ -1216,6 +1287,49 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   {t('chat.veeTeamNoReply', { defaultValue: 'This is an official Vee Team account. Replies are disabled.' })}
                 </Text>
               </View>
+            ) : voice.isRecording ? (
+            /* ── IMO recording bar (bci.xml): waves + timer + cancel + send ── */
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              paddingHorizontal: 12, paddingVertical: 10,
+              borderTopWidth: 1, borderTopColor: C.border,
+              backgroundColor: C.headerBg, gap: 10 }}>
+              {/* Cancel */}
+              <Pressable onPress={handleVoiceCancel} hitSlop={10}>
+                <View style={{
+                  width: 42, height: 42, borderRadius: 21,
+                  backgroundColor: 'rgba(239,68,68,0.12)',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="x" size={20} color="#EF4444" />
+                </View>
+              </Pressable>
+              {/* Waves + timer */}
+              <View style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center',
+                backgroundColor: C.inputBg, borderRadius: 22,
+                paddingHorizontal: 14, paddingVertical: 10,
+                borderWidth: 1, borderColor: C.border, gap: 10 }}>
+                <View style={{
+                  width: 10, height: 10, borderRadius: 5, backgroundColor: '#EF4444' }} />
+                <Text style={{ color: '#000000', fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+                  {formatVoiceDuration(voice.elapsedSec)}
+                </Text>
+                <VoiceWaves />
+                <Text style={{ color: C.muted, fontSize: 12, flex: 1 }} numberOfLines={1}>
+                  {t('chat.recording', { defaultValue: 'Recording…' })}
+                </Text>
+              </View>
+              {/* Send recording */}
+              <Pressable onPress={handleVoiceSend} disabled={uploadingVoice} hitSlop={8}>
+                <View style={{
+                  width: 50, height: 50, borderRadius: 25,
+                  backgroundColor: '#009dff',
+                  alignItems: 'center', justifyContent: 'center',
+                  opacity: uploadingVoice ? 0.6 : 1 }}>
+                  <Feather name="send" size={20} color="#fff" />
+                </View>
+              </Pressable>
+            </View>
             ) : (
             <View style={{
               flexDirection: 'row', alignItems: 'flex-end',
@@ -1242,7 +1356,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   flex: 1, minHeight: 40, maxHeight: 110,
                   backgroundColor: C.inputBg,
                   borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
-                  color: '#000000', fontSize: 15,
+                  color: '#000000', fontSize: 16,
                   borderWidth: 1, borderColor: C.border }}
                 placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
                 placeholderTextColor={C.muted}
@@ -1254,19 +1368,28 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 returnKeyType="send"
               />
 
-              {/* Send */}
-              <Pressable onPress={handleSend} disabled={!inputText.trim() || blockDirection !== 'none' || !user?.uid}>
-                <View style={{
-                  width: 42, height: 42, borderRadius: 21,
-                  backgroundColor: inputText.trim() ? C.primary : 'rgba(124,58,237,0.2)',
-                  alignItems: 'center', justifyContent: 'center',
-                  shadowColor: C.primary,
-                  shadowOpacity: inputText.trim() ? 0.25 : 0,
-                  shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
-                  elevation: inputText.trim() ? 6 : 0 }}>
-                  <Feather name="send" size={18} color={inputText.trim() ? '#fff' : C.dim} />
-                </View>
-              </Pressable>
+              {/* IMO send/mic circle (beb.xml): 50dp #009dff — mic when the
+                  input is empty, send arrow when there is text. */}
+              {inputText.trim() ? (
+                <Pressable onPress={handleSend} disabled={blockDirection !== 'none' || !user?.uid} hitSlop={8}>
+                  <View style={{
+                    width: 50, height: 50, borderRadius: 25,
+                    backgroundColor: '#009dff',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Feather name="send" size={20} color="#fff" />
+                  </View>
+                </Pressable>
+              ) : (
+                <Pressable onPress={handleMicPress} disabled={blockDirection !== 'none' || !user?.uid || uploadingVoice} hitSlop={8}>
+                  <View style={{
+                    width: 50, height: 50, borderRadius: 25,
+                    backgroundColor: '#009dff',
+                    alignItems: 'center', justifyContent: 'center',
+                    opacity: uploadingVoice ? 0.6 : 1 }}>
+                    <Feather name={uploadingVoice ? 'loader' : 'mic'} size={20} color="#fff" />
+                  </View>
+                </Pressable>
+              )}
             </View>
             )}
           </KeyboardAvoidingView>
