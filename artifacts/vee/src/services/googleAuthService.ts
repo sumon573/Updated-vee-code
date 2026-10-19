@@ -11,6 +11,7 @@
 import * as WebBrowser from 'expo-web-browser';
 import {
   GoogleAuthProvider,
+  reauthenticateWithCredential,
   signInWithCredential,
   type User,
 } from 'firebase/auth';
@@ -29,10 +30,12 @@ export const GOOGLE_AUTH_NOT_WIRED = 'GOOGLE_AUTH_NOT_WIRED';
 export const GOOGLE_AUTH_CANCELLED = 'GOOGLE_AUTH_CANCELLED';
 
 /**
- * Start Google sign-in via system browser OAuth.
- * Opens Google's account picker, returns after Firebase session is established.
+ * Run the system-browser Google OAuth flow and return a fresh ID token.
+ * Extracted (2026-10-19) so account-deletion reauth can re-run the exact
+ * same flow without duplicating it. The flow itself is unchanged.
+ * Throws GOOGLE_AUTH_CANCELLED when the user backs out of the browser.
  */
-export async function signInWithGoogle(): Promise<User> {
+export async function getGoogleIdToken(): Promise<string> {
   // Build Google OAuth URL (implicit flow for ID token)
   const authUrl =
     'https://accounts.google.com/o/oauth2/v2/auth' +
@@ -60,10 +63,29 @@ export async function signInWithGoogle(): Promise<User> {
   if (!idToken) {
     throw new Error('Google sign-in did not return an ID token.');
   }
+  return idToken;
+}
 
+/**
+ * Start Google sign-in via system browser OAuth.
+ * Opens Google's account picker, returns after Firebase session is established.
+ */
+export async function signInWithGoogle(): Promise<User> {
+  const idToken = await getGoogleIdToken();
   const credential = GoogleAuthProvider.credential(idToken);
   const { user } = await signInWithCredential(jsAuth, credential);
   return user;
+}
+
+/**
+ * Re-authenticate the current Firebase user with a fresh Google sign-in.
+ * Google-created accounts have no password, so EmailAuthProvider reauth can
+ * never succeed for them — re-running the Google flow is the only path
+ * (used by Settings → Delete Account).
+ */
+export async function reauthenticateWithGoogle(currentUser: User): Promise<void> {
+  const idToken = await getGoogleIdToken();
+  await reauthenticateWithCredential(currentUser, GoogleAuthProvider.credential(idToken));
 }
 
 /**

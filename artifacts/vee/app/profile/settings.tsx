@@ -225,6 +225,11 @@ export default function SettingsScreen() {
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // 2026-10-19: Google-created accounts have no password — the delete modal
+  // offers Google re-confirmation instead of a password field.
+  const deleteProviderIds = (auth.currentUser?.providerData || []).map((p) => p.providerId);
+  const deleteIsGoogleOnly =
+    !deleteProviderIds.includes('password') && deleteProviderIds.includes('google.com');
 
   // ── Load toggle settings from Firebase ────────────────────────────────
   useEffect(() => {
@@ -307,22 +312,54 @@ export default function SettingsScreen() {
   }, [user?.uid, t]);
 
   // ── Delete Account ────────────────────────────────────────────────────
+  // 2026-10-19: branch reauth by sign-in provider. Google-created accounts
+  // have no password, so EmailAuthProvider reauth could never succeed for
+  // them — they re-run the Google sign-in flow for a fresh credential.
   const handleDeleteAccount = useCallback(async () => {
-    if (!deletePassword.trim()) {
-      Alert.alert(t('settings.error'), t('settings.enterPassword'));
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert(t('settings.error'), t('settings.noSession'));
       return;
     }
-    const currentUser = auth.currentUser;
-    if (!currentUser?.email) {
-      Alert.alert(t('settings.error'), t('settings.noSession'));
+    const providerIds = (currentUser.providerData || []).map((p) => p.providerId);
+    const hasPasswordProvider = providerIds.includes('password');
+    const hasGoogleProvider = providerIds.includes('google.com');
+
+    if (hasPasswordProvider) {
+      if (!currentUser.email) {
+        Alert.alert(t('settings.error'), t('settings.noSession'));
+        return;
+      }
+      if (!deletePassword.trim()) {
+        Alert.alert(t('settings.error'), t('settings.enterPassword'));
+        return;
+      }
+    } else if (!hasGoogleProvider) {
+      // Unknown provider — no supported reauth path.
+      Alert.alert('Error', 'This account cannot be deleted here. Please contact support.');
       return;
     }
 
     setDeleteLoading(true);
     try {
       // Reauthenticate first (required for sensitive operations)
-      const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
-      await reauthenticateWithCredential(currentUser, credential);
+      if (hasPasswordProvider) {
+        const credential = EmailAuthProvider.credential(currentUser.email!, deletePassword);
+        await reauthenticateWithCredential(currentUser, credential);
+      } else {
+        // Google-created account — re-run the Google sign-in flow.
+        const { reauthenticateWithGoogle, GOOGLE_AUTH_CANCELLED } =
+          await import('@/src/services/googleAuthService');
+        try {
+          await reauthenticateWithGoogle(currentUser);
+        } catch (reauthErr) {
+          if ((reauthErr as { code?: string })?.code === GOOGLE_AUTH_CANCELLED) {
+            Alert.alert('Error', 'Google confirmation was cancelled.');
+            return;
+          }
+          throw reauthErr;
+        }
+      }
 
       // Remove user data from Firebase RTDB (best-effort cleanup; the
       // auth deletion below is what matters for the user's request)
@@ -502,23 +539,39 @@ export default function SettingsScreen() {
             </Text>
             <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20, marginBottom: 20 }}>
               This action is permanent and cannot be undone. All your data will be deleted.{'\n\n'}
-              Enter your current password to confirm.
+              {deleteIsGoogleOnly
+                ? 'Confirm with your Google account to continue — no password needed.'
+                : 'Enter your current password to confirm.'}
             </Text>
 
-            <TextInput
-              value={deletePassword}
-              onChangeText={setDeletePassword}
-              placeholder="Enter your password"
-              placeholderTextColor={C.mutedDim}
-              secureTextEntry
-              autoCapitalize="none"
-              style={{
+            {deleteIsGoogleOnly ? (
+              <View style={{
                 backgroundColor: '#F2F2F7',
                 borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-                color: C.text, fontSize: 15,
                 borderWidth: 1, borderColor: '#E5E5EA',
-                marginBottom: 20 }}
-            />
+                marginBottom: 20,
+                flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Feather name="shield" size={18} color={C.glow} />
+                <Text style={{ color: C.text, fontSize: 14, flex: 1, lineHeight: 20 }}>
+                  You'll sign in with Google again to confirm it's you.
+                </Text>
+              </View>
+            ) : (
+              <TextInput
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                placeholder="Enter your password"
+                placeholderTextColor={C.mutedDim}
+                secureTextEntry
+                autoCapitalize="none"
+                style={{
+                  backgroundColor: '#F2F2F7',
+                  borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+                  color: C.text, fontSize: 15,
+                  borderWidth: 1, borderColor: '#E5E5EA',
+                  marginBottom: 20 }}
+              />
+            )}
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <Pressable
@@ -543,7 +596,9 @@ export default function SettingsScreen() {
               >
                 {deleteLoading
                   ? <PremiumLoader size="small" />
-                  : <Text style={{ color: C.red, fontWeight: '900' }}>Delete Forever</Text>}
+                  : <Text style={{ color: C.red, fontWeight: '900' }}>
+                      {deleteIsGoogleOnly ? 'Confirm with Google' : 'Delete Forever'}
+                    </Text>}
               </Pressable>
             </View>
           </View>
