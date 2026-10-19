@@ -25,7 +25,9 @@ import {
   SvipState, hasSvipPrivilege } from '@/src/features/svip/svipService';
 import { SVIP_TIERS, SVIP_PRIVILEGES } from '@/src/features/svip/svipConfig';
 
-const SVIP_CROWN = require('@/assets/nobel/crown-ssking.png');
+import { ART_CROWN_SSKING } from '@/src/features/nobel/nobelArt';
+
+const SVIP_CROWN = { uri: ART_CROWN_SSKING };
 
 function formatExpiry(ts: number): string {
   const d = new Date(ts);
