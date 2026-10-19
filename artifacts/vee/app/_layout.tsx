@@ -56,7 +56,7 @@ import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigation
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
-import { getUser } from '@/src/services/userService';
+import { getUser, type VeeUser } from '@/src/services/userService';
 import { ThemeProvider } from '@/src/context/ThemeContext';
 import { LanguageProvider, useLanguage } from '@/src/context/LanguageContext';
 // Side-effect import: initialises i18next with all four language resources.
@@ -236,7 +236,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         // exists so a slow network never blocks an existing user.
         const result = await withTimeout(getUser(user.uid), 8000);
         if (cancelled) return;
-        setHasProfile(result.timedOut ? true : !!result.value);
+        // 2026-10-19 onboarding fix: AuthContext auto-creates an incomplete
+        // profile (profileComplete: false) while this check runs — route on
+        // the flag, not mere existence. Legacy profiles (flag undefined)
+        // count as complete; the timeout stays fail-open for slow networks.
+        const profile = result.timedOut ? null : (result.value as VeeUser | null);
+        const complete = result.timedOut
+          ? true
+          : !!profile && profile.profileComplete !== false;
+        setHasProfile(complete);
         setProfileChecked(true);
       } catch {
         // On error, assume profile exists to avoid blocking existing users.

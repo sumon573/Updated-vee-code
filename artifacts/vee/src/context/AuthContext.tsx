@@ -257,6 +257,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   createdAt: Date.now(),
                   lastSeen: Date.now(),
                   online: true,
+                  // 2026-10-19 onboarding fix: mark auto-created profiles
+                  // incomplete — AuthGuard routes on this flag (not mere
+                  // existence) so new users always land on complete-profile,
+                  // which then REUSES the already-reserved vId.
+                  profileComplete: false,
                 }).catch(() => {});
               } else {
                 const updates: Record<string, string> = {};

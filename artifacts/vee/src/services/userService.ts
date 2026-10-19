@@ -56,6 +56,12 @@ export type VeeUser = {
   activeEntryEffect?: string;
   /** 4-digit premium Short ID (2026-10-09). Displayed in gold badge. */
   shortId?: string;
+  /**
+   * Onboarding (2026-10-19): false on AuthContext auto-created profiles
+   * until the user finishes complete-profile. Legacy profiles (created
+   * before this flag) have it undefined and count as complete.
+   */
+  profileComplete?: boolean;
   /** Official verified badge (2026-10-09). Granted by admins only. */
   officialBadge?: { grantedBy: string; grantedAt: number };
   /**
@@ -161,6 +167,8 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
     officialBadge: raw.officialBadge && typeof raw.officialBadge === 'object'
       ? { grantedBy: String(raw.officialBadge.grantedBy ?? ''), grantedAt: Number(raw.officialBadge.grantedAt ?? 0) }
       : undefined,
+    // Onboarding flag (2026-10-19) — undefined on legacy profiles = complete.
+    profileComplete: typeof raw.profileComplete === 'boolean' ? raw.profileComplete : undefined,
   };
 }
 

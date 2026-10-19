@@ -16,7 +16,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
 import { getCurrentUser } from '@/src/services/authService';
-import { createUser, setupPresence, generateAndReserveVId } from '@/src/services/userService';
+import { createUser, getUser, setUserVId, setupPresence, updateUser, generateAndReserveVId } from '@/src/services/userService';
 import { initializeWallet } from '@/src/features/wallet/walletService';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import generateVId from '@/src/utils/generateVId';
@@ -73,8 +73,18 @@ export default function CompleteProfileScreen() {
       setLoading(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Reserve a unique Vee ID
-      const vId = await generateAndReserveVId(fbUser.uid, generateVId);
+      // 2026-10-19 onboarding fix: AuthContext usually auto-created the
+      // profile already (profileComplete: false) and reserved a Vee ID via
+      // backfill — REUSE it instead of reserving a second one (the old code
+      // orphaned the first reservation on every race).
+      const existing = await getUser(fbUser.uid).catch(() => null);
+      let vId = existing?.vId || '';
+      if (!vId) {
+        vId = await generateAndReserveVId(fbUser.uid, generateVId);
+        if (existing) {
+          await setUserVId(fbUser.uid, vId);
+        }
+      }
 
       // Upload avatar if it's a local file (Google photoURL is already remote)
       let photoURL = fbUser.photoURL ?? '';
@@ -94,16 +104,29 @@ export default function CompleteProfileScreen() {
         photoURL = photoLocalUri;
       }
 
-      await createUser({
-        uid: fbUser.uid,
-        vId,
-        name: trimmedName,
-        email: fbUser.email ?? '',
-        photoURL,
-        bio: '',
-        createdAt: Date.now(),
-        lastSeen: Date.now(),
-        online: true });
+      if (existing) {
+        // Complete the auto-created profile in place — name/photo only.
+        await updateUser(fbUser.uid, {
+          name: trimmedName,
+          photoURL,
+          bio: '',
+          profileComplete: true,
+        });
+      } else {
+        // No profile at all (auto-create failed) — create it fully.
+        await createUser({
+          uid: fbUser.uid,
+          vId,
+          name: trimmedName,
+          email: fbUser.email ?? '',
+          photoURL,
+          bio: '',
+          createdAt: Date.now(),
+          lastSeen: Date.now(),
+          online: true,
+          profileComplete: true,
+        });
+      }
 
       await initializeWallet(fbUser.uid).catch(() => {});
       setupPresence(fbUser.uid);
