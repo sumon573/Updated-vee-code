@@ -29,7 +29,7 @@
  * Ripple, Seat Priority) are flagged enforced:false and the UI shows
  * them honestly as locked — never as unlocked-but-dead.
  */
-import { ref, onValue, get, set, runTransaction, remove } from 'firebase/database';
+import { ref, onValue, get, set, update, runTransaction, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
 import { rewardsForRank, rewardIcon } from './nobleRewardsCatalog';
@@ -373,19 +373,28 @@ async function revokeNobleRankItems(uid: string, rankIndex: number): Promise<voi
   } catch {}
 }
 
-/* ── 2026-10-16 (Sumon): Renew reward validity on successful maintenance ── */
+/* ── 2026-10-16 (Sumon): Renew reward validity on successful maintenance ──
+ * 2026-10-19 perf: (1) skip when the stored deadline already equals the new
+ * one — same-rank gifts recompute an identical deadline, so one cheap read
+ * guards five no-op writes; (2) the five writes are one atomic multi-path
+ * update instead of five separate sets. */
 async function renewNobleRankValidity(uid: string, rankIndex: number, newDeadline: number): Promise<void> {
   const rank = NOBLE_RANKS[rankIndex];
   if (!rank || !uid) return;
   const key = rank.key;
-  const paths = [
-    `users/${uid}/frames/noble-frame-${key}/validity`,
-    `users/${uid}/badges/noble-badge-${key}/validity`,
-    `users/${uid}/nameplates/noble-plate-${key}/validity`,
-    `users/${uid}/ripples/noble-ripple-${key}/validity`,
-    `users/${uid}/entryEffects/noble-effect-${key}/validity`,
-  ];
-  await Promise.all(paths.map(p => set(ref(database, p), newDeadline).catch(() => {})));
+  try {
+    const cur = await get(ref(database, `users/${uid}/frames/noble-frame-${key}/validity`));
+    if (cur.exists() && cur.val() === newDeadline) return; // unchanged — skip
+  } catch {
+    // Read failed — fall through and write (safe).
+  }
+  const updates: Record<string, number> = {};
+  updates[`users/${uid}/frames/noble-frame-${key}/validity`] = newDeadline;
+  updates[`users/${uid}/badges/noble-badge-${key}/validity`] = newDeadline;
+  updates[`users/${uid}/nameplates/noble-plate-${key}/validity`] = newDeadline;
+  updates[`users/${uid}/ripples/noble-ripple-${key}/validity`] = newDeadline;
+  updates[`users/${uid}/entryEffects/noble-effect-${key}/validity`] = newDeadline;
+  await update(ref(database), updates).catch(() => {});
 }
 
 /* ── 2026-10-15 (Sumon): Self-healing — grant missing rank items ──

@@ -450,7 +450,7 @@ async function sendGiftViaFirebase(
   priceOverride?: number,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
-  const { ref, runTransaction, push, set, serverTimestamp, get, increment } = await import('firebase/database');
+  const { ref, runTransaction, push, set, update, serverTimestamp, get, increment } = await import('firebase/database');
   const { database } = await import('@/src/config/firebase');
 
   const fromUid = auth.currentUser?.uid;
@@ -611,38 +611,42 @@ async function sendGiftViaFirebase(
   // Idempotent: replayed gifts return early at Step 0, so this runs exactly
   // once per idempotency key. Atomic under concurrency (runTransaction in
   // recordNobleXP). Non-critical — the gift itself already completed.
+  // 2026-10-19 perf: FIRE-AND-FORGET — the gift already completed; XP writes
+  // must not serialize behind (or block) the gift UI's return.
   if (toUid !== fromUid) {
-    try {
-      const { recordNobleXP } = await import('@/src/services/nobleService');
-      await recordNobleXP(fromUid, price);
-    } catch {
-      // XP write failed — gift stands; noble progress for this gift is lost.
-    }
+    import('@/src/services/nobleService').then(({ recordNobleXP }) =>
+      recordNobleXP(fromUid, price).catch(() => {
+        // XP write failed — gift stands; noble progress for this gift is lost.
+      }),
+    ).catch(() => {});
     // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
     // 1 XP per diamond sent. Very slow progression; Gold slowest.
-    try {
-      const { recordLevelXP } = await import('@/src/services/levelService');
-      await recordLevelXP(fromUid, price);
-    } catch {
-      // Level XP failed — non-critical.
-    }
+    import('@/src/services/levelService').then(({ recordLevelXP }) =>
+      recordLevelXP(fromUid, price).catch(() => {
+        // Level XP failed — non-critical.
+      }),
+    ).catch(() => {});
   }
 
-  // Step 4: Write transaction history (best effort, non-blocking)
-  const timestamp = Date.now();
-  try {
-    const senderTxRef = push(ref(database, `wallets/${fromUid}/transactions`));
-    await set(senderTxRef, {
-      type: 'gift_sent',
-      diamonds: -price,
-      toUid,
-      giftId,
-      timestamp,
-      createdAt: serverTimestamp(),
-    });
+  // Step 4: Write transaction history (best effort, fire-and-forget).
+  // 2026-10-19 perf: one atomic multi-path update instead of two sequential
+  // sets, and not awaited — history must never block the gift UI.
+  {
+    const timestamp = Date.now();
+    const senderTxKey = push(ref(database, `wallets/${fromUid}/transactions`)).key ?? `tx_${timestamp}`;
+    const historyUpdates: Record<string, unknown> = {
+      [`wallets/${fromUid}/transactions/${senderTxKey}`]: {
+        type: 'gift_sent',
+        diamonds: -price,
+        toUid,
+        giftId,
+        timestamp,
+        createdAt: serverTimestamp(),
+      },
+    };
     if (toUid !== fromUid) {
-      const recipientTxRef = push(ref(database, `wallets/${toUid}/transactions`));
-      await set(recipientTxRef, {
+      const recipientTxKey = push(ref(database, `wallets/${toUid}/transactions`)).key ?? `tx_${timestamp}_r`;
+      historyUpdates[`wallets/${toUid}/transactions/${recipientTxKey}`] = {
         type: 'gift_received',
         diamonds: recipientAmount,
         fromUid,
@@ -652,22 +656,23 @@ async function sendGiftViaFirebase(
         // Platform commission info (for transparency)
         originalPrice: price,
         platformCommission,
-      });
+      };
     }
+    update(ref(database), historyUpdates).catch(() => {
+      // History write failed — gift already completed, don't fail
+    });
     // 2026-10-15 (Sumon): permanent lifetime gift count (self-gifts excluded).
     if (toUid !== fromUid) {
       recordGiftReceivedCount(toUid, giftId).catch(() => {});
     }
-  } catch {
-    // History write failed — gift already completed, don't fail
   }
 
-  // Weekly leaderboard stats (best-effort; self-gifts excluded inside).
-  try {
-    const { auth: lbAuth } = await import('@/src/config/firebase');
-    const me = lbAuth.currentUser;
+  // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
+  // 2026-10-19 perf: not awaited — must not block the gift UI.
+  {
+    const me = auth.currentUser;
     if (me && toUid !== fromUid) {
-      await recordWeeklyLeaderboardStats({
+      recordWeeklyLeaderboardStats({
         fromUid,
         toUid,
         price,
@@ -676,10 +681,10 @@ async function sendGiftViaFirebase(
         senderPhotoURL: me.photoURL,
         receiverName: toName,
         receiverPhotoURL: toPhotoURL,
+      }).catch(() => {
+        // Non-critical
       });
     }
-  } catch {
-    // Non-critical
   }
 
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
@@ -737,25 +742,26 @@ export async function sendGift({
       // 2026-10-16 (Sumon): PERMANENT — use actual price (server-driven) for XP, not hardcoded map
       const serverPrice = price ?? GIFT_PRICES[giftId];
       if (serverFromUid && serverPrice && toUid !== serverFromUid) {
-        try {
-          const { recordNobleXP } = await import('@/src/services/nobleService');
-          await recordNobleXP(serverFromUid, serverPrice);
-        } catch {
-          // XP write failed — gift stands; noble progress for this gift is lost.
-        }
+        // 2026-10-19 perf: FIRE-AND-FORGET bookkeeping — the gift already
+        // completed on the server; XP/leaderboard writes must not serialize
+        // behind (or block) the gift UI's return.
+        import('@/src/services/nobleService').then(({ recordNobleXP }) =>
+          recordNobleXP(serverFromUid, serverPrice).catch(() => {
+            // XP write failed — gift stands; noble progress for this gift is lost.
+          }),
+        ).catch(() => {});
         // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
-        try {
-          const { recordLevelXP } = await import('@/src/services/levelService');
-          await recordLevelXP(serverFromUid, serverPrice);
-        } catch {
-          // Level XP failed — non-critical.
-        }
+        import('@/src/services/levelService').then(({ recordLevelXP }) =>
+          recordLevelXP(serverFromUid, serverPrice).catch(() => {
+            // Level XP failed — non-critical.
+          }),
+        ).catch(() => {});
         // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
         recordGiftReceivedCount(toUid, giftId).catch(() => {});
-        // Weekly leaderboard stats (best-effort; self-gifts excluded inside).
-        try {
+        // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
+        {
           const me = auth.currentUser;
-          await recordWeeklyLeaderboardStats({
+          recordWeeklyLeaderboardStats({
             fromUid: serverFromUid,
             toUid,
             price: serverPrice,
@@ -764,9 +770,9 @@ export async function sendGift({
             senderPhotoURL: me?.photoURL,
             receiverName: toName,
             receiverPhotoURL: toPhotoURL,
+          }).catch(() => {
+            // Non-critical
           });
-        } catch {
-          // Non-critical
         }
       }
       return {
