@@ -19,6 +19,7 @@ import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   signInWithGoogle, getGoogleAuthErrorKey } from '@/src/services/googleAuthService';
+import { withTimeout } from '@/src/utils/withTimeout';
 
 const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
 
@@ -73,6 +74,10 @@ export default function ImoLoginScreen() {
   const [notice, setNotice] = useState<{ kind: NoticeKind; text: string } | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  // 2026-10-19 stability fix: the OS can kill the browser activity (or the
+  // deep link back) without the OAuth promise ever settling — the spinner
+  // would run forever. Bound the session and offer an explicit retry.
+  const [googleStalled, setGoogleStalled] = useState(false);
 
   function showNotice(kind: NoticeKind, text: string) {
     setNotice({ kind, text });
@@ -111,13 +116,27 @@ export default function ImoLoginScreen() {
 
   // ─── Google ─────────────────────────────────────────────────────────────────
 
+  // 2026-10-19: browser OAuth can stall if the OS kills the activity without
+  // returning the redirect — the promise never settles. withTimeout never
+  // cancels the underlying session (it keeps running harmlessly); on timeout
+  // we surface an explicit "stuck in browser?" retry instead of an endless
+  // spinner. The OAuth flow itself is untouched.
+  const GOOGLE_OAUTH_TIMEOUT_MS = 120_000;
+
   async function handleGoogle() {
     clearNotice();
     if (googleLoading) return;
     try {
       setGoogleLoading(true);
+      setGoogleStalled(false);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await signInWithGoogle();
+      const result = await withTimeout(signInWithGoogle(), GOOGLE_OAUTH_TIMEOUT_MS);
+      if (result.timedOut) {
+        setGoogleStalled(true);
+        showNotice('info', t('auth.login.googleStalled'));
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        return;
+      }
       // Real wiring lands here signed-in; AuthGuard routes onward.
     } catch (err) {
       showNotice('info', t(getGoogleAuthErrorKey(err) as any));
@@ -125,6 +144,13 @@ export default function ImoLoginScreen() {
     } finally {
       setGoogleLoading(false);
     }
+  }
+
+  function handleGoogleRetry() {
+    // Dismiss the stalled notice and start a fresh OAuth session.
+    setGoogleStalled(false);
+    clearNotice();
+    void handleGoogle();
   }
 
   // ─── Email ──────────────────────────────────────────────────────────────────
@@ -318,7 +344,7 @@ export default function ImoLoginScreen() {
                   </View>
                 )}
 
-                {/* ── Google sign-in (native picker) ──────────────────── */}
+                {/* ── Google sign-in (system-browser OAuth) ───────────────── */}
                 <Pressable
                   onPress={handleGoogle}
                   disabled={googleLoading}
@@ -351,6 +377,30 @@ export default function ImoLoginScreen() {
                     </>
                   )}
                 </Pressable>
+
+                {/* ── Stuck-in-browser recovery (2026-10-19) ────────────────
+                    Visible only after the OAuth session timed out without
+                    returning. One tap starts a fresh session. */}
+                {googleStalled && !googleLoading && (
+                  <Pressable
+                    onPress={handleGoogleRetry}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 52,
+                      borderRadius: 26,
+                      backgroundColor: '#E3F2FD',
+                      gap: 10,
+                      marginTop: 14,
+                      opacity: pressed ? 0.75 : 1 })}
+                  >
+                    <Feather name="refresh-cw" size={18} color="#007AFF" />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#007AFF' }}>
+                      {t('auth.login.googleStallRetry')}
+                    </Text>
+                  </Pressable>
+                )}
 
                 {/* ── Email sign-in ───────────────────────────────────── */}
                 <Pressable

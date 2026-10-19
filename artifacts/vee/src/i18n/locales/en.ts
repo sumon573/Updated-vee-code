@@ -32,6 +32,8 @@ const en = {
       title: 'Welcome to Vee',
       subtitle: 'Connect with friends through voice rooms and chat.',
       continueWithEmail: 'Continue with Email',
+      googleStalled: 'Google sign-in is stuck in the browser and did not return. You can retry safely.',
+      googleStallRetry: 'Stuck in browser? Tap to retry',
     },
     signup: {
       headerTitle: 'Create Account',
