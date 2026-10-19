@@ -1253,6 +1253,14 @@ export async function rejectSeatRequest(
   }
 }
 
+/** Waiter cancels their own seat request (needs rules: requester may delete own request — see report). */
+export async function cancelSeatRequest(
+  roomId: string,
+  requestId: string,
+): Promise<void> {
+  await remove(ref(database, `roomSeatRequests/${roomId}/${requestId}`));
+}
+
 // ─── Room Block System (Firebase-persisted) ───────────────────────────────────
 
 export type RoomBlockRecord = {
