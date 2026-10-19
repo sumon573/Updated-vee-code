@@ -27,6 +27,8 @@ export interface SvipTier {
   durationDays: number;
   /** Privilege keys unlocked at this tier (see SVIP_PRIVILEGES) */
   privileges: string[];
+  /** SVIP Points granted on purchase (proportional to tier value) */
+  pointsGranted: number;
 }
 
 export interface SvipPrivilegeDef {
@@ -49,6 +51,7 @@ export const SVIP_TIERS: SvipTier[] = [
     priceDiamonds: 0, // ⚠️ BOSS: set price
     durationDays: 30,
     privileges: ['badge', 'nameplate'],
+    pointsGranted: 100,
   },
   {
     tier: 2,
@@ -57,6 +60,7 @@ export const SVIP_TIERS: SvipTier[] = [
     priceDiamonds: 0, // ⚠️ BOSS: set price
     durationDays: 30,
     privileges: ['badge', 'nameplate', 'entryEffect'],
+    pointsGranted: 300,
   },
   {
     tier: 3,
@@ -65,6 +69,7 @@ export const SVIP_TIERS: SvipTier[] = [
     priceDiamonds: 0, // ⚠️ BOSS: set price
     durationDays: 30,
     privileges: ['badge', 'nameplate', 'entryEffect', 'antiKick', 'kickOut'],
+    pointsGranted: 800,
   },
 ];
 
@@ -95,16 +100,14 @@ export const SVIP_PRIVILEGES: SvipPrivilegeDef[] = [
     name: 'Anti-Kick Privilege',
     icon: '🛡️',
     minTier: 3,
-    enforced: false,
-    todo: 'Needs voice-room moderation hook: SVIP 3 members cannot be kicked/banned from rooms. Out of scope for this change (voice-room files owned by another stream).',
+    enforced: true,
   },
   {
     key: 'kickOut',
     name: 'Kick-Out Privilege',
     icon: '⚡',
     minTier: 3,
-    enforced: false,
-    todo: 'Needs voice-room moderation hook: SVIP 3 members can kick lower-tier users. Out of scope for this change (voice-room files owned by another stream).',
+    enforced: true,
   },
 ];
 

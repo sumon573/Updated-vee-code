@@ -24,6 +24,10 @@ import {
   subscribeSvip, joinSvipWaitlist, isOnSvipWaitlist,
   SvipState, hasSvipPrivilege } from '@/src/features/svip/svipService';
 import { SVIP_TIERS, SVIP_PRIVILEGES } from '@/src/features/svip/svipConfig';
+import {
+  subscribeSvipPoints, getSvipPointsHistory, formatPointsExpiry,
+  SvipPointsState, SvipPointsHistoryEntry,
+} from '@/src/features/svip/svipPointsService';
 
 const SVIP_CROWN = { uri: 'https://vee-club.duckdns.org/nobel-art/crown-ssking.png' };
 
@@ -41,6 +45,8 @@ export default function SvipScreen() {
   const [error, setError] = useState<string | null>(null);
   const [onWaitlist, setOnWaitlist] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [points, setPoints] = useState<SvipPointsState | null>(null);
+  const [pointsHistory, setPointsHistory] = useState<SvipPointsHistoryEntry[]>([]);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
@@ -52,8 +58,10 @@ export default function SvipScreen() {
       (s) => { setSvip(s); setLoading(false); },
       (e) => { setError(getErrorCause(e)); setLoading(false); },
     );
+    const unsubPoints = subscribeSvipPoints(user.uid, setPoints, () => {});
+    getSvipPointsHistory(user.uid).then(setPointsHistory).catch(() => {});
     const timeout = setTimeout(() => setLoading(false), 8000);
-    return () => { clearTimeout(timeout); unsub(); };
+    return () => { clearTimeout(timeout); unsub(); unsubPoints(); };
   }, [user?.uid]);
 
   const handleBecomeSvip = async () => {
@@ -125,6 +133,42 @@ export default function SvipScreen() {
                 </Text>
               )}
             </LinearGradient>
+
+            {/* SVIP Points — IMO integral model: points expire, spent on kick-outs */}
+            {active && (
+              <View style={{
+                marginHorizontal: 20, marginBottom: 10, borderRadius: 14,
+                backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FFE082',
+                padding: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 26 }}>⭐</Text>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#212121' }}>
+                      {points?.balance || 0} SVIP Points
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
+                      {formatPointsExpiry(points?.expiresAt || 0)} • Points expire after 30 days
+                    </Text>
+                  </View>
+                </View>
+                {pointsHistory.length > 0 && (
+                  <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#FFE082', paddingTop: 8 }}>
+                    {pointsHistory.slice(0, 5).map((h, i) => (
+                      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 13, color: '#616161' }} numberOfLines={1}>
+                          {h.reason}
+                        </Text>
+                        <Text style={{
+                          fontSize: 13, fontWeight: '600',
+                          color: h.amount >= 0 ? '#2E7D32' : '#D32F2F' }}>
+                          {h.amount >= 0 ? '+' : ''}{h.amount}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Tier selector */}
             <Text style={{
