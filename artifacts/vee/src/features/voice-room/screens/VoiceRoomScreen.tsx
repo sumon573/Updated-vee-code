@@ -39,6 +39,14 @@ import { GiftsModal } from '../components/GiftsModal';
 import { AnimatedThemeBackground } from '../components/AnimatedThemeBackground';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { EmojiPanel } from '../components/EmojiPanel';
+import { SeatQueueModal } from '../components/SeatQueueModal';
+import { RoomRankModal } from '../components/RoomRankModal';
+import { RoomPropsSheet } from '../components/RoomPropsSheet';
+import { RoomGamesModal } from '../components/games/RoomGamesModal';
+import { VoteGameModal } from '../components/games/VoteGameModal';
+import { TurntableGameModal } from '../components/games/TurntableGameModal';
+import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
+import type { RoomGame, GameType } from '../services/roomGameService';
 import { ExitModal } from '../components/ExitModal';
 import EntryBanner from '../components/EntryBanner';
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
@@ -53,7 +61,7 @@ import {
   grantRoomAdmin, revokeRoomAdmin,
   closeRoom, updateRoomSettings, getUserColor, getInitials,
   disbandRoom,
-  sendSeatRequest, subscribeSeatRequests, approveSeatRequest, rejectSeatRequest,
+  sendSeatRequest, subscribeSeatRequests, cancelSeatRequest,
   type SeatRequest,
   blockUserInRoom, unblockUserInRoom, subscribeRoomBlocks, isUserBlockedInRoom,
   type RoomBlockRecord,
@@ -255,6 +263,17 @@ export default function VoiceRoomScreen() {
   );
   const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
+  // 2026-10-19 (IMO waiting queue): 1-based position of my own pending seat
+  // request in the time-ordered queue, or null when I'm not queued.
+  const myQueuePosition = useMemo(() => {
+    const ordered = [...pendingRequests].sort((a, b) => a.ts - b.ts);
+    const idx = ordered.findIndex((r) => r.userId === myUid);
+    return idx >= 0 ? idx + 1 : null;
+  }, [pendingRequests, myUid]);
+  const myQueuedRequest = useMemo(
+    () => pendingRequests.find((r) => r.userId === myUid) ?? null,
+    [pendingRequests, myUid],
+  );
   const [ownerId,       setOwnerId]      = useState<string>('');
   const [walletBalance, setWalletBalance] = useState(0);
   const [weeklyEarned,  setWeeklyEarned] = useState(0);
@@ -697,6 +716,12 @@ export default function VoiceRoomScreen() {
   const [membersOpen,     setMembersOpen]     = useState(false);
   const [giftsOpen,       setGiftsOpen]       = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
+  // 2026-10-19 (IMO port): waiting queue + games + ranking + props
+  const [seatQueueOpen,   setSeatQueueOpen]   = useState(false);
+  const [gamesOpen,       setGamesOpen]       = useState(false);
+  const [rankOpen,        setRankOpen]        = useState(false);
+  const [propsOpen,       setPropsOpen]       = useState(false);
+  const [gameNav,         setGameNav]         = useState<{ kind: GameType; gameId: string | null } | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
   useEffect(() => {
     if (!activeMember) return;
@@ -2048,85 +2073,8 @@ export default function VoiceRoomScreen() {
               {isOwnerOrAdmin && pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
-                    const req = pendingRequests[0];
-                    if (!req) return;
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    Alert.alert(
-                      t('voiceRoom.screen.seatRequestTitle', { count: pendingRequests.length }),
-                      t('voiceRoom.screen.seatRequestMsg', { name: req.userName, number: req.seatIdx + 1 }),
-                      [
-                        {
-                          text: t('voiceRoom.screen.approve'),
-                          onPress: async () => {
-                            try {
-                              const [seatsSnap, lockedSnap] = await Promise.all([
-                                get(ref(database, `rooms/${roomId}/seats/${req.seatIdx}`)),
-                                get(ref(database, `rooms/${roomId}/lockedSeats/${req.seatIdx}`)),
-                              ]);
-                              if (seatsSnap.exists()) {
-                                Alert.alert(t('voiceRoom.screen.seatNoLongerEmpty'), t('voiceRoom.screen.seatNoLongerEmptyMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {});
-                                return;
-                              }
-                              if (lockedSnap.exists() && lockedSnap.val() === true) {
-                                Alert.alert(t('voiceRoom.screen.seatLocked'), t('voiceRoom.screen.seatLockedMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {});
-                                return;
-                              }
-                              const audienceSnap = await get(ref(database, `rooms/${roomId}/audience/${req.userId}`));
-                              if (!audienceSnap.exists()) {
-                                Alert.alert(
-                                  t('voiceRoom.screen.error'),
-                                  `${req.userName} is no longer in the room.`,
-                                );
-                                rejectSeatRequest(roomId, req.id).catch(() => {});
-                                return;
-                              }
-                              const seatResult = await takeSeat(roomId, req.seatIdx, {
-                                userId: req.userId,
-                                userName: req.userName,
-                                initials: req.initials,
-                                color: req.color,
-                                muted: true,
-                                role: 'member' });
-                              if (!seatResult.success) {
-                                Alert.alert(t('voiceRoom.screen.seatNoLongerEmpty'), t('voiceRoom.screen.seatNoLongerEmptyMsg'));
-                                rejectSeatRequest(roomId, req.id).catch(() => {});
-                                return;
-                              }
-                              await approveSeatRequest(roomId, req.id);
-                              sendRoomChatMsg(roomId, {
-                                senderId: 'system',
-                                senderName: 'System',
-                                senderColor: C.gold,
-                                text: t('voiceRoom.screen.memberJoinedSeatApproved', { name: req.userName, number: req.seatIdx + 1 }),
-                                ts: Date.now() }).catch(() => {});
-                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            } catch (e) {
-                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                              Alert.alert(
-                                t('voiceRoom.screen.error'),
-                                t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
-                              );
-                            }
-                          } },
-                        {
-                          text: t('voiceRoom.screen.reject'),
-                          style: 'destructive',
-                          onPress: () => {
-                            rejectSeatRequest(roomId, req.id).then(() => {
-                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                            }).catch((e: unknown) => {
-                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                              Alert.alert(
-                                t('voiceRoom.screen.error'),
-                                t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
-                              );
-                            });
-                          } },
-                        { text: t('voiceRoom.screen.later'), style: 'cancel' },
-                      ],
-                    );
+                    setSeatQueueOpen(true);
                   }}
                 >
                   <View style={{
@@ -2162,6 +2110,32 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
+            {/* 2026-10-19 (IMO port): Room Games lobby */}
+            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
+                <Text style={{ fontSize: 16 }}>🎮</Text>
+                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                  {t('voiceRoom.games.title')}
+                </Text>
+              </View>
+            </ScalePress>
+            {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
+            {myQueuePosition !== null && (
+              <ScalePress onPress={() => setSeatQueueOpen(true)}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: '#E3F2FD',
+                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
+                  <Feather name="clock" size={14} color="#007AFF" />
+                  <Text style={{ color: '#007AFF', fontSize: 13, fontWeight: '800' }}>
+                    {t('voiceRoom.queue.youAreNext', { n: myQueuePosition })}
+                  </Text>
+                </View>
+              </ScalePress>
+            )}
             {}
             <LiveAudiencePill
               count={allMembers.length}
@@ -2565,6 +2539,86 @@ export default function VoiceRoomScreen() {
         unlockSeat={unlockSeat}
         inviteToSeat={inviteToSeat}
       />
+
+      {/* ── 2026-10-19 (IMO port): waiting queue + games + ranking + props ── */}
+      <SeatQueueModal
+        visible={seatQueueOpen}
+        roomId={roomId}
+        requests={pendingRequests}
+        myUid={myUid}
+        isHost={isOwnerOrAdmin}
+        myPosition={myQueuePosition}
+        onClose={() => setSeatQueueOpen(false)}
+        onCancelMine={() => {
+          if (myQueuedRequest) {
+            cancelSeatRequest(roomId, myQueuedRequest.id)
+              .then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
+              .catch((e: unknown) => Alert.alert(t('voiceRoom.screen.error'), getErrorCause(e)));
+          }
+        }}
+      />
+      <RoomGamesModal
+        visible={gamesOpen}
+        roomId={roomId}
+        isHost={isOwnerOrAdmin}
+        onClose={() => setGamesOpen(false)}
+        onOpenGame={(g: RoomGame) => { setGamesOpen(false); setGameNav({ kind: g.type, gameId: g.id }); }}
+        onCreateGame={(kind: GameType) => { setGamesOpen(false); setGameNav({ kind, gameId: null }); }}
+        onOpenRank={() => { setGamesOpen(false); setRankOpen(true); }}
+        onOpenProps={() => { setGamesOpen(false); setPropsOpen(true); }}
+      />
+      <RoomRankModal
+        visible={rankOpen}
+        roomId={roomId}
+        members={allMembers.map((m) => ({ uid: m.id, name: m.name || '', photoURL: m.photoURL ?? null, color: m.color, initials: m.initials }))}
+        myUid={myUid}
+        onClose={() => setRankOpen(false)}
+      />
+      <RoomPropsSheet
+        visible={propsOpen}
+        roomId={roomId}
+        isOwner={myRole === 'host'}
+        onClose={() => setPropsOpen(false)}
+        onOpenStore={() => { setPropsOpen(false); router.push('/store'); }}
+      />
+      {gameNav?.kind === 'vote' && (
+        <VoteGameModal
+          visible
+          roomId={roomId}
+          hostUid={ownerId || myUid}
+          hostName={myName}
+          seats={seats.filter((s): s is Participant => !!s).map((s) => ({ uid: s.id, name: s.name || '', photoURL: s.photoURL ?? null, color: s.color, initials: s.initials }))}
+          gameId={gameNav.gameId}
+          isHost={isOwnerOrAdmin}
+          onClose={() => setGameNav(null)}
+          onOpenGifts={() => { setGameNav(null); setGiftsOpen(true); }}
+        />
+      )}
+      {gameNav?.kind === 'turntable' && (
+        <TurntableGameModal
+          visible
+          roomId={roomId}
+          hostUid={ownerId || myUid}
+          hostName={myName}
+          myUid={myUid}
+          myName={myName}
+          isHost={isOwnerOrAdmin}
+          onClose={() => setGameNav(null)}
+        />
+      )}
+      {gameNav?.kind === 'luckybag' && (
+        <LuckyBagGameModal
+          visible
+          roomId={roomId}
+          hostUid={ownerId || myUid}
+          hostName={myName}
+          myUid={myUid}
+          myName={myName}
+          myPhotoURL={myPhotoURL ?? null}
+          isHost={isOwnerOrAdmin}
+          onClose={() => setGameNav(null)}
+        />
+      )}
     </View>
     </KeyboardAvoidingView>
   );
