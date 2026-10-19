@@ -900,6 +900,7 @@ removedMsg: 'You have been removed from this room by the host.',
     invalidCall: 'Invalid call link.',
     alreadyInCallTitle: 'Already in a call',
     alreadyInCallMsg: 'You are already in a call. End the current call before starting a new one.',
+    followsSystem: 'Follows system',
   },
   store: {
     shortId: 'Short ID',

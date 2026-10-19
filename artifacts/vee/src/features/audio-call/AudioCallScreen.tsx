@@ -150,7 +150,6 @@ export default function AudioCallScreen({
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutedRef       = useRef(false);
-  const speakerOnRef   = useRef(true);
   /** Unsubscribe for the call-signal reject listener (caller side). */
   const signalUnsubRef = useRef<(() => void) | null>(null);
   /** Unsubscribe for the callee-online presence listener (caller side). */
@@ -165,7 +164,6 @@ export default function AudioCallScreen({
   // ── State ──────────────────────────────────────────────────────────────────
   const [callState, setCallState] = useState<CallState>(callStateRef.current);
   const [muted,     setMuted]     = useState(false);
-  const [speakerOn, setSpeakerOn] = useState(true);
   const [elapsed,   setElapsed]   = useState(0);
   /** Ref mirror of elapsed — endCall's closure needs the live value. */
   const elapsedRef = useRef(0);
@@ -753,19 +751,6 @@ export default function AudioCallScreen({
     } catch { /* non-critical */ }
   }, [roomId, myUid]);
 
-  // ── Speaker toggle ────────────────────────────────────────────────────────
-  const handleToggleSpeaker = useCallback(() => {
-    const session = webrtcRef.current;
-    if (!session) return;
-    try {
-      const newSpeaker = !speakerOnRef.current;
-      speakerOnRef.current = newSpeaker;
-      session.setSpeakerphone(newSpeaker);
-      setSpeakerOn(newSpeaker);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch { /* non-critical */ }
-  }, []);
-
   // ── End call button ───────────────────────────────────────────────────────
   const handleEndCall = useCallback(() => {
     endCall(true);
@@ -880,24 +865,34 @@ export default function AudioCallScreen({
               <Feather name={muted ? 'mic-off' : 'mic'} size={26} color={C.text} />
             </Pressable>
 
-            {/* Speaker toggle */}
-            <Pressable
-              onPress={handleToggleSpeaker}
-              hitSlop={10}
-              style={{
-                width: 68, height: 68, borderRadius: 34,
-                backgroundColor: !speakerOn
-                  ? C.primary
-                  : 'rgba(255,255,255,0.10)',
-                borderWidth: 1.5,
-                borderColor: !speakerOn ? C.glow : 'rgba(255,255,255,0.2)',
-                alignItems: 'center', justifyContent: 'center',
-                shadowColor: !speakerOn ? C.glow : 'transparent',
-                shadowOpacity: 0.5, shadowRadius: 14,
-              }}
-            >
-              <Feather name={speakerOn ? 'volume-2' : 'volume-x'} size={26} color={C.text} />
-            </Pressable>
+            {/* Speaker toggle — DISABLED (2026-10-19): react-native-webrtc
+                exposes no JS API for audio-route switching without the
+                react-native-incall-manager native module (Sumon hasn't
+                approved new native modules), so setSpeakerphone is a no-op
+                and audio follows the OS default route. The button stays as
+                an honest greyed placeholder — never pretend it works. */}
+            <View style={{ alignItems: 'center' }}>
+              <Pressable
+                disabled
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: true }}
+                accessibilityLabel="Speaker follows system audio route"
+                style={{
+                  width: 68, height: 68, borderRadius: 34,
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(255,255,255,0.12)',
+                  alignItems: 'center', justifyContent: 'center',
+                  opacity: 0.45,
+                }}
+              >
+                <Feather name="volume-2" size={26} color={C.muted} />
+              </Pressable>
+              <Text style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>
+                {t('audioCall.followsSystem')}
+              </Text>
+            </View>
           </View>
 
           {/* Minimize (2026-10-11 Issue #8) — only during connected calls */}

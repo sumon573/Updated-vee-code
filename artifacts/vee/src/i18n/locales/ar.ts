@@ -840,6 +840,7 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
     alreadyInCallTitle: 'أنت في مكالمة بالفعل',
     alreadyInCallMsg: 'أنت في مكالمة حالياً. أنهِ المكالمة الحالية قبل بدء مكالمة جديدة.',
+    followsSystem: 'يتبع النظام',
   },
 } as const;
 

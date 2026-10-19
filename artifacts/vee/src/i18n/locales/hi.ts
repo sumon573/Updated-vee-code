@@ -903,6 +903,7 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
     alreadyInCallTitle: 'पहले से ही कॉल पर हैं',
     alreadyInCallMsg: 'आप पहले से ही एक कॉल पर हैं। नई कॉल शुरू करने से पहले वर्तमान कॉल समाप्त करें।',
+    followsSystem: 'सिस्टम का पालन करता है',
   },
 } as const;
 

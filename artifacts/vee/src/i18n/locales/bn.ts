@@ -909,6 +909,7 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     invalidCall: 'Invalid call link.', // TODO i18n: English fallback — needs translation
     alreadyInCallTitle: 'ইতিমধ্যে একটি কলে আছেন',
     alreadyInCallMsg: 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।',
+    followsSystem: 'সিস্টেম অনুসরণ করে',
   },
   store: {
     shortId: 'শর্ট আইডি',
