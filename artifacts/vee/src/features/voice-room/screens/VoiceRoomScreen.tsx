@@ -254,7 +254,20 @@ function LiveDateIcon({ liveCount = 0 }: { liveCount?: number }) {
 // 2026-10-15 (Sumon): MODULE-LEVEL join-message dedup — survives component
 // remounts (background return, etc.). Key: roomId + uid. Prevents "joined"
 // spam when the screen remounts without the restore=1 param.
+// 2026-10-19 polish: capped at 500 entries — a session-long Set never evicting
+// is a slow memory leak; FIFO prune the oldest keys past the cap.
 const sentJoinMsgKeys = new Set<string>();
+const SENT_JOIN_MSG_KEY_CAP = 500;
+function addSentJoinMsgKey(key: string): void {
+  if (sentJoinMsgKeys.size >= SENT_JOIN_MSG_KEY_CAP) {
+    let pruned = 0;
+    for (const oldest of sentJoinMsgKeys) {
+      sentJoinMsgKeys.delete(oldest);
+      if (++pruned >= SENT_JOIN_MSG_KEY_CAP / 2) break;
+    }
+  }
+  sentJoinMsgKeys.add(key);
+}
 
 /* ── ObsidianGiftButton — Option C (2026-10-15, Sumon picked):
    Premium gift button: obsidian dark + gold border, twinkling sparkles
@@ -1806,7 +1819,7 @@ export default function VoiceRoomScreen() {
       const joinKey = `${roomId}:${myUid}`;
       if (!isRestore && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
-        sentJoinMsgKeys.add(joinKey);
+        addSentJoinMsgKey(joinKey);
         sendRoomChatMsg(roomId, {
           senderId: 'system',
           senderName: 'System',

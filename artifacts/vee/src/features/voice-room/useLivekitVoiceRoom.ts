@@ -443,7 +443,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   }
 
   private registerRoomListeners(room: Room): void {
-    const { RoomEvent, ParticipantEvent, Track } = this.lk!;
+    const lk = this.lk;
+    if (!lk) return; // 2026-10-19 polish: guard instead of non-null assertion
+    const { RoomEvent, ParticipantEvent, Track } = lk;
     room
       .on(RoomEvent.ParticipantConnected, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
