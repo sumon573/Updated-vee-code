@@ -32,6 +32,7 @@ import {
   NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
   subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
 import NobleRankPreview from './NobleRankPreview';
+import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
@@ -183,7 +184,14 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     const rankLocked = rankIdx < selectedRankIdx;
     const earned = rankIdx >= def.minRankIndex;
     const enforcedLocked = earned && !def.enforced;
-    const art = PRIV_ART[def.key];
+    // 2026-10-20 (boss): nameplate/badge/frame show the SELECTED rank's own
+    // design from the rewards catalog — not one generic icon for every rank.
+    const rankCat = rewardsForRankKey(selectedRank.key);
+    const perRankUrl = def.key === 'nameplate' ? rankCat?.nameplate?.designUrl
+      : def.key === 'badge' ? rankCat?.badge?.designUrl
+      : def.key === 'avatarFrame' ? rankCat?.frame?.designUrl
+      : undefined;
+    const art = perRankUrl ? { uri: perRankUrl } : PRIV_ART[def.key];
     return (
       <View key={def.key} style={{ width: (width - 48) / 3, alignItems: 'center', marginBottom: 24 }}>
         <View style={{ opacity: rankLocked ? 0.3 : 1, alignItems: 'center' }}>

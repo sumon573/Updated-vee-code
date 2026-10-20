@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { Text, Animated, Easing, View } from 'react-native';
 import { Image } from 'expo-image';
 import AnimatedFrame from '../../../components/AnimatedFrame';
-import NobelFrame from '../../../components/NobelFrame';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { C } from '../constants/theme';
 import { nobleThemeFor } from '@/src/services/nobleService';
@@ -301,12 +300,21 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
             (() => {
               const rankKey = frameType.replace('noble-frame-', '');
               const catalog = rewardsForRankKey(rankKey);
-              const designUrl = catalog?.frame?.designUrl;
-              if (designUrl && /^https?:\/\//i.test(designUrl)) {
-                // 2026-10-15: Frame inner opening is ~51% of image — 1.6x ensures DP fits
-                return <NobelFrame size={size * 1.6} imageUrl={designUrl} />;
+              if (catalog) {
+                // 2026-10-20 (boss): seat frames stay SNUG inside the seat cell —
+                // a still ring in the rank colour. The ornate Nobel frame art
+                // (1.6x canvas) belongs on profile/Nobel screens only, never seats.
+                const ringColor = catalog.rankColor || '#7E57C2';
+                return (
+                  <View style={{
+                    width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
+                    borderWidth: 3, borderColor: ringColor, backgroundColor: 'transparent',
+                    shadowColor: ringColor, shadowOpacity: 0.35, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 0 },
+                  }} />
+                );
               }
-              // Fallback to regular frame if no design URL
+              // Fallback to regular frame if no catalog entry
               return <AnimatedFrame size={size} frameId={frameType} compact />;
             })()
           ) : (
