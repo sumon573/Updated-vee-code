@@ -1163,7 +1163,9 @@ export default function ProfileScreen({
         {isMe && (
           <View style={[cardStyle, { paddingVertical: 4 }]}>
             <MenuRow icon="credit-card" iconBg="#FFF8E6" iconColor="#B8860B" label={t('profile.menuWallet', 'Wallet')} onPress={() => router.push('/profile/wallet')} />
-            {/* 2026-10-20 (boss): Top Up row REMOVED — recharge happens inside Wallet. */}
+            {/* 2026-10-20 (boss): Store row sits where Top Up used to be —
+                one tap from the profile menu into the full store. */}
+            <MenuRow icon="shopping-bag" iconBg="#FCE7F3" iconColor="#DB2777" label={t('profile.menuStore', 'Store')} onPress={() => router.push('/store' as any)} />
             <MenuRow icon="bell" iconBg="#EDE9FE" iconColor="#8B5CF6" label={t('profile.menuNotifications', 'Notifications')} onPress={() => router.push('/profile/notifications')} />
             <MenuRow icon="lock" iconBg="#F4F5F5" iconColor="#788187" label={t('profile.menuPrivacy', 'Privacy')} onPress={() => router.push('/profile/privacy')} />
             <MenuRow icon="help-circle" iconBg="#E8F5E9" iconColor="#34C759" label={t('profile.menuHelp', 'Help & Feedback')} onPress={() => router.push('/profile/help')} />
