@@ -25,6 +25,12 @@ import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
 import { fmtDiamonds, getWeekStart } from '../utils/format';
 import { SeatCard } from '../components/SeatCard';
+import PairLink, { PAIR_LINK_W, PAIR_LINK_H } from '../components/PairLink';
+import { resolveDesign } from '../components/handshakeDesigns';
+import {
+  subscribeIntimacy, intimacyLevelFor, intimacyPairKey,
+} from '../services/intimacyService';
+import { subscribePairHandshake } from '../services/micHandshakeService';
 import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
 import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
@@ -708,6 +714,68 @@ export default function VoiceRoomScreen() {
   
   const giftFlyRef = useRef<GiftFlyHandle>(null);
   const seatViewRefs = useRef<Record<string, View | null>>({});
+
+  // ── Mic Handshake pair links (2026-10-20, Sumon) ──────────────────────
+  // Adjacent seated pairs who share a diamond-sending intimacy relation
+  // get an animated link between their avatars. Premium designs come from
+  // the Store (micHandshakes/{pairKey}); otherwise the free basic design,
+  // coloured + sparkled by the pair's intimacy level.
+  const [pairData, setPairData] = useState<Record<string, { value: number; designKey: string | null }>>({});
+  const adjacentPairs = useMemo(() => {
+    const out: { key: string; a: string; b: string }[] = [];
+    for (let i = 0; i + 1 < seats.length; i++) {
+      if (i % 4 === 3) continue; // row edge — not adjacent
+      const A = seats[i]; const B = seats[i + 1];
+      if (A && B && A.id !== B.id) out.push({ key: intimacyPairKey(A.id, B.id), a: A.id, b: B.id });
+    }
+    return out;
+  }, [seats]);
+  const pairSig = adjacentPairs.map((p) => p.key).join('|');
+  useEffect(() => {
+    if (!adjacentPairs.length) { setPairData({}); return; }
+    const unsubs: (() => void)[] = [];
+    for (const p of adjacentPairs) {
+      unsubs.push(subscribeIntimacy(p.a, p.b, (rec) => {
+        setPairData((prev) => ({ ...prev, [p.key]: { value: rec.value, designKey: prev[p.key]?.designKey ?? null } }));
+      }));
+      unsubs.push(subscribePairHandshake(p.key, (hs) => {
+        setPairData((prev) => ({ ...prev, [p.key]: { value: prev[p.key]?.value ?? 0, designKey: hs?.designKey ?? null } }));
+      }));
+    }
+    return () => { unsubs.forEach((u) => { try { u(); } catch { /* noop */ } }); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pairSig]);
+
+  const gridWrapRef = useRef<View | null>(null);
+  const [cellGeom, setCellGeom] = useState<Record<string, { x: number; y: number; w: number }>>({});
+  const measureCells = useCallback(() => {
+    const grid = gridWrapRef.current as any;
+    if (!grid) return;
+    grid.measureInWindow((gx: number, gy: number) => {
+      const next: Record<string, { x: number; y: number; w: number }> = {};
+      let pending = 0;
+      let finished = false;
+      const done = () => { if (!finished) { finished = true; setCellGeom(next); } };
+      for (const p of adjacentPairs) {
+        for (const uid of [p.a, p.b]) {
+          const v = seatViewRefs.current[uid] as any;
+          if (!v) continue;
+          pending++;
+          v.measureInWindow((x: number, y: number, w: number) => {
+            next[uid] = { x: x - gx, y: y - gy, w };
+            if (--pending === 0) done();
+          });
+        }
+      }
+      if (pending === 0) done();
+      setTimeout(done, 350); // never leave the layer unmeasured
+    });
+  }, [adjacentPairs]);
+  useEffect(() => {
+    const t1 = setTimeout(measureCells, 80);
+    const t2 = setTimeout(measureCells, 450);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [measureCells, pairSig]);
 
   
   const [roomInfoOpen,    setRoomInfoOpen]    = useState(false);
@@ -2356,7 +2424,8 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
+        <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 10 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {seats.map((member: Participant | null, idx: number) => (
             
             <View
@@ -2382,6 +2451,26 @@ export default function VoiceRoomScreen() {
               />
             </View>
           ))}
+        </View>
+        {/* Mic Handshake pair links — between adjacent related seats.
+            Avatar centre sits 47dp below a cell's top (cell pad 6 +
+            pressable pad 4 + avatar margin 6 + half of the 62dp avatar). */}
+        {adjacentPairs.map((p) => {
+          const d = pairData[p.key];
+          if (!d || d.value < 1) return null;
+          const ga = cellGeom[p.a]; const gb = cellGeom[p.b];
+          if (!ga || !gb) return null;
+          const midX = (ga.x + ga.w / 2 + gb.x + gb.w / 2) / 2;
+          return (
+            <View
+              key={p.key}
+              pointerEvents="none"
+              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 47 - PAIR_LINK_H / 2, zIndex: 30 }}
+            >
+              <PairLink design={resolveDesign(d.designKey, intimacyLevelFor(d.value).id)} />
+            </View>
+          );
+        })}
         </View>
 
         {}
