@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, Alert, Modal, Image, Pressable, FlatList, Animated } from 'react-native';
+import { View, Text, Alert, Modal, Pressable, FlatList, Animated } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import MistNameplate from '@/src/components/MistNameplate';
 import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
