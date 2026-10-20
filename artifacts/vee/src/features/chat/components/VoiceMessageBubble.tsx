@@ -9,7 +9,7 @@
  * a time is NOT enforced here — rapid taps on two bubbles just move the
  * "now playing" state; each bubble owns its player and cleans up on unmount.
  */
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
@@ -141,6 +141,29 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
     ? Math.round(Math.min(172, Math.max(64, 52 + totalSec * 3.4)))
     : 64;
 
+  // 2026-10-20 (boss): heartbeat-style WAVEFORM instead of a plain straight
+  // line — a row of bars with varying heights (like a heartbeat trace).
+  // The pattern is seeded by the message uri, so each voice note has its own
+  // stable wave that never changes between renders.
+  const wave = useMemo(() => {
+    const BAR_W = 3;
+    const GAP = 2;
+    const count = Math.max(10, Math.floor((trackWidth + GAP) / (BAR_W + GAP)));
+    let seed = 0;
+    for (let i = 0; i < uri.length; i++) seed = (seed * 31 + uri.charCodeAt(i)) | 0;
+    const heights: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const v = Math.abs(
+        Math.sin(seed * 0.37 + i * 1.7) * 0.6 + Math.sin(seed * 0.11 + i * 0.53) * 0.4,
+      );
+      heights.push(5 + Math.round(v * 15)); // 5..20px
+    }
+    return { heights, BAR_W, GAP };
+  }, [uri, trackWidth]);
+  const filledBars = Math.round(progress * wave.heights.length);
+  const playedColor = isMe ? '#FFFFFF' : C.blue;
+  const idleColor = trackBg;
+
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {/* Play / pause */}
@@ -162,18 +185,21 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
         />
       </Pressable>
 
-      {/* Progress + duration */}
+      {/* Waveform (heartbeat-style) + duration */}
       <View style={{ width: trackWidth }}>
-        <View style={{
-          height: 4, borderRadius: 2,
-          backgroundColor: trackBg,
-          overflow: 'hidden',
-        }}>
-          <View style={{
-            height: 4, borderRadius: 2,
-            width: `${Math.round(progress * 100)}%`,
-            backgroundColor: C.blue,
-          }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', height: 22 }}>
+          {wave.heights.map((h, i) => (
+            <View
+              key={i}
+              style={{
+                width: wave.BAR_W,
+                height: h,
+                borderRadius: 1.5,
+                marginRight: i === wave.heights.length - 1 ? 0 : wave.GAP,
+                backgroundColor: i < filledBars ? playedColor : idleColor,
+              }}
+            />
+          ))}
         </View>
         <Text style={{ color: timeColor, fontSize: 11, marginTop: 4, fontVariant: ['tabular-nums'] }}>
           {playing
