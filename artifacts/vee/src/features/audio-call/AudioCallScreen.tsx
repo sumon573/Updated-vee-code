@@ -35,6 +35,7 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
+import { startOutgoingTone, stopOutgoingTone } from './services/outgoingCallTone';
 import { WebRTCCallSession } from './services/webrtcCallService';
 import { alertMicDeniedWithSettings } from '@/src/utils/permissionAlert';
 // 2026-10-11 Issue #8: call minimize — persist WebRTC session at module level.
@@ -171,6 +172,16 @@ export default function AudioCallScreen({
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callState, setCallState] = useState<CallState>(callStateRef.current);
+  // 2026-10-20 (boss): caller-side progress tones — "calling" and "ringing"
+  // must sound DIFFERENT. Callee role never plays these (it has the incoming
+  // ringtone instead). Stops on connected/connecting/ended/declined/unmount.
+  useEffect(() => {
+    if (role !== 'caller') return;
+    if (callState === 'calling') startOutgoingTone('calling');
+    else if (callState === 'ringing') startOutgoingTone('ringing');
+    else stopOutgoingTone();
+  }, [callState, role]);
+  useEffect(() => () => stopOutgoingTone(), []);
   const [muted,     setMuted]     = useState(false);
   const [elapsed,   setElapsed]   = useState(0);
   /** Ref mirror of elapsed — endCall's closure needs the live value. */
@@ -903,10 +914,12 @@ export default function AudioCallScreen({
                   no JS API for audio-route switching without the
                   react-native-incall-manager native module (not approved), so
                   audio follows the OS default route. Honest greyed placeholder
-                  in IMO's control style — never pretend it works. */}
+                  in IMO's control style — never pretend it works.
+                  2026-10-20 (boss): the "Follows system" label is REMOVED —
+                  icon only, no writing under it. */}
               <CallOptButton
                 icon="volume-2"
-                label={t('audioCall.followsSystem')}
+                label=""
                 disabled
               />
               {callState === 'connected' && (

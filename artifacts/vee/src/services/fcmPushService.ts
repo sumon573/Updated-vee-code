@@ -184,11 +184,17 @@ export function setupNotificationListeners(onTap: (data: Record<string, any>) =>
 export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
-    await Notifications.setNotificationChannelAsync('vee_notifications', {
+    // 2026-10-20 (boss): ALL notifications use ONE unique sound — the bundled
+    // notification_pop.wav (copied to res/raw by the expo-notifications plugin
+    // config in app.json). Android channel settings are immutable after first
+    // creation, so the sound ships on a NEW channel id (v2); the VPS sender
+    // targets this same id. The old 'vee_notifications' channel is abandoned.
+    await Notifications.setNotificationChannelAsync('vee_notifications_v2', {
       name: 'Vee Notifications',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#7C3AED',
+      sound: 'notification_pop.wav',
     });
     console.log('[FCM] Android channel ready');
   } catch (e) {

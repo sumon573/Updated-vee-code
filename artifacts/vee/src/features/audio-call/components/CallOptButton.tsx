@@ -67,16 +67,20 @@ export default function CallOptButton({
           color={disabled ? IMO_CALL.mutedText : IMO_CALL.text}
         />
       </Pressable>
-      <Text
-        style={{
-          color: disabled ? IMO_CALL.mutedText : IMO_CALL.labelText,
-          fontSize: 11,
-          fontWeight: '500',
-          marginTop: 6,
-        }}
-      >
-        {label}
-      </Text>
+      {/* 2026-10-20 (boss): no label text when label is empty (the call
+          speaker button must show NO writing under its icon). */}
+      {label ? (
+        <Text
+          style={{
+            color: disabled ? IMO_CALL.mutedText : IMO_CALL.labelText,
+            fontSize: 11,
+            fontWeight: '500',
+            marginTop: 6,
+          }}
+        >
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 }

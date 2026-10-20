@@ -99,7 +99,14 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/notification_pop.wav"
+          ]
+        }
+      ],
       [
         "expo-image-picker",
         {
