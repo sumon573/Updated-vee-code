@@ -10,6 +10,8 @@ import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import MistNameplate from '@/src/components/MistNameplate';
+import ShimmerNameplate from '@/src/components/ShimmerNameplate';
+import { rankIndexForKey, nobleVisualsAnimated } from '@/src/services/nobleService';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { ref, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
@@ -59,7 +61,7 @@ export function MemberManageModal({
 
   // 2026-10-16 (Sumon): Nobel nameplate next to the role badge — 100x20,
   // same perfect size as the profile screen. Animated (mist) type for Viscount+.
-  const [nameplate, setNameplate] = useState<{ icon: string; mistColor: string | null } | null>(null);
+  const [nameplate, setNameplate] = useState<{ icon: string; mistColor: string | null; rankKey: string | null } | null>(null);
   useEffect(() => {
     let cancelled = false;
     const resolvePlate = (plateId: string) => {
@@ -68,13 +70,13 @@ export function MemberManageModal({
       const mistColor = entry?.nameplate.mistColor || null;
       const designUrl = entry?.nameplate.designUrl;
       if (designUrl && /^https?:\/\//i.test(designUrl)) {
-        if (!cancelled) setNameplate({ icon: designUrl, mistColor });
+        if (!cancelled) setNameplate({ icon: designUrl, mistColor, rankKey });
       } else {
         get(ref(database, `users/${member?.id}/nameplates/${plateId}`)).then((snap) => {
           if (cancelled) return;
           const icon = snap.val()?.icon;
           if (icon && /^https?:\/\//i.test(icon)) {
-            setNameplate({ icon, mistColor });
+            setNameplate({ icon, mistColor, rankKey });
           } else {
             setNameplate(null);
           }
@@ -161,7 +163,14 @@ export function MemberManageModal({
               <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700' }}>{roleLabel}</Text>
             </View>
             {nameplate && (
-              nameplate.mistColor ? (
+              nameplate.rankKey && nobleVisualsAnimated(rankIndexForKey(nameplate.rankKey)) ? (
+                /* 2026-10-20 (boss's order): Count+ nameplates shimmer */
+                <ShimmerNameplate
+                  imageUrl={nameplate.icon}
+                  width={100}
+                  height={20}
+                />
+              ) : nameplate.mistColor ? (
                 <MistNameplate
                   imageUrl={nameplate.icon}
                   mistColor={nameplate.mistColor}
