@@ -3,9 +3,13 @@
     "name": "Vee",
     "slug": "hridoy5",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "updates": {
-      "enabled": false,
+      "url": "https://u.expo.dev/76af2941-e66e-4252-afd1-bed9f3745348",
+      "enabled": true,
       "fallbackToCacheTimeout": 0,
       "checkAutomatically": "ON_ERROR_RECOVERY"
     },
