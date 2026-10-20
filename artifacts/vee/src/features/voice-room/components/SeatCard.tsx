@@ -154,10 +154,12 @@ export const SeatCard = memo(function SeatCard({
                 resizeMode="cover"
               />
             )}
-            {/* 2026-10-19 (IMO port Phase 1): mic badge bottom-right —
-                white when live, red when muted (IMO) */}
+            {/* 2026-10-19 (IMO port Phase 1): mic badge — white when live, red
+                when muted (IMO). 2026-10-20 (boss): moved bottom-RIGHT →
+                bottom-LEFT, because the bottom-right badge covered the
+                Official frame's official logo. */}
             <View style={{
-              position: 'absolute', bottom: 0, right: 0,
+              position: 'absolute', bottom: 0, left: 0,
               width: 18, height: 18, borderRadius: 9,
               backgroundColor: member.muted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
