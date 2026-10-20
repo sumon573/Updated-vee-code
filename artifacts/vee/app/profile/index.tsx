@@ -230,7 +230,7 @@ function LevelBadge({ level }: { level: number }) {
   // 2026-10-16 (Sumon): Tier animations — Bronze static, Silver shimmer,
   // Gold sparkle, Max PREMIUM dazzling. All inside the box only.
   return (
-    <View style={{ marginRight: 6, marginBottom: 6 }}>
+    <View style={{ marginRight: 6 }}>
       <LinearGradient
         colors={style.colors}
         start={{ x: 0, y: 0 }}
@@ -315,7 +315,7 @@ function fmtCompact(n: number): string {
 function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
   // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
   return (
-    <View style={{ marginRight: 6, marginBottom: 6 }}>
+    <View style={{ marginRight: 6 }}>
       <LinearGradient
         colors={colors}
         start={{ x: 0, y: 0 }}
@@ -891,15 +891,17 @@ export default function ProfileScreen({
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
-        {/* ─── Optional cover (IMO ProfileStudio pattern: 148dp, only when skin/cover set) ─── */}
+        {/* ─── Optional cover (IMO ProfileStudio pattern: 148dp, only when skin/cover set).
+            2026-10-20 (boss): cover tap must NOT open Edit — Edit lives only in
+            the bottom Edit button. Cover is display-only now. ─── */}
         {(profileSkin || profile?.coverImageUrl) && (
-          <Pressable onPress={() => { if (isMe) router.push('/profile/edit'); }}>
+          <View>
             <Image
               source={{ uri: (profileSkin ? profileSkin.imageUrl : profile?.coverImageUrl) as string }}
               style={{ width: '100%', height: 148 }}
               resizeMode="cover"
             />
-          </Pressable>
+          </View>
         )}
 
         {/* ─── Header card: avatar + name/ID chain + pills ─── */}
@@ -976,10 +978,11 @@ export default function ProfileScreen({
                   />
                 ) : null}
               </View>
-              {/* Vee ID — NO # prefix (sacred). Tap copies. */}
+              {/* Vee ID — NO # prefix (sacred). ONLY the copy action lives here
+                  (boss 2026-10-20): VID text + copy icon, nothing else. */}
               {vId ? (
                 <Pressable onPress={handleCopyVid} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }} hitSlop={8}>
-                  <Text style={{ fontSize: 14, color: C.muted }}>{vId}</Text>
+                  <Text style={{ fontSize: 14, color: C.muted, flexShrink: 1 }} numberOfLines={1}>{vId}</Text>
                   <Feather name={vidCopied ? 'check' : 'copy'} size={13} color={vidCopied ? C.blue : C.mutedLight} style={{ marginLeft: 6 }} />
                 </Pressable>
               ) : null}
@@ -993,25 +996,26 @@ export default function ProfileScreen({
               ) : null}
               {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 3 }} numberOfLines={2}>{bio}</Text> : null}
             </View>
-            {isMe ? (
-              <Pressable onPress={() => router.push('/profile/edit')} style={{ padding: 6, alignSelf: 'center' }} hitSlop={10}>
-                <Feather name="chevron-right" size={20} color={C.mutedLight} />
-              </Pressable>
-            ) : null}
+            {/* 2026-10-20 (boss): the edit-chevron is REMOVED — Edit is only in
+                the bottom Edit button; nothing in the header opens Edit. */}
           </View>
 
-          {/* ─── Pills: nameplate + Level + Follower — 100x20 uniform, one line (sacred) ─── */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}>
+          {/* ─── Pills: nameplate + Level + Follower — 100x20 uniform, ONE LINE
+              (2026-10-20 boss: restore exact previous arrangement; wrap is OFF,
+              all three pills same size, single line, no break) ─── */}
+          <View style={{ flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 12 }}>
             {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
-              nameplateMist ? (
-                <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
-              ) : (
-                <Image
-                  source={{ uri: activeNameplate.icon }}
-                  style={{ width: 100, height: 20 }}
-                  resizeMode="contain"
-                />
-              )
+              <View style={{ marginRight: 6 }}>
+                {nameplateMist ? (
+                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
+                ) : (
+                  <Image
+                    source={{ uri: activeNameplate.icon }}
+                    style={{ width: 100, height: 20 }}
+                    resizeMode="contain"
+                  />
+                )}
+              </View>
             ) : null}
             <LevelBadge level={userLevel} />
             <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
