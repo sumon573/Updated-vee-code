@@ -37,11 +37,14 @@ import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
 
-// IMO reward artwork — hosted on Vee's VPS (same pattern as IMO gifts):
-// https://vee-club.duckdns.org/nobel-art/<file>  (files: C:\nobel-art\ on VPS)
-// Extracted from IMO's APK CDN (ImageUrlConst) + boss's reference screenshot.
+// Nobel reward artwork — Vee's OWN rank art set (2026-10-20, boss: no IMO
+// art anywhere in the Nobel system). Generic privilege icons are hosted on
+// Vee's VPS: https://vee-club.duckdns.org/nobel-art/<file> (C:\nobel-art\).
 const NOBEL_ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
 const artUri = (f: string) => ({ uri: `${NOBEL_ART_BASE}/${f}` });
+// Per-rank badge art — jsDelivr (vee-admin-dashboard repo, public/nobel/).
+const NOBEL_BADGE_BASE = 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel';
+const badgeUri = (f: string) => ({ uri: `${NOBEL_BADGE_BASE}/${f}` });
 
 const PRIV_ART: Record<string, any> = {
   nameplate: artUri('priv-nameplate.png'),
@@ -55,15 +58,25 @@ const PRIV_ART: Record<string, any> = {
   homepageSkin: artUri('priv-skin.png'),
 };
 
-// Rank tab crown art (IMO). Ranks without a dedicated crown reuse the badge art.
+// Rank tab icons — EVERY rank shows its OWN badge design (2026-10-20;
+// previously only king/sking/ssking had entries and the other 7 ranks all
+// fell back to one shared generic crest).
 const RANK_CROWN: Record<string, any> = {
-  king: artUri('crown-king.png'),
-  sking: artUri('crown-sking.png'),
-  ssking: artUri('crown-ssking.png'),
+  knight: badgeUri('noble-badge-knight.png'),
+  baron: badgeUri('noble-badge-baron.png'),
+  viscount: badgeUri('noble-badge-viscount.png'),
+  count: badgeUri('noble-badge-count.png'),
+  marquis: badgeUri('noble-badge-marquis.png'),
+  duke: badgeUri('noble-badge-duke.png'),
+  royalDuke: badgeUri('noble-badge-royalduke.png'),
+  king: badgeUri('noble-badge-king.png'),
+  sking: badgeUri('noble-badge-sking.png'),
+  ssking: badgeUri('noble-badge-ssking.png'),
 };
 const RANK_CROWN_FALLBACK = artUri('priv-badge.png');
-// IMO's own "Baron I" badge art (reference screenshot)
-const RANK_BADGE_BARON = artUri('rank-badge-baron.png');
+// Baron header badge — Baron's own badge design (jsDelivr). The old VPS
+// rank-badge-baron.png (an IMO screenshot crop) is retired.
+const RANK_BADGE_BARON = badgeUri('noble-badge-baron.png');
 
 const IMO_TEAL = '#1FB5A6';
 const IMO_ORANGE = '#FF9800';
@@ -228,7 +241,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   });
 
   const renderRankBadge = () => {
-    // IMO shows per-rank badge art; we have Baron's actual art.
+    // The header shows Baron's own wide badge slot; other ranks use the pill.
     if (rank.key === 'baron') {
       return (
         <Image source={RANK_BADGE_BARON} style={{ width: 150, height: 52 }} resizeMode="contain" />
