@@ -79,7 +79,6 @@ import {
   isPinVerifiedForSession as isPinVerified,
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
-  sendNobleUpgradeEvent, subscribeNobleUpgrades,
   sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
@@ -269,8 +268,6 @@ export default function VoiceRoomScreen() {
     [blockedRecs, myUid],
   );
   const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number } | null>(null);
-  // 2026-10-20: room-wide "Congratulations to X for upgrading to Y" banner (SKing+).
-  const [upgradeBanner, setUpgradeBanner] = useState<{ name: string; rankIndex: number; runId: number } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   // 2026-10-19 (IMO waiting queue): 1-based position of my own pending seat
   // request in the time-ordered queue, or null when I'm not queued.
@@ -627,61 +624,6 @@ export default function VoiceRoomScreen() {
         ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
     });
   }, [roomId, myUid]);
-
-  // ── 2026-10-20: Noble upgrade banner (SKing+) ────────────────────────────
-  // Receive room-wide "Congratulations to X for upgrading to Y" broadcasts.
-  const lastUpgradeTsRef = useRef(0);
-  const upgradeRunIdRef = useRef(0);
-  useEffect(() => {
-    if (!roomId) return;
-    return subscribeNobleUpgrades(roomId, (event) => {
-      if (!event) return;
-      if (event.ts <= lastUpgradeTsRef.current) return;
-      if (Date.now() - event.ts > 15000) return; // 15s TTL
-      lastUpgradeTsRef.current = event.ts;
-      if (event.uid === myUid) return; // my own upgrade shows NobleLevelUpCelebration instead
-      upgradeRunIdRef.current += 1;
-      setUpgradeBanner({
-        name: event.name || 'A user',
-        rankIndex: event.rankIndex,
-        runId: upgradeRunIdRef.current,
-      });
-    });
-  }, [roomId, myUid]);
-
-  // Broadcast my own rank-up to the room when I reach the Upgrade Banner
-  // privilege (SKing+, rankIndex >= 8). Fires once per increase, like the
-  // personal celebration — never on initial load or demotion.
-  const myUpgradeRankRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!roomId || !myUid || pinGate !== 'passed') return;
-    let alive = true;
-    let unsub: (() => void) | null = null;
-    (async () => {
-      try {
-        const { subscribeNoble, PRIVILEGES } = await import('@/src/services/nobleService');
-        if (!alive) return;
-        const bannerMin = PRIVILEGES.find((p) => p.key === 'upgradeBanner')?.minRankIndex ?? 8;
-        unsub = subscribeNoble(myUid, (s) => {
-          if (!alive) return;
-          const rank = s ? s.rankIndex : 0;
-          const prev = myUpgradeRankRef.current;
-          myUpgradeRankRef.current = rank;
-          if (prev != null && rank > prev && rank >= bannerMin && s && !s.lapsed) {
-            sendNobleUpgradeEvent(roomId, {
-              uid: myUid,
-              name: myName || 'A user',
-              rankIndex: rank,
-            }).catch(() => {});
-          }
-        }, () => {});
-      } catch { /* non-critical — banner broadcast skipped */ }
-    })();
-    return () => {
-      alive = false;
-      try { unsub?.(); } catch {}
-    };
-  }, [roomId, myUid, pinGate, myName]);
 
   const lastGiftTsRef = useRef(0);
   useEffect(() => {
@@ -2703,8 +2645,6 @@ export default function VoiceRoomScreen() {
         giftFlyRef={giftFlyRef}
         entryBanner={entryBanner}
         setEntryBanner={setEntryBanner}
-        upgradeBanner={upgradeBanner}
-        setUpgradeBanner={setUpgradeBanner}
         handleDisband={handleDisband}
         handleViewOtherProfile={handleViewOtherProfile}
         handleViewOwnProfile={handleViewOwnProfile}
