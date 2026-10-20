@@ -36,9 +36,15 @@ import {
   equipStoreItem, unequipStoreItem,
   purchaseRoomStoreItem, getMyOwnedRooms,
   getRoomStoreDecorState, removeRoomBackground, removeRoomMicDecor,
+  purchaseHandshakeForPair, fetchPairHandshakeOnce,
   isExpired,
   type OwnedStoreItem, type EquippedItem, type OwnedRoom,
 } from './storeService';
+import {
+  subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
+  type IntimacyEntry,
+} from '@/src/features/voice-room/services/intimacyService';
+import { HANDSHAKE_DESIGNS } from '@/src/features/voice-room/components/handshakeDesigns';
 import {
   SHORT_ID_CATALOG, RANDOM_SHORT_ID_PRICE,
   type ShortIdItem,
@@ -305,6 +311,12 @@ function PreviewSheet({
 
   const item: StoreCatalogItem | null = preview?.kind === 'catalog' ? preview.item : null;
   const isRoomItem = !!item && (item.type === 'roomBackground' || item.type === 'micDecor');
+  // 2026-10-20 (Sumon): Mic Handshake items are bought FOR A PAIR — the
+  // buyer picks one of their intimacy relations in this sheet.
+  const isHandshakeItem = !!item && item.type === 'micHandshake';
+  const [peers, setPeers] = useState<(IntimacyEntry & { name: string; photoURL: string | null })[]>([]);
+  const [peerUid, setPeerUid] = useState<string>('');
+  const [pairStatus, setPairStatus] = useState<string>('');
 
   // Load ownership / rooms when the sheet opens
   useEffect(() => {
@@ -315,7 +327,28 @@ function PreviewSheet({
     (async () => {
       if (preview.kind === 'catalog' && preview.item) {
         const it = preview.item;
-        if (it.type === 'roomBackground' || it.type === 'micDecor') {
+        if (it.type === 'micHandshake') {
+          // Load my intimacy relations once (first live snapshot), with
+          // display names/photos for the picker.
+          const entries = await new Promise<IntimacyEntry[]>((resolve) => {
+            let done = false;
+            const unsub = subscribeMyIntimacies(uid, (list) => {
+              if (done) return;
+              done = true;
+              unsub();
+              resolve(list.filter((e) => e.value > 0));
+            });
+            setTimeout(() => { if (!done) { done = true; unsub(); resolve([]); } }, 6000);
+          });
+          const withProfiles = await Promise.all(entries.map(async (e) => {
+            const p = await fetchPeerProfile(e.otherUid).catch(() => ({ name: '', photoURL: null }));
+            return { ...e, name: p.name || 'User', photoURL: p.photoURL };
+          }));
+          if (!cancelled) {
+            setPeers(withProfiles);
+            setPeerUid(withProfiles[0]?.otherUid ?? '');
+          }
+        } else if (it.type === 'roomBackground' || it.type === 'micDecor') {
           const rooms = await getMyOwnedRooms(uid);
           if (!cancelled) {
             setMyRooms(rooms);
@@ -347,6 +380,21 @@ function PreviewSheet({
     })();
     return () => { cancelled = true; };
   }, [preview, uid]);
+
+  // Mic Handshake: live pair status for the picked friend.
+  useEffect(() => {
+    if (!isHandshakeItem || !peerUid) { setPairStatus(''); return; }
+    let cancelled = false;
+    (async () => {
+      const hs = await fetchPairHandshakeOnce(uid, peerUid);
+      if (cancelled) return;
+      if (!hs) { setPairStatus(''); return; }
+      const d = HANDSHAKE_DESIGNS[hs.designKey];
+      const days = Math.max(0, Math.ceil((hs.expiresAt - Date.now()) / 86400000));
+      setPairStatus(`Active: ${d?.name || hs.designKey} · ${days}d left`);
+    })();
+    return () => { cancelled = true; };
+  }, [isHandshakeItem, peerUid, uid]);
 
   // 2026-10-16 verification fix: availability must follow the For Account /
   // For Room toggle — a room ID can be taken while the user ID is free.
@@ -395,7 +443,9 @@ function PreviewSheet({
     try {
       const res = isRoomItem
         ? await purchaseRoomStoreItem(uid, item, roomId)
-        : await purchaseStoreItem(uid, item);
+        : isHandshakeItem
+          ? await purchaseHandshakeForPair(uid, item, peerUid)
+          : await purchaseStoreItem(uid, item);
       if (!res.success) {
         Alert.alert('Store', res.error ?? 'Purchase failed');
         return;
@@ -582,6 +632,48 @@ function PreviewSheet({
             showKindToggle={preview.kind !== 'catalog'}
           />
         )}
+        {isHandshakeItem && (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: C.muted, fontSize: 13, fontWeight: '700', marginBottom: 8 }}>
+              Choose your pair — a friend you share intimacy with
+            </Text>
+            {peers.length === 0 ? (
+              <Text style={{ color: C.muted, fontSize: 13 }}>
+                No intimacy relations yet. Send a diamond gift to someone in a voice room first.
+              </Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {peers.map((p) => {
+                    const active = peerUid === p.otherUid;
+                    return (
+                      <Pressable
+                        key={p.pairKey}
+                        onPress={() => setPeerUid(p.otherUid)}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 7,
+                          paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999,
+                          backgroundColor: active ? '#e8f7ff' : '#F4F5F5',
+                          borderWidth: active ? 1.5 : 0, borderColor: '#009dff',
+                        }}>
+                        {p.photoURL
+                          ? <Image source={{ uri: p.photoURL }} style={{ width: 26, height: 26, borderRadius: 13 }} />
+                          : <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#dbeafe' }} />}
+                        <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>{p.name}</Text>
+                        <Text style={{ color: '#ff5da2', fontSize: 11, fontWeight: '800' }}>
+                          Lv.{intimacyLevelFor(p.value).id}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
+            {pairStatus ? (
+              <Text style={{ color: '#059669', fontSize: 12.5, fontWeight: '700', marginTop: 8 }}>{pairStatus}</Text>
+            ) : null}
+          </View>
+        )}
         {preview.kind === 'shortId' && idTaken === true && (
           <Text style={{ color: C.muted, fontSize: 13, textAlign: 'center', marginTop: 10, fontWeight: '700' }}>
             This ID is already taken
@@ -595,11 +687,11 @@ function PreviewSheet({
               doBuyShortId(preview.item);
             } else doBuyShortId(null);
           }}
-          disabled={preview.kind === 'shortId' && idTaken === true}
+          disabled={(preview.kind === 'shortId' && idTaken === true) || (isHandshakeItem && !peerUid)}
           style={{
             backgroundColor: C.black, borderRadius: 16, paddingVertical: 15,
             alignItems: 'center', marginTop: 14,
-            opacity: preview.kind === 'shortId' && idTaken === true ? 0.4 : 1,
+            opacity: (preview.kind === 'shortId' && idTaken === true) || (isHandshakeItem && !peerUid) ? 0.4 : 1,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
