@@ -8,8 +8,11 @@ import React from 'react';
 import { View, Text, Image, Modal, Pressable, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { rewardsForRankKey, rewardIcon } from '@/src/services/nobleRewardsCatalog';
-import { NOBLE_RANKS, formatXP } from '@/src/services/nobleService';
+import { NOBLE_RANKS, formatXP, nobleVisualsAnimated } from '@/src/services/nobleService';
 import MistNameplate from '@/src/components/MistNameplate';
+import ShimmerNameplate from '@/src/components/ShimmerNameplate';
+import AnimatedNobleBadge from '@/src/components/AnimatedNobleBadge';
+import { RotatingSparkles } from '@/src/components/NobelFrame';
 
 type Props = {
   visible: boolean;
@@ -31,6 +34,8 @@ export default function NobleRankPreview({
   const badgeUrl = catalog.badge?.designUrl;
   const frameUrl = catalog.frame?.designUrl;
   const mistColor = catalog.nameplate?.mistColor;
+  // 2026-10-20 (boss's order): Count+ visuals are animated.
+  const animated = nobleVisualsAnimated(rankIndex);
 
   const xpNeeded = Math.max(0, rank.minXP - userXP);
   const isUnlocked = userXP >= rank.minXP;
@@ -128,13 +133,21 @@ export default function NobleRankPreview({
                   </View>
                 )}
                 {frameUrl && /^https?:\/\//i.test(frameUrl) ? (
-                  <Image
-                    source={{ uri: frameUrl }}
-                    style={{
-                      position: 'absolute', width: 144, height: 144,
-                    }}
-                    resizeMode="contain"
-                  />
+                  <>
+                    <Image
+                      source={{ uri: frameUrl }}
+                      style={{
+                        position: 'absolute', width: 144, height: 144,
+                      }}
+                      resizeMode="contain"
+                    />
+                    {/* 2026-10-20 (boss's order): rotating sparkles for Count+ */}
+                    {animated && (
+                      <View style={{ position: 'absolute', left: -11, top: -11, width: 166, height: 166 }}>
+                        <RotatingSparkles size={166} />
+                      </View>
+                    )}
+                  </>
                 ) : null}
               </View>
 
@@ -143,9 +156,16 @@ export default function NobleRankPreview({
                 {userName || 'Vee User'}
               </Text>
 
-              {/* Nameplate - 5:1 ratio matches actual design */}
+              {/* Nameplate - 5:1 ratio matches actual design.
+                  2026-10-20 (boss's order): Count+ gets the shimmer sweep. */}
               {nameplateUrl && /^https?:\/\//i.test(nameplateUrl) ? (
-                mistColor ? (
+                animated ? (
+                  <ShimmerNameplate
+                    imageUrl={nameplateUrl}
+                    width={100}
+                    height={20}
+                  />
+                ) : mistColor ? (
                   <MistNameplate
                     imageUrl={nameplateUrl}
                     mistColor={mistColor}
@@ -171,13 +191,23 @@ export default function NobleRankPreview({
                 </View>
               )}
 
-              {/* Badge */}
+              {/* Badge — 2026-10-20 (boss's order): Count+ gets glow + sparkles */}
               {badgeUrl && /^https?:\/\//i.test(badgeUrl) ? (
-                <Image
-                  source={{ uri: badgeUrl }}
-                  style={{ width: 56, height: 56, marginTop: 12 }}
-                  resizeMode="contain"
-                />
+                animated ? (
+                  <View style={{ marginTop: 12 }}>
+                    <AnimatedNobleBadge
+                      imageUrl={badgeUrl}
+                      size={56}
+                      glowColor={rank.color}
+                    />
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: badgeUrl }}
+                    style={{ width: 56, height: 56, marginTop: 12 }}
+                    resizeMode="contain"
+                  />
+                )
               ) : null}
             </View>
 

@@ -30,8 +30,11 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
-  subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
+  subscribeNoble, formatXP, formatDeadline, refreshNobleState,
+  nobleArtUrl, nobleVisualsAnimated } from '@/src/services/nobleService';
 import NobleRankPreview from './NobleRankPreview';
+import AnimatedNobleBadge from '@/src/components/AnimatedNobleBadge';
+import ShimmerNameplate from '@/src/components/ShimmerNameplate';
 
 const { width } = Dimensions.get('window');
 const ROMAN = ['I', 'II', 'III'];
@@ -220,10 +223,30 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   });
 
   const renderRankBadge = () => {
-    // IMO shows per-rank badge art; we have Baron's actual art.
-    if (rank.key === 'baron') {
+    // 2026-10-20: per-rank REAL badge art from the VPS (rank-{slug}-badge.png).
+    // 2026-10-20 (boss's order): Count+ rank nameplates shimmer and badges
+    // get the glow + sparkle animation; below Count stays static.
+    const badgeUrl = nobleArtUrl(rankIdx, 'badge');
+    const nameplateUrl = nobleArtUrl(rankIdx, 'nameplate');
+    const animated = nobleVisualsAnimated(rankIdx);
+    if (badgeUrl || nameplateUrl) {
       return (
-        <Image source={RANK_BADGE_BARON} style={{ width: 150, height: 52 }} resizeMode="contain" />
+        <View style={{ alignItems: 'center', gap: 8 }}>
+          {badgeUrl && (
+            animated ? (
+              <AnimatedNobleBadge imageUrl={badgeUrl} size={64} glowColor={rank.color} />
+            ) : (
+              <Image source={{ uri: badgeUrl }} style={{ width: 64, height: 64 }} resizeMode="contain" />
+            )
+          )}
+          {nameplateUrl && (
+            animated ? (
+              <ShimmerNameplate imageUrl={nameplateUrl} width={150} height={30} />
+            ) : (
+              <Image source={{ uri: nameplateUrl }} style={{ width: 150, height: 30 }} resizeMode="contain" />
+            )
+          )}
+        </View>
       );
     }
     const crown = RANK_CROWN[rank.key] || RANK_CROWN_FALLBACK;
