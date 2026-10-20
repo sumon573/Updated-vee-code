@@ -520,10 +520,14 @@ export function GiftsModal({
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         maxHeight: '88%', overflow: 'hidden',
       }}>
-        {/* ── 240dp photo header ── */}
+        {/* ── 240dp photo header — 2026-10-20 audit fix (boss's 11:35 report):
+            the header was a FIXED 2418 promo image, so selecting Blossom or
+            Heart still previewed the 5000💎 proposal scene. It now previews
+            the SELECTED gift's own artwork (promo only before any selection). ── */}
         <View style={{ height: HEADER_H, backgroundColor: '#0b1622' }}>
           <ExpoImage
-            source={{ uri: HEADER_IMG }}
+            key={selectedGift?.id || 'promo'}
+            source={{ uri: selectedGift?.animationUrl || selectedGift?.thumbnailUrl || HEADER_IMG }}
             style={{ width: '100%', height: HEADER_H }}
             contentFit="cover"
           />
