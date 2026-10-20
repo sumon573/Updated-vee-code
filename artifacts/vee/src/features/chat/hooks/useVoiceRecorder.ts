@@ -23,6 +23,9 @@ export type VoiceRecording = {
   durationSec: number;
 };
 
+/** 2026-10-20 (boss): voice messages are capped at 2 minutes. */
+export const MAX_VOICE_SEC = 120;
+
 type RecorderState = 'idle' | 'recording';
 
 export function useVoiceRecorder() {
@@ -105,9 +108,13 @@ export function useVoiceRecorder() {
     setState('idle');
     const uri = recorder.uri;
     // AudioRecorder.currentTime is in seconds.
-    const durationSec = Math.max(
-      1,
-      Math.round(recorder.currentTime || (Date.now() - startTimeRef.current) / 1000),
+    // 2026-10-20 (boss): hard cap — a voice message never exceeds 2 minutes.
+    const durationSec = Math.min(
+      MAX_VOICE_SEC,
+      Math.max(
+        1,
+        Math.round(recorder.currentTime || (Date.now() - startTimeRef.current) / 1000),
+      ),
     );
     if (!uri) return null;
     return { uri, durationSec };
