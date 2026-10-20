@@ -6,6 +6,10 @@
  * 2026-10-20 (boss's order): Stories + Calls tabs REMOVED from the bar;
  * the "Me" text is replaced by the user's own profile DP (photo), with a
  * blue ring when selected. Tab content screens themselves are untouched.
+ * 2026-10-20 (boss): the floating voice FAB is GONE — a "Rooms" text tab
+ * sits between Chats and Contacts (four equal slots: Chats · Rooms ·
+ * Contacts · DP). Rooms is an ACTION (opens the voice rooms page), never
+ * a selected tab.
  */
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 
@@ -18,10 +22,13 @@ interface IMOTabBarProps {
   /** 2026-10-20 (boss): the user's profile photo for the Me tab. */
   myAvatar?: string | null;
   onTabPress: (tab: HomeTab) => void;
+  /** 2026-10-20 (boss): Rooms tab action — opens the voice rooms page. */
+  onRoomsPress: () => void;
 }
 
-const TABS: Array<{ key: HomeTab; label: string }> = [
+const TABS: Array<{ key: HomeTab | 'rooms'; label: string }> = [
   { key: 'chats', label: 'Chats' },
+  { key: 'rooms', label: 'Rooms' },
   { key: 'contacts', label: 'Contacts' },
   { key: 'me', label: 'Me' },
 ];
@@ -56,6 +63,7 @@ export default function IMOTabBar({
   chatsBadgeCount = 0,
   myAvatar,
   onTabPress,
+  onRoomsPress,
 }: IMOTabBarProps) {
   return (
     <View
@@ -68,12 +76,12 @@ export default function IMOTabBar({
       }}
     >
       {TABS.map((tab) => {
-        const selected = activeTab === tab.key;
+        const selected = tab.key !== 'rooms' && activeTab === tab.key;
         const badge = tab.key === 'chats' ? chatsBadgeCount : 0;
         return (
           <TouchableOpacity
             key={tab.key}
-            onPress={() => onTabPress(tab.key)}
+            onPress={() => (tab.key === 'rooms' ? onRoomsPress() : onTabPress(tab.key as HomeTab))}
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}

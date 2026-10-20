@@ -423,36 +423,8 @@ export default function IMOHomeScreen() {
             onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
             onClose={closeMenu}
           />
-          {/* Voice rooms FAB — prominent entry point (IMO has no voice tab;
-              Vee's rooms stay one tap away) */}
-          <TouchableOpacity
-            onPress={() => setVoiceRoomsVisible(true)}
-            activeOpacity={0.8}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={{
-              position: 'absolute',
-              right: 18,
-              bottom: 26,
-              width: 58,
-              height: 58,
-              borderRadius: 29,
-              backgroundColor: '#009dff',
-              alignItems: 'center',
-              justifyContent: 'center',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 3 },
-              shadowOpacity: 0.25,
-              shadowRadius: 6,
-              elevation: 6,
-            }}
-          >
-            {/* 2026-10-13 (Sumon): his custom voice icon, হুবহু */}
-            <Image
-              source={require('@/assets/images/voice-tab-icon.png')}
-              style={{ width: 30, height: 30, tintColor: '#FFFFFF' }}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          {/* 2026-10-20 (boss): voice FAB removed — Rooms now lives in the
+              bottom tab bar (Chats · Rooms · Contacts · DP). */}
         </View>
       )}
 
@@ -540,6 +512,7 @@ export default function IMOHomeScreen() {
         callsBadgeCount={missedCalls}
         myAvatar={profile?.photoURL || user?.photoURL || null}
         onTabPress={handleTabPress}
+        onRoomsPress={() => setVoiceRoomsVisible(true)}
       />
     </SafeAreaView>
   );
