@@ -1,17 +1,15 @@
 import {
   useState, useEffect, useRef, useCallback,
 } from 'react';
-import {
-  View, Text, Modal, Pressable, TextInput,
-  Animated, Dimensions, Alert, Image,
-  KeyboardAvoidingView, Platform, ScrollView,
-} from 'react-native';
+import { View, Text, Modal, Pressable, TextInput, Animated, Dimensions, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAudioPlayer } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import Svg, { Polyline } from 'react-native-svg';
 import { UserStories, Story, DrawingStroke } from '../types';
 import { useRealAuthor } from '../hooks/useRealAuthor';
@@ -24,9 +22,43 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 8000;
 
+// 2026-10-20 (boss): fast media everywhere — while one story is on screen,
+// silently pre-download the NEXT story's media so advancing is instant.
+// Images go into expo-image's memory-disk cache (Image.prefetch); videos are
+// downloaded to the app cache dir and played from the local file on open.
+const prefetchedVideoCache = new Map<string, string>(); // remote uri -> local file uri
+const videoDownloadInFlight = new Set<string>();
+function prefetchStoryVideo(remoteUri: string, onDone: () => void): void {
+  if (!remoteUri.startsWith('http')) return;
+  if (prefetchedVideoCache.has(remoteUri) || videoDownloadInFlight.has(remoteUri)) return;
+  videoDownloadInFlight.add(remoteUri);
+  const name = 'storyvid_' + remoteUri.replace(/[^a-zA-Z0-9]/g, '_').slice(-60) + '.mp4';
+  const localUri = (FileSystem.cacheDirectory || '') + name;
+  FileSystem.downloadAsync(remoteUri, localUri)
+    .then((res) => {
+      if (res.status === 200) {
+        prefetchedVideoCache.set(remoteUri, res.uri);
+        onDone();
+      }
+    })
+    .catch(() => { /* prefetch is best-effort */ })
+    .finally(() => { videoDownloadInFlight.delete(remoteUri); });
+}
+function prefetchStoryImage(remoteUri: string): void {
+  if (!remoteUri.startsWith('http')) return;
+  Image.prefetch([remoteUri], 'memory-disk').catch(() => { /* best-effort */ });
+}
+
 /** Real video playback for video-type stories (expo-video). */
-function StoryVideoPlayer({ uri, onDuration, onReady }: { uri: string; onDuration?: (durationMs: number) => void; onReady?: () => void }) {
-  const player = useVideoPlayer(uri, (p) => {
+function StoryVideoPlayer({ uri, storyId, onDuration, onReady }: { uri: string; storyId: string; onDuration?: (durationMs: number) => void; onReady?: () => void }) {
+  // Source locks PER STORY: a prefetch completing mid-view (same story id,
+  // remote->local uri flip) must never swap the playing source; advancing to
+  // a different story adopts that story's (possibly pre-cached) uri.
+  const lockRef = useRef<{ id: string; uri: string }>({ id: storyId, uri });
+  if (lockRef.current.id !== storyId) {
+    lockRef.current = { id: storyId, uri };
+  }
+  const player = useVideoPlayer(lockRef.current.uri, (p) => {
     p.loop = true;
     p.play();
   });
@@ -437,7 +469,8 @@ function StoryCard({
         ) : story.type === 'video' && story.content ? (
           // NOTE 2 (Batch C): video stories play with expo-video
           <StoryVideoPlayer
-            uri={story.content}
+            uri={prefetchedVideoCache.get(story.content) ?? story.content}
+            storyId={story.id}
             onDuration={onVideoDuration ? (ms) => onVideoDuration(story.id, ms) : undefined}
             onReady={onMediaReady ? () => onMediaReady(story.id) : undefined}
           />
@@ -915,6 +948,30 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
       stopTimer();
     }
   }, [visible, startUserIndex]);
+
+  // 2026-10-20 (boss): prefetch the NEXT story's media while this one is on
+  // screen, so advancing feels instant. The tick bump re-renders once a video
+  // lands in the local cache (the playing source itself never swaps — see
+  // StoryVideoPlayer's per-story lock).
+  const [, setPrefetchTick] = useState(0);
+  useEffect(() => {
+    if (!visible) return;
+    const list = storiesRef.current;
+    const ui = userIndexRef.current;
+    const si = storyIndexRef.current;
+    const upcoming: Story[] = [];
+    const curUser = list[ui];
+    if (curUser?.stories[si + 1]) upcoming.push(curUser.stories[si + 1]);
+    const nextUser = list[ui + 1];
+    if (nextUser?.stories[0]) upcoming.push(nextUser.stories[0]);
+    for (const s of upcoming) {
+      if (!s.content) continue;
+      if (s.type === 'image') prefetchStoryImage(s.content);
+      else if (s.type === 'video') {
+        prefetchStoryVideo(s.content, () => setPrefetchTick((n) => n + 1));
+      }
+    }
+  }, [visible, userIndex, storyIndex, stories]);
 
   const currentUser  = stories[userIndex];
   const currentStory = currentUser?.stories[storyIndex];

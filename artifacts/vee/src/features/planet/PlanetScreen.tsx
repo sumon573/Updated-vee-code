@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { View, Text, Image, FlatList, Dimensions, Alert } from 'react-native';
+import { View, Text, FlatList, Dimensions, Alert } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
