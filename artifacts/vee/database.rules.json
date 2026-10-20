@@ -1,5 +1,15 @@
 {
   "rules": {
+    "micHandshakes": {
+      "$pairKey": {
+        ".read": "auth != null",
+        ".write": "auth != null && ($pairKey.beginsWith(auth.uid + '_') || $pairKey.endsWith('_' + auth.uid))",
+        ".validate": "newData.hasChildren(['designKey', 'expiresAt'])",
+        "designKey": { ".validate": "newData.isString()" },
+        "expiresAt": { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "$other": { ".validate": true }
+      }
+    },
     ".read": false,
     ".write": false,
 
