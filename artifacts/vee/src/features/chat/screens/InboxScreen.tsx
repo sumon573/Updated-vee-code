@@ -48,7 +48,7 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import { uploadImage } from '@/src/services/cloudinaryService';
 // 2026-10-19 (IMO port): IMO-style voice messages — record in chat,
 // upload to Vee's Telegram storage, playable bubble.
-import { useVoiceRecorder, formatVoiceDuration } from '../hooks/useVoiceRecorder';
+import { useVoiceRecorder, formatVoiceDuration, MAX_VOICE_SEC } from '../hooks/useVoiceRecorder';
 // 2026-10-19 OOM fix: fullscreen chat image viewer uses expo-image
 // (disk cache + native downsampling). RN core Image decodes full-resolution
 // originals (Telegram serves originals; 20–50MB photos → OOM). Same size.
@@ -665,6 +665,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       setUploadingVoice(false);
     }
   }, [user?.uid, uploadingVoice, effectiveParticipantId, voice, chatId, myUid, t, myRealName, user?.displayName]);
+
+  // 2026-10-20 (boss): 2-minute cap — when the timer hits the limit the
+  // recording auto-sends, exactly as if the user tapped send.
+  useEffect(() => {
+    if (voice.isRecording && voice.elapsedSec >= MAX_VOICE_SEC) {
+      handleVoiceSend();
+    }
+  }, [voice.isRecording, voice.elapsedSec, handleVoiceSend]);
 
   // ── Typing detection ──────────────────────────────────────────────────────
   const handleInputChange = useCallback((text: string) => {
@@ -1312,7 +1320,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 <View style={{
                   width: 10, height: 10, borderRadius: 5, backgroundColor: '#EF4444' }} />
                 <Text style={{ color: '#000000', fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
-                  {formatVoiceDuration(voice.elapsedSec)}
+                  {formatVoiceDuration(voice.elapsedSec)} / 2:00
                 </Text>
                 <VoiceWaves />
                 <Text style={{ color: C.muted, fontSize: 12, flex: 1 }} numberOfLines={1}>
