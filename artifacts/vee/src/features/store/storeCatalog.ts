@@ -26,6 +26,7 @@ export type StoreItemType =
   | 'entryEffect'
   | 'profileSkin'
   | 'soundRipple'
+  | 'micHandshake'
   | 'shortId'
   | 'roomBackground'
   | 'micDecor';
@@ -56,6 +57,7 @@ export const PERSONAL_CATEGORIES = [
   'Entry Effect',
   'Profile Skin',
   'Sound Ripple',
+  'Mic Handshake',
 ] as const;
 
 export const ROOM_CATEGORIES = [
@@ -110,6 +112,7 @@ function defaultCategoryFor(type: StoreItemType, tab: StoreTab): string {
     case 'entryEffect': return 'Entry Effect';
     case 'profileSkin': return 'Profile Skin';
     case 'soundRipple': return 'Sound Ripple';
+    case 'micHandshake': return 'Mic Handshake';
     default: return 'Mic Sticker';
   }
 }

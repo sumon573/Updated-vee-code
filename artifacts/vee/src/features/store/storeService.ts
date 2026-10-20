@@ -28,6 +28,7 @@
 import { ref, get, set, remove, runTransaction } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { debitOwnWallet, InsufficientFundsError } from '@/src/features/wallet/walletService';
+import { intimacyPairKey } from '@/src/features/voice-room/services/intimacyService';
 import type { StoreCatalogItem, StoreItemType } from './storeCatalog';
 
 export interface OwnedStoreItem {
@@ -266,6 +267,72 @@ export async function purchaseStoreItem(
     return { success: true };
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };
+  }
+}
+
+/**
+ * Buy a Mic Handshake design FOR A PAIR (2026-10-20, Sumon).
+ * Same money safety as purchaseStoreItem: server price, atomic debit,
+ * refund if the grant write fails. The grant lives at
+ * `micHandshakes/{pairKey}` — a pair-scoped record, not personal
+ * inventory — and the voice room reads it live. Re-buying replaces the
+ * design and restarts the validity window.
+ */
+export async function purchaseHandshakeForPair(
+  uid: string,
+  item: StoreCatalogItem,
+  peerUid: string,
+): Promise<PurchaseResult> {
+  if (!peerUid || peerUid === uid) return { success: false, error: 'Choose a friend first' };
+  try {
+    const serverItem = await getServerCatalogItem(item.id);
+    if (!serverItem || serverItem.type !== 'micHandshake') {
+      return { success: false, error: 'Item not available' };
+    }
+    const price = serverItem.price;
+    try {
+      await debitOwnWallet(uid, price);
+    } catch (e) {
+      if (e instanceof InsufficientFundsError) {
+        return { success: false, error: 'Not enough diamonds' };
+      }
+      return { success: false, error: 'Payment failed. Try again.' };
+    }
+    const now = Date.now();
+    const pairKey = intimacyPairKey(uid, peerUid);
+    try {
+      await set(ref(database, `micHandshakes/${pairKey}`), {
+        designKey: item.id,
+        itemId: item.id,
+        buyerUid: uid,
+        purchasedAt: now,
+        expiresAt: serverItem.validityDays > 0
+          ? now + serverItem.validityDays * 86400000
+          : 4102444800000, // 2100-01-01 — permanent
+      });
+    } catch {
+      await refundOnGrantFailure(uid, price);
+      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
+    }
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Purchase failed. Try again.' };
+  }
+}
+
+/** Current pair handshake (for the store sheet's status line). */
+export async function fetchPairHandshakeOnce(
+  uid: string,
+  peerUid: string,
+): Promise<{ designKey: string; expiresAt: number } | null> {
+  try {
+    const snap = await get(ref(database, `micHandshakes/${intimacyPairKey(uid, peerUid)}`));
+    if (!snap.exists()) return null;
+    const v = snap.val() as any;
+    if (!v || typeof v.expiresAt !== 'number' || v.expiresAt <= Date.now()) return null;
+    return { designKey: String(v.designKey || ''), expiresAt: v.expiresAt };
+  } catch {
+    return null;
   }
 }
 
