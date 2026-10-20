@@ -25,11 +25,32 @@ const { width, height } = Dimensions.get('window');
 const STORY_DURATION = 8000;
 
 /** Real video playback for video-type stories (expo-video). */
-function StoryVideoPlayer({ uri, onDuration }: { uri: string; onDuration?: (durationMs: number) => void }) {
+function StoryVideoPlayer({ uri, onDuration, onReady }: { uri: string; onDuration?: (durationMs: number) => void; onReady?: () => void }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.play();
   });
+  // 2026-10-20 (boss's concept): the story countdown must NOT run while the
+  // video is still loading/buffering — it starts only when the video is
+  // actually playing on screen. Report that moment once via onReady.
+  const readyFiredRef = useRef(false);
+  useEffect(() => {
+    if (!onReady) return;
+    const sub = player.addListener('playingChange', ({ isPlaying }: { isPlaying: boolean }) => {
+      if (isPlaying && !readyFiredRef.current) {
+        readyFiredRef.current = true;
+        onReady();
+      }
+    });
+    // The video may already be playing by the time the listener attaches.
+    try {
+      if ((player as { playing?: boolean }).playing && !readyFiredRef.current) {
+        readyFiredRef.current = true;
+        onReady();
+      }
+    } catch { /* player not ready yet */ }
+    return () => { sub.remove(); };
+  }, [player, onReady]);
   useEffect(() => {
     return () => {
       try { player.pause(); } catch { /* ignore */ }
@@ -228,13 +249,15 @@ type StoryCardProps = {
   onReact?: (authorUid: string, storyId: string, emoji: string) => Promise<void>;
   onComment?: (authorUid: string, storyId: string, text: string) => Promise<void>;
   onVideoDuration?: (storyId: string, durationMs: number) => void;
+  /** 2026-10-20 (boss): media is actually on screen (video playing / image loaded). */
+  onMediaReady?: (storyId: string) => void;
 };
 
 function StoryCard({
   story, userStories, storyIndex, totalStories,
   progressAnim, onTapLeft, onTapRight, onClose,
   currentUserId, currentUserName, onDelete, onCommentFocus, onCommentBlur,
-  onReact, onComment, onVideoDuration,
+  onReact, onComment, onVideoDuration, onMediaReady,
 }: StoryCardProps) {
   const { t } = useTranslation();
   // Real author name/avatar (2026-10-11): resolves from RTDB if stored name is placeholder.
@@ -416,6 +439,7 @@ function StoryCard({
           <StoryVideoPlayer
             uri={story.content}
             onDuration={onVideoDuration ? (ms) => onVideoDuration(story.id, ms) : undefined}
+            onReady={onMediaReady ? () => onMediaReady(story.id) : undefined}
           />
         ) : story.type === 'audio' && story.content ? (
           // NOTE 2 (Batch C): audio stories play the uploaded file with expo-audio
@@ -429,6 +453,7 @@ function StoryCard({
                 width: width - 40, height: (width - 40) * 1.4, borderRadius: 20,
               }}
               resizeMode="cover"
+              onLoad={onMediaReady ? () => onMediaReady(story.id) : undefined}
             />
             {/* Text overlay (2026-10-11) */}
             {story.overlayText && (
@@ -711,6 +736,11 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
   const elapsedRef = useRef(0);
   const segmentStartRef = useRef<number | null>(null);
   const durationRef = useRef(STORY_DURATION);
+  // 2026-10-20 (boss's concept): ids of image/video stories whose media has
+  // actually appeared on screen (image loaded / video playing). The countdown
+  // for a gated story may only start once its id is in this set; until then
+  // the progress bar stays parked at 0.
+  const readyStoriesRef = useRef<Set<string>>(new Set());
 
   const stopTimer = useCallback(() => {
     animRef.current?.stop();
@@ -755,6 +785,11 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
 
   const resumeTimer = useCallback(() => {
     if (segmentStartRef.current != null) return; // already running
+    // 2026-10-20 (boss): never resume on a story whose media hasn't shown yet —
+    // the countdown only exists once the media is on screen.
+    const curStory = storiesRef.current[userIndexRef.current]?.stories[storyIndexRef.current];
+    if (curStory && (curStory.type === 'video' || curStory.type === 'image')
+        && !readyStoriesRef.current.has(curStory.id)) return;
     const duration = durationRef.current;
     const remaining = Math.max(0, duration - elapsedRef.current);
     if (remaining <= 0) { advance(); return; }
@@ -798,9 +833,18 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
     storyDurationsRef.current[storyId] = durationMs;
     const cur = storiesRef.current[userIndexRef.current]?.stories[storyIndexRef.current];
     if (cur?.id === storyId) {
-      startTimer(durationMs);
+      // Duration alone must not start the countdown (boss 2026-10-20): the
+      // timer starts only once the video is actually playing — see
+      // handleMediaReady. If it already is, restart with the real duration.
+      if (readyStoriesRef.current.has(storyId)) startTimer(durationMs);
     }
   }, [startTimer]);
+
+  // 2026-10-20 (boss's concept): media-visible gate. Text stories render
+  // instantly and are never gated; image/video stories start their countdown
+  // only when the media is actually on screen.
+  const mediaGateApplies = useCallback((story: Story): boolean =>
+    story.type === 'video' || story.type === 'image', []);
 
   const durationForStory = useCallback((story: Story): number => {
     if (story.type === 'video') {
@@ -809,6 +853,18 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
     }
     return STORY_DURATION;
   }, []);
+
+  // 2026-10-20 (boss's concept): fired by the card when the media is actually
+  // on screen — image onLoad, or the video's first playing state. Only then
+  // does this story's countdown begin.
+  const handleMediaReady = useCallback((storyId: string) => {
+    if (readyStoriesRef.current.has(storyId)) return;
+    readyStoriesRef.current.add(storyId);
+    const cur = storiesRef.current[userIndexRef.current]?.stories[storyIndexRef.current];
+    if (cur?.id === storyId) {
+      startTimer(durationForStory(cur));
+    }
+  }, [startTimer, durationForStory]);
 
   const goPrev = useCallback(() => {
     const ui = userIndexRef.current;
@@ -831,13 +887,22 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
     const user  = stories[userIndex];
     const story = user?.stories[storyIndex];
     if (!user || !story) { onClose(); return; }
+    // 2026-10-20 (boss's concept): gated stories (image/video) do NOT start
+    // counting down on open — the bar stays at 0 until the media is actually
+    // on screen; handleMediaReady starts the timer at that moment. Revisited
+    // stories (already in the ready set) start immediately.
+    if (mediaGateApplies(story) && !readyStoriesRef.current.has(story.id)) {
+      stopTimer();
+      progressAnim.setValue(0);
+      return () => stopTimer();
+    }
     // 2026-10-19 polish: video stories use their real duration when known.
     startTimer(durationForStory(story));
     return () => stopTimer();
     // stories/onClose intentionally omitted: data-only subscription ticks must
     // NOT restart the timer (same as before this change).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, userIndex, storyIndex, startTimer, durationForStory]);
+  }, [visible, userIndex, storyIndex, startTimer, durationForStory, mediaGateApplies]);
 
   // Reset indices when viewer is (re-)opened
   useEffect(() => {
@@ -881,6 +946,7 @@ export default function StoryViewer({ visible, startUserIndex, stories, onClose,
           onReact={onReact}
           onComment={onComment}
           onVideoDuration={handleVideoDuration}
+          onMediaReady={handleMediaReady}
         />
       </View>
     </Modal>
