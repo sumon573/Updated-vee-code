@@ -62,7 +62,19 @@ export function useLiveAudienceCounts(roomIds: string[]): Record<string, number>
           recompute();
         }),
         onValue(audRef, (snap) => {
-          audCounts.set(id, snap.exists() ? snap.size : 0);
+          // 2026-10-20 (boss): count only LIVE audience — entries with a fresh
+          // heartbeat (<150s). Ghosts (crashed sessions whose onDisconnect
+          // never fired, pre-heartbeat entries with no ts) must not make an
+          // empty room show members.
+          let live = 0;
+          if (snap.exists()) {
+            const now = Date.now();
+            snap.forEach((child) => {
+              const a = child.val() as { ts?: number } | null;
+              if (typeof a?.ts === 'number' && now - a.ts < 150_000) live++;
+            });
+          }
+          audCounts.set(id, live);
           recompute();
         }),
       );

@@ -74,6 +74,11 @@ export type RoomAudienceMember = {
   activeFrame?: string;
   /** 2026-10-15 (Sumon): noble rank index (0-9) — for per-rank entry effect. */
   nobleRankIndex?: number;
+  /** 2026-10-20 (boss): audience heartbeat (ms epoch) — refreshed every ~60s
+   *  while in the room (refreshAudienceHeartbeat); entries with a missing or
+   *  >5-min-old ts are ghosts (crashed/killed before onDisconnect cleanup)
+   *  and are swept by sweepStaleAudience + ignored by live counters. */
+  ts?: number;
 };
 
 export type RoomInfo = {
@@ -675,7 +680,10 @@ export async function joinRoomAsAudience(
   member: RoomAudienceMember,
 ): Promise<void> {
   const audienceRef = ref(database, `rooms/${roomId}/audience/${member.userId}`);
-  await set(audienceRef, member);
+  // 2026-10-20 (boss): stamp the heartbeat so a crashed session's leftover
+  // entry ages out (see sweepStaleAudience) instead of showing a phantom
+  // member in an empty room forever.
+  await set(audienceRef, { ...member, ts: serverTimestamp() });
   // BUG 14/15 fix: if the app crashes/loses connection without an explicit
   // leave, Firebase removes this audience entry automatically so the room
   // doesn't show ghost members. The room info (active:true) is NOT touched
@@ -888,6 +896,74 @@ export async function sweepStaleSeats(roomId: string): Promise<void> {
     for (const key of staleKeys) {
       try {
         await remove(ref(database, `rooms/${roomId}/seats/${key}`));
+      } catch {
+        // PERMISSION_DENIED or gone already — best-effort, continue
+      }
+    }
+    if (staleKeys.length > 0) {
+      _updateCounts(roomId).catch(() => {});
+    }
+  } catch {
+    // background: safe to swallow — sweep is best-effort
+  }
+}
+
+/**
+ * 2026-10-20 (boss): audience heartbeat — mirror of refreshSeatHeartbeat.
+ * Called every ~60s while the user is inside a room. Transaction-guarded:
+ * a missing entry (left room / took a seat) is never recreated as a phantom.
+ */
+export async function refreshAudienceHeartbeat(
+  roomId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await runTransaction(
+      ref(database, `rooms/${roomId}/audience/${userId}`),
+      (current) => {
+        if (!current) return undefined;
+        return { ...current, ts: serverTimestamp() };
+      },
+    );
+  } catch {
+    // background: safe to swallow — a missed beat just ages the entry
+  }
+}
+
+/**
+ * 2026-10-20 (boss): ghost-audience fix — mirror of sweepStaleSeats.
+ * Removes audience entries whose heartbeat is missing or >5 min old, so an
+ * empty room never shows a phantom member. A uid holding any seat is never
+ * swept (they are genuinely in the room). Called on room enter. Best-effort.
+ */
+export async function sweepStaleAudience(roomId: string): Promise<void> {
+  try {
+    const [audienceSnap, seatsSnap] = await Promise.all([
+      get(ref(database, `rooms/${roomId}/audience`)),
+      get(ref(database, `rooms/${roomId}/seats`)),
+    ]);
+    if (!audienceSnap.exists()) return;
+    const seatedUsers = new Set<string>();
+    if (seatsSnap.exists()) {
+      seatsSnap.forEach((child) => {
+        const s = child.val() as { userId?: string } | null;
+        if (s?.userId) seatedUsers.add(s.userId);
+      });
+    }
+    const now = Date.now();
+    const STALE_MS = 5 * 60 * 1000;
+    const staleKeys: string[] = [];
+    audienceSnap.forEach((child) => {
+      const uid = child.key as string;
+      if (seatedUsers.has(uid)) return; // on a seat — genuinely present
+      const a = child.val() as { ts?: number } | null;
+      const ts = typeof a?.ts === 'number' ? a.ts : 0;
+      if (now - ts > STALE_MS) staleKeys.push(uid);
+    });
+    // One-by-one deletes (same rules reasoning as sweepStaleSeats).
+    for (const key of staleKeys) {
+      try {
+        await remove(ref(database, `rooms/${roomId}/audience/${key}`));
       } catch {
         // PERMISSION_DENIED or gone already — best-effort, continue
       }
