@@ -908,10 +908,11 @@ export default function ProfileScreen({
         )}
 
         {/* ─── Header card: avatar + name/ID chain + pills ─── */}
-        {/* 2026-10-20 (boss): header has NO card container — contents merge with
-            the page background (more space). Same margins/padding keep the
-            contents aligned with the cards below, which keep their containers. */}
-        <View style={{ marginHorizontal: 15, marginTop: 12, padding: 15 }}>
+        {/* 2026-10-20 (boss): NO box, but the box's WHITE color stays — the
+            header sits on a full-width white band (edge to edge, no rounded
+            corners, no margins). Padding matches the cards below so contents
+            stay aligned. */}
+        <View style={{ backgroundColor: C.card, paddingVertical: 15, paddingHorizontal: 30 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Pressable
                 onPress={() => {
