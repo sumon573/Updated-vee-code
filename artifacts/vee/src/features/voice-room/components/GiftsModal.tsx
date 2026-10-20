@@ -3,7 +3,8 @@
  *
  * IMO spec (from APK v2026.09.1051, BIUI tokens):
  * - White bottom sheet, 20dp top corner radius, slide-up
- * - 240dp photographic header (centerCrop) with close button
+ * - NO header block (boss 2026-10-20: removed entirely) — the sheet opens
+ *   directly on the recipient row; ✕ close chip at the top-right corner
  * - Tabs: Hot / Rank / Recent / Event — active = dark text + 26x3.5dp #05b5fa underline
  * - 4-column grid, 64dp tiles (#f4f5f5, ~18dp radius), 12sp names (#8f9091)
  * - Footer: diamond balance + top-up, count stepper (- xN +), gradient Send
@@ -24,7 +25,6 @@ import {
   View, Text, ScrollView, Alert, Pressable, Modal, Image,
   FlatList, Dimensions,
 } from 'react-native';
-import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -54,9 +54,6 @@ const IMO_TITLE = '#1a1a1a';
 const IMO_SEND_FROM = '#ccebff';
 const IMO_SEND_TO = '#66c4ff';
 const IMO_SEND_TEXT = '#002c47';
-const HEADER_H = 240;
-// IMO promo header — animated blast artwork on Vee's own VPS
-const HEADER_IMG = 'https://vee-club.duckdns.org/gifts/imo-blast-2418.webp';
 // IMO big-gift broadcast threshold (server decides in IMO; Vee: blast tier)
 const BIG_GIFT_COINS = 2000;
 const MAX_RECIPIENTS = 10;
@@ -520,33 +517,26 @@ export function GiftsModal({
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         maxHeight: '88%', overflow: 'hidden',
       }}>
-        {/* ── 240dp photo header — 2026-10-20 audit fix (boss's 11:35 report):
-            the header was a FIXED 2418 promo image, so selecting Blossom or
-            Heart still previewed the 5000💎 proposal scene. It now previews
-            the SELECTED gift's own artwork (promo only before any selection). ── */}
-        <View style={{ height: HEADER_H, backgroundColor: '#0b1622' }}>
-          <ExpoImage
-            key={selectedGift?.id || 'promo'}
-            source={{ uri: selectedGift?.animationUrl || selectedGift?.thumbnailUrl || HEADER_IMG }}
-            style={{ width: '100%', height: HEADER_H }}
-            contentFit="cover"
-          />
-          <Pressable
-            onPress={onClose}
-            style={{
-              position: 'absolute', top: 14, right: 14,
-              width: 32, height: 32, borderRadius: 16,
-              backgroundColor: 'rgba(0,0,0,0.45)',
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-            <Feather name="x" size={18} color="#fff" />
-          </Pressable>
-        </View>
+        {/* ── Close — 2026-10-20 (boss): the 240dp preview header block was
+            REMOVED entirely ("Black ওটা থাকবেই না") — the panel opens
+            directly as the clean white sheet (recipient row → tabs → grid).
+            ✕ re-homed to the sheet's top-right corner, same onClose. The
+            selected gift shows via the grid's selection highlight. ── */}
+        <Pressable
+          onPress={onClose}
+          style={{
+            position: 'absolute', top: 10, right: 12, zIndex: 10,
+            width: 32, height: 32, borderRadius: 16,
+            backgroundColor: '#F1F5F9',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+          <Feather name="x" size={18} color="#111827" />
+        </Pressable>
 
-        {/* ── Recipient bar ── */}
+        {/* ── Recipient bar (paddingRight clears the ✕ chip) ── */}
         <View style={{
           flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4,
+          paddingHorizontal: 20, paddingRight: 56, paddingTop: 12, paddingBottom: 4,
         }}>
           <Text style={{ color: IMO_SUB, fontSize: 13, fontWeight: '600', marginRight: 8 }}>
             {t('voiceRoom.gifts.toLabel')}

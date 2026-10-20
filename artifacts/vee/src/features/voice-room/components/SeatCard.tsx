@@ -34,7 +34,7 @@ function useServerBadgeIcon() {
 
 /* ─────────────────────────── Seat Card ───────────────────────────
    2026-10-19 (IMO port Phase 1): IMO look —
-   - 62dp circles, 4-column grid, 11.5sp seat names
+   - 53dp circles, 5-column grid, 11.5sp seat names
    - Speaking → #05b5fa halo ripple (Avatar)
    - Mic badge bottom-right: white when live, red when muted
    - Empty seat: dashed circle with +
@@ -42,8 +42,9 @@ function useServerBadgeIcon() {
    - Occupied: avatar + name + verified badge (unchanged behavior)
    - Locked: lock overlay on empty seats only (unchanged behavior)
    Memoized so a single chat message doesn't re-render all 10 seats. */
-// IMO seat avatar diameter (design tokens: ~62dp)
-const SEAT_SIZE = 62;
+// Seat avatar diameter — 2026-10-20 polish (boss): 62 → 53 so the
+// 5-across grid breathes instead of seats crowding each other.
+const SEAT_SIZE = 53;
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
 }: {
@@ -84,7 +85,7 @@ export const SeatCard = memo(function SeatCard({
       {/* ── Seat number badge — only on EMPTY seats (2026-10-11: hidden when occupied) ── */}
       {!member && (
         <View style={{
-          position: 'absolute', top: 8, left: '12%', zIndex: 10,
+          position: 'absolute', top: 8, left: '14%', zIndex: 10,
           width: 17, height: 17, borderRadius: 8.5,
           backgroundColor: accent,
           alignItems: 'center', justifyContent: 'center',
@@ -101,7 +102,7 @@ export const SeatCard = memo(function SeatCard({
           শুধু খালি locked সিটে দেখাবে। */}
       {locked && !member && (
         <View style={{
-          position: 'absolute', top: 8, right: '12%', zIndex: 10,
+          position: 'absolute', top: 8, right: '14%', zIndex: 10,
           width: 17, height: 17, borderRadius: 8.5,
           backgroundColor: C.gold + 'DD',
           alignItems: 'center', justifyContent: 'center',
