@@ -25,12 +25,9 @@
  * Grants use fixed IDs (noble-plate-{rank} etc.) so concurrent rank-ups
  * are idempotent.
  *
- * Privileges with no full code path yet (Microphone Ripple, Upgrade Banner,
- * Homepage Skin) are flagged enforced:false and the UI shows them honestly
- * as locked — never as unlocked-but-dead. Noble Gift is enforced via
- * noble-gated gift catalog (minNobleRank); Seat Priority has the pure
- * ranking rule (pickSeatByNoblePriority) with seat-claim integration
- * owned by the voice-room flow.
+ * Privileges that have no real code path yet (Noble Gift, Microphone
+ * Ripple, Seat Priority) are flagged enforced:false and the UI shows
+ * them honestly as locked — never as unlocked-but-dead.
  */
 import { ref, onValue, get, set, update, runTransaction, remove } from 'firebase/database';
 import { database } from '../config/firebase';
@@ -60,20 +57,16 @@ export interface PrivilegeDef {
   enforced: boolean;
 }
 
-/* Privilege unlock indices — EXACT from IMO's My Nobel video (2026-10-20):
- * nameplate Knight(0) · badge/gift Baron(1) · avatarFrame Viscount(2) ·
- * entryEffects Count(3) · homepageSkin Duke(5) · micRipple RoyalDuke(6) ·
- * seatPriority King(7) · upgradeBanner SKing(8). */
 export const PRIVILEGES: PrivilegeDef[] = [
   { key: 'nameplate',    name: 'Noble Nameplate',   icon: '🎖️', minRankIndex: 0, enforced: true  },
   { key: 'badge',        name: 'Noble Badge',       icon: '🛡️', minRankIndex: 1, enforced: true  },
   { key: 'gift',         name: 'Noble Gift',        icon: '🎁', minRankIndex: 1, enforced: true  },
-  { key: 'avatarFrame',  name: 'Avatar Frame',      icon: '🖼️', minRankIndex: 2, enforced: true  },
-  { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 3, enforced: true },
+  { key: 'avatarFrame',  name: 'Avatar Frame',      icon: '🖼️', minRankIndex: 3, enforced: true  },
+  { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 4, enforced: true },
   { key: 'micRipple',    name: 'Microphone Ripple', icon: '🎤', minRankIndex: 6, enforced: false },
-  { key: 'seatPriority', name: 'Seat Priority',     icon: '💺', minRankIndex: 7, enforced: true  },
-  { key: 'upgradeBanner', name: 'Upgrade Banner',  icon: '🚩', minRankIndex: 8, enforced: false },
-  { key: 'homepageSkin',  name: 'Homepage Skin',    icon: '🏠', minRankIndex: 5, enforced: false },
+  { key: 'seatPriority', name: 'Seat Priority',     icon: '💺', minRankIndex: 9, enforced: true  },
+  { key: 'upgradeBanner', name: 'Upgrade Banner',   icon: '🚩', minRankIndex: 5, enforced: false },
+  { key: 'homepageSkin',  name: 'Homepage Skin',    icon: '🏠', minRankIndex: 6, enforced: false },
 ];
 
 export interface NobleRank {
@@ -83,89 +76,26 @@ export interface NobleRank {
   maxXP: number;
   color: string;
   privileges: PrivilegeKey[];
-  /** IMO "Prop Level" for entry effects (1-5) and upgrade banner (2) — 2026-10-20. */
-  propLevels?: Partial<Record<'entryEffects' | 'upgradeBanner', number>>;
 }
 
 /**
- * IMO Prop Level for a privilege at a rank (0 when the rank lacks it).
- * e.g. propLevelFor(9, 'entryEffects') === 5 (SSKing, Entry ★5).
- */
-export function propLevelFor(rankIndex: number, key: 'entryEffects' | 'upgradeBanner'): number {
-  const rank = NOBLE_RANKS[Math.max(0, Math.min(rankIndex, NOBLE_RANKS.length - 1))];
-  return rank?.propLevels?.[key] ?? 0;
-}
-
-/* ── Per-rank artwork on Vee's VPS (uploaded 2026-10-20, from IMO's video) ──
- * https://vee-club.duckdns.org/nobel-art/rank-{slug}-{nameplate,badge,frame}.png
- * slug: knight|baron|viscount|count|marquis|duke|rduke|king|sking|ssking
- * Components use nobleArtUrl() and fall back to the color theme when an
- * image fails to load — never a broken image. */
-export const NOBEL_ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
-const NOBLE_ART_SLUGS = ['knight', 'baron', 'viscount', 'count', 'marquis', 'duke', 'rduke', 'king', 'sking', 'ssking'];
-
-export function nobleArtUrl(
-  rankIndex: number,
-  kind: 'nameplate' | 'badge' | 'frame',
-): string | null {
-  if (rankIndex < 0 || rankIndex >= NOBLE_RANKS.length) return null;
-  const slug = NOBLE_ART_SLUGS[rankIndex];
-  const priv: PrivilegeKey = kind === 'nameplate' ? 'nameplate' : kind === 'badge' ? 'badge' : 'avatarFrame';
-  if (!NOBLE_RANKS[rankIndex].privileges.includes(priv)) return null;
-  return `${NOBEL_ART_BASE}/rank-${slug}-${kind}.png`;
-}
-
-/** URL of the rank badge image for the entry effect (Count+ always have badge). */
-export function nobleEntryBadgeUrl(rankIndex: number): string | null {
-  return nobleArtUrl(rankIndex, 'badge');
-}
-
-/** Rank index for a rank key ('count' → 3); -1 when unknown. */
-export function rankIndexForKey(key: string): number {
-  return NOBLE_RANKS.findIndex((r) => r.key === key);
-}
-
-/**
- * First rank whose Nobel visuals are ANIMATED (2026-10-20, boss's order):
- * Count (index 3) and above — nameplate shimmer, badge glow + sparkles,
- * frame rotating sparkles, entry-effect sparkle burst. Baron/Viscount
- * visuals stay static, matching IMO (entry effects start at Count).
- */
-export const NOBLE_ANIMATED_MIN_RANK = 3;
-export function nobleVisualsAnimated(rankIndex: number): boolean {
-  return rankIndex >= NOBLE_ANIMATED_MIN_RANK;
-}
-
-/**
- * Rank thresholds — EXACT values read from IMO's My Noble page video
- * (2026-10-20, boss's screen recording):
- * Baron 1260~8399 | Viscount 8400~83999 | Count 84000~251999 |
- * Marquis 252000~587999 | Duke 588000~1259999 | Royal Duke 1260K~4200K |
- * King 4200K~12600K | SKing 12600K~42000K | SSKing 42000K+.
- *
- * Privilege unlock order (exact, from the video's Noble Privileges grid):
- * Baron → Nameplate, Badge, Gift
- * Viscount → + Avatar Frame
- * Count → + Fancy Entry Effects (Prop Level ★1)
- * Marquis → Entry ★2
- * Duke → + Homepage Skin (Entry ★3)
- * Royal Duke → + Microphone Ripple (Entry ★4)
- * King → + Seat Priority (Entry ★4)
- * SKing → + Upgrade Banner (Entry ★4, Banner ★2)
- * SSKing → Entry ★5, Banner ★2
+ * Rank thresholds. Anchor points come from the IMO reference video
+ * (Baron 1260~8399, Marquis 252000~587999, Royal Duke 1260K~4200K,
+ * SSKing 42000K~1000000000000K); the in-between ranks interpolate
+ * those anchors with non-overlapping contiguous ranges.
  */
 export const NOBLE_RANKS: NobleRank[] = [
   { key: 'knight',    name: 'Knight',     minXP: 0,         maxXP: 1259,       color: '#8BC34A', privileges: ['nameplate'] },
   { key: 'baron',     name: 'Baron',      minXP: 1260,      maxXP: 8399,       color: '#26A69A', privileges: ['nameplate', 'badge', 'gift'] },
-  { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 83999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame'] },
-  { key: 'count',     name: 'Count',      minXP: 84000,     maxXP: 251999,     color: '#7E57C2', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'], propLevels: { entryEffects: 1 } },
-  { key: 'marquis',   name: 'Marquis',    minXP: 252000,    maxXP: 587999,    color: '#EC407A', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'], propLevels: { entryEffects: 2 } },
-  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'homepageSkin'], propLevels: { entryEffects: 3 } },
-  { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'homepageSkin'], propLevels: { entryEffects: 4 } },
-  { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 12600000,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'homepageSkin', 'seatPriority'], propLevels: { entryEffects: 4 } },
-  { key: 'sking',     name: 'SKing',      minXP: 12600001,  maxXP: 42000000,  color: '#E65100', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'homepageSkin', 'seatPriority', 'upgradeBanner'], propLevels: { entryEffects: 4, upgradeBanner: 2 } },
-  { key: 'ssking',    name: 'SSKing',     minXP: 42000001,  maxXP: Number.MAX_SAFE_INTEGER, color: '#BF360C',
-    privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'homepageSkin', 'seatPriority', 'upgradeBanner'], propLevels: { entryEffects: 5, upgradeBanner: 2 } },
+  { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 41999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift'] },
+  { key: 'count',     name: 'Count',      minXP: 42000,     maxXP: 251999,     color: '#7E57C2', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame'] },
+  { key: 'marquis',   name: 'Marquis',    minXP: 252000,    maxXP: 587999,    color: '#EC407A', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'] },
+  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
+  { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 41999999,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'sking',     name: 'SKing',      minXP: 42000000,  maxXP: 419999999, color: '#E65100', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'ssking',    name: 'SSKing',     minXP: 420000000, maxXP: Number.MAX_SAFE_INTEGER, color: '#BF360C',
+    privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin', 'seatPriority'] },
 ];
 
 /**
