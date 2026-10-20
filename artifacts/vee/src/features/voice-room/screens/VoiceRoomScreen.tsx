@@ -76,6 +76,7 @@ import {
   sendSeatInvite, subscribeSeatInvites, removeSeatInvite, type SeatInvite,
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
   refreshSeatHeartbeat, sweepStaleSeats,
+  refreshAudienceHeartbeat, sweepStaleAudience,
   isPinVerifiedForSession as isPinVerified,
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
@@ -1011,6 +1012,8 @@ export default function VoiceRoomScreen() {
 
   useEffect(() => {
     sweepStaleSeats(roomId).catch(() => {});
+    // 2026-10-20 (boss): ghost-audience sweep on enter (mirror of seats).
+    sweepStaleAudience(roomId).catch(() => {});
   }, [roomId]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
@@ -1019,6 +1022,17 @@ export default function VoiceRoomScreen() {
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
   }, [roomId, mySeatIdx, myUid]);
+  // 2026-10-20 (boss): audience heartbeat while inside the room — keeps my
+  // audience entry provably live; if the app dies, the entry ages out in
+  // 5 min and gets swept instead of showing a phantom member forever.
+  // Transaction-guarded server-side: no entry (seated/left) = no-op.
+  useEffect(() => {
+    if (!myUid) return;
+    const beat = () => refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
+    beat();
+    const timer = setInterval(beat, 60_000);
+    return () => clearInterval(timer);
+  }, [roomId, myUid]);
 
   
   const hasAutoPublishedRef = useRef(false);
