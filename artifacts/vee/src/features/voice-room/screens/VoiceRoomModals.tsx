@@ -19,8 +19,6 @@ import { GiftsModal } from '../components/GiftsModal';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { ExitModal } from '../components/ExitModal';
 import EntryBanner from '../components/EntryBanner';
-import NobleEntryEffect from '../../nobel/NobleEntryEffect';
-import NobleUpgradeBanner from '../../nobel/NobleUpgradeBanner';
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
 import { Role, Participant, BlockRecord } from '../types/room';
 import { submitReport } from '@/src/services/reportService';
@@ -97,10 +95,6 @@ export interface VoiceRoomModalsProps {
   giftFlyRef: React.RefObject<GiftFlyHandle | null>;
   entryBanner: { name: string; photoURL?: string | null; nobleRankIndex?: number } | null;
   setEntryBanner: (b: { name: string; photoURL?: string | null; nobleRankIndex?: number } | null) => void;
-  // 2026-10-20: noble rank-up broadcast — "Congratulations to X for upgrading
-  // to Y" golden banner shown room-wide (SKing+).
-  upgradeBanner: { name: string; rankIndex: number; runId: number } | null;
-  setUpgradeBanner: (b: { name: string; rankIndex: number; runId: number } | null) => void;
   handleDisband: () => void;
   handleViewOtherProfile: (uid: string, name: string) => void;
   handleViewOwnProfile: () => void;
@@ -252,34 +246,13 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
           Above the seat grid/chat, below the modals. */}
       <GiftFlyAnimation ref={p.giftFlyRef} />
       {p.roomId ? <GiftReceiveBanners roomId={p.roomId} /> : null}
-      {/* ── Entry effect: "X is Coming" banner (2026-10-10).
-          2026-10-20: Count+ nobles get IMO's golden NobleEntryEffect
-          (badge art + "is coming..." + sparkle burst); below Count keeps
-          the standard EntryBanner. */}
+      {/* ── Entry effect: "X is Coming" banner (2026-10-10) ── */}
       {p.entryBanner ? (
-        p.entryBanner.nobleRankIndex != null && p.entryBanner.nobleRankIndex >= 3 ? (
-          <NobleEntryEffect
-            name={p.entryBanner.name}
-            photoURL={p.entryBanner.photoURL}
-            nobleRankIndex={p.entryBanner.nobleRankIndex}
-            onDismiss={() => p.setEntryBanner(null)}
-          />
-        ) : (
-          <EntryBanner
-            name={p.entryBanner.name}
-            photoURL={p.entryBanner.photoURL}
-            nobleRankIndex={p.entryBanner.nobleRankIndex}
-            onDismiss={() => p.setEntryBanner(null)}
-          />
-        )
-      ) : null}
-      {/* ── Noble upgrade banner: "Congratulations to X..." (2026-10-20) ── */}
-      {p.upgradeBanner ? (
-        <NobleUpgradeBanner
-          key={p.upgradeBanner.runId}
-          name={p.upgradeBanner.name}
-          rankIndex={p.upgradeBanner.rankIndex}
-          onDismiss={() => p.setUpgradeBanner(null)}
+        <EntryBanner
+          name={p.entryBanner.name}
+          photoURL={p.entryBanner.photoURL}
+          nobleRankIndex={p.entryBanner.nobleRankIndex}
+          onDismiss={() => p.setEntryBanner(null)}
         />
       ) : null}
       <GiftsModal
