@@ -35,7 +35,7 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
       <Animated.View style={{
         position: 'absolute', bottom: bottomOffset, left: 12, right: 12, zIndex: 100,
         transform: [{ translateY: slideAnim }], opacity: opacityAnim,
-        backgroundColor: '#0F0A1E', borderRadius: 22, borderWidth: 1.5, borderColor: C.border,
+        backgroundColor: '#FFFFFF', borderRadius: 22, borderWidth: 1.5, borderColor: C.border,
         paddingVertical: 14, paddingHorizontal: 18,
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
         shadowColor: C.primary, shadowOpacity: 0.4, shadowRadius: 20,
@@ -44,7 +44,7 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
         {REACTION_EMOJIS.map(emoji => (
           <ScalePress key={emoji} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(emoji); }}>
             <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center',
-              justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.10)' }}>
+              justifyContent: 'center', backgroundColor: 'rgba(5,181,250,0.10)' }}>
               <Text style={{ fontSize: 22 }}>{emoji}</Text>
             </View>
           </ScalePress>

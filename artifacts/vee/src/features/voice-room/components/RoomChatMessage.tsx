@@ -43,8 +43,8 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
     );
   }
 
-  const bubbleBg    = item.isMe ? accentColor + '30' : 'rgba(255,255,255,0.075)';
-  const borderColor = item.isMe ? accentColor + '55' : 'rgba(255,255,255,0.1)';
+  const bubbleBg    = item.isMe ? accentColor + '30' : '#F1F5F9';
+  const borderColor = item.isMe ? accentColor + '55' : '#E2E8F0';
 
   return (
     <Pressable
@@ -80,7 +80,7 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
           <View style={{
             borderLeftWidth: 3, borderLeftColor: item.replyTo.color,
             paddingLeft: 9, marginBottom: 7,
-            backgroundColor: 'rgba(0,0,0,0.22)',
+            backgroundColor: 'rgba(15,23,42,0.06)',
             borderRadius: 8, padding: 6,
           }}>
             <Text style={{

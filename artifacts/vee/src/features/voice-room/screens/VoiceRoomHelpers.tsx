@@ -94,10 +94,10 @@ export function LiveAudiencePill({ count, onPress, person }: { count: number; on
     <ScalePress onPress={onPress} style={{ marginLeft: 8 }}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.4)',
+        backgroundColor: '#F1F5F9',
         borderRadius: 20, paddingLeft: 12, paddingRight: 6, paddingVertical: 4,
-        borderWidth: 1, borderColor: 'rgba(255,215,0,0.3)' }}>
-        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
+        borderWidth: 1, borderColor: '#E2E8F0' }}>
+        <Text style={{ color: '#111827', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
           {formatCount(count)}
         </Text>
         {photoURL ? (

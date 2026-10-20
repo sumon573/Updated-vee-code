@@ -125,7 +125,7 @@ export function InviteModal({
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#0F0A1E', borderTopLeftRadius: 26, borderTopRightRadius: 26,
+        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
         borderWidth: 1, borderColor: C.border, maxHeight: '88%' }}>
         <View style={{
           width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,

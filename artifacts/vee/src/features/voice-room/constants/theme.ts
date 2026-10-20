@@ -1,18 +1,21 @@
 /* ─────────────────────────── Design tokens ─────────────────────────── */
+/* 2026-10-20 (boss): IMO-LIGHT palette — "Imo মতো সাদা হবে". The whole
+   voice-room feature renders on white; every consumer of C in this
+   feature (room screen, seats, chat, sheets) follows these tokens. */
 export const C = {
-  bg:          '#0A0715',
-  card:        'rgba(255,255,255,0.055)',
-  border:      'rgba(139,92,246,0.28)',
-  borderFaint: 'rgba(255,255,255,0.09)',
-  primary:     '#7C3AED',
+  bg:          '#FFFFFF',
+  card:        '#F1F5F9',
+  border:      '#E2E8F0',
+  borderFaint: '#EDF2F7',
+  primary:     '#05b5fa',
   gold:        '#F59E0B',
-  text:        '#FFFFFF',
-  sub:         '#B8A6D9',
-  muted:       '#6B5E8A',
+  text:        '#111827',
+  sub:         '#64748B',
+  muted:       '#94A3B8',
   mic:         '#22C55E',
   red:         '#EF4444',
   pink:        '#EC4899',
-  inputBg:     'rgba(255,255,255,0.065)',
+  inputBg:     '#F1F5F9',
 } as const;
 
 /* ─────────────────────────── Room metadata ─────────────────────────── */
@@ -28,6 +31,7 @@ export const MAX_SEATS = 10;
    feels like a full premium repaint, not just a border-color swap.
 ─────────────────────────────────────────────────────────────────────── */
 export const ROOM_THEMES: { id: string; name: string; accent: string; bg: string; surface: string }[] = [
+  { id: 'imo-light', name: '💙 IMO Light',  accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9' },
   { id: 'cosmic',   name: '🌌 Cosmic',      accent: '#7C3AED', bg: '#0A0715', surface: '#130930' },
   { id: 'inferno',  name: '🔥 Inferno',      accent: '#EF4444', bg: '#0F0505', surface: '#200A0A' },
   { id: 'ocean',    name: '🌊 Ocean',        accent: '#0EA5E9', bg: '#020D14', surface: '#062030' },

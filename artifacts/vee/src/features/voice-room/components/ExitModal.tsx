@@ -13,7 +13,7 @@ export function ExitModal({ visible, onClose, onLeave, onMinimize, roomName }: {
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' }} onPress={onClose} />
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#0F0A1E', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+        backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
         borderWidth: 1, borderColor: C.border,
         paddingBottom: Platform.OS === 'web' ? 34 : 24, paddingTop: 8 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,

@@ -193,7 +193,7 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#0F0A1E', borderTopLeftRadius: 26, borderTopRightRadius: 26,
+        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
         borderWidth: 1, borderColor: accent + '44', paddingBottom: Platform.OS === 'web' ? 34 : 20 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12, marginBottom: 14 }} />

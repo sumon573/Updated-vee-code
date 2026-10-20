@@ -460,9 +460,9 @@ export default function VoiceRoomScreen() {
   const [roomTopic,     setRoomTopic]    = useState<string>(t('voiceRoom.creation.defaultTopic'));
   const [roomName,      setRoomName]     = useState(ROOM_META.name);
   const [roomImageUri, setRoomImageUri] = useState<string | null>(null);
-  const [activeThemeId, setActiveThemeId] = useState('cosmic');
+  const [activeThemeId, setActiveThemeId] = useState('imo-light');
   
-  const activeThemeIdRef = useRef('cosmic');
+  const activeThemeIdRef = useRef('imo-light');
   
   const [roomIsPublic,  setRoomIsPublic]  = useState(true);
   
@@ -480,7 +480,7 @@ export default function VoiceRoomScreen() {
   );
   
   const themeSurface = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.surface ?? 'rgba(255,255,255,0.055)',
+    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.surface ?? C.card,
     [activeThemeId],
   );
 
@@ -938,9 +938,13 @@ export default function VoiceRoomScreen() {
       setRoomIsPublic(info.isPublic);
       setRoomIsLocked(info.isLocked ?? false);
       setRoomDescription(info.description ?? '');
+      // 2026-10-20 (boss): "Imo মতো সাদা হবে" — the room ALWAYS renders
+      // IMO-light, even when the room's saved themeId names a dark theme.
+      // The saved value is left untouched in the DB; display is forced
+      // light here (previously: applied info.themeId verbatim).
       if (info.themeId && info.themeId !== activeThemeIdRef.current) {
-        activeThemeIdRef.current = info.themeId;
-        setActiveThemeId(info.themeId);
+        activeThemeIdRef.current = 'imo-light';
+        setActiveThemeId('imo-light');
       }
       if (pinGateRef.current === 'passed') handleRoomInfoOk();
     });
@@ -2258,10 +2262,10 @@ export default function VoiceRoomScreen() {
             <ScalePress onPress={() => setLeaderboardOpen(true)}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: 'rgba(255,255,255,0.1)',
+                backgroundColor: C.card,
                 borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 16 }}>🏆</Text>
-                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                   Hourly Rank
                 </Text>
               </View>
@@ -2270,10 +2274,10 @@ export default function VoiceRoomScreen() {
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: 'rgba(255,255,255,0.1)',
+                backgroundColor: C.card,
                 borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 16 }}>🎮</Text>
-                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                   {t('voiceRoom.games.title')}
                 </Text>
               </View>
@@ -2288,7 +2292,7 @@ export default function VoiceRoomScreen() {
                   maxWidth: 180,
                 }}>
                   <Text style={{ fontSize: 16 }}>📢</Text>
-                  <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 13, fontWeight: '700', flexShrink: 1 }}>
+                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: '700', flexShrink: 1 }}>
                     {announcement.content}
                   </Text>
                 </View>
@@ -2298,10 +2302,10 @@ export default function VoiceRoomScreen() {
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,
-                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  backgroundColor: C.card,
                   borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                   <Text style={{ fontSize: 16 }}>📢</Text>
-                  <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                  <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                     {t('voiceRoom.announcement.post')}
                   </Text>
                 </View>
@@ -2310,10 +2314,10 @@ export default function VoiceRoomScreen() {
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIntimacyOpen(true); }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: 'rgba(255,255,255,0.1)',
+                backgroundColor: C.card,
                 borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 16 }}>💕</Text>
-                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                   {t('voiceRoom.intimacy.title')}
                 </Text>
               </View>
@@ -2321,10 +2325,10 @@ export default function VoiceRoomScreen() {
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBackpackOpen(true); }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: 'rgba(255,255,255,0.1)',
+                backgroundColor: C.card,
                 borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
                 <Text style={{ fontSize: 16 }}>🎒</Text>
-                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
                   {t('voiceRoom.backpack.title')}
                 </Text>
               </View>
@@ -2379,7 +2383,7 @@ export default function VoiceRoomScreen() {
             alignSelf: 'flex-start', marginBottom: 8, flexDirection: 'row', alignItems: 'center',
             backgroundColor: myRole === 'host'  ? C.gold + '22'
                            : myRole === 'admin' ? accentColor + '22'
-                           : 'rgba(255,255,255,0.07)',
+                           : C.card,
             borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
             borderWidth: 1,
             borderColor: myRole === 'host'  ? C.gold + '66'
@@ -2425,13 +2429,14 @@ export default function VoiceRoomScreen() {
 
         {}
         <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 10 }}>
+        {/* ── Seat grid — clean 5-column professional layout ── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {seats.map((member: Participant | null, idx: number) => (
             
             <View
               key={idx}
               collapsable={false}
-              style={{ width: '25%', alignItems: 'center', paddingVertical: 6 }}
+              style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
               ref={(v) => {
                 const id = member?.id;
                 if (!id) return;
@@ -2539,7 +2544,7 @@ export default function VoiceRoomScreen() {
         {mentionQuery !== null && mentionCandidates.length > 0 && (
           <View style={{
             maxHeight: 180,
-            backgroundColor: '#0F0A1E',
+            backgroundColor: '#FFFFFF',
             borderRadius: 14,
             borderWidth: 1, borderColor: accentColor + '55',
             marginTop: 6, overflow: 'hidden',
@@ -2582,7 +2587,7 @@ export default function VoiceRoomScreen() {
         {replyingTo && (
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(255,255,255,0.07)',
+            backgroundColor: C.card,
             borderRadius: 10, padding: 8, marginTop: 6,
             borderLeftWidth: 3, borderLeftColor: accentColor }}>
             <Text numberOfLines={1} style={{ flex: 1, color: C.sub, fontSize: 12 }}>

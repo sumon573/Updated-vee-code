@@ -86,7 +86,7 @@ export const SeatCard = memo(function SeatCard({
         <View style={{
           position: 'absolute', top: 8, left: '12%', zIndex: 10,
           width: 17, height: 17, borderRadius: 8.5,
-          backgroundColor: accent + '55',
+          backgroundColor: accent,
           alignItems: 'center', justifyContent: 'center',
           shadowColor: accent,
           shadowOpacity: 0.6, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
@@ -227,7 +227,8 @@ export const SeatCard = memo(function SeatCard({
           )}
         </>
       ) : (
-        /* ── Empty / locked seat — 2026-10-19 (IMO port Phase 1): dashed circle with + */
+        /* ── Empty / locked seat — dashed circle with user-plus
+            (pre-IMO-port placeholder visual, restored 2026-10-20 per boss) */
         <>
           <View style={{
             marginTop: 6,
@@ -242,13 +243,13 @@ export const SeatCard = memo(function SeatCard({
             elevation: 2,
           }}>
             <Feather
-              name={locked ? 'lock' : 'plus'}
-              size={20}
-              color={locked ? C.gold : accent + 'BB'}
+              name={locked ? 'lock' : 'user-plus'}
+              size={16}
+              color={locked ? C.gold : '#94A3B8'}
             />
           </View>
           <Text style={{
-            color: locked ? C.gold : accent + 'AA',
+            color: locked ? C.gold : C.muted,
             fontSize: 10, marginTop: 5, fontWeight: '600',
             textAlign: 'center',
           }} numberOfLines={1}>
