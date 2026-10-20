@@ -1,10 +1,7 @@
 /**
- * NobelFrame — Static Nobel crown frame with sparkle effects.
+ * NobelFrame — Static Nobel crown frame with sparkle shimmer.
  * 2026-10-15 (Sumon): Frame STAYS STILL (no movement). Sparkles twinkle
  * around the entire frame perimeter. Battery-friendly.
- * 2026-10-20 (boss's order): Count+ ranks get a ROTATING sparkle ring
- * around the still frame + subtle glow pulse. Baron/Viscount keep the
- * static frame (IMO — effects start at Count).
  */
 import React, { useEffect, useRef } from 'react';
 import { Animated, View, Image, StyleSheet } from 'react-native';
@@ -16,11 +13,6 @@ type Props = {
   sparkles?: boolean;
   /** Frame color for glow (defaults to Count purple) */
   glowColor?: string;
-  /**
-   * 2026-10-20 (boss's order): rotating sparkle ring for Count+ ranks.
-   * false = twinkling sparkles (Baron/Viscount), true = rotating ring.
-   */
-  rotatingSparkles?: boolean;
 };
 
 // Sparkle positions around the frame (percentages)
@@ -36,77 +28,6 @@ const SPARKLE_POSITIONS = [
   { top: '60%', left: '0%' },
   { top: '35%', left: '3%' },
 ];
-
-/**
- * RotatingSparkles — a ring of sparkles that rotates around a square area.
- * The center (frame artwork) stays still; only the sparkle ring spins.
- * Exported for reuse in NobelRankPreview. Pure useNativeDriver (rotate).
- */
-export function RotatingSparkles({ size, count = 8 }: { size: number; count?: number }) {
-  const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    spin.setValue(0);
-    const loop = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 12000,
-        easing: (t) => t, // linear — constant spin
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [spin]);
-
-  const rotate = spin.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  // Sparkle glyphs placed on the ring's cardinal/diagonal points.
-  const points = Array.from({ length: count }, (_, i) => {
-    const angle = (i / count) * Math.PI * 2;
-    return {
-      left: size / 2 + Math.cos(angle) * (size / 2 - 4) - 8,
-      top: size / 2 + Math.sin(angle) * (size / 2 - 4) - 8,
-      glyph: i % 3 === 0 ? '⭐' : '✨',
-      fontSize: 14 + (i % 2) * 4,
-    };
-  });
-
-  return (
-    <View
-      pointerEvents="none"
-      style={{ position: 'absolute', width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Animated.View
-        style={{
-          width: size,
-          height: size,
-          transform: [{ rotate }],
-        }}
-      >
-        {points.map((p, i) => (
-          <View
-            key={i}
-            style={{ position: 'absolute', left: p.left, top: p.top, width: 16, height: 16 }}
-          >
-            <Animated.Text
-              style={{
-                fontSize: p.fontSize,
-                textShadowColor: '#FFFFFF',
-                textShadowRadius: 5,
-              }}
-            >
-              {p.glyph}
-            </Animated.Text>
-          </View>
-        ))}
-      </Animated.View>
-    </View>
-  );
-}
 
 function Twinkle({ delay, size: s }: { delay: number; size: number }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -145,7 +66,7 @@ function Twinkle({ delay, size: s }: { delay: number; size: number }) {
   );
 }
 
-export default function NobelFrame({ size, imageUrl, sparkles = true, glowColor = '#7E57C2', rotatingSparkles = false }: Props) {
+export default function NobelFrame({ size, imageUrl, sparkles = true, glowColor = '#7E57C2' }: Props) {
   const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -187,15 +108,12 @@ export default function NobelFrame({ size, imageUrl, sparkles = true, glowColor 
         style={{ width: size, height: size }}
         resizeMode="contain"
       />
-      {/* 2026-10-20 (boss's order): Count+ gets a rotating sparkle ring
-          (frame still stays still); below Count keeps twinkles. */}
-      {sparkles && (rotatingSparkles
-        ? <RotatingSparkles size={size * 1.18} />
-        : SPARKLE_POSITIONS.map((pos, i) => (
-          <View key={i} style={[styles.spark, pos as any]}>
-            <Twinkle delay={i * 300} size={size * 0.12} />
-          </View>
-        )))}
+      {/* Sparkles around the entire frame */}
+      {sparkles && SPARKLE_POSITIONS.map((pos, i) => (
+        <View key={i} style={[styles.spark, pos as any]}>
+          <Twinkle delay={i * 300} size={size * 0.12} />
+        </View>
+      ))}
     </View>
   );
 }
