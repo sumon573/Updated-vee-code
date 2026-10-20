@@ -236,7 +236,16 @@ export function LeaderboardModal({
           const uid = ch.val()?.userId as string | undefined;
           if (uid && !seen.has(uid)) { seen.add(uid); seated++; }
         });
-        const aud = audSnap.exists() ? audSnap.numChildren() : 0;
+        // 2026-10-20 (boss): audience counts only LIVE entries (fresh
+        // heartbeat <150s) — ghost entries never inflate a room's count.
+        let aud = 0;
+        if (audSnap.exists()) {
+          const now = Date.now();
+          audSnap.forEach((ch: any) => {
+            const a = ch.val() as { ts?: number } | null;
+            if (typeof a?.ts === 'number' && now - a.ts < 150_000) aud++;
+          });
+        }
         counts[room.id] = seated + aud;
         seatedCountsRef.current[room.id] = seated;
         push();
