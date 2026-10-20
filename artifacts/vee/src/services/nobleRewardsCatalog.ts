@@ -12,9 +12,16 @@
  * - ripple: config for the speaking ripple (colors + particle)
  * - entryEffect: image/config for the room-entry animation
  *
- * Until a design is provided, the `fallbackIcon` (emoji) is used.
+ * 2026-10-20: per-rank artwork lives on Vee's VPS —
+ * https://vee-club.duckdns.org/nobel-art/rank-{slug}-{nameplate,badge,frame}.png
+ * (extracted from IMO's My Nobel video by the assets team).
+ * The `fallbackIcon` (emoji) is used ONLY if an image fails to load.
  * NEVER ship a reward with neither designUrl nor fallbackIcon.
  */
+
+const ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
+const artUrl = (slug: string, kind: 'nameplate' | 'badge' | 'frame') =>
+  `${ART_BASE}/rank-${slug}-${kind}.png`;
 
 export interface RewardDesign {
   /** CDN URL (jsDelivr) — set when Sumon provides the design */
@@ -42,7 +49,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'knight', rankName: 'Knight', rankColor: '#8BC34A',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-knight.png',
+      designUrl: artUrl('knight', 'nameplate'),
       fallbackIcon: '🎖️',
     },
     badge: null, frame: null, ripple: null, entryEffect: null,
@@ -50,11 +57,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'baron', rankName: 'Baron', rankColor: '#26A69A',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-baron.png',
+      designUrl: artUrl('baron', 'nameplate'),
       fallbackIcon: '🎖️',
     },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-baron.png',
+      designUrl: artUrl('baron', 'badge'),
       fallbackIcon: '👑',
     },
     frame: null, ripple: null, entryEffect: null,
@@ -62,78 +69,142 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'viscount', rankName: 'Viscount', rankColor: '#42A5F5',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-viscount.png',
+      designUrl: artUrl('viscount', 'nameplate'),
       fallbackIcon: '🎖️',
       mistColor: '#BBDEFB', // 2026-10-15 (Sumon): mist animation starts from Viscount
     },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-viscount.png',
+      designUrl: artUrl('viscount', 'badge'),
       fallbackIcon: '👑',
     },
-    frame: null, ripple: null, entryEffect: null,
+    frame: {
+      designUrl: artUrl('viscount', 'frame'),
+      fallbackIcon: '🖼️',
+    },
+    ripple: null, entryEffect: null,
   },
   {
     rankKey: 'count', rankName: 'Count', rankColor: '#7E57C2',
     nameplate: {
       fallbackIcon: '🎖️',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-count.png',
+      designUrl: artUrl('count', 'nameplate'),
       mistColor: '#CE93D8',
     },
     badge: {
       fallbackIcon: '👑',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-count.png',
+      designUrl: artUrl('count', 'badge'),
     },
     frame: {
       fallbackIcon: '🖼️',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-count.png',
+      designUrl: artUrl('count', 'frame'),
     },
     ripple: null, entryEffect: null,
   },
   {
     rankKey: 'marquis', rankName: 'Marquis', rankColor: '#EC407A',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('marquis', 'nameplate'),
+      mistColor: '#EFBCD2',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('marquis', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('marquis', 'frame'),
+    },
     ripple: null,
     entryEffect: { fallbackIcon: '✨' },
   },
   {
     rankKey: 'duke', rankName: 'Duke', rankColor: '#FF7043',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('duke', 'nameplate'),
+      mistColor: '#FFCCBC',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('duke', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('duke', 'frame'),
+    },
     ripple: null,
     entryEffect: { fallbackIcon: '✨' },
   },
   {
     rankKey: 'royalDuke', rankName: 'Royal Duke', rankColor: '#FFA000',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('rduke', 'nameplate'),
+      mistColor: '#FFE0B2',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('rduke', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('rduke', 'frame'),
+    },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FFA000', '#FF8F00'] } },
     entryEffect: { fallbackIcon: '✨' },
   },
   {
     rankKey: 'king', rankName: 'King', rankColor: '#FBC02D',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('king', 'nameplate'),
+      mistColor: '#FFF9C4',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('king', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('king', 'frame'),
+    },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FBC02D', '#F9A825'] } },
     entryEffect: { fallbackIcon: '✨' },
   },
   {
     rankKey: 'sking', rankName: 'SKing', rankColor: '#E65100',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('sking', 'nameplate'),
+      mistColor: '#FFCCBC',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('sking', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('sking', 'frame'),
+    },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#E65100', '#BF360C'] } },
     entryEffect: { fallbackIcon: '✨' },
   },
   {
     rankKey: 'ssking', rankName: 'SSKing', rankColor: '#BF360C',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: { fallbackIcon: '👑' },
-    frame: { fallbackIcon: '🖼️' },
+    nameplate: {
+      fallbackIcon: '🎖️',
+      designUrl: artUrl('ssking', 'nameplate'),
+      mistColor: '#EF9A9A',
+    },
+    badge: {
+      fallbackIcon: '👑',
+      designUrl: artUrl('ssking', 'badge'),
+    },
+    frame: {
+      fallbackIcon: '🖼️',
+      designUrl: artUrl('ssking', 'frame'),
+    },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#BF360C', '#880E4F'] } },
     entryEffect: { fallbackIcon: '✨' },
   },
