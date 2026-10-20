@@ -220,7 +220,7 @@ function Sparkle({ delay, left, top, size = 4, color = '#FFFFFF' }:
   );
 }
 
-function LevelBadge({ level }: { level: number }) {
+function LevelBadge({ level, width = 100 }: { level: number; width?: number }) {
   const tier = getLevelTier(level);
   const levelInTier = getLevelInTier(level);
   const style = TIER_STYLE[tier];
@@ -236,7 +236,7 @@ function LevelBadge({ level }: { level: number }) {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          width: 100, height: 20, borderRadius: 10,
+          width, height: 20, borderRadius: 10,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden' }}
       >
@@ -312,7 +312,7 @@ function fmtCompact(n: number): string {
 
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
-function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
+function PremiumPill({ label, icon, colors, width = 100 }: { label: string; icon?: string; colors: [string, string]; width?: number }) {
   // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
   return (
     <View style={{ marginRight: 6 }}>
@@ -321,7 +321,7 @@ function PremiumPill({ label, icon, colors }: { label: string; icon?: string; co
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          width: 100, height: 20, borderRadius: 10,
+          width, height: 20, borderRadius: 10,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
       >
         {icon && <Text style={{ fontSize: 10, marginRight: 3 }}>{icon}</Text>}
@@ -441,6 +441,9 @@ export default function ProfileScreen({
   }, [isMe, user?.uid]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // 2026-10-20 (boss): profile pills row — measured pill width so Nameplate /
+  // Level / Follower sit in ONE line at the SAME size and always fit.
+  const [pillW, setPillW] = useState(100);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
@@ -1000,26 +1003,35 @@ export default function ProfileScreen({
                 the bottom Edit button; nothing in the header opens Edit. */}
           </View>
 
-          {/* ─── Pills: nameplate + Level + Follower — 100x20 uniform, ONE LINE
-              (2026-10-20 boss: restore exact previous arrangement; wrap is OFF,
-              all three pills same size, single line, no break) ─── */}
-          <View style={{ flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 12 }}>
+          {/* ─── Pills: nameplate + Level + Follower — uniform 20dp height, ONE LINE.
+              2026-10-20 boss: all three MUST fit exactly like before — measure
+              the row and size each pill identically (100 wide on a full-width
+              row; scaled down together on narrow screens). Never wraps. ─── */}
+          <View
+            style={{ flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 12 }}
+            onLayout={(e) => {
+              const rowW = e.nativeEvent.layout.width;
+              // three pills + total 18dp of margins must fit the row
+              setPillW(Math.min(100, Math.max(70, Math.floor((rowW - 18) / 3))));
+            }}
+          >
             {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
               <View style={{ marginRight: 6 }}>
                 {nameplateMist ? (
-                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
+                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={pillW} height={20} />
                 ) : (
                   <Image
                     source={{ uri: activeNameplate.icon }}
-                    style={{ width: 100, height: 20 }}
+                    style={{ width: pillW, height: 20 }}
                     resizeMode="contain"
                   />
                 )}
               </View>
             ) : null}
-            <LevelBadge level={userLevel} />
+            <LevelBadge level={userLevel} width={pillW} />
             <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
               <PremiumPill
+                width={pillW}
                 label={`${fmtCompact(followCounts.followers)} Follower`}
                 icon="⭐"
                 colors={['#0EA5E9', '#38BDF8']}
