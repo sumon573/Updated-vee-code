@@ -882,7 +882,9 @@ export default function ProfileScreen({
           <Feather name="chevron-left" size={24} color={C.text} />
         </Pressable>
         <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
-          {isMe ? t('profile.me', 'Me') : displayName}
+          {/* 2026-10-20 (boss): NO "Me" title on own profile — title text removed.
+              Other users' profiles still show their name here. */}
+          {isMe ? '' : displayName}
         </Text>
         {isMe ? (
           <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
