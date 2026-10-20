@@ -535,6 +535,14 @@
             ".validate": "!newData.exists() || (newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('ts').isNumber())"
           }
         },
+        "nobleUpgrades": {
+          // 2026-10-20: "Congratulations to X for upgrading to Y" golden banner
+          // (SKing+ privilege) — room members broadcast their own rank-up.
+          "$upgradeId": {
+            ".write": "auth != null",
+            ".validate": "!newData.exists() || (newData.child('uid').val() === auth.uid && newData.child('name').isString() && newData.child('rankIndex').isNumber() && newData.child('ts').isNumber())"
+          }
+        },
         "giftEvents": {
           "$eventId": {
             ".write": "auth != null",
