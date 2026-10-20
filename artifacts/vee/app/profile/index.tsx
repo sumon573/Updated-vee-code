@@ -8,7 +8,6 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, Alert, Modal, Image, Pressable, FlatList, Animated } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import MistNameplate from '@/src/components/MistNameplate';
-import ShimmerNameplate from '@/src/components/ShimmerNameplate';
 import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -38,7 +37,7 @@ import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/fir
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
-import { subscribeNoble, NOBLE_RANKS, type NobleState , checkNobleMaintenance, rankIndexForKey, nobleVisualsAnimated } from '@/src/services/nobleService';
+import { subscribeNoble, NOBLE_RANKS, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import { useTranslation } from 'react-i18next';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
@@ -1003,10 +1002,7 @@ export default function ProfileScreen({
           {/* ─── Pills: nameplate + Level + Follower — 100x20 uniform, one line (sacred) ─── */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}>
             {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
-              // 2026-10-20 (boss's order): Count+ nameplates shimmer
-              nobleVisualsAnimated(rankIndexForKey((activeNameplate.id || '').replace('noble-plate-', ''))) ? (
-                <ShimmerNameplate imageUrl={activeNameplate.icon} width={100} height={20} />
-              ) : nameplateMist ? (
+              nameplateMist ? (
                 <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} />
               ) : (
                 <Image

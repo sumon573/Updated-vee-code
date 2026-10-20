@@ -86,9 +86,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 ];
 
 import MistNameplate from '@/src/components/MistNameplate';
-import ShimmerNameplate from '@/src/components/ShimmerNameplate';
 import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
-import { rankIndexForKey, nobleVisualsAnimated } from '@/src/services/nobleService';
 
 function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
   // 2026-10-16: Hooks must be at top level — before any early returns
@@ -105,14 +103,10 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
       </View>
     );
   }
-  /* 2026-10-20 (boss's order): shimmer animation for Count+ nameplates;
-     2026-10-15: Mist animation for Viscount+ nameplates */
+  /* 2026-10-15 (Sumon): Mist animation for Viscount+ nameplates */
   if (itemId && /^https?:\/\//i.test(icon)) {
-    const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === itemId);
-    if (entry && nobleVisualsAnimated(rankIndexForKey(entry.rankKey))) {
-      return <ShimmerNameplate imageUrl={icon} width={100} height={34} />;
-    }
-    const mistColor = entry?.nameplate.mistColor;
+    const mistEntry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === itemId);
+    const mistColor = mistEntry?.nameplate.mistColor;
     if (mistColor) {
       return <MistNameplate imageUrl={icon} mistColor={mistColor} width={100} height={34} />;
     }
