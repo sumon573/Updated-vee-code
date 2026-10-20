@@ -133,8 +133,16 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
   const timeColor = isMe ? C.timeOnBlue : C.time;
   const trackBg = isMe ? C.trackBgOnBlue : C.trackBg;
 
+  // 2026-10-20 (boss): the progress track must FIT the clip — the old fixed
+  // minWidth 180 stretched a long empty line across even a 1-second voice
+  // note ("unprofessional"). Width now scales with duration (short clip =
+  // compact bubble), capped for long notes; unknown duration = compact.
+  const trackWidth = totalSec > 0
+    ? Math.round(Math.min(172, Math.max(64, 52 + totalSec * 3.4)))
+    : 64;
+
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 180, maxWidth: 220 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       {/* Play / pause */}
       <Pressable
         onPress={toggle}
@@ -155,7 +163,7 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
       </Pressable>
 
       {/* Progress + duration */}
-      <View style={{ flex: 1 }}>
+      <View style={{ width: trackWidth }}>
         <View style={{
           height: 4, borderRadius: 2,
           backgroundColor: trackBg,

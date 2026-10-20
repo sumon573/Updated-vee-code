@@ -54,6 +54,9 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
     senderId: v.senderId as string,
     type: (v.type as DmMessage['type']) ?? 'text',
     content: (v.content as string) ?? '',
+    // 2026-10-20 (boss): voice-message duration — written at send time but
+    // never read back, so every voice bubble showed 0:00 until played.
+    ...(typeof v.durationSec === 'number' ? { durationSec: v.durationSec } : {}),
     cloudinaryId: v.cloudinaryId as string | undefined,
     createdAt: (v.createdAt as number) ?? Date.now(),
     status: (v.status as DmMessage['status']) ?? 'sent',
