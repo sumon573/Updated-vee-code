@@ -2,7 +2,8 @@
  * IMOStoryRow — IMO-style story circles row (2026-10-10).
  * "Add a story" + horizontal scrollable story DPs with unread badges.
  */
-import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
 
 export interface IMOStory {

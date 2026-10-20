@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, Pressable, Image, Alert, TextInput, Platform } from 'react-native';
+import { View, Text, FlatList, Pressable, Alert, TextInput, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';

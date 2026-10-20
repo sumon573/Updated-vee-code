@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Text, Animated, Easing, Image, View } from 'react-native';
+import { Text, Animated, Easing, View } from 'react-native';
+import { Image } from 'expo-image';
 import AnimatedFrame from '../../../components/AnimatedFrame';
 import NobelFrame from '../../../components/NobelFrame';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';

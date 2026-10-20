@@ -5,7 +5,8 @@
  * add affordance. Tapping a group opens the shared StoryViewer via the
  * shell's onStoryPress(userId).
  */
-import { View, Text, FlatList, Image, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserStories } from '@/src/features/chat/types';
 
