@@ -9,7 +9,7 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
@@ -317,6 +317,26 @@ export default function VoiceRoomHome({
   const [locationDenied, setLocationDenied] = useState(false);
   const locationRequestedRef = useRef(false);
 
+  // 2026-10-20 (boss): pull-to-refresh, exactly like the chat screen — a pull
+  // re-subscribes both room feeds (fresh Firebase snapshots) and the spinner
+  // stops on the first fresh snapshot (8s safety timeout mirrors chat).
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const refreshingRef = useRef(false);
+  const finishRefresh = () => {
+    if (refreshingRef.current) {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  };
+  const handleRefresh = () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshTick((n) => n + 1);
+    setTimeout(finishRefresh, 8000);
+  };
+
   // Subscribe to my rooms: created rooms first, then rooms I've joined
   // (most-recently-joined first) — persists even after minimizing or
   // fully exiting a room, so it's always findable again here.
@@ -325,18 +345,20 @@ export default function VoiceRoomHome({
     const unsub = subscribeMyRoomsCombined(user.uid, (rooms) => {
       setMyRooms(rooms);
       setMyLoading(false);
+      finishRefresh();
     });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, refreshTick]);
 
   // Subscribe to all active public rooms
   useEffect(() => {
     const unsub = subscribeActiveRooms((rooms) => {
       setAllRooms(rooms);
       setRecLoading(false);
+      finishRefresh();
     });
     return unsub;
-  }, []);
+  }, [refreshTick]);
 
   // Fix 6: Request location permission when "Nearby" tab is selected
   useEffect(() => {
@@ -420,6 +442,9 @@ export default function VoiceRoomHome({
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
       >
         {isLoading ? (
           <View style={{ paddingTop: 60, alignItems: 'center' }}>
