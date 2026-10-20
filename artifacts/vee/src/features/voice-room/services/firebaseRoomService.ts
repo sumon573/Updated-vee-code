@@ -1493,6 +1493,47 @@ export function subscribeRoomEntryEvents(
   });
 }
 
+// ─── Noble Upgrade Broadcast (2026-10-20) ────────────────────────────────────
+// When a user in the room reaches a rank that holds the Upgrade Banner
+// privilege (SKing+, rankIndex >= 8), broadcast it so ALL participants see
+// IMO's "Congratulations to X for upgrading to Y" golden banner.
+// Mirrors the entry-event pattern (push + limitToLast(1) + client TTL).
+
+export type RoomNobleUpgradeEvent = {
+  uid: string;
+  name: string;
+  rankIndex: number;
+  ts: number;
+};
+
+/**
+ * Broadcast a noble rank-up to all room participants.
+ * Stored at rooms/{roomId}/nobleUpgrades/{pushId}; TTL enforced client-side.
+ */
+export async function sendNobleUpgradeEvent(
+  roomId: string,
+  event: Omit<RoomNobleUpgradeEvent, 'ts'>,
+): Promise<void> {
+  const upgradeRef = push(ref(database, `rooms/${roomId}/nobleUpgrades`));
+  await set(upgradeRef, { ...event, ts: Date.now() });
+}
+
+/** Subscribe to the most recent noble upgrade in the room. */
+export function subscribeNobleUpgrades(
+  roomId: string,
+  callback: (event: RoomNobleUpgradeEvent | null) => void,
+): () => void {
+  const q = query(ref(database, `rooms/${roomId}/nobleUpgrades`), limitToLast(1));
+  return onValue(q, (snap) => {
+    if (!snap.exists()) { callback(null); return; }
+    let latest: RoomNobleUpgradeEvent | null = null;
+    snap.forEach((child) => {
+      latest = child.val() as RoomNobleUpgradeEvent;
+    });
+    callback(latest);
+  });
+}
+
 // ─── Gift Animation Broadcast (2026-10-10) ───────────────────────────────────
 // When a gift is sent, broadcast it so ALL participants see the fly animation.
 
