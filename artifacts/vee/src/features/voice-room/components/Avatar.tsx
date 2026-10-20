@@ -4,7 +4,7 @@ import AnimatedFrame from '../../../components/AnimatedFrame';
 import NobelFrame from '../../../components/NobelFrame';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { C } from '../constants/theme';
-import { nobleThemeFor, rankIndexForKey, nobleVisualsAnimated } from '@/src/services/nobleService';
+import { nobleThemeFor } from '@/src/services/nobleService';
 
 /* ─────────────────────────── MsgText ─────────────────────────── */
 export function MsgText({ text, accent }: { text: string; accent: string }) {
@@ -303,15 +303,7 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
               const designUrl = catalog?.frame?.designUrl;
               if (designUrl && /^https?:\/\//i.test(designUrl)) {
                 // 2026-10-15: Frame inner opening is ~51% of image — 1.6x ensures DP fits
-                // 2026-10-20 (boss's order): Count+ frames get the rotating
-                // sparkle ring + glow (nobleVisualsAnimated).
-                return (
-                  <NobelFrame
-                    size={size * 1.6}
-                    imageUrl={designUrl}
-                    rotatingSparkles={nobleVisualsAnimated(rankIndexForKey(rankKey))}
-                  />
-                );
+                return <NobelFrame size={size * 1.6} imageUrl={designUrl} />;
               }
               // Fallback to regular frame if no design URL
               return <AnimatedFrame size={size} frameId={frameType} compact />;

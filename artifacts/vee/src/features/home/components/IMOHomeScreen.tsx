@@ -538,6 +538,7 @@ export default function IMOHomeScreen() {
         activeTab={activeTab}
         chatsBadgeCount={totalUnread}
         callsBadgeCount={missedCalls}
+        myAvatar={profile?.photoURL || user?.photoURL || null}
         onTabPress={handleTabPress}
       />
     </SafeAreaView>

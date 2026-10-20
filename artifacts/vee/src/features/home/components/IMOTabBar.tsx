@@ -1,10 +1,13 @@
 /**
  * IMOTabBar — IMO-style bottom tab bar (2026-10-19).
- * 5 TEXT tabs (15sp, 56dp bar): Chats · Contacts · Stories · Calls · Me.
+ * TEXT tabs (15sp, 56dp bar): Chats · Contacts · Me.
  * Selected #009dff (medium), unselected #333333. Red #ff3b30 badge pills.
  * Per ~/workspace/imo-voiceroom/ui-preview/HOME-PROFILE-TOKENS.md
+ * 2026-10-20 (boss's order): Stories + Calls tabs REMOVED from the bar;
+ * the "Me" text is replaced by the user's own profile DP (photo), with a
+ * blue ring when selected. Tab content screens themselves are untouched.
  */
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Image } from 'react-native';
 
 export type HomeTab = 'chats' | 'contacts' | 'stories' | 'calls' | 'me';
 
@@ -12,14 +15,14 @@ interface IMOTabBarProps {
   activeTab: HomeTab;
   chatsBadgeCount?: number;
   callsBadgeCount?: number;
+  /** 2026-10-20 (boss): the user's profile photo for the Me tab. */
+  myAvatar?: string | null;
   onTabPress: (tab: HomeTab) => void;
 }
 
 const TABS: Array<{ key: HomeTab; label: string }> = [
   { key: 'chats', label: 'Chats' },
   { key: 'contacts', label: 'Contacts' },
-  { key: 'stories', label: 'Stories' },
-  { key: 'calls', label: 'Calls' },
   { key: 'me', label: 'Me' },
 ];
 
@@ -51,7 +54,7 @@ function Badge({ count }: { count: number }) {
 export default function IMOTabBar({
   activeTab,
   chatsBadgeCount = 0,
-  callsBadgeCount = 0,
+  myAvatar,
   onTabPress,
 }: IMOTabBarProps) {
   return (
@@ -66,8 +69,7 @@ export default function IMOTabBar({
     >
       {TABS.map((tab) => {
         const selected = activeTab === tab.key;
-        const badge =
-          tab.key === 'chats' ? chatsBadgeCount : tab.key === 'calls' ? callsBadgeCount : 0;
+        const badge = tab.key === 'chats' ? chatsBadgeCount : 0;
         return (
           <TouchableOpacity
             key={tab.key}
@@ -76,18 +78,38 @@ export default function IMOTabBar({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
           >
-            <View>
-              <Text
+            {tab.key === 'me' ? (
+              /* 2026-10-20 (boss): profile DP instead of the "Me" text */
+              <View
                 style={{
-                  fontSize: 15,
-                  fontWeight: selected ? '600' : '400',
-                  color: selected ? '#009dff' : '#333333',
+                  width: 32, height: 32, borderRadius: 16,
+                  borderWidth: selected ? 2 : 1,
+                  borderColor: selected ? '#009dff' : '#D8DBDE',
+                  alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden',
+                  backgroundColor: '#E8EAED',
                 }}
               >
-                {tab.label}
-              </Text>
-              <Badge count={badge} />
-            </View>
+                {myAvatar ? (
+                  <Image source={{ uri: myAvatar }} style={{ width: 32, height: 32 }} />
+                ) : (
+                  <Text style={{ fontSize: 15 }}>👤</Text>
+                )}
+              </View>
+            ) : (
+              <View>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: selected ? '600' : '400',
+                    color: selected ? '#009dff' : '#333333',
+                  }}
+                >
+                  {tab.label}
+                </Text>
+                <Badge count={badge} />
+              </View>
+            )}
           </TouchableOpacity>
         );
       })}

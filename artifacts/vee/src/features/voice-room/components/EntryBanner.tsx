@@ -19,81 +19,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 
-/**
- * SparkleBurst — 2026-10-20 (boss's order).
- * A one-shot golden sparkle burst that erupts when a Count+ noble's
- * entry banner appears: ~12 sparkles shoot outward from the banner's
- * center and fade. Runs once on mount (no loop), all native-driven.
- */
-function SparkleBurst({ width = 260, height = 80 }: { width?: number; height?: number }) {
-  const animsRef = useRef<Animated.Value[] | null>(null);
-  if (animsRef.current === null) {
-    animsRef.current = Array.from({ length: 12 }, () => new Animated.Value(0));
-  }
-  const anims = animsRef.current;
-  const spotsRef = useRef<{ dx: number; dy: number; size: number; delay: number; glyph: string }[] | null>(null);
-  if (spotsRef.current === null) {
-    spotsRef.current = Array.from({ length: 12 }, (_, i) => {
-      const angle = (i / 12) * Math.PI * 2 + (i % 3) * 0.22;
-      const dist = 55 + (i % 4) * 22;
-      return {
-        dx: Math.cos(angle) * dist,
-        dy: Math.sin(angle) * dist * 0.62,
-        size: 10 + (i % 3) * 5,
-        delay: (i % 5) * 90,
-        glyph: i % 4 === 0 ? '⭐' : '✨',
-      };
-    });
-  }
-  const spots = spotsRef.current;
-
-  useEffect(() => {
-    const seqs = anims.map((a, i) =>
-      Animated.sequence([
-        Animated.delay(spots[i].delay),
-        Animated.timing(a, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]),
-    );
-    const all = Animated.stagger(40, seqs);
-    all.start();
-    return () => all.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: 'absolute', left: 0, top: 0, width, height,
-        alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      {spots.map((s, i) => {
-        const a = anims[i];
-        return (
-          <Animated.Text
-            key={i}
-            style={{
-              position: 'absolute',
-              fontSize: s.size,
-              opacity: a.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 1, 0] }),
-              transform: [
-                { translateX: a.interpolate({ inputRange: [0, 1], outputRange: [0, s.dx] }) },
-                { translateY: a.interpolate({ inputRange: [0, 1], outputRange: [0, s.dy] }) },
-                { scale: a.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0.4, 1.2, 0.6] }) },
-              ],
-              textShadowColor: '#FFD700',
-              textShadowRadius: 6,
-            }}
-          >
-            {s.glyph}
-          </Animated.Text>
-        );
-      })}
-    </View>
-  );
-}
-
 interface EntryBannerProps {
   /** The joiner's display name */
   name: string;
@@ -241,8 +166,6 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
           <Text style={{ position: 'absolute', top: 4, right: 10, fontSize: 10 }}>✨</Text>
           <Text style={{ position: 'absolute', bottom: 6, right: 28, fontSize: 10 }}>✨</Text>
         </LinearGradient>
-        {/* 2026-10-20 (boss's order): golden sparkle burst on entry for Count+ */}
-        <SparkleBurst width={280} height={84} />
       </Animated.View>
     );
   }
