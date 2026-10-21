@@ -774,17 +774,23 @@ export function LeaderboardModal({
         </Text>
       </View>
       <DPAvatar name={myName} photoURL={myPhoto} size={40} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: C.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1 }}>
+      {/* 2026-10-21 fix (boss screenshot): the right column was unconstrained,
+          so a long empty-hint ("Your room isn't live right now") took its full
+          one-line intrinsic width and starved the flex:1 name column down to
+          ~1 character — "YOUR RANK" wrapped letter-by-letter and the name
+          ellipsized to "…". Cap + shrink the right column, let the hint wrap
+          to 2 lines right-aligned, and pin the label to a single line. */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: C.gold, fontSize: 10, fontWeight: '800', letterSpacing: 1 }} numberOfLines={1}>
           {t('leaderboard.yourRank', { defaultValue: 'YOUR RANK' })}
         </Text>
         <Text style={{ color: C.text, fontSize: 15, fontWeight: '800' }} numberOfLines={1}>{myName}</Text>
       </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={{ color: C.text, fontSize: 16, fontWeight: '800' }}>
+      <View style={{ alignItems: 'flex-end', flexShrink: 1, marginLeft: 10, maxWidth: '52%' }}>
+        <Text style={{ color: C.text, fontSize: 16, fontWeight: '800' }} numberOfLines={1}>
           {stat !== null ? `💎${fmtCompact(stat)}` : '–'}
         </Text>
-        <Text style={{ color: C.muted, fontSize: 11 }}>{rank > 0 ? statLabel : emptyHint}</Text>
+        <Text style={{ color: C.muted, fontSize: 11, textAlign: 'right' }} numberOfLines={2}>{rank > 0 ? statLabel : emptyHint}</Text>
       </View>
     </View>
   );
