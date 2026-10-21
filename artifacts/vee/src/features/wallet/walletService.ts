@@ -31,7 +31,7 @@ import { getApiBase } from '@/src/utils/platform';
 
 async function authedFetch(
   path: string,
-  opts?: { method?: 'GET' | 'POST'; body?: unknown },
+  opts?: { method?: 'GET' | 'POST'; body?: unknown; timeoutMs?: number },
 ): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new GiftError('Not signed in');
@@ -40,16 +40,26 @@ async function authedFetch(
   // rejects it (401), the user sees an error, and only the SECOND attempt
   // (after the SDK auto-refreshes) succeeds. Retry once with a forced
   // refresh on 401/403 so the FIRST attempt works.
+  // 2026-10-21 (boss: gift sends felt slow): optional hard timeout — a hung
+  // api-server must never stall the caller; on abort the fetch throws and
+  // the caller's fallback path takes over, same as a network failure.
   const doFetch = async (forceRefresh: boolean): Promise<Response> => {
     const idToken = await user.getIdToken(forceRefresh);
-    return fetch(`${getApiBase()}/api${path}`, {
-      method: opts?.method ?? 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
+    const ctrl = opts?.timeoutMs ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), opts!.timeoutMs) : null;
+    try {
+      return await fetch(`${getApiBase()}/api${path}`, {
+        method: opts?.method ?? 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   };
   let res = await doFetch(false);
   if (res.status === 401 || res.status === 403) {
@@ -815,6 +825,11 @@ export async function sendGift({
     res = await authedFetch('/wallet/send-gift', {
       method: 'POST',
       body: serverBody,
+      // 2026-10-21: the api-server's send-gift has a record of hanging —
+      // cap the wait at 6 s, then the Firebase fallback below takes over
+      // (protected by the same idempotency key), instead of the gift
+      // sitting frozen for the OS network timeout.
+      timeoutMs: 6000,
     });
   } catch {
     // Network failure — res stays null, fallback below takes over.

@@ -218,6 +218,99 @@ async function requestMicPermission(strings: {
   }
 }
 
+// ─── LiveKit token fetch + prefetch cache ────────────────────────────────────
+// 2026-10-21 (boss: voice-room entry is slow): entering a room used to run
+// STRICTLY serial — RTDB room-info first value → PIN gate → mic check →
+// token POST to the VPS → audio session → WebRTC connect. The token POST
+// (~0.5–1 s from BD to the EU VPS) sat fully exposed in that chain even
+// though it depends on nothing but roomId + userName. The screen now calls
+// prefetchLivekitToken() the moment it mounts, so the token is usually
+// already in hand when the PIN gate passes; join() consumes the cached
+// token when fresh (<45 s — LiveKit tokens live far longer) and only then
+// fetches. A prefetched token for a room the user never actually enters
+// (PIN-locked, backed out) simply expires unused — token creation is free
+// and grants nothing by itself.
+
+type LivekitTokenData = { token: string; url: string };
+
+let tokenCache: {
+  roomId: string;
+  userName: string;
+  at: number;
+  promise: Promise<LivekitTokenData>;
+} | null = null;
+
+const TOKEN_CACHE_TTL_MS = 45000;
+
+async function fetchLivekitToken(roomId: string, userName: string): Promise<LivekitTokenData> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) throw new Error('Not signed in');
+  const idToken = await fbUser.getIdToken();
+  const tokenCtrl = new AbortController();
+  const tokenTimeout = setTimeout(() => tokenCtrl.abort(), 20000);
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}/api/livekit/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        roomName: roomId,
+        participantName: userName,
+        canPublish: true,
+      }),
+      signal: tokenCtrl.signal,
+    });
+  } catch (e) {
+    throw new Error(
+      e instanceof Error && e.name === 'AbortError'
+        ? 'Voice server request timed out (20s)'
+        : 'Voice server request failed (network)',
+    );
+  } finally {
+    clearTimeout(tokenTimeout);
+  }
+  if (!res.ok) throw new Error(`Voice server request failed (${res.status})`);
+  const data = (await res.json()) as { token?: string; url?: string };
+  if (!data.token || !data.url) {
+    throw new Error('Voice server returned an invalid response');
+  }
+  return { token: data.token, url: data.url };
+}
+
+/** Fire-and-forget: warm the token cache for a room the user is entering. */
+export function prefetchLivekitToken(roomId: string, userName: string): void {
+  if (!roomId || !userName) return;
+  if (
+    tokenCache &&
+    tokenCache.roomId === roomId &&
+    tokenCache.userName === userName &&
+    Date.now() - tokenCache.at < TOKEN_CACHE_TTL_MS
+  ) {
+    return;
+  }
+  const promise = fetchLivekitToken(roomId, userName);
+  // Swallow here — join() re-awaits the same promise and surfaces errors.
+  promise.catch(() => {});
+  tokenCache = { roomId, userName, at: Date.now(), promise };
+}
+
+async function acquireLivekitToken(roomId: string, userName: string): Promise<LivekitTokenData> {
+  if (
+    tokenCache &&
+    tokenCache.roomId === roomId &&
+    tokenCache.userName === userName &&
+    Date.now() - tokenCache.at < TOKEN_CACHE_TTL_MS
+  ) {
+    const cached = tokenCache;
+    tokenCache = null; // single-use — a retry must fetch a fresh token
+    return cached.promise;
+  }
+  return fetchLivekitToken(roomId, userName);
+}
+
 // ─── Engine ──────────────────────────────────────────────────────────────────
 
 /**
@@ -613,44 +706,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       markVoiceStage('sdk_loaded', roomId);
 
       // 1. Token from the LiveKit token endpoint (Bearer Firebase ID token).
-      // 2026-10-13: 20s timeout — API hang করলে "connecting" অবস্থায় চিরকাল
-      // আটকে থাকত, কোনো error-ও দেখাত না।
-      const fbUser = auth.currentUser;
-      if (!fbUser) throw new Error('Not signed in');
-      const idToken = await fbUser.getIdToken();
+      // 2026-10-13: 20s timeout inside fetchLivekitToken — API hang করলে
+      // "connecting" অবস্থায় চিরকাল আটকে থাকত, কোনো error-ও দেখাত না।
+      // 2026-10-21: usually already prefetched by the screen at mount —
+      // acquireLivekitToken returns the in-flight/cached token instantly.
+      const data = await acquireLivekitToken(roomId, identity.userName);
       if (this.joinAborted(myGeneration)) return;
-      const tokenCtrl = new AbortController();
-      const tokenTimeout = setTimeout(() => tokenCtrl.abort(), 20000);
-      let res: Response;
-      try {
-        res = await fetch(`${getApiBase()}/api/livekit/token`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            roomName: roomId,
-            participantName: identity.userName,
-            canPublish: true,
-          }),
-          signal: tokenCtrl.signal,
-        });
-      } catch (e) {
-        throw new Error(
-          e instanceof Error && e.name === 'AbortError'
-            ? 'Voice server request timed out (20s)'
-            : 'Voice server request failed (network)',
-        );
-      } finally {
-        clearTimeout(tokenTimeout);
-      }
-      if (!res.ok) throw new Error(`Voice server request failed (${res.status})`);
-      const data = (await res.json()) as { token?: string; url?: string };
-      if (this.joinAborted(myGeneration)) return;
-      if (!data.token || !data.url) {
-        throw new Error('Voice server returned an invalid response');
-      }
       // Crash breadcrumb: token acquired, about to touch the native audio session.
       markVoiceStage('token_ok', roomId);
 
@@ -1065,21 +1126,15 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         if (!roomID || userID === 'anonymous') return;
 
         // Crash breadcrumb: the screen now begins the native voice init
-        // sequence (mic permission → SDK load → token → audio session).
+        // sequence (SDK load → token → audio session).
         markVoiceStage('engine_init_start', roomID);
 
-        const hasMic = await requestMicPermission({
-          title: t('voiceRoom.screen.micPermissionTitle'),
-          message: t('voiceRoom.screen.micPermissionMessage'),
-          allow: t('voiceRoom.screen.allow'),
-          deny: t('voiceRoom.screen.deny'),
-          askLater: t('voiceRoom.screen.askLater'),
-        });
-        if (!hasMic) {
-          if (mountedRef.current) {
-            setError(t('voiceRoom.screen.micPermissionDenied'));
-          }
-        }
+        // 2026-10-21 (boss: room entry is slow): mic permission is NO
+        // LONGER requested on entry. Joining is audience-only — no mic is
+        // published — so the permission round-trip (and, for a first-time
+        // user, a blocking system dialog) taxed every entry for nothing.
+        // The permission is now requested lazily in startPublishing(),
+        // the moment the user actually takes a seat.
 
         if (!mountedRef.current) return;
 
@@ -1134,10 +1189,28 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   ══════════════════════════════════════════════ */
 
   const startPublishing = useCallback(() => {
-    engineRef.current?.publish().catch(() => {
+    // 2026-10-21: mic permission moved here from room entry (see the init
+    // effect) — requested only when the user actually takes a seat and is
+    // about to publish. Already-granted resolves in milliseconds.
+    (async () => {
+      const hasMic = await requestMicPermission({
+        title: t('voiceRoom.screen.micPermissionTitle'),
+        message: t('voiceRoom.screen.micPermissionMessage'),
+        allow: t('voiceRoom.screen.allow'),
+        deny: t('voiceRoom.screen.deny'),
+        askLater: t('voiceRoom.screen.askLater'),
+      });
+      if (!hasMic) {
+        if (mountedRef.current) {
+          setError(t('voiceRoom.screen.micPermissionDenied'));
+        }
+        return;
+      }
+      await engineRef.current?.publish();
+    })().catch(() => {
       // non-critical — engine surfaces failures via state
     });
-  }, []);
+  }, [t]);
 
   const stopPublishing = useCallback(() => {
     engineRef.current?.unpublish().catch(() => {

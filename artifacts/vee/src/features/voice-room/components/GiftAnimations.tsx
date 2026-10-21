@@ -443,10 +443,14 @@ function VideoGift({ animationUrl, size = 120, fullscreen = false }: {
 // 2026-10-19: IMO gifts — fullscreen animated WebP playback (expo-image plays
 // animated WebP natively, no new native module needed). Used for IMO's blast
 // gifts which are designed for fullscreen dramatic effects.
-function WebpGift({ animationUrl, size = 120, fullscreen = false }: {
+// 2026-10-21 (boss): onReady fires when the first frame is actually decoded —
+// the show clock in GiftFlyAnimation starts from THIS moment, so download
+// time never eats the gift's display time.
+function WebpGift({ animationUrl, size = 120, fullscreen = false, onReady }: {
   animationUrl: string;
   size?: number;
   fullscreen?: boolean;
+  onReady?: () => void;
 }) {
   const { width: screenW, height: screenH } = Dimensions.get('window');
   const giftSize = fullscreen ? Math.min(screenW * 0.92, screenH * 0.62) : size;
@@ -456,12 +460,15 @@ function WebpGift({ animationUrl, size = 120, fullscreen = false }: {
       source={{ uri: animationUrl }}
       style={{ width: giftSize, height: giftSize }}
       contentFit="contain"
+      cachePolicy="memory-disk"
+      onLoad={onReady}
+      onError={onReady}
       // Animated WebP loops natively via expo-image
     />
   );
 }
 
-export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize, videoFullscreen }: {
+export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize, videoFullscreen, onReady }: {
   giftId: string;
   emoji: string;
   size?: number;
@@ -469,7 +476,16 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   animationType?: string;
   videoSize?: number;
   videoFullscreen?: boolean;
+  /** 2026-10-21 (boss): fires when the gift art is actually visible/decoded
+   *  (or immediately for built-in animations) so callers can start their
+   *  display clock at true playback start, not at mount. */
+  onReady?: () => void;
 }) {
+  // Built-in animations render instantly — report ready on mount.
+  useEffect(() => {
+    if (!animationUrl) onReady?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 2026-10-16 (Sumon): PERMANENT — server-driven gifts with video play the video as-is
   // 2026-10-17 (Sumon): videoSize/videoFullscreen are server-driven via Firebase gift_catalog — no build needed to adjust. Video plays stable, no rotation/movement.
   if (animationType === 'video' && animationUrl) {
@@ -478,7 +494,7 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   // 2026-10-19: IMO gifts — animationType='webp' plays animated WebP fullscreen
   // via expo-image (native animated WebP support, no new native module).
   if (animationType === 'webp' && animationUrl) {
-    return <WebpGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} />;
+    return <WebpGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} onReady={onReady} />;
   }
   // 2026-10-17 (Sumon): CRITICAL FIX — server gifts with animationType='image'
   // must render the CDN image, not fall through to emoji!
@@ -488,6 +504,8 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
         source={{ uri: animationUrl }}
         style={{ width: size, height: size, borderRadius: size / 8 }}
         resizeMode="contain"
+        onLoad={onReady}
+        onError={onReady}
       />
     );
   }

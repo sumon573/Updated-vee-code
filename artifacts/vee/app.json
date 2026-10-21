@@ -44,6 +44,7 @@
     },
     "android": {
       "backgroundColor": "#FFFFFF",
+      "allowBackup": false,
       "package": "com.vee.app",
       "minSdkVersion": 24,
       "targetSdkVersion": 35,

@@ -13,7 +13,8 @@ import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
-import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
+import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
+import { fetchGiftCatalog } from '../services/giftCatalogService';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
@@ -164,6 +165,19 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     markVoiceStage('screen_mount', roomId);
   }, []);
+
+  // 2026-10-21 (boss: room entry slow + gift play delayed): warm the two
+  // network-bound caches the moment the screen mounts, in parallel with
+  // everything else — (1) the LiveKit token, so voice connect doesn't wait
+  // on the VPS round trip after the PIN gate passes; (2) the gift catalog,
+  // whose load also prefetches every gift's animation into the image cache
+  // so a sent gift plays instantly.
+  useEffect(() => {
+    if (!roomId || !myUid || myUid === 'anonymous') return;
+    prefetchLivekitToken(roomId, voiceUserName);
+    fetchGiftCatalog().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, myUid]);
 
   
   useFocusEffect(
@@ -2022,14 +2036,12 @@ export default function VoiceRoomScreen() {
     router.back();
   }, [roomId, stopPublishing]);
 
-  const handleGiftSent = useCallback((info: GiftSentInfo) => {
-    sendRoomChatMsg(roomId, {
-      senderId: myUid,
-      senderName: myName,
-      senderColor: myColor,
-      text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
-      ts: Date.now() }).catch(() => {});
-
+  // 2026-10-21 (boss: "ক্লিক করার সাথে সাথেই গিফট টা প্লে হতে থাকে"): the
+  // local fullscreen show ONLY — GiftsModal fires this the moment Send is
+  // tapped (balance pre-check passed), while the wallet sends run in
+  // parallel. The room-visible records live in handleGiftSent below and
+  // still wait for the sends to succeed.
+  const handleGiftPlay = useCallback((info: GiftSentInfo) => {
     const fly = (toUid: string, toName: string, toAvatar: string | undefined, target: { x: number; y: number } | null) => {
       giftFlyRef.current?.playFly({
         fromName: info.senderName,
@@ -2045,6 +2057,28 @@ export default function VoiceRoomScreen() {
       videoFullscreen: info.videoFullscreen});
     };
     for (const r of info.recipients) {
+      try {
+        const v = seatViewRefs.current[r.uid];
+        if (v) {
+          v.measureInWindow((x, y, w, h) => fly(r.uid, r.name, r.photoURL, { x: x + w / 2, y: y + h / 2 }));
+        } else {
+          fly(r.uid, r.name, r.photoURL, null); // recipient not on a seat → top-center fallback
+        }
+      } catch {
+        fly(r.uid, r.name, r.photoURL, null);
+      }
+    }
+  }, []);
+
+  const handleGiftSent = useCallback((info: GiftSentInfo) => {
+    sendRoomChatMsg(roomId, {
+      senderId: myUid,
+      senderName: myName,
+      senderColor: myColor,
+      text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
+      ts: Date.now() }).catch(() => {});
+
+    for (const r of info.recipients) {
       sendRoomGiftEvent(roomId, {
         giftId: info.giftId,
         emoji: info.emoji,
@@ -2059,16 +2093,6 @@ export default function VoiceRoomScreen() {
       animationType: info.animationType || null,
       videoSize: info.videoSize || null,
       videoFullscreen: info.videoFullscreen || null }).catch(() => {});
-      try {
-        const v = seatViewRefs.current[r.uid];
-        if (v) {
-          v.measureInWindow((x, y, w, h) => fly(r.uid, r.name, r.photoURL, { x: x + w / 2, y: y + h / 2 }));
-        } else {
-          fly(r.uid, r.name, r.photoURL, null); // recipient not on a seat → top-center fallback
-        }
-      } catch {
-        fly(r.uid, r.name, r.photoURL, null);
-      }
     }
   }, [roomId, myUid, myName, myColor, t]);
 
@@ -2784,6 +2808,7 @@ export default function VoiceRoomScreen() {
         handleEditOwnProfile={handleEditOwnProfile}
         handleMention={handleMention}
         handleGiftSent={handleGiftSent}
+        handleGiftPlay={handleGiftPlay}
         handleLeave={handleLeave}
         handleMinimize={handleMinimize}
         downFromSeat={downFromSeat}

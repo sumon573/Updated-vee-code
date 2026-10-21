@@ -8,6 +8,7 @@
  */
 
 import { ref, onValue, off, get } from 'firebase/database';
+import { Image as ExpoImage } from 'expo-image';
 import { database } from '@/src/config/firebase';
 
 export type GiftCategory = string;
@@ -38,6 +39,29 @@ const CATALOG_PATH = 'gift_catalog';
 // In-memory cache
 let cachedGifts: CatalogGift[] | null = null;
 let listeners: Array<(gifts: CatalogGift[]) => void> = [];
+const prefetchedUrls = new Set<string>();
+
+/**
+ * 2026-10-21 (boss: gift must play the instant it is sent): warm the
+ * expo-image disk cache with every animated gift's WebP as soon as the
+ * catalog is known — room entry / panel open — so a send never waits on
+ * the network to show its animation. Fire-and-forget; failures are fine
+ * (playback still streams, just slower).
+ */
+export function prefetchGiftAnimations(gifts: CatalogGift[]): void {
+  try {
+    const urls: string[] = [];
+    for (const g of gifts) {
+      if (g.animationType === 'webp' && g.animationUrl && !prefetchedUrls.has(g.animationUrl)) {
+        prefetchedUrls.add(g.animationUrl);
+        urls.push(g.animationUrl);
+      }
+    }
+    if (urls.length > 0) {
+      ExpoImage.prefetch(urls, 'memory-disk').catch(() => {});
+    }
+  } catch { /* prefetch is best-effort only */ }
+}
 
 function normalizeGift(id: string, data: any): CatalogGift | null {
   if (!data || typeof data !== 'object') return null;
@@ -115,6 +139,7 @@ export async function fetchGiftCatalog(): Promise<CatalogGift[]> {
       if (gift) gifts.push(gift);
     }
     cachedGifts = sortGifts(gifts);
+    prefetchGiftAnimations(cachedGifts);
     return cachedGifts;
   } catch (e) {
     console.warn('[giftCatalog] fetch failed:', e);
@@ -145,6 +170,7 @@ export function subscribeGiftCatalog(callback: (gifts: CatalogGift[]) => void): 
       }
     }
     cachedGifts = sortGifts(gifts);
+    prefetchGiftAnimations(cachedGifts);
     listeners.forEach(l => {
       try { l(cachedGifts!); } catch (e) { console.warn('[giftCatalog] listener error:', e); }
     });

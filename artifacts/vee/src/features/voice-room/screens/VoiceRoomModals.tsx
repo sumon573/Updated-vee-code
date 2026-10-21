@@ -101,6 +101,8 @@ export interface VoiceRoomModalsProps {
   handleEditOwnProfile: () => void;
   handleMention: (name: string) => void;
   handleGiftSent: (info: any) => void;
+  /** 2026-10-21: instant local gift show, fired at Send-tap (pre-wallet). */
+  handleGiftPlay: (info: any) => void;
   handleLeave: () => void;
   handleMinimize: () => void;
   downFromSeat: (idx: number) => void;
@@ -259,6 +261,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         visible={p.giftsOpen}
         onClose={() => { p.setGiftsOpen(false); p.setGiftsRecipient(null); }}
         onGiftSent={p.handleGiftSent}
+        onGiftPlay={p.handleGiftPlay}
         // 2026-10-13 (Sumon-এর নিয়ম): gift সবাইকে পাঠানো যাবে — seated +
         // p.audience সবাই (self সহ)। আগে শুধু seated members ছিল।
         members={p.allMembers}

@@ -110,12 +110,17 @@ type ImoTab = 'hot' | 'rank' | 'recent' | 'event';
 /* ── Component ──────────────────────────────────────────────── */
 
 export function GiftsModal({
-  visible, onClose, onGiftSent, members, initialRecipient,
+  visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
   walletBalance, myUid, myName, roomId }: {
   visible: boolean;
   onClose: () => void;
-  /** Called immediately after a successful gift send — for the room fly animation */
+  /** Called after a successful gift send — chat line + room gift events. */
   onGiftSent: (info: GiftSentInfo) => void;
+  /** 2026-10-21 (boss: gift must play the instant Send is tapped): called
+   *  the moment the balance pre-check passes, BEFORE the wallet round
+   *  trips — plays the local fullscreen show immediately. onGiftSent
+   *  still fires after the sends succeed, for the room-visible records. */
+  onGiftPlay?: (info: GiftSentInfo) => void;
   members: Participant[];
   initialRecipient?: Participant | null;
   /** Real-time wallet balance from Firebase subscription */
@@ -276,16 +281,23 @@ export function GiftsModal({
 
     const totalCost = g.coins * quantity * selectedMembers.length;
 
-    try {
-      const { initializeWallet } = await import('@/src/features/wallet/walletService');
-      await initializeWallet(myUid);
-    } catch { /* non-critical — proceed with send attempt */ }
+    // 2026-10-21 (boss: instant gift play): wallet init is non-critical —
+    // fire-and-forget instead of taxing every send with its round trip.
+    import('@/src/features/wallet/walletService')
+      .then(({ initializeWallet }) => initializeWallet(myUid))
+      .catch(() => { /* non-critical — proceed with send attempt */ });
 
-    // Balance pre-check (same source as the UI display)
-    let effectiveBalance: number | null = null;
-    try {
-      effectiveBalance = await getWalletBalance(myUid);
-    } catch { /* try next */ }
+    // Balance pre-check. 2026-10-21: the live-subscribed walletBalance prop
+    // IS the same source the UI displays — when it is positive, trust it
+    // and skip the two network reads that used to precede every send (the
+    // send itself still enforces the real balance). Only a zero/unknown
+    // prop falls back to the network chain.
+    let effectiveBalance: number | null = walletBalance > 0 ? walletBalance : null;
+    if (effectiveBalance === null) {
+      try {
+        effectiveBalance = await getWalletBalance(myUid);
+      } catch { /* try next */ }
+    }
     if (effectiveBalance === null || effectiveBalance === 0) {
       try {
         const serverBal = await getBalance();
@@ -327,6 +339,29 @@ export function GiftsModal({
         keys.set(r.id, unitKeys);
       }
       const senderAvatar = members.find((m) => m.id === myUid)?.photoURL;
+
+      // 2026-10-21 (boss: "ক্লিক করার সাথে সাথেই গিফট টা প্লে হতে থাকে"):
+      // the balance pre-check has passed — play the fullscreen show RIGHT
+      // NOW and close the panel (IMO behavior). The wallet sends below run
+      // in parallel; only the room-visible records (chat line + gift
+      // events via onGiftSent) wait for the sends to actually succeed.
+      if (onGiftPlay) {
+        onGiftPlay({
+          giftId: g.id,
+          emoji: g.thumbnailUrl || '',
+          giftName: g.nameKey,
+          coins: g.coins,
+          senderUid: myUid,
+          senderName: myName,
+          senderAvatar,
+          recipients: recipients.map((r) => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
+          animationUrl: g.animationUrl,
+          animationType: g.animationType,
+          videoSize: g.videoSize,
+          videoFullscreen: g.videoFullscreen,
+        });
+        onClose();
+      }
 
       const succeeded: Participant[] = [];
       const failed: { name: string; insufficient: boolean; error?: unknown }[] = [];

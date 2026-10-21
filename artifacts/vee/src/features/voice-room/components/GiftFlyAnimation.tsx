@@ -156,7 +156,21 @@ function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void
   const bannerDuration = isBig ? BIG_BANNER_MS : BANNER_MS;
   const totalMs = DISPLAY_MS + FLY_MS + bannerDuration + 600;
 
+  // 2026-10-21 (boss: "gift play হতে সময় নিচ্ছে, timing চলে যাচ্ছে"): the
+  // show clock used to start at MOUNT — the WebP then spent part of its
+  // fixed 3.4 s display window downloading, so viewers saw only the tail.
+  // Now the whole sequence (entrance → hold → fly → banner → done) starts
+  // only when the gift art has actually loaded (onReady from AnimatedGift),
+  // capped at 1.5 s so a failed/slow load can never stall the queue.
+  const [ready, setReady] = useState(false);
+  const handleReady = useCallback(() => setReady(true), []);
   useEffect(() => {
+    const cap = setTimeout(() => setReady(true), 1500);
+    return () => clearTimeout(cap);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
     const entrance = Animated.parallel([
       Animated.spring(scale, { toValue: 1, friction: 5, tension: 60, useNativeDriver: true }),
       Animated.timing(displayOp, { toValue: 1, duration: 400, useNativeDriver: true }),
@@ -183,7 +197,7 @@ function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void
     const timer = setTimeout(onDone, totalMs);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
 
   // Combo bump: pop the xN badge when the count grows mid-show.
   const prevCount = useRef(show.count);
@@ -221,6 +235,7 @@ function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void
           giftId={show.giftId} emoji={show.emoji} size={displaySize}
           animationUrl={show.animationUrl} animationType={show.animationType}
           videoSize={displaySize} videoFullscreen
+          onReady={handleReady}
         />
         {show.count > 1 && (
           <Animated.View style={{
