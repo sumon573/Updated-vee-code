@@ -17,7 +17,7 @@ import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { ref, query, orderByChild, limitToLast, startAfter, onValue } from 'firebase/database';
+import { ref, query, orderByChild, limitToLast, startAfter, onValue, get } from 'firebase/database';
 import { auth, database } from '@/src/config/firebase';
 import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
 import { getCurrentWeekId } from '@/src/utils/weekId';
@@ -274,20 +274,10 @@ export function LeaderboardModal({
   // Unmount safety: never leak the delta-managed subscriptions.
   useEffect(() => () => { teardownLiveCounts(); }, []);
 
-  /* Rooms ranked by REAL live count. Top Live = rooms with ≥1 SEATED member
-     (people on mic = genuinely live content), ranked by seated count — so the
-     two tabs are never identical (Sumon 2026-10-16: LIVE badge never on an
-     empty room; 2026-10-19: Top Live differentiated from Top Rooms). */
-  const rankedRooms = useMemo(() => {
-    // 2026-10-16 (Sumon): Top Rooms = ONLY rooms with real members.
-    // Empty rooms (0 members) are not "top" — filter them out so the
-    // leaderboard is always REAL, never showing fake/empty rankings.
-    return rooms
-      .map((r) => ({ ...r, realCount: liveCounts[r.id] ?? r.liveCount ?? r.memberCount ?? 0 }))
-      .filter((r) => r.realCount > 0)
-      .sort((a, b) => b.realCount - a.realCount)
-      .slice(0, 30);
-  }, [rooms, liveCounts]);
+  /* 2026-10-21 (boss's choice): Top Rooms is the WEEKLY GIFT board now
+     (leaderboard_rooms/{weekId}, below) — the old live-occupancy ranking
+     moved to Top Live only, which ranks rooms with ≥1 SEATED member by
+     seated count (2026-10-16/19: LIVE badge never on an empty room). */
   const liveRankedRooms = useMemo(() => {
     return rooms
       // 2026-10-20 FIX: rows must DISPLAY the number they are ranked by.
@@ -480,11 +470,99 @@ export function LeaderboardModal({
     }, () => { /* keep last known rank on error */ });
   }, [visible, tab, myUid, myEarned, weekId]);
 
-  const myRoomRank = useMemo(() => {
-    if (!myUid) return 0;
-    const i = rankedRooms.findIndex(r => r.ownerId === myUid);
-    return i >= 0 ? i + 1 : 0;
-  }, [rankedRooms, myUid]);
+  // ── Top Rooms — WEEKLY gift board (2026-10-21, boss's choice) ───────────
+  // leaderboard_rooms/{weekId}/{roomId}.weeklyReceived, written by
+  // walletService.recordWeeklyRoomGiftStat on every in-room gift.
+  const [weekRooms, setWeekRooms] = useState<{ roomId: string; weeklyReceived: number }[]>([]);
+  const [weekRoomsLoading, setWeekRoomsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!visible || tab !== 'rooms') return;
+    setWeekRoomsLoading(true);
+    const q = query(ref(database, `leaderboard_rooms/${weekId}`), orderByChild('weeklyReceived'), limitToLast(30));
+    const unsub = onValue(q, (snap) => {
+      const list: { roomId: string; weeklyReceived: number }[] = [];
+      snap.forEach((child) => {
+        const v = child.val() as { weeklyReceived?: number };
+        list.push({ roomId: child.key!, weeklyReceived: typeof v.weeklyReceived === 'number' ? v.weeklyReceived : 0 });
+      });
+      list.sort((a, b) => b.weeklyReceived - a.weeklyReceived);
+      setWeekRooms(list);
+      setWeekRoomsLoading(false);
+    }, () => { setWeekRooms([]); setWeekRoomsLoading(false); });
+    return unsub;
+  }, [visible, tab, weekId]);
+
+  // Room display info (name / cover / owner) for the weekly rows: prefer
+  // the live rooms list, else a one-time rooms/{id}/info read — a weekly
+  // top room may not be live right now, so it is not always in `rooms`.
+  const [weekRoomInfo, setWeekRoomInfo] = useState<Record<string, { name: string; coverImageUrl?: string; ownerId?: string; ownerName?: string }>>({});
+  const weekRoomInfoTriedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!visible) return;
+    for (const wr of weekRooms) {
+      if (weekRoomInfoTriedRef.current.has(wr.roomId)) continue;
+      weekRoomInfoTriedRef.current.add(wr.roomId);
+      const live = rooms.find((r) => r.id === wr.roomId);
+      if (live) {
+        setWeekRoomInfo((prev) => ({ ...prev, [wr.roomId]: { name: live.name, coverImageUrl: live.coverImageUrl, ownerId: live.ownerId, ownerName: live.ownerName } }));
+        continue;
+      }
+      get(ref(database, `rooms/${wr.roomId}/info`)).then((snap) => {
+        if (!snap.exists()) return;
+        const v = snap.val() as { name?: string; coverImageUrl?: string; ownerId?: string; ownerName?: string };
+        setWeekRoomInfo((prev) => ({ ...prev, [wr.roomId]: { name: v.name || 'Vee Room', coverImageUrl: v.coverImageUrl, ownerId: v.ownerId, ownerName: v.ownerName } }));
+      }).catch(() => {});
+    }
+  }, [visible, weekRooms, rooms]);
+
+  const rankedWeekRooms = useMemo(() => weekRooms.map((wr) => {
+    const info = weekRoomInfo[wr.roomId];
+    const live = rooms.find((r) => r.id === wr.roomId);
+    return {
+      id: wr.roomId,
+      name: info?.name || live?.name || 'Vee Room',
+      coverImageUrl: info?.coverImageUrl || live?.coverImageUrl,
+      ownerId: info?.ownerId || live?.ownerId,
+      ownerName: info?.ownerName || live?.ownerName,
+      weeklyReceived: wr.weeklyReceived,
+    };
+  }), [weekRooms, weekRoomInfo, rooms]);
+
+  // My best room's weekly total + TRUE rank (same startAfter counting as
+  // the user boards — never a placeholder).
+  const myRoomIdsKey = useMemo(
+    () => rooms.filter((r) => r.ownerId === myUid).map((r) => r.id).sort().join(','),
+    [rooms, myUid],
+  );
+  const [myRoomReceived, setMyRoomReceived] = useState<number | null>(null);
+  useEffect(() => {
+    if (!visible || !myUid) return;
+    const ids = myRoomIdsKey ? myRoomIdsKey.split(',') : [];
+    if (ids.length === 0) { setMyRoomReceived(0); return; }
+    const vals: Record<string, number> = {};
+    const unsubs = ids.map((id) => onValue(ref(database, `leaderboard_rooms/${weekId}/${id}/weeklyReceived`), (snap) => {
+      vals[id] = snap.exists() && typeof snap.val() === 'number' ? snap.val() : 0;
+      setMyRoomReceived(Math.max(0, ...Object.values(vals)));
+    }, () => {}));
+    return () => { unsubs.forEach((u) => u()); };
+  }, [visible, myUid, weekId, myRoomIdsKey]);
+
+  const [myRoomWeekRank, setMyRoomWeekRank] = useState(0);
+  useEffect(() => {
+    if (!visible || tab !== 'rooms' || !myUid || myRoomReceived === null) return;
+    if (myRoomReceived <= 0) { setMyRoomWeekRank(0); return; }
+    const q = query(
+      ref(database, `leaderboard_rooms/${weekId}`),
+      orderByChild('weeklyReceived'),
+      startAfter(myRoomReceived),
+    );
+    return onValue(q, (snap) => {
+      let above = 0;
+      snap.forEach(() => { above++; });
+      setMyRoomWeekRank(above + 1);
+    }, () => { /* keep last known rank on error */ });
+  }, [visible, tab, myUid, myRoomReceived, weekId]);
 
   const myLiveRank = useMemo(() => {
     if (!myUid) return 0;
@@ -502,6 +580,11 @@ export function LeaderboardModal({
   const roomRankHint = iOwnARoom
     ? t('leaderboard.roomNotLive', { defaultValue: "Your room isn't live right now" })
     : t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' });
+  const myRoomWeekHint = !iOwnARoom
+    ? t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' })
+    : weekOffset === 0
+      ? t('leaderboard.noRoomGiftsMine', { defaultValue: 'No gifts in your room yet this week' })
+      : t('leaderboard.noRoomGiftsMineLastWeek', { defaultValue: 'No gifts in your room last week' });
 
   // 2026-10-19 polish: the pinned bar must show the viewer's LIVE profile
   // from users/{myUid} — auth.currentUser's displayName/photoURL go stale
@@ -623,6 +706,55 @@ export function LeaderboardModal({
     );
   };
 
+  const renderWeekRoomRow = (item: { id: string; name: string; coverImageUrl?: string; ownerId?: string; ownerName?: string; weeklyReceived: number }, index: number) => {
+    const rank = index + 1;
+    const top3 = rank <= 3;
+    const isMine = item.ownerId === myUid;
+    return (
+      <Pressable
+        onPress={() => {
+          onClose();
+          router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never);
+        }}
+        style={{
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: top3 ? 14 : 12, paddingHorizontal: top3 ? 12 : 0,
+        borderRadius: top3 ? 16 : 0,
+        backgroundColor: top3 ? TINT_BG[rank - 1] : 'transparent',
+        borderWidth: top3 ? 1 : 0, borderColor: top3 ? TINT_BD[rank - 1] : 'transparent',
+        borderBottomWidth: 1, borderBottomColor: top3 ? TINT_BD[rank - 1] : C.surface,
+        marginBottom: top3 ? 8 : 0 }}>
+        <RankBadge rank={rank} />
+        <DPAvatar name={item.name} photoURL={item.coverImageUrl} size={top3 ? 48 : 42} ring={top3 ? TINT_TX[rank - 1] : undefined} />
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: C.text, fontSize: top3 ? 16 : 15, fontWeight: top3 ? '800' : '700', flexShrink: 1 }} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {isMine && (
+              <View style={{ backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 6 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>
+                  {t('leaderboard.you', { defaultValue: 'YOU' })}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+            {item.ownerName ?? ''}
+          </Text>
+        </View>
+        <View style={{ alignItems: 'flex-end', marginLeft: 10, flexShrink: 0 }}>
+          <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 18, fontWeight: '800' }}>
+            💎{fmtCompact(item.weeklyReceived)}
+          </Text>
+          <Text style={{ color: C.muted, fontSize: 11 }}>
+            {t('leaderboard.diamondsReceived', { defaultValue: 'diamonds received' })}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
+
   // ── Pinned "Your Rank" bar ─────────────────────────────────────────────────
   const yourRankBar = (
     rank: number, stat: number | null, statLabel: string, emptyHint: string,
@@ -699,7 +831,7 @@ export function LeaderboardModal({
             <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.3 }}>
               {t('leaderboard.title', { defaultValue: 'Leaderboard' })}
             </Text>
-            {(tab === 'senders' || tab === 'receivers') ? (
+            {(tab === 'senders' || tab === 'receivers' || tab === 'rooms') ? (
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
                 {([0, 1] as const).map((off) => {
                   const activeWeek = weekOffset === off;
@@ -769,25 +901,29 @@ export function LeaderboardModal({
 
         {/* ── Top Rooms ── */}
         {tab === 'rooms' && (
-          roomsLoading
+          weekRoomsLoading
             ? loading
             : <FlatList
-                data={rankedRooms}
+                data={rankedWeekRooms}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
                   <EmptyState
                     icon="home"
-                    message={t('leaderboard.noRoomsLive', { defaultValue: 'No rooms live right now' })}
-                    hint={t('leaderboard.roomsLiveHint', { defaultValue: 'Rooms appear here while members are inside' })}
+                    message={weekOffset === 0
+                      ? t('leaderboard.noRoomGifts', { defaultValue: 'No room gifts yet this week' })
+                      : t('leaderboard.noRoomGiftsLastWeek', { defaultValue: 'No room gifts last week' })}
+                    hint={weekOffset === 0
+                      ? t('leaderboard.roomGiftsHint', { defaultValue: 'Gifts sent in voice rooms rank the room here' })
+                      : undefined}
                   />
                 }
                 ListFooterComponent={yourRankBar(
-                  myRoomRank, null,
-                  t('leaderboard.members', { defaultValue: 'members' }),
-                  roomRankHint,
+                  myRoomWeekRank, myRoomReceived,
+                  t('leaderboard.diamondsReceived', { defaultValue: 'diamonds received' }),
+                  myRoomWeekHint,
                 )}
-                renderItem={({ item, index }) => renderRoomRow(item, index, false)}
+                renderItem={({ item, index }) => renderWeekRoomRow(item, index)}
               />
         )}
 

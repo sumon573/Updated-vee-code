@@ -344,6 +344,7 @@ export function GiftsModal({
               await sendGift({
                 toUid: r.id, giftId: g.id, idempotencyKey: key,
                 toName: r.name, toPhotoURL: r.photoURL, price: g.coins,
+                roomId,
               });
               charged = true;
             } catch (e) {

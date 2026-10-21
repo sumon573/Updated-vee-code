@@ -837,6 +837,15 @@
     },
     // LEADERBOARD FIX (2026-10-12): leaderboard_senders had NO rules —
     // top-level ".read": false made Top Senders permanently empty.
+    "leaderboard_rooms": {
+      ".read": "auth != null",
+      "$week": {
+        ".indexOn": ["weeklyReceived"],
+        "$roomId": {
+          ".write": "auth != null && newData.hasChildren(['weeklyReceived']) && newData.child('weeklyReceived').isNumber() && newData.child('weeklyReceived').val() >= 0 && (!data.child('weeklyReceived').exists() ? newData.child('weeklyReceived').val() <= 2000000 : (newData.child('weeklyReceived').val() - data.child('weeklyReceived').val() >= 0 && newData.child('weeklyReceived').val() - data.child('weeklyReceived').val() <= 2000000))"
+        }
+      }
+    },
     "leaderboard_senders": {
       ".read": "auth != null",
       // 2026-10-15 (Sumon): REAL weekly stats — the sender's app writes ONLY its

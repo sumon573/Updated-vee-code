@@ -170,6 +170,8 @@ export type SendGiftArgs = {
   toPhotoURL?: string;
   /** Price in diamonds (from server catalog) — server is source of truth */
   price?: number;
+  /** Room the gift was sent in (for the weekly Top Rooms board; optional) */
+  roomId?: string;
 };
 
 export type SendGiftResult = {
@@ -397,6 +399,46 @@ export async function recordWeeklyLeaderboardStats(args: {
 }
 
 /**
+ * Weekly Top Rooms stat — 2026-10-21 (boss's choice: "Top Rooms weekly
+ * gift দিয়ে বানাও"). Every gift sent inside a room adds its full price to
+ * the room's weekly total:
+ *   leaderboard_rooms/{weekId}/{roomId} = { weeklyReceived }
+ * Unlike the user boards, SELF-gifts DO count here: the room board
+ * measures room activity, and a self-gift still burns the platform
+ * commission, so it cannot be farmed for free. Best-effort, fire-and-
+ * forget — a failed stat write never touches the completed gift.
+ */
+export async function recordWeeklyRoomGiftStat(args: {
+  roomId: string;
+  price: number;
+}): Promise<void> {
+  const { roomId, price } = args;
+  if (!roomId || !(price > 0)) return;
+  try {
+    const { getCurrentWeekId } = await import('@/src/utils/weekId');
+    const { ref, update, increment, runTransaction } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const weekId = getCurrentWeekId();
+    const base = `leaderboard_rooms/${weekId}/${roomId}`;
+    // Same ensure-then-increment discipline as the user boards: the rules
+    // compute the delta against the existing counter, so the node must
+    // exist WITH its counter (initialised to 0) before the increment.
+    await runTransaction(ref(database, base), (cur) => {
+      const existing = (cur ?? null) as Record<string, unknown> | null;
+      if (existing && typeof existing.weeklyReceived === 'number') return;
+      const v: Record<string, unknown> = { ...(existing ?? {}) };
+      if (typeof v.weeklyReceived !== 'number') v.weeklyReceived = 0;
+      return v;
+    }).catch(() => {});
+    try {
+      await update(ref(database), { [`${base}/weeklyReceived`]: increment(price) });
+    } catch { /* best-effort — gift already succeeded */ }
+  } catch {
+    // Best-effort — the gift already succeeded; room stats are non-critical.
+  }
+}
+
+/**
  * 2026-10-15 (Sumon): PERMANENT gift count aggregate — lifetime per-gift
  * received counts at wallets/{uid}/giftCounts/{giftId}. Incremented via
  * transaction on EVERY gift received (both VPS primary and Firebase fallback
@@ -485,6 +527,7 @@ async function sendGiftViaFirebase(
   toName?: string,
   toPhotoURL?: string,
   priceOverride?: number,
+  roomId?: string,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
   const { ref, runTransaction, push, set, update, serverTimestamp, get, increment } = await import('firebase/database');
@@ -724,6 +767,11 @@ async function sendGiftViaFirebase(
     }
   }
 
+  // Weekly Top Rooms stat (fallback path) — self-gifts count for rooms.
+  if (roomId) {
+    recordWeeklyRoomGiftStat({ roomId, price: price ?? 0 }).catch(() => {});
+  }
+
   // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy on the fallback
   // path too. Self-gifts excluded (anti-farming).
   {
@@ -745,6 +793,7 @@ export async function sendGift({
   toName,
   toPhotoURL,
   price,
+  roomId,
 }: SendGiftArgs): Promise<SendGiftResult> {
   // Self-gifting is ALLOWED (per product requirement): the server debits and
   // credits the same account (net-zero), so the gift animation and history
@@ -822,6 +871,10 @@ export async function sendGift({
             // Non-critical
           });
         }
+        // Weekly Top Rooms stat (server path) — self-gifts count for rooms.
+        if (roomId) {
+          recordWeeklyRoomGiftStat({ roomId, price: serverPrice }).catch(() => {});
+        }
       }
       // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy — gift already
       // completed on the server; must not block the gift UI's return. Self-gifts
@@ -849,7 +902,7 @@ export async function sendGift({
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {
-    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price);
+    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price, roomId);
     if (fbResult.ok) return fbResult;
   } catch (e) {
     // Firebase fallback also failed — surface the meaningful error.
