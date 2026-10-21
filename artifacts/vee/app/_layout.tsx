@@ -427,7 +427,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
                 import('@/src/features/chat/services/firebaseDmService').then(({ buildChatId }) => {
                   router.push(`/inbox/${buildChatId(uid, 'vee_team')}` as any);
                 }).catch(() => {
-                  router.push('/chat' as any);
+                  // 2026-10-21 (Sumon): never force-open the chat list —
+                  // if the Vee Team chat id can't be built, land on home.
                 });
               });
             }
@@ -441,9 +442,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
             stashPendingLinkRef.current(() => handleRoomInviteTap(roomId));
             return;
           }
-          // 2026-10-19 stability fix (batch 2D): unknown notification types
-          // must never fail silently — land on the chat list.
-          stashPendingLinkRef.current(() => router.push('/chat' as any));
+          // 2026-10-21 (Sumon): unknown notification types land on HOME —
+          // never force-open the chat list. (The old push('/chat') here,
+          // replayed by the cold-start last-response path below, re-opened
+          // Chats over home on every app launch from one stale tap.)
         } catch {}
       };
       setupNotificationListeners(handleFcmTap);
@@ -453,9 +455,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       // identical handler so the incoming-call dead end is closed on cold
       // start too. (Idempotent: the seeder verifies the RTDB signal is alive,
       // so a stale tap can never pop a phantom modal.)
-      import('expo-notifications').then(async ({ getLastNotificationResponseAsync }) => {
+      import('expo-notifications').then(async ({ getLastNotificationResponseAsync, clearLastNotificationResponseAsync }) => {
         try {
           const last = await getLastNotificationResponseAsync();
+          // 2026-10-21 (Sumon): CLEAR the stored response immediately.
+          // getLastNotificationResponseAsync returns the last tap FOREVER,
+          // so without clearing, one old notification tap replayed on every
+          // cold start and force-opened its target over home. Clearing keeps
+          // genuine app-launching taps working exactly once.
+          try { await clearLastNotificationResponseAsync(); } catch { /* non-critical */ }
           const d = last?.notification?.request?.content?.data as Record<string, any> | undefined;
           if (d && typeof d === 'object' && Object.keys(d).length > 0) {
             handleFcmTap(d);
@@ -496,11 +504,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     registerNotificationOpenedHandler(
       (chatId) => stashPendingLink(() => router.push(`/inbox/${chatId}` as any)),
       (roomId) => handleRoomInviteTap(roomId),
-      () => stashPendingLink(() => router.push('/chat' as any)),
+      // 2026-10-21 (Sumon): generic OneSignal taps land on HOME — never
+      // force-open the chat list.
+      () => {},
       // Incoming call: just bring app to foreground; the call UI is driven by
       // the live call listener (app/_layout.tsx handleIncomingCall), not by params.
       // Pushing /audio-call with partial params would hit the invalid-call guard.
-      () => stashPendingLink(() => router.push('/chat' as any)),
+      // 2026-10-21 (Sumon): no forced navigation (was push('/chat')).
+      () => {},
     ).then((unsub) => {
       if (cancelled) {
         unsub();
