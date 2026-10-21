@@ -144,9 +144,18 @@ export function LeaderboardModal({
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('rooms');
+  // 2026-10-21 (boss: "ager history kichui nai"): the boards used to be
+  // hard-locked to the current week, so last week's rankings existed in
+  // the database but were unreachable in the app. Senders/Receivers now
+  // have a This Week / Last Week switch; Rooms/Live are always live.
+  const [weekOffset, setWeekOffset] = useState(0);
+  useEffect(() => { if (visible) setWeekOffset(0); }, [visible]);
   // Recomputed whenever the modal (re)opens so a session left mounted over
   // the UTC week boundary never reads/writes a dead week bucket.
-  const weekId = useMemo(() => getCurrentWeekId(), [visible]);
+  const weekId = useMemo(
+    () => getCurrentWeekId(weekOffset === 0 ? new Date() : new Date(Date.now() - 7 * 24 * 3600 * 1000)),
+    [visible, weekOffset],
+  );
   const myUid = auth.currentUser?.uid ?? null;
 
   // ── Top Rooms (live subscription) ──────────────────────────────────────────
@@ -483,6 +492,17 @@ export function LeaderboardModal({
     return i >= 0 ? i + 1 : 0;
   }, [liveRankedRooms, myUid]);
 
+  // 2026-10-21: the pinned bar used to claim "Own a room to rank" even for
+  // users who DO own rooms (their rooms just weren't live at that moment).
+  // Say the true thing instead.
+  const iOwnARoom = useMemo(
+    () => !!myUid && rooms.some((r) => r.ownerId === myUid),
+    [rooms, myUid],
+  );
+  const roomRankHint = iOwnARoom
+    ? t('leaderboard.roomNotLive', { defaultValue: "Your room isn't live right now" })
+    : t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' });
+
   // 2026-10-19 polish: the pinned bar must show the viewer's LIVE profile
   // from users/{myUid} — auth.currentUser's displayName/photoURL go stale
   // (e.g. after an in-app profile edit) while the leaderboard rows are live.
@@ -679,14 +699,37 @@ export function LeaderboardModal({
             <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', letterSpacing: 0.3 }}>
               {t('leaderboard.title', { defaultValue: 'Leaderboard' })}
             </Text>
-            <View style={{
-              alignSelf: 'flex-start', backgroundColor: C.goldBg, borderRadius: 10,
-              paddingHorizontal: 8, paddingVertical: 3, marginTop: 4,
-              borderWidth: 1, borderColor: C.goldBd }}>
-              <Text style={{ color: C.gold, fontSize: 11, fontWeight: '800' }}>
-                ✨ {t('leaderboard.thisWeek', { defaultValue: 'This Week' })}
-              </Text>
-            </View>
+            {(tab === 'senders' || tab === 'receivers') ? (
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                {([0, 1] as const).map((off) => {
+                  const activeWeek = weekOffset === off;
+                  return (
+                    <Pressable
+                      key={off}
+                      onPress={() => setWeekOffset(off)}
+                      style={{
+                        backgroundColor: activeWeek ? C.gold : C.goldBg, borderRadius: 10,
+                        paddingHorizontal: 8, paddingVertical: 3,
+                        borderWidth: 1, borderColor: C.goldBd }}>
+                      <Text style={{ color: activeWeek ? '#fff' : C.gold, fontSize: 11, fontWeight: '800' }}>
+                        {off === 0
+                          ? `✨ ${t('leaderboard.thisWeek', { defaultValue: 'This Week' })}`
+                          : t('leaderboard.lastWeek', { defaultValue: 'Last Week' })}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={{
+                alignSelf: 'flex-start', backgroundColor: C.goldBg, borderRadius: 10,
+                paddingHorizontal: 8, paddingVertical: 3, marginTop: 4,
+                borderWidth: 1, borderColor: C.goldBd }}>
+                <Text style={{ color: C.gold, fontSize: 11, fontWeight: '800' }}>
+                  ● {t('leaderboard.liveNow', { defaultValue: 'Live Now' })}
+                </Text>
+              </View>
+            )}
           </View>
           <Pressable onPress={onClose} hitSlop={14}>
             <Feather name="x" size={22} color={C.muted} />
@@ -733,12 +776,16 @@ export function LeaderboardModal({
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
-                  <EmptyState icon="home" message={t('leaderboard.noData', { defaultValue: 'No rooms yet' })} />
+                  <EmptyState
+                    icon="home"
+                    message={t('leaderboard.noRoomsLive', { defaultValue: 'No rooms live right now' })}
+                    hint={t('leaderboard.roomsLiveHint', { defaultValue: 'Rooms appear here while members are inside' })}
+                  />
                 }
                 ListFooterComponent={yourRankBar(
                   myRoomRank, null,
                   t('leaderboard.members', { defaultValue: 'members' }),
-                  t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
+                  roomRankHint,
                 )}
                 renderItem={({ item, index }) => renderRoomRow(item, index, false)}
               />
@@ -758,7 +805,7 @@ export function LeaderboardModal({
                 ListFooterComponent={yourRankBar(
                   myLiveRank, null,
                   t('leaderboard.members', { defaultValue: 'members' }),
-                  t('leaderboard.noRoomRanked', { defaultValue: 'Own a room to rank' }),
+                  roomRankHint,
                 )}
                 renderItem={({ item, index }) => renderRoomRow(item, index, true)}
               />
@@ -775,14 +822,20 @@ export function LeaderboardModal({
                 ListEmptyComponent={
                   <EmptyState
                     icon="gift"
-                    message={t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })}
-                    hint={t('leaderboard.sendersHint', { defaultValue: 'Send gifts in voice rooms to climb the ranks!' })}
+                    message={weekOffset === 0
+                      ? t('leaderboard.noSenders', { defaultValue: 'No gift senders yet this week' })
+                      : t('leaderboard.noSendersLastWeek', { defaultValue: 'No gift senders last week' })}
+                    hint={weekOffset === 0
+                      ? t('leaderboard.sendersHint', { defaultValue: 'Send gifts in voice rooms to climb the ranks!' })
+                      : undefined}
                   />
                 }
                 ListFooterComponent={yourRankBar(
                   mySenderRank, mySent,
                   t('leaderboard.diamondsSent', { defaultValue: 'diamonds sent' }),
-                  t('leaderboard.sendersHint', { defaultValue: 'Send gifts to rank!' }),
+                  weekOffset === 0
+                    ? t('leaderboard.sendersHint', { defaultValue: 'Send gifts to rank!' })
+                    : t('leaderboard.noSendsLastWeek', { defaultValue: 'No gifts sent last week' }),
                 )}
                 renderItem={({ item, index }) => renderUserRow(
                   item, index, item.weeklySent ?? 0,
@@ -802,14 +855,20 @@ export function LeaderboardModal({
                 ListEmptyComponent={
                   <EmptyState
                     icon="award"
-                    message={t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })}
-                    hint={t('leaderboard.receiversHint', { defaultValue: 'Receive gifts in voice rooms to climb the ranks!' })}
+                    message={weekOffset === 0
+                      ? t('leaderboard.noReceivers', { defaultValue: 'No gift receivers yet this week' })
+                      : t('leaderboard.noReceiversLastWeek', { defaultValue: 'No gift receivers last week' })}
+                    hint={weekOffset === 0
+                      ? t('leaderboard.receiversHint', { defaultValue: 'Receive gifts in voice rooms to climb the ranks!' })
+                      : undefined}
                   />
                 }
                 ListFooterComponent={yourRankBar(
                   myReceiverRank, myEarned,
                   t('leaderboard.diamondsEarned', { defaultValue: 'diamonds earned' }),
-                  t('leaderboard.receiversHint', { defaultValue: 'Receive gifts to rank!' }),
+                  weekOffset === 0
+                    ? t('leaderboard.receiversHint', { defaultValue: 'Receive gifts to rank!' })
+                    : t('leaderboard.noEarnedLastWeek', { defaultValue: 'No gifts received last week' }),
                 )}
                 renderItem={({ item, index }) => renderUserRow(
                   item, index, item.weeklyEarned ?? 0,
