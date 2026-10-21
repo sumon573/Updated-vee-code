@@ -1,6 +1,8 @@
 /**
  * Profile — IMO-style (light mode)
- * Exact IMO layout: cover, avatar, badges, sections, Edit button
+ * Exact IMO layout: avatar, badges, sections, Edit button
+ * 2026-10-20 (boss, option A): profile cover photo REMOVED entirely —
+ * clean IMO-style header, no cover banner anywhere on the profile.
  * All data real from Firebase; all buttons functional
  */
 
@@ -16,7 +18,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useActiveProfileSkin } from '@/src/hooks/useStoreItems';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -423,8 +424,6 @@ export default function ProfileScreen({
   const { t } = useTranslation();
   // The UID whose profile data we display (own or another user's)
   const displayUid = targetUid ?? user?.uid;
-  // 2026-10-16 (Sumon): Store profile skin — equipped skin renders as the cover.
-  const profileSkin = useActiveProfileSkin(displayUid);
   const isMe = !targetUid || targetUid === user?.uid;
 
   // 2026-10-16 (Sumon): Enforce 30-day Nobel maintenance on profile load.
@@ -1033,19 +1032,6 @@ export default function ProfileScreen({
         </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
-        {/* ─── Optional cover (IMO ProfileStudio pattern: 148dp, only when skin/cover set).
-            2026-10-20 (boss): cover tap must NOT open Edit — Edit lives only in
-            the bottom Edit button. Cover is display-only now. ─── */}
-        {(profileSkin || profile?.coverImageUrl) && (
-          <View>
-            <Image
-              source={{ uri: (profileSkin ? profileSkin.imageUrl : profile?.coverImageUrl) as string }}
-              style={{ width: '100%', height: 148 }}
-              resizeMode="cover"
-            />
-          </View>
-        )}
-
 
         {/* ─── VoiceClub Room card ─── */}
         {rooms.length > 0 && (

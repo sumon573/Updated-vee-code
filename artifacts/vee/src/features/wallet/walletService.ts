@@ -346,30 +346,51 @@ export async function recordWeeklyLeaderboardStats(args: {
     const weekId = getCurrentWeekId();
     const sBase = `leaderboard_senders/${weekId}/${fromUid}`;
     const rBase = `leaderboard/${weekId}/${toUid}`;
-    // 2026-10-19 polish: name/photoURL are written ONLY when the weekly node
-    // is first created. This runs on the SENDER's client, whose cached copy
-    // of the receiver's name/photo may be stale — overwriting on every gift
-    // corrupted the receiver's leaderboard display name. Counters still
-    // increment server-side on every gift (unchanged).
-    const ensureIdentity = (
+    // 2026-10-20 FIX (boss: leaderboard must be REAL + realtime): the old
+    // ensureIdentity created the node as { name } ONLY — no counter. The
+    // database rules compute the counter delta as new − old, and with the
+    // old counter MISSING the expression errors → the increment write was
+    // DENIED forever, so live gifts NEVER landed on the boards (only
+    // server-side backfill data ever showed). ensureNode now guarantees the
+    // node exists WITH its counter field (initialised to 0 when missing),
+    // still without overwriting an existing name/photo or counter: the
+    // sender's cached copy of the receiver's identity may be stale, so
+    // identity fields are only filled when absent.
+    const ensureNode = (
       base: string,
+      counterKey: 'weeklySent' | 'weeklyEarned',
       name?: string | null,
       photoURL?: string | null,
     ) =>
       runTransaction(ref(database, base), (cur) => {
-        if (cur !== null) return; // node exists — never overwrite the stored identity
-        const v: Record<string, unknown> = { name: name || 'Vee User' };
-        if (photoURL) v.photoURL = photoURL;
+        const existing = (cur ?? null) as Record<string, unknown> | null;
+        if (
+          existing &&
+          typeof existing.name === 'string' &&
+          typeof existing[counterKey] === 'number'
+        ) {
+          return; // node complete — never overwrite identity or counter
+        }
+        const v: Record<string, unknown> = { ...(existing ?? {}) };
+        if (typeof v.name !== 'string' || !v.name) v.name = name || 'Vee User';
+        if (photoURL && typeof v.photoURL !== 'string') v.photoURL = photoURL;
+        if (typeof v[counterKey] !== 'number') v[counterKey] = 0;
         return v;
       }).catch(() => {});
     await Promise.all([
-      ensureIdentity(sBase, args.senderName, args.senderPhotoURL),
-      ensureIdentity(rBase, args.receiverName, args.receiverPhotoURL),
+      ensureNode(sBase, 'weeklySent', args.senderName, args.senderPhotoURL),
+      ensureNode(rBase, 'weeklyEarned', args.receiverName, args.receiverPhotoURL),
     ]);
-    const updates: Record<string, unknown> = {};
-    updates[`${sBase}/weeklySent`] = increment(price);
-    updates[`${rBase}/weeklyEarned`] = increment(recipientAmount);
-    await update(ref(database), updates);
+    // 2026-10-20 FIX: the two increments used to ride in ONE atomic root
+    // update() — a rules denial on either side (e.g. an obsolete delta cap)
+    // silently killed BOTH stats. They are independent writes now, each
+    // with its own failure boundary.
+    try {
+      await update(ref(database), { [`${sBase}/weeklySent`]: increment(price) });
+    } catch { /* best-effort — gift already succeeded */ }
+    try {
+      await update(ref(database), { [`${rBase}/weeklyEarned`]: increment(recipientAmount) });
+    } catch { /* best-effort — gift already succeeded */ }
   } catch {
     // Best-effort — the gift already succeeded; leaderboard stats are non-critical.
   }

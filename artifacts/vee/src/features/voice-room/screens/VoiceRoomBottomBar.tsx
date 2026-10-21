@@ -49,7 +49,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-evenly',
-        paddingBottom: bottomPad, paddingTop: 10, paddingHorizontal: 8,
+        paddingBottom: bottomPad, paddingTop: 4, paddingHorizontal: 8,
         backgroundColor: 'transparent' }}>
         {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -57,7 +57,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option C Pulse Ring mic button.
                 Join Seat keeps user-plus; seated uses PulseMicButton. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
             {mySeatIdx < 0 ? (
               <Feather name="user-plus" size={21} color={accentColor} />
             ) : (
@@ -80,7 +80,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option E Liquid Gold speaker. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiquidGoldSpeaker speakerOn={speakerOn} />
             </View>
             <Text style={{ color: speakerOn ? '#D4AF37' : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -96,7 +96,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiveDateIcon />
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -111,7 +111,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianGiftButton />
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -126,7 +126,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         <ScalePress onPress={() => setInviteOpen(true)}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option B Sapphire Orbit invite button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <SapphireInviteButton />
             </View>
             <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
@@ -141,7 +141,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
           <View style={{ alignItems: 'center', gap: 4 }}>
             {/* 2026-10-15 (Sumon): Option B Obsidian Exit button. */}
-<View style={{ height: 56, justifyContent: 'center', alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianExitButton />
             </View>
             <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>

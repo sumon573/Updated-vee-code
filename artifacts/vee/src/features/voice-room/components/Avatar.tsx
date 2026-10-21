@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Text, Animated, Easing, View } from 'react-native';
 import { Image } from 'expo-image';
 import AnimatedFrame from '../../../components/AnimatedFrame';
-import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
+import { rewardsForRankKey, rewardsForRank } from '@/src/services/nobleRewardsCatalog';
 import { C } from '../constants/theme';
 import { nobleThemeFor } from '@/src/services/nobleService';
 
@@ -299,23 +299,25 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
           {frameType.startsWith('noble-frame-') ? (
             (() => {
               const rankKey = frameType.replace('noble-frame-', '');
-              const catalog = rewardsForRankKey(rankKey);
-              if (catalog) {
-                // 2026-10-20 (boss): seat frames stay SNUG inside the seat cell —
-                // a still ring in the rank colour. The ornate Nobel frame art
-                // (1.6x canvas) belongs on profile/Nobel screens only, never seats.
-                const ringColor = catalog.rankColor || '#7E57C2';
-                return (
-                  <View style={{
-                    width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
-                    borderWidth: 3, borderColor: ringColor, backgroundColor: 'transparent',
-                    shadowColor: ringColor, shadowOpacity: 0.35, shadowRadius: 6,
-                    shadowOffset: { width: 0, height: 0 },
-                  }} />
-                );
-              }
-              // Fallback to regular frame if no catalog entry
-              return <AnimatedFrame size={size} frameId={frameType} compact />;
+              // 2026-10-20 FIX (boss: count frame not showing on seats): a
+              // noble-frame-* id must ALWAYS resolve to the snug seat ring.
+              // Resolution order: catalog by frame-id key (now case-tolerant
+              // in rewardsForRankKey) → catalog by the occupant's rank index
+              // (seat data carries it; position-based, immune to id format)
+              // → generic noble-gold ring. NEVER the full-size AnimatedFrame:
+              // ornate art on a seat covers the name/DP (boss's standing rule).
+              const catalog =
+                rewardsForRankKey(rankKey) ??
+                (nobleRankIndex != null ? rewardsForRank(nobleRankIndex) : null);
+              const ringColor = catalog?.rankColor || C.gold;
+              return (
+                <View style={{
+                  width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
+                  borderWidth: 3, borderColor: ringColor, backgroundColor: 'transparent',
+                  shadowColor: ringColor, shadowOpacity: 0.35, shadowRadius: 6,
+                  shadowOffset: { width: 0, height: 0 },
+                }} />
+              );
             })()
           ) : (
             /* 2026-10-13 (Sumon): server-hosted APNG; frameId resolves the admin-controlled URL.

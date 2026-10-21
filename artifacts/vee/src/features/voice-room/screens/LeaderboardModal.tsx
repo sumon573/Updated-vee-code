@@ -17,7 +17,7 @@ import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { get, ref, query, orderByChild, limitToLast, onValue } from 'firebase/database';
+import { ref, query, orderByChild, limitToLast, startAfter, onValue } from 'firebase/database';
 import { auth, database } from '@/src/config/firebase';
 import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
 import { getCurrentWeekId } from '@/src/utils/weekId';
@@ -144,7 +144,9 @@ export function LeaderboardModal({
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('rooms');
-  const weekId = useMemo(() => getCurrentWeekId(), []);
+  // Recomputed whenever the modal (re)opens so a session left mounted over
+  // the UTC week boundary never reads/writes a dead week bucket.
+  const weekId = useMemo(() => getCurrentWeekId(), [visible]);
   const myUid = auth.currentUser?.uid ?? null;
 
   // ── Top Rooms (live subscription) ──────────────────────────────────────────
@@ -167,7 +169,7 @@ export function LeaderboardModal({
      2026-10-19 perf: DELTA-MANAGED subscriptions. The old effect tore down
      and recreated all ~80 listeners on every rooms-array rebuild (any room
      churn). Now subscriptions are keyed by room id in a ref: only rooms
-     entering the top-40 set are subscribed, only rooms leaving it are
+     entering the top-80 set are subscribed, only rooms leaving it are
      unsubscribed. Ground-truth semantics unchanged. */
   const [liveCounts, setLiveCounts] = useState<Record<string, number>>({});
   // 2026-10-19 polish: Top Live must differ from Top Rooms — it ranks rooms
@@ -196,10 +198,10 @@ export function LeaderboardModal({
     }
     const subs = liveSubsRef.current;
     const counts = liveCountsRef.current;
-    // Same top-40 seeding as before — only the subscription management changed.
+    // Same top-80 seeding as before (widened from 40 on 2026-10-20 so more active rooms carry ground-truth counts) — only the subscription management changed.
     const seeded = [...rooms]
       .sort((a, b) => (b.liveCount ?? b.memberCount ?? 0) - (a.liveCount ?? a.memberCount ?? 0))
-      .slice(0, 40);
+      .slice(0, 80);
     const wanted = new Set(seeded.map((r) => r.id));
     // Unsubscribe rooms that fell out of the set.
     subs.forEach((unsub, id) => {
@@ -279,7 +281,11 @@ export function LeaderboardModal({
   }, [rooms, liveCounts]);
   const liveRankedRooms = useMemo(() => {
     return rooms
-      .map((r) => ({ ...r, seatedCount: seatedCounts[r.id] ?? 0 }))
+      // 2026-10-20 FIX: rows must DISPLAY the number they are ranked by.
+      // renderRoomRow prints realCount, so for Top Live realCount = the
+      // SEATED count (ground truth) — previously it fell back to the stored
+      // memberCount, a stale total that did not match the ranking.
+      .map((r) => ({ ...r, seatedCount: seatedCounts[r.id] ?? 0, realCount: seatedCounts[r.id] ?? 0 }))
       .filter((r) => r.seatedCount > 0)
       .sort((a, b) => b.seatedCount - a.seatedCount)
       .slice(0, 30);
@@ -407,42 +413,63 @@ export function LeaderboardModal({
   }, []);
 
   // ── My own weekly stats (for the pinned "Your Rank" bar) ───────────────────
+  // 2026-10-20 FIX: REALTIME listeners — the old code used a one-shot get(),
+  // so the pinned bar froze at whatever the values were when the modal
+  // opened and never moved while gifts flowed.
   const [mySent, setMySent] = useState<number | null>(null);
   const [myEarned, setMyEarned] = useState<number | null>(null);
 
   useEffect(() => {
     if (!visible || !myUid) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [sSnap, rSnap] = await Promise.all([
-          get(ref(database, `leaderboard_senders/${weekId}/${myUid}/weeklySent`)),
-          get(ref(database, `leaderboard/${weekId}/${myUid}/weeklyEarned`)),
-        ]);
-        if (cancelled) return;
-        setMySent(sSnap.exists() && typeof sSnap.val() === 'number' ? sSnap.val() : 0);
-        setMyEarned(rSnap.exists() && typeof rSnap.val() === 'number' ? rSnap.val() : 0);
-      } catch {
-        if (!cancelled) { setMySent(0); setMyEarned(0); }
-      }
-    })();
-    return () => { cancelled = true; };
+    const u1 = onValue(ref(database, `leaderboard_senders/${weekId}/${myUid}/weeklySent`), (s) => {
+      setMySent(s.exists() && typeof s.val() === 'number' ? s.val() : 0);
+    }, () => setMySent(0));
+    const u2 = onValue(ref(database, `leaderboard/${weekId}/${myUid}/weeklyEarned`), (s) => {
+      setMyEarned(s.exists() && typeof s.val() === 'number' ? s.val() : 0);
+    }, () => setMyEarned(0));
+    return () => { u1(); u2(); };
   }, [visible, myUid, weekId]);
 
   const liveRooms = liveRankedRooms;
 
   // ── My rank per tab ────────────────────────────────────────────────────────
-  const mySenderRank = useMemo(() => {
-    const i = senders.findIndex(e => e.uid === myUid);
-    if (i >= 0) return i + 1;
-    return (mySent ?? 0) > 0 ? 31 : 0; // 31 = "30+" (outside loaded top-30)
-  }, [senders, myUid, mySent]);
+  // 2026-10-20 FIX (boss: REAL data only): the old code returned a literal
+  // 31 ("30+") for anyone outside the loaded top-30 — a PLACEHOLDER rank,
+  // not a measurement. True rank = 1 + (number of users this week whose
+  // stat is strictly greater than mine), counted live with a startAfter
+  // query on the same board the tab displays.
+  const [mySenderRank, setMySenderRank] = useState(0);
+  const [myReceiverRank, setMyReceiverRank] = useState(0);
 
-  const myReceiverRank = useMemo(() => {
-    const i = receivers.findIndex(e => e.uid === myUid);
-    if (i >= 0) return i + 1;
-    return (myEarned ?? 0) > 0 ? 31 : 0;
-  }, [receivers, myUid, myEarned]);
+  useEffect(() => {
+    if (!visible || tab !== 'senders' || !myUid || mySent === null) return;
+    if (mySent <= 0) { setMySenderRank(0); return; }
+    const q = query(
+      ref(database, `leaderboard_senders/${weekId}`),
+      orderByChild('weeklySent'),
+      startAfter(mySent),
+    );
+    return onValue(q, (snap) => {
+      let above = 0;
+      snap.forEach(() => { above++; });
+      setMySenderRank(above + 1);
+    }, () => { /* keep last known rank on error */ });
+  }, [visible, tab, myUid, mySent, weekId]);
+
+  useEffect(() => {
+    if (!visible || tab !== 'receivers' || !myUid || myEarned === null) return;
+    if (myEarned <= 0) { setMyReceiverRank(0); return; }
+    const q = query(
+      ref(database, `leaderboard/${weekId}`),
+      orderByChild('weeklyEarned'),
+      startAfter(myEarned),
+    );
+    return onValue(q, (snap) => {
+      let above = 0;
+      snap.forEach(() => { above++; });
+      setMyReceiverRank(above + 1);
+    }, () => { /* keep last known rank on error */ });
+  }, [visible, tab, myUid, myEarned, weekId]);
 
   const myRoomRank = useMemo(() => {
     if (!myUid) return 0;

@@ -445,15 +445,31 @@ export function recordUserRoomVisit(
   roomId: string,
   role: 'owner' | 'member',
 ): Promise<void> {
-  const payload = { joinedAt: Date.now(), role };
-  // Write to both the per-user index (userRooms/{uid}/{roomId}) AND a
-  // per-room reverse index (roomMembers/{roomId}/{uid}).  The reverse index
-  // is what lets disbandRoom clean up ALL past members — not just those who
-  // happen to be online at the moment of disband.
-  return Promise.all([
-    set(ref(database, `userRooms/${uid}/${roomId}`), payload),
-    set(ref(database, `roomMembers/${roomId}/${uid}`), payload),
-  ]).then(() => undefined);
+  // 2026-10-20 FIX (boss): re-entry must NEVER downgrade an existing role or
+  // reset the original join time. The old set() clobbered the owner's
+  // roomMembers record to role 'member' (fresh joinedAt) every time he
+  // re-entered his own room via joinRoomAsAudience/takeSeat, so Room Info
+  // classified the owner as a regular member. Preserve the stronger role
+  // (owner > admin > member) and the earliest joinedAt already on record.
+  const rank = (r?: string) => (r === 'owner' ? 3 : r === 'admin' ? 2 : 1);
+  return get(ref(database, `roomMembers/${roomId}/${uid}`))
+    .catch(() => null)
+    .then((snap) => {
+      const existing = (snap?.val() ?? null) as { role?: string; joinedAt?: number } | null;
+      const finalRole = rank(existing?.role) > rank(role) ? (existing!.role as 'owner' | 'member') : role;
+      const payload = {
+        joinedAt: typeof existing?.joinedAt === 'number' && existing.joinedAt > 0 ? existing.joinedAt : Date.now(),
+        role: finalRole };
+      // Write to both the per-user index (userRooms/{uid}/{roomId}) AND a
+      // per-room reverse index (roomMembers/{roomId}/{uid}).  The reverse index
+      // is what lets disbandRoom clean up ALL past members — not just those who
+      // happen to be online at the moment of disband.
+      return Promise.all([
+        set(ref(database, `userRooms/${uid}/${roomId}`), payload),
+        set(ref(database, `roomMembers/${roomId}/${uid}`), payload),
+      ]);
+    })
+    .then(() => undefined);
 }
 
 /**
@@ -706,10 +722,14 @@ export async function leaveAudience(
   // Cancel any pending onDisconnect before removing manually
   onDisconnect(audienceRef).cancel().catch(() => {/* non-critical */});
   await remove(audienceRef);
-  // 2026-10-16 (Sumon): REAL LEAVE — also remove from roomMembers and
-  // userRooms so the user vanishes from member lists and My Room everywhere.
-  remove(ref(database, `roomMembers/${roomId}/${userId}`)).catch(() => {});
-  remove(ref(database, `userRooms/${userId}/${roomId}`)).catch(() => {});
+  // 2026-10-20 FIX (boss): routine exit removes LIVE PRESENCE ONLY. The
+  // 2026-10-16 lines that also deleted roomMembers/userRooms here erased
+  // every joined member from Room Info the moment they left the room
+  // (e.g. a member who joined, sent gifts, then exited vanished from the
+  // member list entirely). Membership is persistent by design — see
+  // recordUserRoomVisit ("never cleared on leave/exit") and
+  // subscribeRoomMembers ("covers everyone who ever joined"). Joined
+  // membership ends only via leaveRoomCompletely / disbandRoom.
   // 2026-10-11 Issue #1: refresh cached counts so room cards/filters
   // never show stale audience numbers after someone leaves.
   _updateCounts(roomId).catch(() => {});
@@ -1807,6 +1827,10 @@ export type JoinedMember = {
   uid: string;
   role: 'owner' | 'admin' | 'member';
   joinedAt: number;
+  /** Display name written into the record at join time (handleJoinRoom).
+   *  Fallback source for members whose users/{uid} profile is thin
+   *  (no name/email) — without it they render as "User" in Room Info. */
+  name?: string;
 };
 
 // ─── PIN Session Cache (2026-10-13) ──────────────────────────────────────────
@@ -1853,12 +1877,14 @@ export function subscribeRoomMembers(
     const members: JoinedMember[] = [];
     if (snap.exists()) {
       snap.forEach((child) => {
-        const v = child.val() as { role?: string; joinedAt?: number } | null;
+        const v = child.val() as { role?: string; joinedAt?: number; name?: string } | null;
         if (child.key) {
+          const recName = typeof v?.name === 'string' ? v.name.trim() : '';
           members.push({
             uid: child.key,
             role: (v?.role === 'owner' || v?.role === 'admin') ? v.role : 'member',
             joinedAt: v?.joinedAt ?? 0,
+            ...(recName ? { name: recName } : {}),
           });
         }
       });

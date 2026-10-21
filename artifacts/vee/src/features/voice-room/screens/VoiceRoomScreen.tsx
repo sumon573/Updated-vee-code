@@ -1955,17 +1955,28 @@ export default function VoiceRoomScreen() {
     setIsRoomMember(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (roomId && myUid) {
+      // 2026-10-20 FIX (boss): re-joining must not downgrade an existing
+      // owner/admin role or reset the original joinedAt — read the current
+      // record first and merge (same rule as recordUserRoomVisit).
       const memberRef = ref(database, `roomMembers/${roomId}/${myUid}`);
-      set(memberRef, {
-        role: 'member',
-        joinedAt: Date.now(),
-        name: myName,
-      }).catch(() => {});
-      const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
-      set(userRoomRef, {
-        joinedAt: Date.now(),
-        role: 'member',
-      }).catch(() => {});
+      get(memberRef)
+        .then((snap) => {
+          const existing = (snap.val() ?? null) as { role?: string; joinedAt?: number } | null;
+          const keepRole = existing?.role === 'owner' || existing?.role === 'admin';
+          const joinedAt = typeof existing?.joinedAt === 'number' && existing.joinedAt > 0 ? existing.joinedAt : Date.now();
+          const role = keepRole ? (existing!.role as string) : 'member';
+          set(memberRef, {
+            role,
+            joinedAt,
+            name: myName,
+          }).catch(() => {});
+          const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
+          set(userRoomRef, {
+            joinedAt,
+            role,
+          }).catch(() => {});
+        })
+        .catch(() => {});
       joinRoomAsAudience(roomId, {
         userId: myUid,
         userName: myName,
@@ -2081,7 +2092,7 @@ export default function VoiceRoomScreen() {
 
   
   const bottomPad  = Math.max(insets.bottom, Platform.OS === 'web' ? 20 : 8) + 14;
-  const BOTTOM_BAR_H = bottomPad + 10 + 74;
+  const BOTTOM_BAR_H = bottomPad + 4 + 68;
 
   
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -2173,7 +2184,7 @@ export default function VoiceRoomScreen() {
       <AnimatedThemeBackground accentColor={accentColor} />
       <SafeAreaView edges={['top']}>
         {}
-        <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 10, paddingBottom: 8 }}>
+        <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)}>
@@ -2257,7 +2268,7 @@ export default function VoiceRoomScreen() {
             </View>
           </View>
           {}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 }}>
             {}
             <ScalePress onPress={() => setLeaderboardOpen(true)}>
               <View style={{
@@ -2270,18 +2281,12 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
-            {/* 2026-10-19 (IMO port): Room Games lobby */}
-            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: C.card,
-                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                <Text style={{ fontSize: 16 }}>🎮</Text>
-                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
-                  {t('voiceRoom.games.title')}
-                </Text>
-              </View>
-            </ScalePress>
+            {/* 2026-10-20 (Sumon): Live Audience pill sits next to Hourly Rank; the Room Games header pill is removed. */}
+            <LiveAudiencePill
+              count={allMembers.length}
+              onPress={() => setMembersOpen(true)}
+              person={allMembers[0]}
+            />
             {/* 2026-10-19 (IMO gap fill): announcement / intimacy / backpack */}
             {announcement && (
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
@@ -2347,12 +2352,6 @@ export default function VoiceRoomScreen() {
                 </View>
               </ScalePress>
             )}
-            {}
-            <LiveAudiencePill
-              count={allMembers.length}
-              onPress={() => setMembersOpen(true)}
-              person={allMembers[0]}
-            />
           </View>
         </View>
       </SafeAreaView>
@@ -2364,7 +2363,7 @@ export default function VoiceRoomScreen() {
         {showJoinBanner && (
           <ScalePress onPress={handleJoinRoom}>
             <View style={{
-              marginVertical: 10, borderRadius: 16, padding: 14,
+              marginVertical: 6, borderRadius: 16, padding: 14,
               backgroundColor: accentColor,
               flexDirection: 'row', alignItems: 'center', gap: 10,
               shadowColor: accentColor, shadowOpacity: 0.5,
@@ -2380,11 +2379,11 @@ export default function VoiceRoomScreen() {
         {}
         {(hasJoined || mySeatIdx >= 0) && (
           <View style={{
-            alignSelf: 'flex-start', marginBottom: 8, flexDirection: 'row', alignItems: 'center',
+            alignSelf: 'flex-start', marginBottom: 4, flexDirection: 'row', alignItems: 'center',
             backgroundColor: myRole === 'host'  ? C.gold + '22'
                            : myRole === 'admin' ? accentColor + '22'
                            : C.card,
-            borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5,
+            borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2,
             borderWidth: 1,
             borderColor: myRole === 'host'  ? C.gold + '66'
                        : myRole === 'admin' ? accentColor + '66'
@@ -2393,7 +2392,7 @@ export default function VoiceRoomScreen() {
               color: myRole === 'host'  ? C.gold
                    : myRole === 'admin' ? accentColor
                    : C.sub,
-              fontSize: 12, fontWeight: '800' }}>
+              fontSize: 11, fontWeight: '800' }}>
               {myRole === 'host'
                 ? t('voiceRoom.screen.roleOwner')
                 : myRole === 'admin'
@@ -2410,7 +2409,7 @@ export default function VoiceRoomScreen() {
             backgroundColor: 'rgba(239,68,68,0.12)',
             borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)',
             borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
-            marginBottom: 10 }}>
+            marginBottom: 6 }}>
             <Feather name="alert-triangle" size={18} color={C.red} />
             <Text style={{ flex: 1, color: C.text, fontSize: 12, fontWeight: '600' }}>
               {voiceError}
@@ -2428,7 +2427,7 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
-        <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 10 }}>
+        <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4 }}>
         {/* ── Seat grid — clean 5-column professional layout ── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {seats.map((member: Participant | null, idx: number) => (
@@ -2436,7 +2435,7 @@ export default function VoiceRoomScreen() {
             <View
               key={idx}
               collapsable={false}
-              style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
+              style={{ width: '20%', alignItems: 'center', paddingVertical: 3 }}
               ref={(v) => {
                 const id = member?.id;
                 if (!id) return;
@@ -2458,8 +2457,10 @@ export default function VoiceRoomScreen() {
           ))}
         </View>
         {/* Mic Handshake pair links — between adjacent related seats.
-            Avatar centre sits 47dp below a cell's top (cell pad 6 +
-            pressable pad 4 + avatar margin 6 + half of the 62dp avatar). */}
+            Avatar centre sits ~42.5dp below a cell's top (cell pad 3 +
+            pressable pad 4 + avatar margin 6 + half of the 53dp avatar);
+            the +44 offset preserves the link's long-standing position
+            relative to the avatar centre after the cell-pad tightening. */}
         {adjacentPairs.map((p) => {
           const d = pairData[p.key];
           if (!d || d.value < 1) return null;
@@ -2470,7 +2471,7 @@ export default function VoiceRoomScreen() {
             <View
               key={p.key}
               pointerEvents="none"
-              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 47 - PAIR_LINK_H / 2, zIndex: 30 }}
+              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 44 - PAIR_LINK_H / 2, zIndex: 30 }}
             >
               <PairLink design={resolveDesign(d.designKey, intimacyLevelFor(d.value).id)} />
             </View>
@@ -2604,7 +2605,7 @@ export default function VoiceRoomScreen() {
           flexDirection: 'row', alignItems: 'center', gap: 10,
           marginTop: 0, marginBottom: 0,
           paddingHorizontal: 4, paddingVertical: 8,
-          backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
+          backgroundColor: 'transparent' }}>
           <ScalePress onPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }} style={{ padding: 8 }}>
             <Feather name="smile" size={26} color={C.sub} />
           </ScalePress>

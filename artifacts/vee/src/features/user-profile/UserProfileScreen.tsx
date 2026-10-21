@@ -343,19 +343,10 @@ export default function UserProfileScreen({ uid, name: fallbackName }: Props) {
             )}
           </View>
 
-          {/* Cover (imo style) */}
-          <View style={{ height: 180, backgroundColor: '#E8E8ED' }}>
-            {profile?.coverImageUrl ? (
-              <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            ) : (
-              <View style={{ flex: 1, backgroundColor: '#EFEFF4', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 48 }}>🌅</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Avatar (overlapping, imo style) */}
-          <View style={{ paddingHorizontal: 16, marginTop: -40 }}>
+          {/* 2026-10-20 (boss, option A): cover photo REMOVED entirely —
+              clean IMO-style header, avatar sits directly under the back bar. */}
+          {/* Avatar (imo style) */}
+          <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
               <View style={{ width: 80, height: 80, alignItems: 'center', justifyContent: 'center' }}>
                 {photoURL ? (

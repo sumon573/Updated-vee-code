@@ -221,7 +221,18 @@ export function getActiveCatalog(): RankRewards[] {
 
 /** Find rewards by rank key from the active catalog. */
 export function rewardsForRankKey(rankKey: string): RankRewards | null {
-  return getActiveCatalog().find((r) => r.rankKey === rankKey) ?? null;
+  const catalog = getActiveCatalog();
+  // 2026-10-20 FIX (boss: noble frame missing on voice-room seats): exact
+  // match first, then a case-insensitive match. Two key conventions
+  // coexist — NOBLE_RANKS / catalog rankKey 'royalDuke' vs the item/asset
+  // id suffix 'royalduke' (designUrls, admin-granted ids). A frame id in
+  // the other convention's case resolved to NO entry, and callers fell
+  // back to full-size frame art (Avatar seat ring) or lost designUrls.
+  return (
+    catalog.find((r) => r.rankKey === rankKey) ??
+    catalog.find((r) => r.rankKey.toLowerCase() === rankKey.toLowerCase()) ??
+    null
+  );
 }
 
 /**

@@ -15,7 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { updateUser, VeeUser, subscribeUser } from '@/src/services/userService';
-import { uploadProfilePhoto, uploadCoverPhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
+import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { useTranslation } from 'react-i18next';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { withTimeout } from '@/src/utils/withTimeout';
@@ -109,10 +109,8 @@ export default function EditProfileScreen() {
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [photoURI, setPhotoURI] = useState<string>('');
-  const [coverURI, setCoverURI] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
 
   // Track whether we've already done the initial load from Firebase.
   // Without this, every Firebase update (e.g. after photo upload writes
@@ -128,7 +126,6 @@ export default function EditProfileScreen() {
       setProfile(veeUser);
       // Always keep photo in sync (upload may update it at any time)
       setPhotoURI(veeUser.photoURL ?? '');
-      setCoverURI(veeUser.coverImageUrl ?? '');
       // Only seed the text fields once — do not reset the user's in-progress edits
       if (!hasLoadedRef.current) {
         hasLoadedRef.current = true;
@@ -168,38 +165,6 @@ export default function EditProfileScreen() {
       setUploadingPhoto(false);
     }
   }, [user?.uid, profile?.photoPublicId, t]);
-
-  // ── Upload cover to Cloudinary + save URL to Firebase ──────────────────────
-  const uploadCover = useCallback(async (localUri: string) => {
-    if (!user?.uid) return;
-    setUploadingCover(true);
-    try {
-      const result = await uploadCoverPhoto(localUri);
-      setCoverURI(result.url);
-      await updateUser(user.uid, { coverImageUrl: result.url });
-    } catch (err) {
-      Alert.alert(t('editProfile.error'), err instanceof Error ? err.message : t('editProfile.uploadFailedMsg'));
-    } finally {
-      setUploadingCover(false);
-    }
-  }, [user?.uid, t]);
-
-  // ── Pick cover from gallery ────────────────────────────────────────────────
-  const pickCover = useCallback(async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow gallery access to choose a cover photo.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [16, 9],
-      quality: 0.8 });
-    if (!result.canceled && result.assets[0]) {
-      await uploadCover(result.assets[0].uri);
-    }
-  }, [uploadCover]);
 
   // ── Pick photo from gallery ────────────────────────────────────────────────
   const pickPhoto = useCallback(async () => {
@@ -320,24 +285,6 @@ export default function EditProfileScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
         >
-          {/* Cover picker */}
-          <View style={[cardStyle, { padding: 12 }]}>
-            <Pressable onPress={pickCover} style={{ borderRadius: 12, overflow: 'hidden' }}>
-              <View style={{ height: 140, backgroundColor: C.tile, alignItems: 'center', justifyContent: 'center' }}>
-                {uploadingCover ? (
-                  <PremiumLoader size="large" />
-                ) : coverURI ? (
-                  <Image source={{ uri: coverURI }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                ) : (
-                  <View style={{ alignItems: 'center' }}>
-                    <Feather name="image" size={32} color={C.mutedLight} />
-                    <Text style={{ color: C.muted, fontSize: 13, marginTop: 8 }}>Tap to add cover</Text>
-                  </View>
-                )}
-              </View>
-            </Pressable>
-          </View>
-
           {/* Avatar picker */}
           <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
             <Pressable onPress={handlePhotoPress} hitSlop={8}>

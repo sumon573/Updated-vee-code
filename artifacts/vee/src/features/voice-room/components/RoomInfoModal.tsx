@@ -53,17 +53,21 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     return subscribeRoomMembers(roomId, setJoinedMembers);
   }, [visible, roomId]);
   useEffect(() => {
-    if (joinedMembers.length === 0) return;
+    // Fetch profiles for all joined members PLUS the owner when the owner
+    // has no roomMembers record (synthesized into the list below).
+    const uids = new Set(joinedMembers.map((m) => m.uid));
+    if (ownerId) uids.add(ownerId);
+    if (uids.size === 0) return;
     let cancelled = false;
     (async () => {
       const results = await Promise.all(
-        joinedMembers.map(async (m) => {
+        [...uids].map(async (uid) => {
           try {
-            const p = await getUser(m.uid);
+            const p = await getUser(uid);
             if (!p) return null;
             // Name fallback: DB name → email prefix → 'User' (Google users may have empty name)
             const fallbackName = p.name || (p.email ? p.email.split('@')[0] : null) || 'User';
-            return [m.uid, { name: fallbackName, photoURL: p.photoURL || undefined }] as const;
+            return [uid, { name: fallbackName, photoURL: p.photoURL || undefined }] as const;
           } catch { return null; }
         }),
       );
@@ -75,31 +79,51 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
       setJoinedProfiles(map);
     })();
     return () => { cancelled = true; };
-  }, [joinedMembers]);
+  }, [joinedMembers, ownerId]);
 
   // Build display list: owner first, then admins, then members (by join time).
   // Falls back to live allMembers if the joined index is empty.
+  // 2026-10-20 FIX (boss): three corrections —
+  //  (1) The OWNER is whoever owns the room (ownerId), regardless of the
+  //      role stored in their roomMembers record: a re-entry used to
+  //      downgrade that record to 'member', so the owner ALSO appeared in
+  //      the regular Members list (owner shown twice, "2 total" wrong).
+  //  (2) If the owner has no roomMembers record at all, synthesize one so
+  //      the owner always appears (and counts) exactly once.
+  //  (3) Name chain: a getUser() result of 'User' means "unresolved"
+  //      (thin users/{uid} profile) — fall through to the name stored in
+  //      the member's own roomMembers record at join time, then the live
+  //      participant name, and only then 'User'.
+  const joinedAtByUid: Record<string, number> = {};
   const displayMembers: Participant[] = (() => {
     if (joinedMembers.length === 0) return allMembers;
+    const effective: JoinedMember[] = [...joinedMembers];
+    if (ownerId && !effective.some((m) => m.uid === ownerId)) {
+      effective.push({ uid: ownerId, role: 'owner', joinedAt: 0 });
+    }
+    const roleOf = (m: JoinedMember) => (ownerId && m.uid === ownerId ? 'owner' : m.role);
     const roleRank = (r: string) => r === 'owner' ? 0 : r === 'admin' ? 1 : 2;
-    return [...joinedMembers]
+    return effective
       .sort((a, b) => {
-        const rd = roleRank(a.role) - roleRank(b.role);
+        const rd = roleRank(roleOf(a)) - roleRank(roleOf(b));
         if (rd !== 0) return rd;
         return a.joinedAt - b.joinedAt;
       })
       .map((m) => {
+        joinedAtByUid[m.uid] = m.joinedAt;
         const prof = joinedProfiles[m.uid];
         const live = allMembers.find((p) => p.id === m.uid);
+        const profName = prof?.name && prof.name !== 'User' ? prof.name : null;
+        const name = profName || m.name || live?.name || prof?.name || 'User';
         return {
           id: m.uid,
-          name: prof?.name || live?.name || 'User',
-          initials: (prof?.name || live?.name || 'U').charAt(0).toUpperCase(),
+          name,
+          initials: (name || 'U').charAt(0).toUpperCase(),
           color: live?.color ?? '#7C3AED',
           photoURL: prof?.photoURL || live?.photoURL,
           speaking: live?.speaking ?? false,
           muted: live?.muted ?? true,
-          role: (m.role === 'owner' ? 'host' : m.role) as Participant['role'] } as Participant;
+          role: (roleOf(m) === 'owner' ? 'host' : roleOf(m)) as Participant['role'] } as Participant;
       });
   })();
 
@@ -128,13 +152,15 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
 
   const owner   = displayMembers.find((m: Participant) => m.role === 'host');
   const admins  = displayMembers.filter((m: Participant) => m.role === 'admin');
-  // Sort regular members by activity: speaking first, then unmuted, then by name
+  // Sort regular members by activity: live (speaking, then unmuted) first,
+  // then SERIAL order by join time (joinedAt) — the member list is the
+  // room's joined roster, so its stable order is join order (2026-10-20).
   const regular = displayMembers
     .filter((m: Participant) => m.role === 'member')
     .sort((a, b) => {
       if (a.speaking !== b.speaking) return a.speaking ? -1 : 1;
       if (a.muted !== b.muted) return a.muted ? 1 : -1;
-      return a.name.localeCompare(b.name);
+      return (joinedAtByUid[a.id] ?? 0) - (joinedAtByUid[b.id] ?? 0);
     });
 
   const [editingName,    setEditingName]    = useState(false);

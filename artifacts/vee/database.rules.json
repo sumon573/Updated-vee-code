@@ -819,13 +819,19 @@
       // 2026-10-15 (Sumon): REAL weekly leaderboard — per-ISO-week buckets
       // ({weekId}/{uid}) so rankings reset automatically every week.
       // The gift SENDER's app credits the receiver's weeklyEarned. The writer
-      // can never be the stat owner (no self-inflation); the added amount must
-      // be a valid 70% gift commission (7/17/35/70/140/350/700/1400) — mirrors
-      // the wallets/$uid/balance anti-mint pattern.
+      // can never be the stat owner (no self-inflation).
+      // 2026-10-20 FIX (boss: leaderboard must be REAL + realtime): the old
+      // delta expression subtracted data.child('weeklyEarned').val() even
+      // when that child was MISSING (identity-only node) — arithmetic on
+      // null errors in rules, so the write was denied and live gifts NEVER
+      // landed. The delta is now null-safe (missing counter = start from
+      // the new value) and the cap matches the REAL catalog: max gift
+      // 2,000,000 → max 70% commission 1,400,000 (was 3,500, written for
+      // the retired price table whose largest gift was 2,000).
       "$week": {
         ".indexOn": ["weeklyEarned"],
         "$uid": {
-          ".write": "auth != null && auth.uid !== $uid && ((!data.exists() && newData.hasChildren(['name']) && newData.child('name').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString())) || (data.exists() && newData.hasChildren(['name', 'weeklyEarned']) && newData.child('weeklyEarned').isNumber() && (newData.child('weeklyEarned').val() - data.child('weeklyEarned').val()) >= 1 && (newData.child('weeklyEarned').val() - data.child('weeklyEarned').val()) <= 3500))"
+          ".write": "auth != null && auth.uid !== $uid && newData.hasChildren(['name', 'weeklyEarned']) && newData.child('name').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString()) && newData.child('weeklyEarned').isNumber() && newData.child('weeklyEarned').val() >= 0 && (!data.child('weeklyEarned').exists() ? newData.child('weeklyEarned').val() <= 1400000 : (newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() >= 0 && newData.child('weeklyEarned').val() - data.child('weeklyEarned').val() <= 1400000))"
         }
       }
     },
@@ -834,12 +840,16 @@
     "leaderboard_senders": {
       ".read": "auth != null",
       // 2026-10-15 (Sumon): REAL weekly stats — the sender's app writes ONLY its
-      // own node (auth.uid === $uid); the added amount must be a valid gift
-      // price (10/25/50/100/200/500/1000/2000).
+      // own node (auth.uid === $uid).
+      // 2026-10-20 FIX: same null-delta trap + obsolete cap as `leaderboard`
+      // above — delta is null-safe now and the cap is the real catalog max
+      // gift price, 2,000,000 (was 5,000, which denied every premium /
+      // luxury / server-catalog gift and, via the old shared update, took
+      // the receiver's stat down with it).
       "$week": {
         ".indexOn": ["weeklySent"],
         "$uid": {
-          ".write": "auth != null && auth.uid === $uid && ((!data.exists() && newData.hasChildren(['name']) && newData.child('name').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString())) || (data.exists() && newData.hasChildren(['name', 'weeklySent']) && newData.child('weeklySent').isNumber() && (newData.child('weeklySent').val() - data.child('weeklySent').val()) >= 1 && (newData.child('weeklySent').val() - data.child('weeklySent').val()) <= 5000))"
+          ".write": "auth != null && auth.uid === $uid && newData.hasChildren(['name', 'weeklySent']) && newData.child('name').isString() && (!newData.hasChild('photoURL') || newData.child('photoURL').isString()) && newData.child('weeklySent').isNumber() && newData.child('weeklySent').val() >= 0 && (!data.child('weeklySent').exists() ? newData.child('weeklySent').val() <= 2000000 : (newData.child('weeklySent').val() - data.child('weeklySent').val() >= 0 && newData.child('weeklySent').val() - data.child('weeklySent').val() <= 2000000))"
         }
       }
     },
