@@ -95,6 +95,15 @@ async function ensureCacheDir(): Promise<void> {
   }
 }
 
+/** 2026-10-21: cache key includes a hash of the source URL — when admin
+ * swaps a frame's animationUrl, devices download the NEW file instead of
+ * reusing the previously cached one forever. */
+function urlHash(url: string): string {
+  let h = 5381;
+  for (let i = 0; i < url.length; i++) h = ((h * 33) ^ url.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 /**
  * Get a local (cached) file URI for the frame's APNG.
  * Downloads once, then reuses the cached copy offline.
@@ -105,7 +114,7 @@ export async function getCachedFrameUri(frameId: string): Promise<string | null>
   const url = await getFrameAnimationUrl(frameId);
   if (!url) return null;
 
-  const localPath = `${FRAMES_CACHE_DIR}${frameId}.png`;
+  const localPath = `${FRAMES_CACHE_DIR}${frameId}-${urlHash(url)}.png`;
   try {
     await ensureCacheDir();
     const info = await FileSystem.getInfoAsync(localPath);
@@ -124,7 +133,12 @@ export async function getCachedFrameUri(frameId: string): Promise<string | null>
 export async function clearFrameFileCache(frameId?: string): Promise<void> {
   try {
     if (frameId) {
-      await FileSystem.deleteAsync(`${FRAMES_CACHE_DIR}${frameId}.png`, { idempotent: true });
+      const names = await FileSystem.readDirectoryAsync(FRAMES_CACHE_DIR);
+      await Promise.all(
+        names
+          .filter((n) => n === `${frameId}.png` || n.startsWith(`${frameId}-`))
+          .map((n) => FileSystem.deleteAsync(`${FRAMES_CACHE_DIR}${n}`, { idempotent: true })),
+      );
     } else {
       const info = await FileSystem.getInfoAsync(FRAMES_CACHE_DIR);
       if (info.exists) await FileSystem.deleteAsync(FRAMES_CACHE_DIR, { idempotent: true });
