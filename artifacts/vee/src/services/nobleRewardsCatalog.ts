@@ -47,8 +47,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     badge: null,
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-knight.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
+      // 2026-10-21 (Sumon): demo frame design removed — no frame design until a real one is provided.
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -64,8 +63,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-baron.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
+      // 2026-10-21 (Sumon): demo frame design removed — no frame design until a real one is provided.
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -82,7 +80,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://vee-club.duckdns.org/nobel-art/rank-viscount-frame.png?v=2',
+      // 2026-10-21 (Sumon): demo frame design removed — no frame design until a real one is provided.
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
