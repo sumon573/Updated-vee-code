@@ -23,29 +23,29 @@ export const ROOM_META = { id: '123456', name: 'Royal Lounge', type: 'Public' };
 export const MAX_SEATS = 10;
 
 /* ─────────────────────────── Themes ─────────────────────────────────
+   2026-10-21 (boss): "একটা theme শুধু রাখো যেনো black হয়, তাছাড়া বাকি
+   গুলো change করলে seat এর কালার, বাটন গুলোর কালার, মেসেজ — সব change
+   হবে।" Exactly ONE black theme (Midnight); every other theme is a real
+   LIGHT color scheme. (The old list was 16 near-black clones — changing
+   theme just repainted the room black with a different accent tint.)
    Each theme exposes:
-   - accent : primary glow / border / button color
-   - bg     : deep background (slightly tinted toward the accent hue)
+   - accent : primary glow / border / button color (seats, buttons, chat)
+   - bg     : screen background
    - surface: card / panel background (a step lighter than bg)
-   These three are applied throughout the room screen so changing themes
-   feels like a full premium repaint, not just a border-color swap.
+   - onBg   : text color for elements sitting directly on bg
+   - onBgSub: secondary text color on bg
+   These are applied throughout the room screen so changing themes feels
+   like a full premium repaint, not just a border-color swap.
 ─────────────────────────────────────────────────────────────────────── */
-export const ROOM_THEMES: { id: string; name: string; accent: string; bg: string; surface: string }[] = [
-  { id: 'imo-light', name: '💙 IMO Light',  accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9' },
-  { id: 'cosmic',   name: '🌌 Cosmic',      accent: '#7C3AED', bg: '#0A0715', surface: '#130930' },
-  { id: 'inferno',  name: '🔥 Inferno',      accent: '#EF4444', bg: '#0F0505', surface: '#200A0A' },
-  { id: 'ocean',    name: '🌊 Ocean',        accent: '#0EA5E9', bg: '#020D14', surface: '#062030' },
-  { id: 'midnight', name: '🌙 Midnight',     accent: '#3B82F6', bg: '#050A1A', surface: '#0A1535' },
-  { id: 'forest',   name: '🌿 Forest',       accent: '#22C55E', bg: '#030E05', surface: '#061A09' },
-  { id: 'cherry',   name: '🌸 Cherry',       accent: '#EC4899', bg: '#0F0510', surface: '#200828' },
-  { id: 'thunder',  name: '⚡ Thunder',       accent: '#F59E0B', bg: '#0E0C03', surface: '#1C1905' },
-  { id: 'galaxy',   name: '🎆 Galaxy',        accent: '#A855F7', bg: '#0A0514', surface: '#15062A' },
-  { id: 'arctic',   name: '❄️ Arctic',        accent: '#67E8F9', bg: '#020E10', surface: '#041B1E' },
-  { id: 'desert',   name: '🏜️ Desert',        accent: '#D97706', bg: '#0E0A03', surface: '#1C1505' },
-  { id: 'neon',     name: '🎭 Neon City',     accent: '#10B981', bg: '#030E0A', surface: '#051A12' },
-  { id: 'sunset',   name: '🌅 Sunset',        accent: '#F97316', bg: '#0E0703', surface: '#1E0E05' },
-  { id: 'rose',     name: '🌹 Rose Gold',     accent: '#F43F5E', bg: '#0F0408', surface: '#200714' },
-  { id: 'ice',      name: '💎 Ice Crystal',   accent: '#BAE6FD', bg: '#020B12', surface: '#041622' },
-  { id: 'lava',     name: '🌋 Lava',          accent: '#DC2626', bg: '#0F0404', surface: '#200808' },
-  { id: 'aurora',   name: '🌌 Aurora',        accent: '#6EE7B7', bg: '#03100D', surface: '#061E19' },
+export const ROOM_THEMES: { id: string; name: string; accent: string; bg: string; surface: string; onBg: string; onBgSub: string }[] = [
+  { id: 'imo-light', name: '💙 IMO Light', accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9', onBg: '#111827', onBgSub: '#64748B' },
+  { id: 'ocean',    name: '🌊 Ocean',       accent: '#0284C7', bg: '#E0F2FE', surface: '#F0F9FF', onBg: '#0C4A6E', onBgSub: '#0369A1' },
+  { id: 'forest',   name: '🌿 Forest',      accent: '#16A34A', bg: '#DCFCE7', surface: '#F0FDF4', onBg: '#14532D', onBgSub: '#15803D' },
+  { id: 'cherry',   name: '🌸 Cherry',      accent: '#DB2777', bg: '#FCE7F3', surface: '#FDF2F8', onBg: '#500724', onBgSub: '#9D174D' },
+  { id: 'sunset',   name: '🌅 Sunset',      accent: '#EA580C', bg: '#FFEDD5', surface: '#FFF7ED', onBg: '#431407', onBgSub: '#9A3412' },
+  { id: 'galaxy',   name: '💜 Lavender',    accent: '#7C3AED', bg: '#EDE9FE', surface: '#F5F3FF', onBg: '#2E1065', onBgSub: '#5B21B6' },
+  { id: 'desert',   name: '🏜️ Desert',     accent: '#D97706', bg: '#FEF3C7', surface: '#FFFBEB', onBg: '#451A03', onBgSub: '#92400E' },
+  { id: 'rose',     name: '🌹 Rose',        accent: '#E11D48', bg: '#FFE4E6', surface: '#FFF1F2', onBg: '#4C0519', onBgSub: '#9F1239' },
+  { id: 'aurora',   name: '🍃 Mint',        accent: '#059669', bg: '#D1FAE5', surface: '#ECFDF5', onBg: '#022C22', onBgSub: '#065F46' },
+  { id: 'midnight', name: '🖤 Midnight',   accent: '#3B82F6', bg: '#050506', surface: '#101114', onBg: '#F8FAFC', onBgSub: '#94A3B8' },
 ];

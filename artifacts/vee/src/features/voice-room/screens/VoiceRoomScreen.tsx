@@ -484,6 +484,19 @@ export default function VoiceRoomScreen() {
     [activeThemeId],
   );
 
+  // 2026-10-21 (boss): text colors for elements sitting directly on the
+  // themed background (room title, seat names, bottom-bar labels) — light
+  // on the one black theme, dark on every light theme.
+  const themeOnBg = useMemo(
+    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.onBg ?? C.text,
+    [activeThemeId],
+  );
+
+  const themeOnBgSub = useMemo(
+    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.onBgSub ?? C.sub,
+    [activeThemeId],
+  );
+
   
   const [hasJoined, setHasJoined] = useState(false);
   const [isRoomMember, setIsRoomMember] = useState(false);
@@ -938,13 +951,16 @@ export default function VoiceRoomScreen() {
       setRoomIsPublic(info.isPublic);
       setRoomIsLocked(info.isLocked ?? false);
       setRoomDescription(info.description ?? '');
-      // 2026-10-20 (boss): "Imo মতো সাদা হবে" — the room ALWAYS renders
-      // IMO-light, even when the room's saved themeId names a dark theme.
-      // The saved value is left untouched in the DB; display is forced
-      // light here (previously: applied info.themeId verbatim).
+      // 2026-10-21 (boss): the room's saved theme APPLIES on entry —
+      // themes are real color schemes now (exactly one black, the rest
+      // light), so a chosen theme sticks. Unknown/removed ids fall back
+      // to IMO Light. (Supersedes the 2026-10-20 force-light, which
+      // existed only because every other theme was near-black.)
       if (info.themeId && info.themeId !== activeThemeIdRef.current) {
-        activeThemeIdRef.current = 'imo-light';
-        setActiveThemeId('imo-light');
+        const known = ROOM_THEMES.some((th) => th.id === info.themeId);
+        const next = known ? info.themeId : 'imo-light';
+        activeThemeIdRef.current = next;
+        setActiveThemeId(next);
       }
       if (pinGateRef.current === 'passed') handleRoomInfoOk();
     });
@@ -2127,10 +2143,10 @@ export default function VoiceRoomScreen() {
         }}>
           <Feather name="slash" size={40} color="#EF4444" />
         </View>
-        <Text style={{ color: C.text, fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 8 }}>
+        <Text style={{ color: themeOnBg, fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 8 }}>
           {t('voiceRoom.ban.title', { defaultValue: 'Voice rooms unavailable' })}
         </Text>
-        <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 16 }}>
+        <Text style={{ color: themeOnBgSub, fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 16 }}>
           {t('voiceRoom.ban.message', { defaultValue: 'Your access to voice rooms has been restricted.' })}
         </Text>
         <View style={{
@@ -2150,7 +2166,7 @@ export default function VoiceRoomScreen() {
             {untilText}
           </Text>
         </View>
-        <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8, marginBottom: 24 }}>
+        <Text style={{ color: themeOnBgSub, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8, marginBottom: 24 }}>
           {t('voiceRoom.ban.note', { defaultValue: 'You can still use the rest of the app. Contact support if you believe this is a mistake.' })}
         </Text>
         <Pressable
@@ -2206,7 +2222,7 @@ export default function VoiceRoomScreen() {
 
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>
+              <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
                 {roomName}
               </Text>
             </Pressable>
@@ -2411,7 +2427,7 @@ export default function VoiceRoomScreen() {
             borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10,
             marginBottom: 6 }}>
             <Feather name="alert-triangle" size={18} color={C.red} />
-            <Text style={{ flex: 1, color: C.text, fontSize: 12, fontWeight: '600' }}>
+            <Text style={{ flex: 1, color: themeOnBg, fontSize: 12, fontWeight: '600' }}>
               {voiceError}
             </Text>
             <ScalePress onPress={retryConnection}>
@@ -2448,6 +2464,8 @@ export default function VoiceRoomScreen() {
                 member={member}
                 isLocked={lockedSeats.has(idx)}
                 accentColor={accentColor}
+                nameColor={themeOnBg}
+                labelColor={themeOnBgSub}
                 myId={myUid}
                 micDecorUrl={micDecorUrl}
                 onPress={seatPressHandlers[idx]}
@@ -2676,6 +2694,8 @@ export default function VoiceRoomScreen() {
         mySeatIdx={mySeatIdx}
         muted={muted}
         accentColor={accentColor}
+        onBg={themeOnBg}
+        onBgSub={themeOnBgSub}
         toggleSpeaker={toggleSpeaker}
         speakerOn={speakerOn}
         setTaskCenterOpen={setTaskCenterOpen}

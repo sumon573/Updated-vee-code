@@ -47,6 +47,7 @@ function useServerBadgeIcon() {
 const SEAT_SIZE = 53;
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
+  nameColor, labelColor,
 }: {
   seatIndex: number;
   member: Participant | null | undefined;
@@ -54,6 +55,11 @@ export const SeatCard = memo(function SeatCard({
   reaction?: SeatReaction;
   isLocked?: boolean;
   accentColor: string;
+  /** 2026-10-21 (boss): theme-aware label colors — seat names sit directly
+      on the room background, so they follow the active theme (light text
+      only on the one black theme). Defaults keep the light look. */
+  nameColor?: string;
+  labelColor?: string;
   myId?: string;
   /** 2026-10-16 (Sumon): Store-bought room mic decor — shown on the mic dot. */
   micDecorUrl?: string | null;
@@ -187,7 +193,7 @@ export const SeatCard = memo(function SeatCard({
           {/* 2026-10-19 (IMO port Phase 1): 11.5sp seat name (IMO) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
             <Text style={{
-              color: C.text, fontSize: 11.5, fontWeight: '700',
+              color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
               textAlign: 'center',
             }} numberOfLines={1}>{seatName(member.name)}</Text>
             {hasVerifiedBadge && (
@@ -250,7 +256,7 @@ export const SeatCard = memo(function SeatCard({
             />
           </View>
           <Text style={{
-            color: locked ? C.gold : C.muted,
+            color: locked ? C.gold : (labelColor ?? C.muted),
             fontSize: 10, marginTop: 5, fontWeight: '600',
             textAlign: 'center',
           }} numberOfLines={1}>

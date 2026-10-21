@@ -21,6 +21,10 @@ export interface VoiceRoomBottomBarProps {
   mySeatIdx: number;
   muted: boolean;
   accentColor: string;
+  /** 2026-10-21 (boss): theme-aware label colors (labels sit on the room
+      background). Defaults keep the light look. */
+  onBg?: string;
+  onBgSub?: string;
   toggleSpeaker: () => void;
   speakerOn: boolean;
   setTaskCenterOpen: (v: boolean) => void;
@@ -33,6 +37,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const { t } = useTranslation();
   const {
     keyboardOpen, bottomPad, handleMicBarPress, mySeatIdx, muted, accentColor,
+    onBg, onBgSub,
     toggleSpeaker, speakerOn,
     setTaskCenterOpen, setGiftsOpen, setInviteOpen, setExitModalOpen,
   } = props;
@@ -83,7 +88,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiquidGoldSpeaker speakerOn={speakerOn} />
             </View>
-            <Text style={{ color: speakerOn ? '#D4AF37' : C.sub, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
+            <Text style={{ color: speakerOn ? '#D4AF37' : (onBgSub ?? C.sub), fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.speaker')}
             </Text>
           </View>
@@ -99,7 +104,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiveDateIcon />
             </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
+            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               Tasks
             </Text>
           </View>
@@ -114,7 +119,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianGiftButton />
             </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
+            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.gift')}
             </Text>
           </View>
@@ -129,7 +134,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <SapphireInviteButton />
             </View>
-            <Text style={{ color: C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
+            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
               {t('voiceRoom.screen.invite')}
             </Text>
           </View>

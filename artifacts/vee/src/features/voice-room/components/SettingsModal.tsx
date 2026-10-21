@@ -256,7 +256,7 @@ export function SettingsModal({
               }}>
                 <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: accent }} />
                 <Text style={{ color: C.sub, fontSize: 11, fontWeight: '700' }}>
-                  {ROOM_THEMES.find((th: { id: string; name: string; accent: string }) => th.id === activeThemeId)?.name ?? 'Cosmic'}
+                  {ROOM_THEMES.find((th: { id: string; name: string; accent: string }) => th.id === activeThemeId)?.name ?? '💙 IMO Light'}
                 </Text>
               </View>
               <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={16}
