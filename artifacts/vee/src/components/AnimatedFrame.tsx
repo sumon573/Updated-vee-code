@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, View, StyleSheet, Image } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { getCachedFrameUri } from '../services/frameService';
 
 type Props = {
@@ -86,11 +87,14 @@ export default function AnimatedFrame({ size, frameId, compact }: Props) {
   return (
     <View style={[styles.container, { width: frameSize, height: frameSize }]}>
       {showServer ? (
-        // Server APNG — animation is baked in, no code animation on top.
-        <Image
+        // 2026-10-21: Server animated frame via expo-image — RN Image/Fresco
+        // does NOT animate APNG on Android (shows only the first frame);
+        // expo-image animates WebP/APNG on both platforms. Animation is
+        // baked into the file, no code animation on top.
+        <ExpoImage
           source={{ uri: serverUri! }}
           style={{ width: frameSize, height: frameSize }}
-          resizeMode="contain"
+          contentFit="contain"
           onError={() => setServerFailed(true)}
         />
       ) : (
