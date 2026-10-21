@@ -310,13 +310,40 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
                 rewardsForRankKey(rankKey) ??
                 (nobleRankIndex != null ? rewardsForRank(nobleRankIndex) : null);
               const ringColor = catalog?.rankColor || C.gold;
+              // 2026-10-21 (boss: "count er frame voice room e dekhay na —
+              // professional koro, boro app gulo jevabe kaj kore"): draw the
+              // frame's REAL artwork over the DP, big-app style. Calibration
+              // comes from the catalog (frame.config.seatScale / seatDy) so
+              // geometry is data, not code. The plain ring stays UNDERNEATH:
+              // it is what shows while the art downloads, and it remains if
+              // the art fails. Frames without calibration (e.g. Viscount's
+              // opaque-centre shield) keep the ring only — an opaque image
+              // must never cover a DP.
+              const frameCfg = catalog?.frame?.config as { seatScale?: unknown; seatDy?: unknown } | undefined;
+              const seatScale = typeof frameCfg?.seatScale === 'number' ? frameCfg.seatScale : null;
+              const seatDy = typeof frameCfg?.seatDy === 'number' ? frameCfg.seatDy : 0;
+              const frameUrl = seatScale != null ? catalog?.frame?.designUrl : undefined;
+              const artSize = seatScale != null ? Math.round(size * seatScale) : 0;
               return (
-                <View style={{
-                  width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
-                  borderWidth: 3, borderColor: ringColor, backgroundColor: 'transparent',
-                  shadowColor: ringColor, shadowOpacity: 0.35, shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 0 },
-                }} />
+                <>
+                  <View style={{
+                    width: size + 10, height: size + 10, borderRadius: (size + 10) / 2,
+                    borderWidth: 3, borderColor: ringColor, backgroundColor: 'transparent',
+                    shadowColor: ringColor, shadowOpacity: 0.35, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 0 },
+                  }} />
+                  {frameUrl ? (
+                    <Image
+                      source={{ uri: frameUrl }}
+                      style={{
+                        position: 'absolute',
+                        width: artSize, height: artSize,
+                        transform: [{ translateY: -seatDy * artSize }],
+                      }}
+                      resizeMode="contain"
+                    />
+                  ) : null}
+                </>
               );
             })()
           ) : (

@@ -48,6 +48,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     badge: null,
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-knight.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -64,6 +65,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-baron.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -99,6 +101,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     frame: {
       fallbackIcon: '🖼️',
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-count.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0.076 },
     },
     ripple: null, entryEffect: null,
   },
@@ -111,6 +114,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-marquis.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: null,
@@ -125,6 +129,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-duke.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: null,
@@ -139,6 +144,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-royalduke.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FFA000', '#FF8F00'] } },
@@ -153,6 +159,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-king.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FBC02D', '#F9A825'] } },
@@ -167,6 +174,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-sking.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#E65100', '#BF360C'] } },
@@ -181,6 +189,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     frame: {
       designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-ssking.png?v=2',
+      config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#BF360C', '#880E4F'] } },
