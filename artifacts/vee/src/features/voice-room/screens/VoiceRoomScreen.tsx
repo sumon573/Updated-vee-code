@@ -161,15 +161,8 @@ export default function VoiceRoomScreen() {
   
   const [voiceReady, setVoiceReady] = useState(false);
   const voiceReadyRef = useRef(false);
-  const voiceReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     markVoiceStage('screen_mount', roomId);
-    return () => {
-      if (voiceReadyTimerRef.current !== null) {
-        clearTimeout(voiceReadyTimerRef.current);
-        voiceReadyTimerRef.current = null;
-      }
-    };
   }, []);
 
   
@@ -213,10 +206,11 @@ export default function VoiceRoomScreen() {
     markVoiceStage('room_info_ok', roomId);
     if (voiceReadyRef.current) return;
     voiceReadyRef.current = true;
-    voiceReadyTimerRef.current = setTimeout(() => {
-      voiceReadyTimerRef.current = null;
-      setVoiceReady(true);
-    }, 1200);
+    // 2026-10-21 (boss: voice room loads slowly): a hardcoded 1,200 ms
+    // setTimeout used to sit here before voice could even START
+    // connecting — a flat 1.2 s tax on every single room entry. Voice now
+    // starts the moment the room-info/PIN checks pass.
+    setVoiceReady(true);
   }, [roomId]);
 
   useEffect(() => {
@@ -531,7 +525,7 @@ export default function VoiceRoomScreen() {
   const [pinGate, setPinGate] = useState<'checking' | 'open' | 'passed'>('checking');
   const pinGateRef = useRef<'checking' | 'open' | 'passed'>('checking');
   const pinEvaluatedForRef = useRef<string | null>(null);
-  const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string; pinVersion?: number } | null>(null);
+  const pinInfoRef = useRef<{ isPublic?: boolean; ownerId?: string; pinVersion?: number; isLocked?: boolean } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
@@ -893,7 +887,7 @@ export default function VoiceRoomScreen() {
       setRoomName(info.name);
       setRoomTopic(info.topic);
       setOwnerId(info.ownerId);
-      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0 };
+      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0, isLocked: info.isLocked };
       const curPinVer = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
       if (
         pinGateRef.current === 'passed' &&
@@ -1212,19 +1206,29 @@ export default function VoiceRoomScreen() {
     let cancelled = false;
 
     (async () => {
-      try {
-        const { getNobleState } = await import('@/src/services/nobleService');
-        const noble = await getNobleState(myUid).catch(() => null);
-        if (noble && !noble.lapsed) myNobleRankRef.current = noble.rankIndex;
-      } catch {  }
+      // 2026-10-21 (boss: voice room loads slowly): the noble-state read
+      // and the block check are independent — they used to run one after
+      // another (serial round trips). They now run together, and the
+      // room-info re-read that followed them is gone: the room-info
+      // subscription has already delivered it (pinInfoRef) before this
+      // effect can run (it is gated on pinGate === 'passed').
+      const [noble, blockSnap] = await Promise.all([
+        (async () => {
+          try {
+            const { getNobleState } = await import('@/src/services/nobleService');
+            return await getNobleState(myUid).catch(() => null);
+          } catch { return null; }
+        })(),
+        get(ref(database, `roomBlocks/${roomId}/${myUid}`)).catch(() => null),
+      ]);
+      if (noble && !noble.lapsed) myNobleRankRef.current = noble.rankIndex;
       if (cancelled) return;
       try {
-        const blockSnap = await get(
-          ref(database, `roomBlocks/${roomId}/${myUid}`),
-        ).catch(() => null);
         if (blockSnap?.exists()) return;
-        const infoSnap = await get(ref(database, `rooms/${roomId}/info`));
-        const info = infoSnap.val() as { isLocked?: boolean; ownerId?: string } | null;
+        const cachedInfo = pinInfoRef.current;
+        const info = cachedInfo
+          ? { isLocked: cachedInfo.isLocked, ownerId: cachedInfo.ownerId }
+          : ((await get(ref(database, `rooms/${roomId}/info`))).val() as { isLocked?: boolean; ownerId?: string } | null);
         if (info && info.isLocked === true && info.ownerId !== myUid) {
           const adminSnap = await get(
             ref(database, `rooms/${roomId}/admins/${myUid}`),

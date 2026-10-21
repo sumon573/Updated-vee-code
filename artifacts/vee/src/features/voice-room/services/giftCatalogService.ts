@@ -98,6 +98,10 @@ function sortGifts(gifts: CatalogGift[]): CatalogGift[] {
  * Fetch gift catalog once from server.
  */
 export async function fetchGiftCatalog(): Promise<CatalogGift[]> {
+  // 2026-10-21: serve the module cache when present — the realtime
+  // subscription keeps it fresh. Re-downloading the whole catalog on
+  // every fetch (every room entry) was pure waste.
+  if (cachedGifts) return cachedGifts;
   try {
     const snap = await get(ref(database, CATALOG_PATH));
     if (!snap.exists()) {

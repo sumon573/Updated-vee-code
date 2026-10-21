@@ -173,7 +173,13 @@ export function GiftsModal({
   }, [visible, initialRecipient?.id, myUid]);
 
   // Server-driven catalog (single source of truth)
+  // 2026-10-21 (boss: voice room loads slowly): this effect used to run on
+  // MOUNT — every room entry downloaded the whole gift catalog and held a
+  // permanent subscription even if gifts were never opened. It now runs
+  // only while the modal is visible (same pattern as the other modals);
+  // the service-level cache makes re-opens instant.
   useEffect(() => {
+    if (!visible) return;
     let unsub: (() => void) | null = null;
     const load = async () => {
       setGiftsLoading(true);
@@ -199,7 +205,7 @@ export function GiftsModal({
       setGiftsLoading(false);
     });
     return () => { if (unsub) unsub(); };
-  }, []);
+  }, [visible]);
 
   const getVisibleGifts = useCallback((): GiftItem[] => {
     switch (activeTab) {
