@@ -44,7 +44,11 @@ const NOBEL_ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
 const artUri = (f: string) => ({ uri: `${NOBEL_ART_BASE}/${f}` });
 // Per-rank badge art — jsDelivr (vee-admin-dashboard repo, public/nobel/).
 const NOBEL_BADGE_BASE = 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel';
-const badgeUri = (f: string) => ({ uri: `${NOBEL_BADGE_BASE}/${f}` });
+// 2026-10-21 (boss): ?v=2 cache-bust — the art files at these URLs were
+// replaced server-side (original designs restored), but phones kept showing
+// the previous images from the image cache. The version query forces a
+// fresh fetch. Bump the number on every future art swap.
+const badgeUri = (f: string) => ({ uri: `${NOBEL_BADGE_BASE}/${f}?v=2` });
 
 const PRIV_ART: Record<string, any> = {
   nameplate: artUri('priv-nameplate.png'),

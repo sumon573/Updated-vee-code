@@ -42,12 +42,12 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'knight', rankName: 'Knight', rankColor: '#8BC34A',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-knight.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-knight.png?v=2',
       fallbackIcon: '🎖️',
     },
     badge: null,
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-knight.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-knight.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -55,15 +55,15 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'baron', rankName: 'Baron', rankColor: '#26A69A',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-baron.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-baron.png?v=2',
       fallbackIcon: '🎖️',
     },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-baron.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-baron.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-baron.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-baron.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -71,16 +71,16 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   {
     rankKey: 'viscount', rankName: 'Viscount', rankColor: '#42A5F5',
     nameplate: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-viscount.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-viscount.png?v=2',
       fallbackIcon: '🎖️',
       mistColor: '#BBDEFB', // 2026-10-15 (Sumon): mist animation starts from Viscount
     },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-viscount.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-viscount.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://vee-club.duckdns.org/nobel-art/rank-viscount-frame.png',
+      designUrl: 'https://vee-club.duckdns.org/nobel-art/rank-viscount-frame.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: null, entryEffect: null,
@@ -89,16 +89,16 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'count', rankName: 'Count', rankColor: '#7E57C2',
     nameplate: {
       fallbackIcon: '🎖️',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-count.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-plate-count.png?v=2',
       mistColor: '#CE93D8',
     },
     badge: {
       fallbackIcon: '👑',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-count.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-count.png?v=2',
     },
     frame: {
       fallbackIcon: '🖼️',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-count.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-count.png?v=2',
     },
     ripple: null, entryEffect: null,
   },
@@ -106,11 +106,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'marquis', rankName: 'Marquis', rankColor: '#EC407A',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-marquis.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-marquis.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-marquis.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-marquis.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: null,
@@ -120,11 +120,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'duke', rankName: 'Duke', rankColor: '#FF7043',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-duke.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-duke.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-duke.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-duke.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: null,
@@ -134,11 +134,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'royalDuke', rankName: 'Royal Duke', rankColor: '#FFA000',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-royalduke.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-royalduke.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-royalduke.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-royalduke.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FFA000', '#FF8F00'] } },
@@ -148,11 +148,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'king', rankName: 'King', rankColor: '#FBC02D',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-king.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-king.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-king.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-king.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FBC02D', '#F9A825'] } },
@@ -162,11 +162,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'sking', rankName: 'SKing', rankColor: '#E65100',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-sking.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-sking.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-sking.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-sking.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#E65100', '#BF360C'] } },
@@ -176,11 +176,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'ssking', rankName: 'SSKing', rankColor: '#BF360C',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-ssking.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-ssking.png?v=2',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-ssking.png',
+      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-ssking.png?v=2',
       fallbackIcon: '🖼️',
     },
     ripple: { fallbackIcon: '🌊', config: { colors: ['#BF360C', '#880E4F'] } },
