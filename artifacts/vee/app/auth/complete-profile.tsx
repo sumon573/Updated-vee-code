@@ -20,6 +20,7 @@ import { createUser, getUser, setUserVId, setupPresence, updateUser, generateAnd
 import { initializeWallet } from '@/src/features/wallet/walletService';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import generateVId from '@/src/utils/generateVId';
+import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const C = {
   bg: '#FFFFFF',
@@ -77,7 +78,19 @@ export default function CompleteProfileScreen() {
       // profile already (profileComplete: false) and reserved a Vee ID via
       // backfill — REUSE it instead of reserving a second one (the old code
       // orphaned the first reservation on every race).
-      const existing = await getUser(fbUser.uid).catch(() => null);
+      // 2026-10-22 HARDENING (boss): a FAILED read must never be treated as
+      // "no profile" — on a bad network the old .catch(() => null) sent the
+      // flow into the create branch, whose write then collided with the
+      // real record (immutable vId) and failed with a generic error,
+      // trapping the user on this screen forever. Retry once; if the read
+      // still fails, surface the real cause and stop.
+      let existing: Awaited<ReturnType<typeof getUser>> = null;
+      try {
+        existing = await getUser(fbUser.uid);
+      } catch {
+        await new Promise((r) => setTimeout(r, 1200));
+        existing = await getUser(fbUser.uid);
+      }
       let vId = existing?.vId || '';
       if (!vId) {
         vId = await generateAndReserveVId(fbUser.uid, generateVId);
@@ -134,7 +147,10 @@ export default function CompleteProfileScreen() {
       // AuthGuard will route to /home now that the profile exists
       router.replace('/home');
     } catch (err) {
-      setErrorMsg(t('auth.errors.generic'));
+      // 2026-10-22 (boss's standing rule — error cause always visible):
+      // show the REAL cause, not a generic message, so a stuck DONE is
+      // diagnosable from the user's own screenshot.
+      setErrorMsg(`${t('auth.errors.generic')} (${getErrorCause(err)})`);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
