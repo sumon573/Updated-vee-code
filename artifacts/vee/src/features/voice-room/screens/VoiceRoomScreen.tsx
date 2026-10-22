@@ -11,7 +11,7 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
-import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
+import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
@@ -1320,6 +1320,26 @@ export default function VoiceRoomScreen() {
       }
       if (cancelled) return;
 
+      // 2026-10-22 FIX (boss: "একটা রুম থেকে আরেকটা রুমে গেলে আগের রুমে
+      // আইডি থেকে যায়"): enforce ONE active room. Several in-app paths
+      // (room-invite popup, leaderboard, profile) push this screen OVER an
+      // already-open room — the covered screen stays mounted, so its
+      // presence cleanup never runs and its heartbeats keep the old room's
+      // seat/audience entries alive indefinitely. The minimized case is
+      // handled on mount (above); this covers the still-open stacked case:
+      // if the active-room tracker names a DIFFERENT room, leave it fully
+      // (seat + audience) before joining this one. Both heartbeat writers
+      // are transaction-guarded, so once removed here the old entries can
+      // never resurrect.
+      const prevActive = getCurrentRoom();
+      if (prevActive && prevActive.id !== roomId) {
+        if (prevActive.mySeatIdx >= 0) {
+          removeSeat(prevActive.id, prevActive.mySeatIdx).catch(() => {});
+        }
+        leaveAudience(prevActive.id, prevActive.myUid || myUid).catch(() => {});
+        clearCurrentRoom();
+      }
+
       if (finalSeatIdx < 0) {
         joinRoomAsAudience(roomId, {
           userId: myUid,
@@ -1369,6 +1389,11 @@ export default function VoiceRoomScreen() {
     let disposed = false;
     const reRegisterPresence = async () => {
       if (disposed || hasLeftRef.current || !presenceReadyRef.current) return;
+      // 2026-10-22: a superseded (stacked-under) room screen must not
+      // resurrect its presence on reconnect — the user has moved on to a
+      // different active room (see the one-active-room guard at join).
+      const activeNow = getCurrentRoom();
+      if (activeNow && activeNow.id !== roomId) return;
       try {
         const seatIdx = mySeatIdxRef.current;
         const audData = {
