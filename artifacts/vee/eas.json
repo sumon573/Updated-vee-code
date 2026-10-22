@@ -22,6 +22,7 @@
       }
     },
     "preview": {
+      "channel": "preview",
       "distribution": "internal",
       "android": {
         "buildType": "apk",
@@ -36,9 +37,10 @@
       "node": "20.18.0"
     },
     "production": {
+      "channel": "production",
       "distribution": "store",
       "android": {
-        "buildType": "app-bundle",
+        "buildType": "apk",
         "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       },
       "ios": {

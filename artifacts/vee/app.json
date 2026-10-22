@@ -9,9 +9,9 @@
     "orientation": "portrait",
     "updates": {
       "url": "https://u.expo.dev/76af2941-e66e-4252-afd1-bed9f3745348",
-      "enabled": false,
+      "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "checkAutomatically": "ON_ERROR_RECOVERY"
+      "checkAutomatically": "ON_LOAD"
     },
     "icon": "./assets/images/icon.png",
     "scheme": "vee",
