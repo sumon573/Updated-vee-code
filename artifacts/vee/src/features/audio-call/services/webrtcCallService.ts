@@ -126,7 +126,7 @@ export type StartWebRTCCallOptions = {
   isCaller: boolean;
 } & WebRTCCallCallbacks;
 
-type SdpPayload = { sdp: string; type: string };
+type SdpPayload = { sdp: string; type: string; epoch?: number };
 
 type IcePayload = {
   candidate: string;
@@ -156,6 +156,17 @@ export class WebRTCCallSession {
   private ended = false;
   private signalingNodeRemoved = false;
   private muted = false;
+
+  // ── ICE restart bookkeeping (2026-10-22, boss: calls must never drop) ──
+  // SDP payloads carry an epoch. The initial exchange is epoch 1; every ICE
+  // restart bumps it, so a re-offer / re-answer is distinguishable from the
+  // original one-shot exchange the signaling listeners were built for.
+  // Legacy payloads without an epoch are treated as epoch 1.
+  private localOfferEpoch = 0;
+  private appliedRemoteEpoch = 0;
+  private iceRestartAttempts = 0;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly MAX_ICE_RESTARTS = 4;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -237,21 +248,23 @@ export class WebRTCCallSession {
       };
 
       // ── Connection state ───────────────────────────────────────────────
+      // 2026-10-22 (boss: calls must never drop): a transient network loss
+      // (Wi‑Fi ↔ mobile switch, brief signal drop) must NOT kill the call.
+      // 'disconnected' gets a grace window; 'failed' starts ICE-restart
+      // recovery (see beginRecovery). Only when every restart is exhausted
+      // does the call surface the fatal error it used to show immediately.
       pc.onconnectionstatechange = () => {
         if (this.ended || !this.pc) return;
         const state = this.pc.connectionState;
         if (state === 'connected') {
+          this.clearRecoveryTimer();
+          this.iceRestartAttempts = 0;
           this.notifyConnected();
+        } else if (state === 'disconnected') {
+          this.scheduleRecovery(10000);
         } else if (state === 'failed') {
-          this.fail(
-            true,
-            // User-facing: this message is shown in an Alert by
-            // AudioCallScreen — keep it free of code/file references.
-            'Could not establish a direct connection to the other device ' +
-              '(network blocked). Please check your connection and try again.',
-          );
+          this.scheduleRecovery(1500);
         }
-        // 'disconnected' is transient (may recover); intentionally ignored.
       };
 
       // ── Mic capture ────────────────────────────────────────────────────
@@ -294,13 +307,15 @@ export class WebRTCCallSession {
       this.watchRemoteIce();
 
       if (this.isCaller) {
-        // Caller ALWAYS creates the offer.
+        // Caller ALWAYS creates the offer. Initial exchange = epoch 1.
+        this.localOfferEpoch = 1;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         if (this.ended) return;
         await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/offer`), {
           sdp: offer.sdp,
           type: offer.type ?? 'offer',
+          epoch: 1,
         } satisfies SdpPayload);
         // May have ended during the offer write — don't attach a listener
         // the ended session can never clean up.
@@ -366,6 +381,7 @@ export class WebRTCCallSession {
   hangup(): void {
     if (this.ended) return;
     this.ended = true;
+    this.clearRecoveryTimer();
     // 2026-10-15 (Sumon): call over — drop the foreground service.
     stopVoiceForegroundService();
 
@@ -461,7 +477,11 @@ export class WebRTCCallSession {
     this.unsubscribers.push(off);
   }
 
-  /** Listens for the remote SDP (offer or answer), exactly once. */
+  /**
+   * Listens for the remote SDP (offer or answer). Fires on every write;
+   * the apply methods accept only a NEW epoch (ICE restarts re-use these
+   * same listeners — see the epoch bookkeeping on the class fields).
+   */
   private watchRemoteSdp(
     kind: 'offer' | 'answer',
     onSdp: (sdp: SdpPayload) => void,
@@ -469,13 +489,14 @@ export class WebRTCCallSession {
     const off = onValue(
       ref(database, `${SIGNAL_ROOT}/${this.roomId}/${kind}`),
       (snap) => {
-        if (this.ended || this.remoteDescSet) return;
+        if (this.ended) return;
         const val = snap.val() as Partial<SdpPayload> | null;
         if (val && typeof val.sdp === 'string') {
           try {
             onSdp({
               sdp: val.sdp,
               type: typeof val.type === 'string' ? val.type : kind,
+              epoch: typeof val.epoch === 'number' ? val.epoch : 1,
             });
           } catch {
             /* never throw to UI */
@@ -541,7 +562,15 @@ export class WebRTCCallSession {
   }
 
   private async applyRemoteAnswer(answer: SdpPayload): Promise<void> {
-    if (this.remoteDescSet || this.ended || !this.pc) return;
+    if (this.ended || !this.pc) return;
+    // Epoch gate (2026-10-22): accept only the answer to OUR latest offer
+    // that we have not already applied — the initial exchange (epoch 1)
+    // and every ICE-restart answer flow through here exactly once each.
+    const epoch = answer.epoch ?? 1;
+    if (epoch !== this.localOfferEpoch || epoch <= this.appliedRemoteEpoch) {
+      return;
+    }
+    this.appliedRemoteEpoch = epoch;
     this.remoteDescSet = true;
     try {
       await this.pc.setRemoteDescription(
@@ -557,7 +586,13 @@ export class WebRTCCallSession {
   }
 
   private async applyRemoteOffer(offer: SdpPayload): Promise<void> {
-    if (this.remoteDescSet || this.ended || !this.pc) return;
+    if (this.ended || !this.pc) return;
+    // Epoch gate (2026-10-22): accept only an offer NEWER than the last
+    // one applied — initial offer (epoch 1) first, then the caller's
+    // ICE-restart re-offers (epoch 2, 3, …) as they arrive.
+    const epoch = offer.epoch ?? 1;
+    if (epoch <= this.appliedRemoteEpoch) return;
+    this.appliedRemoteEpoch = epoch;
     this.remoteDescSet = true;
     try {
       await this.pc.setRemoteDescription(
@@ -569,6 +604,7 @@ export class WebRTCCallSession {
       await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/answer`), {
         sdp: answer.sdp,
         type: answer.type ?? 'answer',
+        epoch,
       } satisfies SdpPayload);
       this.flushPendingCandidates();
     } catch (e) {
@@ -576,6 +612,81 @@ export class WebRTCCallSession {
         true,
         `Failed to answer remote offer: ${e instanceof Error ? e.message : String(e)}`,
       );
+    }
+  }
+
+  // ── ICE restart recovery (2026-10-22, boss: calls must never drop) ──────
+
+  private clearRecoveryTimer(): void {
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+  }
+
+  private scheduleRecovery(delayMs: number): void {
+    if (this.ended) return;
+    if (this.recoveryTimer) {
+      // A hard 'failed' (short delay) preempts a pending grace wait;
+      // a soft 'disconnected' never extends an already-scheduled retry.
+      if (delayMs >= 10000) return;
+      this.clearRecoveryTimer();
+    }
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
+      void this.beginRecovery();
+    }, delayMs);
+  }
+
+  private async beginRecovery(): Promise<void> {
+    if (this.ended || !this.pc) return;
+    const state = this.pc.connectionState;
+    if (state === 'connected' || state === 'connecting' || state === 'new') {
+      return;
+    }
+    if (this.iceRestartAttempts >= WebRTCCallSession.MAX_ICE_RESTARTS) {
+      this.fail(
+        true,
+        // User-facing: shown in an Alert by AudioCallScreen — keep it free
+        // of code/file references.
+        'Could not establish a direct connection to the other device ' +
+          '(network blocked). Please check your connection and try again.',
+      );
+      return;
+    }
+    this.iceRestartAttempts += 1;
+    if (this.isCaller) {
+      await this.restartIce();
+    } else {
+      // The callee cannot restart alone — the caller drives re-offers.
+      // Re-check after a window: if the caller's restart landed, the
+      // 'connected' transition clears this chain and resets attempts.
+      this.scheduleRecovery(20000);
+    }
+  }
+
+  /** Caller-only: fresh ICE credentials via a re-offer on the same
+   *  signaling nodes, epoch bumped so both sides accept it as new. */
+  private async restartIce(): Promise<void> {
+    if (this.ended || !this.pc || !this.isCaller) return;
+    const pc = this.pc;
+    try {
+      this.localOfferEpoch += 1;
+      const epoch = this.localOfferEpoch;
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      if (this.ended) return;
+      await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/offer`), {
+        sdp: offer.sdp,
+        type: offer.type ?? 'offer',
+        epoch,
+      } satisfies SdpPayload);
+      // Watchdog: if no further connection-state event fires, re-enter
+      // recovery instead of hanging in a dead state forever.
+      this.scheduleRecovery(15000);
+    } catch {
+      // Attempt failed before signaling — retry via the watchdog chain.
+      this.scheduleRecovery(5000);
     }
   }
 }

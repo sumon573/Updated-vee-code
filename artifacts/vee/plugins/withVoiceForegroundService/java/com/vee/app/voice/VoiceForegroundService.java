@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -31,6 +32,12 @@ public class VoiceForegroundService extends Service {
   // already declared in the app manifest.
   private PowerManager.WakeLock wakeLock;
 
+  // 2026-10-22 (boss, lifetime background fix): WIFI lock held alongside the
+  // wake lock. In Doze the Wi‑Fi radio sleeps too — CPU awake alone still
+  // starves the voice socket on Wi‑Fi calls. LOW_LATENCY keeps the radio
+  // responsive without the old HIGH_PERF power draw.
+  private WifiManager.WifiLock wifiLock;
+
   @Override
   public IBinder onBind(Intent intent) {
     return null;
@@ -54,6 +61,25 @@ public class VoiceForegroundService extends Service {
       }
       if (wakeLock != null && !wakeLock.isHeld()) {
         wakeLock.acquire();
+      }
+    } catch (Exception ignored) {
+    }
+
+    // Keep the Wi‑Fi radio awake with the CPU (see wifiLock field note).
+    try {
+      if (wifiLock == null) {
+        WifiManager wm = (WifiManager) getApplicationContext()
+            .getSystemService(WIFI_SERVICE);
+        if (wm != null) {
+          int mode = Build.VERSION.SDK_INT >= 29
+              ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+              : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+          wifiLock = wm.createWifiLock(mode, "vee:voice-wifi");
+          wifiLock.setReferenceCounted(false);
+        }
+      }
+      if (wifiLock != null && !wifiLock.isHeld()) {
+        wifiLock.acquire();
       }
     } catch (Exception ignored) {
     }
@@ -123,6 +149,20 @@ public class VoiceForegroundService extends Service {
     }
   }
 
+  // 2026-10-22 (boss): the user swiping the app away from recents is an
+  // explicit exit — the JS engine dies with the task, so voice cannot
+  // continue; stop cleanly instead of leaving a zombie "Voice active"
+  // notification with dead audio behind (matches the standing rule:
+  // app killed → leave the room/call, presence cleaned by onDisconnect).
+  @Override
+  public void onTaskRemoved(Intent rootIntent) {
+    try {
+      stopSelf();
+    } catch (Exception ignored) {
+    }
+    super.onTaskRemoved(rootIntent);
+  }
+
   @Override
   public void onDestroy() {
     try {
@@ -132,6 +172,13 @@ public class VoiceForegroundService extends Service {
     } catch (Exception ignored) {
     }
     wakeLock = null;
+    try {
+      if (wifiLock != null && wifiLock.isHeld()) {
+        wifiLock.release();
+      }
+    } catch (Exception ignored) {
+    }
+    wifiLock = null;
     try {
       if (Build.VERSION.SDK_INT >= 24) {
         stopForeground(STOP_FOREGROUND_REMOVE);

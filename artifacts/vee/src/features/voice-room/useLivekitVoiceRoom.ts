@@ -761,7 +761,20 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       startVoiceForegroundService('Voice room active');
       // Crash breadcrumb: native audio session started — next is WebRTC connect.
       markVoiceStage('audio_session_started', roomId);
-      const room = new lk.Room();
+      // 2026-10-22 (boss, heat/lag/lifetime fix): adaptiveStream + dynacast
+      // make the SFU send only the quality each subscription needs and
+      // pause unneeded layers — measurably less CPU, bandwidth and heat on
+      // long room stays. Explicit capture defaults pin hardware AEC/NS/AGC
+      // (echo/noise suppression) instead of relying on platform defaults.
+      const room = new lk.Room({
+        adaptiveStream: true,
+        dynacast: true,
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       this.room = room;
       markVoiceStage('room_created', roomId);
       this.registerRoomListeners(room);
