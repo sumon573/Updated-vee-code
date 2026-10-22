@@ -37,7 +37,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useKeepAwake } from 'expo-keep-awake';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { startOutgoingTone, stopOutgoingTone } from './services/outgoingCallTone';
-import { WebRTCCallSession } from './services/webrtcCallService';
+import { WebRTCCallSession, type WebRTCCallCallbacks } from './services/webrtcCallService';
 import { alertMicDeniedWithSettings } from '@/src/utils/permissionAlert';
 // 2026-10-11 Issue #8: call minimize — persist WebRTC session at module level.
 // 2026-10-11 FIX: module-level minimizing flag + mount tracking fix the race
@@ -481,6 +481,69 @@ export default function AudioCallScreen({
       const persisted = getPersistedCallSession(roomId) as WebRTCCallSession | null;
       if (persisted) {
         webrtcRef.current = persisted;
+        // 2026-10-22 (deep audit): REBIND the session's callbacks to THIS
+        // live instance. The session was created by the previous (now
+        // unmounted) screen and its handlers still close over that dead
+        // instance — remote hangup / errors / state changes would fire
+        // into a screen that no longer exists. These handlers mirror the
+        // fresh-dial ones passed to startCall below.
+        persisted.setCallbacks({
+          onRemoteStream: () => {
+            if (!mountedRef.current || !webrtcRef.current) return;
+            updateCallState('connected');
+            startTimer();
+            if (declineTimerRef.current) {
+              clearTimeout(declineTimerRef.current);
+              declineTimerRef.current = null;
+            }
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+          },
+          onConnectionChange: (state) => {
+            if (!mountedRef.current || !webrtcRef.current) return;
+            if (state === 'connected') {
+              updateCallState('connected');
+              startTimer();
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
+            } else if (state === 'remote-ended') {
+              updateCallState('ended');
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
+              if (getPersistedCallSession(roomId)) {
+                endCall(false);
+                return;
+              }
+              timeoutRef.current = setTimeout(() => {
+                if (mountedRef.current) endCall(true);
+              }, 1500);
+            }
+          },
+          onError: ({ fatal, message }) => {
+            if (fatal) {
+              if (mountedRef.current) {
+                mountedRef.current = false;
+                Alert.alert(
+                  t('audioCall.callEndedTitle'),
+                  message,
+                  [{ text: t('audioCall.ok'), onPress: () => endCall(true) }],
+                  { onDismiss: () => endCall(true) },
+                );
+              }
+            } else {
+              Alert.alert(
+                t('audioCall.audioNoticeTitle'),
+                message,
+              );
+            }
+          },
+        } satisfies WebRTCCallCallbacks);
         isMinimizingRef.current = false;
         // 2026-10-11 FIX: clear the module-level minimizing flag — we're
         // back on the call screen, future unmounts must hang up normally.

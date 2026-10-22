@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Animated, Image } from 'react-native';
+import { View, Text, Pressable, Animated } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
@@ -158,7 +159,9 @@ export const SeatCard = memo(function SeatCard({
                   borderRadius: 12, borderWidth: 1.5, borderColor: '#fff',
                   zIndex: 15,
                 }}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={micSticker.itemId}
               />
             )}
             {/* 2026-10-19 (IMO port Phase 1): mic badge — white when live, red
@@ -183,7 +186,9 @@ export const SeatCard = memo(function SeatCard({
                   position: 'absolute', bottom: -3, left: -3, width: 22, height: 22,
                   zIndex: 16,
                 }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
+                recyclingKey={micDecorUrl}
               />
             )}
           </View>
@@ -200,7 +205,8 @@ export const SeatCard = memo(function SeatCard({
               <Image
                 source={badgeSource}
                 style={{ width: 12, height: 12, marginLeft: 2 }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
             )}
           </View>

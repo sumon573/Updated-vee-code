@@ -163,6 +163,19 @@ export class WebRTCCallSession {
    * Starts the P2P call: mic capture → peer connection → RTDB signaling.
    * Never throws — failures are delivered to `onError`.
    */
+  /**
+   * Rebind the UI callbacks (2026-10-22 deep-audit fix). A session created
+   * by a call screen that has since unmounted (minimize) keeps firing the
+   * DEAD instance's closures — its guards and state setters belong to a
+   * screen that no longer exists. When a fresh call screen reattaches to
+   * the persisted session, it calls this so connection events, remote
+   * hangup and errors reach the LIVE screen.
+   */
+  setCallbacks(callbacks: WebRTCCallCallbacks): void {
+    if (this.ended) return;
+    this.callbacks = { ...callbacks };
+  }
+
   async startCall(options: StartWebRTCCallOptions): Promise<void> {
     if (this.started || this.ended) return;
     this.started = true;
