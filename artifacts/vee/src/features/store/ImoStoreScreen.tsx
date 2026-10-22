@@ -14,9 +14,10 @@
  * empty — categories show a "Coming soon" placeholder until designs land.
  */
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { memo, useEffect, useState, useCallback, useMemo, useRef  } from 'react';
 import {
-  View, Text, ScrollView, Pressable, Image, Modal,
+  View, Text, ScrollView,
+  FlatList, Pressable, Image, Modal,
   ActivityIndicator, Alert, Dimensions,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -134,7 +135,7 @@ function Price({ value, size = 13 }: { value: number; size?: number }) {
 }
 
 /* ── Personal item card (IMO style) ── */
-function ItemCard({
+function ItemCardInner({
   item, owned, using, onPress,
 }: {
   item: StoreCatalogItem; owned: boolean; using: boolean; onPress: () => void;
@@ -166,7 +167,7 @@ function ItemCard({
 }
 
 /* ── Short ID card (IMO gold pill style) ── */
-function ShortIdCard({
+function ShortIdCardInner({
   id, label, price, onPress,
 }: {
   id: string; label: string; price: number; onPress: () => void;
@@ -222,7 +223,7 @@ function ShortIdCard({
 }
 
 /* ── Background card (IMO tall image card) ── */
-function BackgroundCard({
+function BackgroundCardInner({
   item, owned, using, onPress,
 }: {
   item: StoreCatalogItem; owned: boolean; using: boolean; onPress: () => void;
@@ -263,6 +264,10 @@ function BackgroundCard({
 }
 
 /* ── Coming-soon placeholder ── */
+const ItemCard = memo(ItemCardInner);
+const ShortIdCard = memo(ShortIdCardInner);
+const BackgroundCard = memo(BackgroundCardInner);
+
 function ComingSoonCard() {
   return (
     <View style={{
@@ -976,12 +981,16 @@ export function ImoStoreScreen() {
           <ActivityIndicator size="large" color={C.blue} />
         </View>
       ) : (
-        <ScrollView
+        <FlatList
+          data={categories}
+          keyExtractor={(c) => c}
+          renderItem={({ item }) => renderCategory(item)}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 32 }}
-        >
-          {categories.map(renderCategory)}
-        </ScrollView>
+          windowSize={5}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+        />
       )}
 
       <PreviewSheet preview={preview} onClose={() => setPreview(null)} uid={uid} onChanged={refresh} />

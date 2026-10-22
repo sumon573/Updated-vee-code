@@ -8,11 +8,16 @@
  * The player is created lazily per bubble; only one voice message plays at
  * a time is NOT enforced here — rapid taps on two bubbles just move the
  * "now playing" state; each bubble owns its player and cleans up on unmount.
+ *
+ * 2026-10-22 (perf audit): progress/finish now come from
+ * useAudioPlayerStatus (event-driven, updateInterval 250 ms) instead of a
+ * hand-rolled setInterval poll that re-rendered via layout state 4×/sec
+ * and detected the finish up to 250 ms late.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { formatVoiceDuration } from '../hooks/useVoiceRecorder';
 
 const C = {
@@ -37,66 +42,26 @@ type Props = {
 function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
   // useAudioPlayer(null) is allowed — player stays idle until we load.
   // We pass the uri up-front; the hook handles remote streaming.
-  const player = useAudioPlayer(uri ? { uri } : null);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0); // 0..1
-  const [elapsed, setElapsed] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // updateInterval 250ms: status (currentTime) refreshes 4×/sec, matching
+  // the old poll's smoothness but event-driven instead of polled.
+  const player = useAudioPlayer(uri ? { uri } : null, { updateInterval: 250 });
+  const status = useAudioPlayerStatus(player);
 
-  const totalSec = durationSec && durationSec > 0 ? durationSec : player.duration || 0;
+  const playing = status.playing;
+  const totalSec = durationSec && durationSec > 0 ? durationSec : status.duration || 0;
+  const elapsed = status.currentTime || 0;
+  const progress = totalSec > 0 ? Math.min(1, elapsed / totalSec) : 0;
 
-  const stopPoll = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  // Poll currentTime while playing (cheap, 250ms) — drives the progress bar.
+  // On natural finish, rewind so the next tap replays from the start
+  // (progress/elapsed derive from currentTime, so the seek resets the UI).
+  const finishHandledRef = useRef(false);
   useEffect(() => {
-    if (!playing) {
-      stopPoll();
-      return;
+    if (status.didJustFinish && !finishHandledRef.current) {
+      finishHandledRef.current = true;
+      try { player.seekTo(0); } catch { /* noop */ }
     }
-    pollRef.current = setInterval(() => {
-      try {
-        const cur = player.currentTime || 0;
-        const dur = player.duration || totalSec || 1;
-        setElapsed(cur);
-        setProgress(Math.min(1, cur / dur));
-        // Finished (no didJustFinish in expo-audio — detect via time).
-        if (dur > 0.5 && cur >= dur - 0.25 && !player.loop) {
-          setPlaying(false);
-          setProgress(0);
-          setElapsed(0);
-          try { player.seekTo(0); } catch { /* noop */ }
-        }
-      } catch {
-        /* player torn down mid-poll */
-      }
-    }, 250);
-    return stopPoll;
-  }, [playing, player, totalSec, stopPoll]);
-
-  useEffect(() => stopPoll, [stopPoll]);
-
-  // If the player reports finished via status change, reset UI.
-  useEffect(() => {
-    if (!player.playing && playing) {
-      // External pause/finish — sync the icon. (Poll loop also resets on finish.)
-      const t = setTimeout(() => {
-        try {
-          if (!player.playing && (player.currentTime || 0) <= 0.05) {
-            setPlaying(false);
-            setProgress(0);
-            setElapsed(0);
-          }
-        } catch { /* noop */ }
-      }, 300);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [player.playing, playing, player]);
+    if (!status.didJustFinish) finishHandledRef.current = false;
+  }, [status.didJustFinish, player]);
 
   const toggle = useCallback(async () => {
     try {
@@ -106,7 +71,6 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
       }).catch(() => {});
       if (playing) {
         player.pause();
-        setPlaying(false);
       } else {
         // Restart from the beginning if we were at the end.
         try {
@@ -116,10 +80,9 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
           }
         } catch { /* seek is best-effort */ }
         player.play();
-        setPlaying(true);
       }
     } catch {
-      setPlaying(false);
+      /* player torn down — nothing to toggle */
     }
   }, [playing, player, totalSec]);
 

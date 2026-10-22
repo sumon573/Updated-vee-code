@@ -23,21 +23,91 @@ function sanitizeEquipped(raw: any): EquippedItem | null {
   };
 }
 
+function sameEquipped(a: EquippedItem | null, b: EquippedItem | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.itemId === b.itemId && a.imageUrl === b.imageUrl
+    && a.name === b.name && a.expiresAt === b.expiresAt;
+}
+
+interface EquippedEntry {
+  value: EquippedItem | null;
+  refCount: number;
+  listeners: Set<(v: EquippedItem | null) => void>;
+  unsub: (() => void) | null;
+}
+
+/**
+ * 2026-10-22 (perf audit): ref-counted shared subscription cache, keyed by
+ * `${uid}/${node}` — the useLiveUserProfile pattern. Every seat card used
+ * to attach its own listener per equipped node; now one subscription per
+ * (uid, node) serves all components, with change-only notifications.
+ */
+const equippedCache = new Map<string, EquippedEntry>();
+
+function ensureEquippedSubscription(uid: string, node: string): EquippedEntry {
+  const cacheKey = `${uid}/${node}`;
+  const existing = equippedCache.get(cacheKey);
+  if (existing) return existing;
+
+  const entry: EquippedEntry = {
+    value: null,
+    refCount: 0,
+    listeners: new Set(),
+    unsub: null,
+  };
+
+  entry.unsub = onValue(ref(database, `users/${uid}/${node}`), (snap) => {
+    const next = sanitizeEquipped(snap.val());
+    if (!sameEquipped(next, entry.value)) {
+      entry.value = next;
+      for (const cb of entry.listeners) {
+        try { cb(next); } catch { /* one bad listener must not break the rest */ }
+      }
+    }
+  }, () => {
+    // Fall back to empty (no equipped item) instead of a silently dead listener.
+    if (entry.value !== null) {
+      entry.value = null;
+      for (const cb of entry.listeners) {
+        try { cb(null); } catch { /* ignore */ }
+      }
+    }
+  });
+
+  equippedCache.set(cacheKey, entry);
+  return entry;
+}
+
+function subscribeEquippedNode(
+  uid: string,
+  node: string,
+  cb: (v: EquippedItem | null) => void,
+): () => void {
+  const entry = ensureEquippedSubscription(uid, node);
+  entry.refCount += 1;
+  entry.listeners.add(cb);
+  cb(entry.value);
+  return () => {
+    entry.listeners.delete(cb);
+    entry.refCount -= 1;
+    if (entry.refCount <= 0) {
+      try { entry.unsub?.(); } catch { /* ignore */ }
+      equippedCache.delete(`${uid}/${node}`);
+    }
+  };
+}
+
 function useEquippedNode(uid: string | undefined | null, node: string): EquippedItem | null {
-  const [item, setItem] = useState<EquippedItem | null>(null);
+  const [item, setItem] = useState<EquippedItem | null>(() =>
+    uid ? equippedCache.get(`${uid}/${node}`)?.value ?? null : null,
+  );
   useEffect(() => {
     if (!uid) {
       setItem(null);
       return;
     }
-    const unsub = onValue(ref(database, `users/${uid}/${node}`), (snap) => {
-      setItem(sanitizeEquipped(snap.val()));
-    }, () => {
-      // 2026-10-19 polish: fall back to empty (no equipped item) instead of
-      // a silently dead listener.
-      setItem(null);
-    });
-    return () => unsub();
+    return subscribeEquippedNode(uid, node, setItem);
   }, [uid, node]);
   return item;
 }

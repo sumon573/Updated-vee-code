@@ -13,8 +13,9 @@
  * cards, 56dp title bar). LEGACY_GIFT_ID_MAP kept verbatim — all logic
  * unchanged.
  */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, Pressable, Image, Modal } from 'react-native';
+import { memo, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { View, Text, ScrollView, Pressable, Modal, FlatList } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -117,6 +118,55 @@ function initials(name: string): string {
   const c = name.trim().charAt(0);
   return c ? c.toUpperCase() : '?';
 }
+
+
+/* Perf (2026-10-22 audit): memoized contributor row for the virtualized
+   Gift Board list (was an unbounded .map() inside a ScrollView). */
+const ContributorRow = memo(function ContributorRow({
+  rank, name, avatar, count, last,
+}: {
+  rank: number;
+  name: string;
+  avatar?: string;
+  count: number;
+  last: boolean;
+}) {
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
+        <Text
+          style={{
+            fontSize: 16, fontWeight: '800',
+            color: rank < 3 ? C.gold : C.mutedLight,
+            width: 28, textAlign: 'center' }}
+        >
+          {rank + 1}
+        </Text>
+        {avatar ? (
+          <Image source={{ uri: avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} cachePolicy="memory-disk" />
+        ) : (
+          <View
+            style={{
+              width: 44, height: 44, borderRadius: 22,
+              backgroundColor: C.blueLight,
+              alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 18, fontWeight: '800', color: C.blue }}>
+              {initials(name)}
+            </Text>
+          </View>
+        )}
+        <Text style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }} numberOfLines={1}>
+          {name}
+        </Text>
+        <Text style={{ fontSize: 14, color: C.muted }}>x{count} gifts</Text>
+      </View>
+      {!last && (
+        <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 84 }} />
+      )}
+    </View>
+  );
+});
 
 export default function GiftDisplayScreen() {
   const { user } = useAuth();
@@ -359,7 +409,7 @@ export default function GiftDisplayScreen() {
             justifyContent: 'center' }}
         >
           {info?.thumbnailUrl ? (
-            <Image source={{ uri: info.thumbnailUrl }} style={{ width: 48, height: 48, borderRadius: 8 }} resizeMode="contain" />
+            <Image source={{ uri: info.thumbnailUrl }} style={{ width: 48, height: 48, borderRadius: 8 }} contentFit="contain" cachePolicy="memory-disk" recyclingKey={giftId} />
           ) : (
             <Text style={{ fontSize: 36 }}>{info?.emoji ?? '🎁'}</Text>
           )}
@@ -502,75 +552,45 @@ export default function GiftDisplayScreen() {
         </ScrollView>
       ) : (
         /* ── Gift Board ── */
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-          {contributorList.length > 0 ? (
-            <View style={[cardStyle, { paddingVertical: 4, paddingHorizontal: 15 }]}>
-              {contributorList.map((c, i) => {
-                const u = contributors[c.uid];
-                // Name fallback: DB name → email prefix → 'User'.
-                // (Google/Gmail users may have empty DB name.)
-                const name = u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
-                const avatar = u?.photoURL || undefined;
-                return (
-                  <View key={c.uid}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingVertical: 10 }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontWeight: '800',
-                          color: i < 3 ? C.gold : C.mutedLight,
-                          width: 28,
-                          textAlign: 'center' }}
-                      >
-                        {i + 1}
-                      </Text>
-                      {avatar ? (
-                        <Image source={{ uri: avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
-                      ) : (
-                        <View
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 22,
-                            backgroundColor: C.blueLight,
-                            alignItems: 'center',
-                            justifyContent: 'center' }}
-                        >
-                          <Text style={{ fontSize: 18, fontWeight: '800', color: C.blue }}>
-                            {initials(name)}
-                          </Text>
-                        </View>
-                      )}
-                      <Text
-                        style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }}
-                        numberOfLines={1}
-                      >
-                        {name}
-                      </Text>
-                      <Text style={{ fontSize: 14, color: C.muted }}>x{c.count} gifts</Text>
-                    </View>
-                    {i < contributorList.length - 1 && (
-                      <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 84 }} />
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <View style={[cardStyle, { paddingVertical: 48, paddingHorizontal: 32, alignItems: 'center' }]}>
-              <Text style={{ fontSize: 40, marginBottom: 12 }}>🎁</Text>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>No contributors yet</Text>
-              <Text style={{ fontSize: 13, color: C.muted, marginTop: 6, textAlign: 'center' }}>
-                When people send you gifts in voice rooms, they will appear here.
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+        <View style={{ flex: 1, paddingBottom: 32 }}>
+          <FlatList
+            data={contributorList}
+            keyExtractor={(c) => c.uid}
+            renderItem={({ item, index }) => {
+              const u = contributors[item.uid];
+              // Name fallback: DB name → email prefix → 'User'.
+              // (Google/Gmail users may have empty DB name.)
+              const name = u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
+              return (
+                <ContributorRow
+                  rank={index}
+                  name={name}
+                  avatar={u?.photoURL || undefined}
+                  count={item.count}
+                  last={index === contributorList.length - 1}
+                />
+              );
+            }}
+            ListEmptyComponent={
+              <View style={{ paddingVertical: 48, paddingHorizontal: 32, alignItems: 'center' }}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>🎁</Text>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>No contributors yet</Text>
+                <Text style={{ fontSize: 13, color: C.muted, marginTop: 6, textAlign: 'center' }}>
+                  When people send you gifts in voice rooms, they will appear here.
+                </Text>
+              </View>
+            }
+            showsVerticalScrollIndicator={false}
+            windowSize={9}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            style={{
+              backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12,
+              flexGrow: 0, maxHeight: '100%', overflow: 'hidden',
+            }}
+            contentContainerStyle={{ paddingVertical: 4, paddingHorizontal: 15 }}
+          />
+        </View>
       )}
 
       {/* Sort dropdown — real menu anchored under the sort button; tap outside to close */}

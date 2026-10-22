@@ -5,9 +5,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import en from './locales/en';
-import bn from './locales/bn';
-import hi from './locales/hi';
-import ar from './locales/ar';
 
 /**
  * NOTE (2026-10-09): Arabic was REMOVED from the selectable languages.
@@ -17,8 +14,14 @@ import ar from './locales/ar';
  * app was ever designed or tested for RTL). Per the "no setting may ever
  * break the app" rule, RTL is now disabled app-wide via
  * I18nManager.allowRTL(false) in app/_layout.tsx, and 'ar' can never be
- * selected. The ar locale resource stays registered below (harmless) so it
- * can return if full RTL support is ever properly built.
+ * selected.
+ *
+ * 2026-10-22 (perf audit): only English is bundled eagerly. bn/hi load
+ * on demand via ensureLanguageBundle() (dynamic import +
+ * addResourceBundle) the first time the user picks that language, and
+ * the 'ar' resource is no longer registered at all (it was parsed on
+ * every cold start despite being unselectable — dead weight). If RTL
+ * support is ever built, re-add 'ar' through the same lazy path.
  */
 export type SupportedLanguage = 'en' | 'bn' | 'hi';
 
@@ -49,9 +52,6 @@ if (!i18n.isInitialized) {
     .init({
       resources: {
         en: { translation: en },
-        bn: { translation: bn },
-        hi: { translation: hi },
-        ar: { translation: ar },
       },
       lng: 'en',
       fallbackLng: 'en',
@@ -62,6 +62,34 @@ if (!i18n.isInitialized) {
       // Suppress the missing-key warning noise in dev; English fallback covers it
       saveMissing: false,
     });
+}
+
+const bundleLoads = new Map<string, Promise<void>>();
+
+/**
+ * Load a non-English locale bundle on demand (2026-10-22). Idempotent and
+ * race-safe: concurrent calls share one in-flight import. English is
+ * always available (bundled eagerly at init).
+ */
+export function ensureLanguageBundle(lang: SupportedLanguage): Promise<void> {
+  if (lang === 'en' || i18n.hasResourceBundle(lang, 'translation')) {
+    return Promise.resolve();
+  }
+  const inFlight = bundleLoads.get(lang);
+  if (inFlight) return inFlight;
+  const load = (async () => {
+    const mod = lang === 'bn'
+      ? await import('./locales/bn')
+      : await import('./locales/hi');
+    i18n.addResourceBundle(lang, 'translation', mod.default, true, true);
+  })().catch((e) => {
+    // Never let a failed bundle load break language switching — the UI
+    // falls back to English strings. Allow a later retry.
+    bundleLoads.delete(lang);
+    console.warn('[i18n] locale bundle load failed', lang, (e as Error)?.message ?? String(e));
+  });
+  bundleLoads.set(lang, load);
+  return load;
 }
 
 export default i18n;

@@ -24,7 +24,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import i18n, { SupportedLanguage } from '@/src/i18n';
+import i18n, { SupportedLanguage, ensureLanguageBundle } from '@/src/i18n';
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────
 
@@ -112,6 +112,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   /** Apply language to i18next, optionally persisting it. Never touches RTL. */
   async function applyLanguage(lang: SupportedLanguage, persist: boolean) {
+    // Lazy locales (2026-10-22): bn/hi bundles load on first use.
+    await ensureLanguageBundle(lang);
     await i18n.changeLanguage(lang);
     setLanguage(lang);
 

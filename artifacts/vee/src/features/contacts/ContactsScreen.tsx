@@ -4,7 +4,7 @@
  * Requests tab split into: People → Me (received) | Me → People (sent).
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { memo, useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, Alert, TextInput, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -67,6 +67,174 @@ function UserAvatar({ user }: { user: VeeUser }) {
     </View>
   );
 }
+
+
+/* ── Memoized list rows (2026-10-22 perf audit) ──────────────────────────
+   Previously all three FlatLists used inline renderItem JSX, so every
+   search keystroke re-rendered every visible row. Rows are memo() now and
+   receive only stable useCallback handlers + their own item/busy flag. */
+function ContactSeparator() {
+  return <View style={{ height: 1, backgroundColor: C.border, marginLeft: 76 }} />;
+}
+
+const IncomingRequestRow = memo(function IncomingRequestRow({
+  item, busy, onView, onAccept, onReject,
+}: {
+  item: FriendRequest;
+  busy: boolean;
+  onView: (u: VeeUser) => void;
+  onAccept: (r: FriendRequest) => void;
+  onReject: (r: FriendRequest) => void;
+}) {
+  const user = { uid: item.fromUid, name: item.fromName, vId: item.fromVId, photoURL: item.fromPhoto } as VeeUser;
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: C.surface,
+      borderRadius: 16, padding: 12, marginBottom: 10,
+      borderWidth: 1, borderColor: C.border }}>
+      <Pressable onPress={() => onView(user)} style={{ marginRight: 12 }}>
+        <UserAvatar user={user} />
+      </Pressable>
+      <Pressable onPress={() => onView(user)} style={{ flex: 1 }}>
+        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+          {truncateTo12(item.fromName)}
+        </Text>
+        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
+          #{item.fromVId}
+        </Text>
+      </Pressable>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable
+          onPress={() => onAccept(item)}
+          disabled={busy}
+          style={{
+            width: 36, height: 36, borderRadius: 18,
+            backgroundColor: 'rgba(34,197,94,0.18)',
+            borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
+            alignItems: 'center', justifyContent: 'center' }}
+        >
+          {busy ? (
+            <PremiumLoader size="small" />
+          ) : (
+            <Feather name="check" size={16} color={C.online} />
+          )}
+        </Pressable>
+        <Pressable
+          onPress={() => onReject(item)}
+          disabled={busy}
+          style={{
+            width: 36, height: 36, borderRadius: 18,
+            backgroundColor: 'rgba(239,68,68,0.1)',
+            borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+            alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Feather name="x" size={16} color={C.red} />
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
+const SentRequestRow = memo(function SentRequestRow({
+  item, busy, pendingLabel, cancelLabel, onView, onCancel,
+}: {
+  item: VeeUser;
+  busy: boolean;
+  pendingLabel: string;
+  cancelLabel: string;
+  onView: (u: VeeUser) => void;
+  onCancel: (uid: string) => void;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: C.surface,
+      borderRadius: 16, padding: 12, marginBottom: 10,
+      borderWidth: 1, borderColor: C.border }}>
+      <Pressable onPress={() => onView(item)} style={{ marginRight: 12 }}>
+        <UserAvatar user={item} />
+      </Pressable>
+      <Pressable onPress={() => onView(item)} style={{ flex: 1 }}>
+        <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+          {truncateTo12(item.name)}
+        </Text>
+        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
+          {item.vId}
+        </Text>
+        <Text style={{ color: 'rgba(124,58,237,0.7)', fontSize: 11, marginTop: 3, fontWeight: '600' }}>
+          {pendingLabel}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onCancel(item.uid)}
+        disabled={busy}
+        style={{
+          paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+          backgroundColor: 'rgba(239,68,68,0.1)',
+          borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+          alignItems: 'center', justifyContent: 'center' }}
+      >
+        {busy ? (
+          <PremiumLoader size="small" />
+        ) : (
+          <Text style={{ color: C.red, fontSize: 12, fontWeight: '700' }}>
+            {cancelLabel}
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+});
+
+const ContactRow = memo(function ContactRow({
+  item, onView, onMessage, onLongPress,
+}: {
+  item: VeeUser;
+  onView: (u: VeeUser) => void;
+  onMessage: (u: VeeUser) => void;
+  onLongPress: (u: VeeUser) => void;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: C.bg,
+        paddingVertical: 12, paddingHorizontal: 16 }}
+    >
+      {/* DP — tap → profile screen (2026-10-15, Sumon) */}
+      <Pressable onPress={() => onView(item)}>
+        <View style={{ position: 'relative', marginRight: 12 }}>
+          <UserAvatar user={item} />
+          {item.online && (
+            <View style={{
+              position: 'absolute', bottom: 1, right: 1,
+              width: 12, height: 12, borderRadius: 6,
+              backgroundColor: C.online, borderWidth: 2, borderColor: C.bg }} />
+          )}
+        </View>
+      </Pressable>
+      {/* Name / Vee ID — tap → chat directly; long-press → contact menu.
+          2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
+      <Pressable
+        onPress={() => onMessage(item)}
+        onLongPress={() => onLongPress(item)}
+        delayLongPress={350}
+        style={{ flex: 1 }}
+      >
+        <VerifiedName
+          name={truncateTo12(item.name)}
+          uid={item.uid}
+          nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
+          logoSize={16}
+        />
+        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
+          {item.vId}
+        </Text>
+      </Pressable>
+    </View>
+  );
+});
 
 type Tab = 'friends' | 'requests';
 type RequestSubTab = 'received' | 'sent';
@@ -411,6 +579,37 @@ export default function ContactsScreen() {
   const totalRequestsBadge = visibleIncoming.length;
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
+  // Stable render callbacks for the memoized rows (2026-10-22 audit).
+  const renderIncoming = useCallback(({ item }: { item: FriendRequest }) => (
+    <IncomingRequestRow
+      item={item}
+      busy={requestActionUid === item.fromUid}
+      onView={handleViewProfile}
+      onAccept={handleAcceptRequest}
+      onReject={handleRejectRequest}
+    />
+  ), [requestActionUid, handleViewProfile, handleAcceptRequest, handleRejectRequest]);
+
+  const renderSent = useCallback(({ item }: { item: VeeUser }) => (
+    <SentRequestRow
+      item={item}
+      busy={cancellingUid === item.uid}
+      pendingLabel={t('contacts.pendingLabel')}
+      cancelLabel={t('contacts.cancelRequest')}
+      onView={handleViewProfile}
+      onCancel={handleCancelSentRequest}
+    />
+  ), [cancellingUid, t, handleViewProfile, handleCancelSentRequest]);
+
+  const renderContact = useCallback(({ item }: { item: VeeUser }) => (
+    <ContactRow
+      item={item}
+      onView={handleViewProfile}
+      onMessage={handleMessage}
+      onLongPress={handleContactLongPress}
+    />
+  ), [handleViewProfile, handleMessage, handleContactLongPress]);
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -544,61 +743,7 @@ export default function ContactsScreen() {
                 keyExtractor={(item) => item.fromUid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center',
-                    backgroundColor: C.surface,
-                    borderRadius: 16, padding: 12, marginBottom: 10,
-                    borderWidth: 1, borderColor: C.border }}>
-                    <Pressable
-                      onPress={() => handleViewProfile({ uid: item.fromUid, name: item.fromName, vId: item.fromVId, photoURL: item.fromPhoto } as VeeUser)}
-                      style={{ marginRight: 12 }}
-                    >
-                      <UserAvatar user={{ uid: item.fromUid, name: item.fromName, vId: item.fromVId, photoURL: item.fromPhoto } as VeeUser} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleViewProfile({ uid: item.fromUid, name: item.fromName, vId: item.fromVId, photoURL: item.fromPhoto } as VeeUser)}
-                      style={{ flex: 1 }}
-                    >
-                      <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                        {truncateTo12(item.fromName)}
-                      </Text>
-                      <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-                        #{item.fromVId}
-                      </Text>
-                    </Pressable>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {/* Accept */}
-                      <Pressable
-                        onPress={() => handleAcceptRequest(item)}
-                        disabled={requestActionUid === item.fromUid}
-                        style={{
-                          width: 36, height: 36, borderRadius: 18,
-                          backgroundColor: 'rgba(34,197,94,0.18)',
-                          borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-                          alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        {requestActionUid === item.fromUid ? (
-                          <PremiumLoader size="small" />
-                        ) : (
-                          <Feather name="check" size={16} color={C.online} />
-                        )}
-                      </Pressable>
-                      {/* Reject */}
-                      <Pressable
-                        onPress={() => handleRejectRequest(item)}
-                        disabled={requestActionUid === item.fromUid}
-                        style={{
-                          width: 36, height: 36, borderRadius: 18,
-                          backgroundColor: 'rgba(239,68,68,0.1)',
-                          borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-                          alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        <Feather name="x" size={16} color={C.red} />
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
+                renderItem={renderIncoming}
               />
             )
           ) : (
@@ -626,46 +771,7 @@ export default function ContactsScreen() {
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <View style={{
-                    flexDirection: 'row', alignItems: 'center',
-                    backgroundColor: C.surface,
-                    borderRadius: 16, padding: 12, marginBottom: 10,
-                    borderWidth: 1, borderColor: C.border }}>
-                    <Pressable onPress={() => handleViewProfile(item)} style={{ marginRight: 12 }}>
-                      <UserAvatar user={item} />
-                    </Pressable>
-                    <Pressable onPress={() => handleViewProfile(item)} style={{ flex: 1 }}>
-                      <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                        {truncateTo12(item.name)}
-                      </Text>
-                      <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-                        {item.vId}
-                      </Text>
-                      <Text style={{ color: 'rgba(124,58,237,0.7)', fontSize: 11, marginTop: 3, fontWeight: '600' }}>
-                        {t('contacts.pendingLabel')}
-                      </Text>
-                    </Pressable>
-                    {/* Cancel sent request */}
-                    <Pressable
-                      onPress={() => handleCancelSentRequest(item.uid)}
-                      disabled={cancellingUid === item.uid}
-                      style={{
-                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-                        backgroundColor: 'rgba(239,68,68,0.1)',
-                        borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-                        alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      {cancellingUid === item.uid ? (
-                        <PremiumLoader size="small" />
-                      ) : (
-                        <Text style={{ color: C.red, fontSize: 12, fontWeight: '700' }}>
-                          {t('contacts.cancelRequest')}
-                        </Text>
-                      )}
-                    </Pressable>
-                  </View>
-                )}
+                renderItem={renderSent}
               />
             )
           )}
@@ -734,49 +840,9 @@ export default function ContactsScreen() {
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingBottom: 120 }}
               showsVerticalScrollIndicator={false}
-              ItemSeparatorComponent={() => (
-                <View style={{ height: 1, backgroundColor: C.border, marginLeft: 76 }} />
-              )}
-              renderItem={({ item }) => (
-                <View
-                  style={{
-                    flexDirection: 'row', alignItems: 'center',
-                    backgroundColor: C.bg,
-                    paddingVertical: 12, paddingHorizontal: 16 }}
-                >
-                  {/* DP — tap → profile screen (2026-10-15, Sumon) */}
-                  <Pressable onPress={() => handleViewProfile(item)}>
-                    <View style={{ position: 'relative', marginRight: 12 }}>
-                      <UserAvatar user={item} />
-                      {item.online && (
-                        <View style={{
-                          position: 'absolute', bottom: 1, right: 1,
-                          width: 12, height: 12, borderRadius: 6,
-                          backgroundColor: C.online, borderWidth: 2, borderColor: C.bg }} />
-                      )}
-                    </View>
-                  </Pressable>
-                  {/* Name / Vee ID — tap → chat directly; long-press → contact menu.
-                      2026-10-14 (Sumon): IMO-র মতো flat, কোনো call/chat button নেই */}
-                  <Pressable
-                    onPress={() => handleMessage(item)}
-                    onLongPress={() => handleContactLongPress(item)}
-                    delayLongPress={350}
-                    style={{ flex: 1 }}
-                  >
-                    <VerifiedName
-                      name={truncateTo12(item.name)}
-                      uid={item.uid}
-                      nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
-                      logoSize={16}
-                    />
-                    <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-                      {item.vId}
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
-            />
+              ItemSeparatorComponent={ContactSeparator}
+              renderItem={renderContact}
+              />
           )}
         </>
       )}

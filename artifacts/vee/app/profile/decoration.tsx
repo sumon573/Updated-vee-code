@@ -16,7 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
-import { View, Text, ScrollView, Pressable, Image } from 'react-native';
+import { View, Text, ScrollView, Pressable, Image, FlatList } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -364,15 +364,21 @@ export default function DecorationScreen() {
       return <LuxuryEmptyState tab={tab} />;
     }
 
+    // Perf (2026-10-22 audit): virtualized list — the old ScrollView
+    // mounted every owned item row at once.
     return (
-      <ScrollView
+      <FlatList
+        data={data.items}
+        keyExtractor={(item: any) => item.id}
+        renderItem={({ item }: { item: any }) =>
+          renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
+        }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}
-      >
-        {data.items.map((item: any) =>
-          renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
-        )}
-      </ScrollView>
+        windowSize={9}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+      />
     );
   };
 

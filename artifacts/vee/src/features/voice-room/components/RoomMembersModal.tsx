@@ -10,10 +10,11 @@
  * Styled for the voice room's dark theme.
  */
 
-import { useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import {
-  View, Text, Modal, Pressable, FlatList, Image,
+  View, Text, Modal, Pressable, FlatList,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import type { Participant } from '@/src/features/voice-room/types/room';
@@ -44,7 +45,14 @@ type Props = {
 
 function MemberAvatar({ p }: { p: Participant }) {
   if (p.photoURL) {
-    return <Image source={{ uri: p.photoURL }} style={{ width: 46, height: 46, borderRadius: 23 }} />;
+    return (
+      <Image
+        source={{ uri: p.photoURL }}
+        style={{ width: 46, height: 46, borderRadius: 23 }}
+        cachePolicy="memory-disk"
+        recyclingKey={p.id}
+      />
+    );
   }
   return (
     <View style={{
@@ -74,6 +82,43 @@ function RoleBadge({ role }: { role: 'host' | 'admin' | 'member' }) {
     </View>
   );
 }
+
+const MemberRow = memo(function MemberRow({
+  item, onPress,
+}: {
+  item: Participant;
+  onPress: (p: Participant) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      style={{
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: 10, paddingHorizontal: 16,
+        borderBottomWidth: 1, borderBottomColor: C.border,
+      }}
+    >
+      <MemberAvatar p={item} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <VerifiedName
+            name={item.name}
+            uid={(item as any).uid || (item as any).id}
+            nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
+            logoSize={15}
+          />
+          <RoleBadge role={item.role} />
+        </View>
+        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
+          {item.speaking ? 'Speaking…' : item.muted ? 'Muted' : 'In room'}
+        </Text>
+      </View>
+      {item.muted
+        ? <Feather name="mic-off" size={16} color={C.red} />
+        : <Feather name="mic" size={16} color={C.green} />}
+    </Pressable>
+  );
+});
 
 export default function RoomMembersModal({
   visible, onClose, ownerId, seats, audience, onManageMember,
@@ -125,35 +170,25 @@ export default function RoomMembersModal({
     ...(fMembers.length ? [{ title: `Members (${members.length})`, data: fMembers }] : []),
   ];
 
-  const renderRow = ({ item }: { item: Participant }) => (
-    <Pressable
-      onPress={() => { onClose(); onManageMember(item); }}
-      style={{
-        flexDirection: 'row', alignItems: 'center',
-        paddingVertical: 10, paddingHorizontal: 16,
-        borderBottomWidth: 1, borderBottomColor: C.border,
-      }}
-    >
-      <MemberAvatar p={item} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <VerifiedName
-            name={item.name}
-            uid={(item as any).uid || (item as any).id}
-            nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
-            logoSize={15}
-          />
-          <RoleBadge role={item.role} />
-        </View>
-        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
-          {item.speaking ? 'Speaking…' : item.muted ? 'Muted' : 'In room'}
-        </Text>
-      </View>
-      {item.muted
-        ? <Feather name="mic-off" size={16} color={C.red} />
-        : <Feather name="mic" size={16} color={C.green} />}
-    </Pressable>
-  );
+  // Perf (2026-10-22 audit): ONE flat virtualized list. The old code ran a
+  // FlatList over ≤3 sections and .map()-mounted EVERY member inside each
+  // section — no virtualization at all in large rooms.
+  type FlatRow =
+    | { kind: 'header'; title: string }
+    | { kind: 'member'; p: Participant };
+  const flatRows = useMemo<FlatRow[]>(() => {
+    const rows: FlatRow[] = [];
+    for (const s of sections) {
+      rows.push({ kind: 'header', title: s.title });
+      for (const p of s.data) rows.push({ kind: 'member', p });
+    }
+    return rows;
+  }, [sections]);
+
+  const handleMemberPress = useCallback((p: Participant) => {
+    onClose();
+    onManageMember(p);
+  }, [onClose, onManageMember]);
 
   return (
     <Modal
@@ -184,22 +219,24 @@ export default function RoomMembersModal({
           </View>
 
           <FlatList
-            data={sections}
-            keyExtractor={(s) => s.title}
-            renderItem={({ item: section }) => (
-              <View>
+            data={flatRows}
+            keyExtractor={(r) => (r.kind === 'header' ? `h:${r.title}` : `m:${r.p.id}`)}
+            renderItem={({ item: row }) => (
+              row.kind === 'header' ? (
                 <Text style={{
                   color: C.muted, fontSize: 12, fontWeight: '800',
                   letterSpacing: 0.6, paddingHorizontal: 16,
                   paddingTop: 14, paddingBottom: 4,
                 }}>
-                  {section.title.toUpperCase()}
+                  {row.title.toUpperCase()}
                 </Text>
-                {section.data.map((p) => (
-                  <View key={p.id}>{renderRow({ item: p })}</View>
-                ))}
-              </View>
+              ) : (
+                <MemberRow item={row.p} onPress={handleMemberPress} />
+              )
             )}
+            windowSize={9}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 60 }}>
                 <Feather name="users" size={40} color={C.dim} />
