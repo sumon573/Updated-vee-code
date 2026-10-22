@@ -33,6 +33,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/services/voiceForegroundService';
+import { NoiseGate, extractMediaSourceLevel } from '@/src/services/noiseGate';
 import { setVoiceRoomAudioActive } from '@/src/services/audioOwner';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { useTranslation } from 'react-i18next';
@@ -393,6 +394,62 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
    */
   private joining = false;
 
+  /**
+   * Premium Voice v2 (2026-10-22, Sumon): conservative noise gate on the
+   * local mic — silences background noise between sentences. Driven by the
+   * capture-side media-source level from the mic sender's stats, gated
+   * through the raw MediaStreamTrack only (never the app's mute state).
+   * Self-disables whenever its level signal is missing or unreliable.
+   */
+  private noiseGate: NoiseGate | null = null;
+
+  private localMicHandles(): { mst: { enabled: boolean } | null; sender: unknown } {
+    const room = this.room;
+    if (!room) return { mst: null, sender: null };
+    try {
+      const pubs = Array.from(room.localParticipant.audioTrackPublications.values());
+      for (const pub of pubs) {
+        const track = pub.track as unknown as {
+          mediaStreamTrack?: { enabled: boolean };
+          sender?: unknown;
+        } | null;
+        if (track?.mediaStreamTrack) {
+          return { mst: track.mediaStreamTrack, sender: track.sender ?? null };
+        }
+      }
+    } catch {
+      /* non-critical — gate just never engages */
+    }
+    return { mst: null, sender: null };
+  }
+
+  private startNoiseGate(): void {
+    this.stopNoiseGate();
+    const gate = new NoiseGate({
+      readLevel: async () => {
+        const { sender } = this.localMicHandles();
+        const s = sender as { getStats?: () => Promise<unknown> } | null;
+        if (!s?.getStats) return null;
+        return extractMediaSourceLevel(await s.getStats());
+      },
+      setTrackEnabled: (enabled: boolean) => {
+        const { mst } = this.localMicHandles();
+        if (mst) mst.enabled = enabled;
+      },
+      isUserMuted: () => this.muted,
+      isSpeaking: () => this.localSpeaking,
+    });
+    this.noiseGate = gate;
+    gate.start();
+  }
+
+  private stopNoiseGate(): void {
+    if (this.noiseGate) {
+      try { this.noiseGate.stop(); } catch { /* non-critical */ }
+      this.noiseGate = null;
+    }
+  }
+
   /** Identities currently flagged as speaking (remote only). */
   private speakingIds = new Set<string>();
   private participants: VoiceParticipant[] = [];
@@ -663,6 +720,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   }
 
   private async teardownRoom(): Promise<void> {
+    this.stopNoiseGate();
     // 2026-10-19 perf fix: drop any pending throttled refresh — leave paths
     // set their own final state; a trailing emit would be stale work.
     this.clearRefreshTimer();
@@ -773,6 +831,20 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          // Premium Voice v2 (2026-10-22, Sumon): pin full-band capture —
+          // mono 48 kHz, so odd devices can't negotiate a thin low-rate mic.
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        // Premium Voice v2: pin publish quality instead of SDK defaults —
+        // musicHighQuality = 96 kbps full-band Opus (voice sounds full,
+        // never thin), RED redundancy + DTX pinned so network loss and
+        // future SDK default changes can't silently degrade quality.
+        publishDefaults: {
+          audioPreset: lk.AudioPresets.musicHighQuality,
+          dtx: true,
+          red: true,
+          forceStereo: false,
         },
       });
       this.room = room;
@@ -886,6 +958,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         // Start muted — the user unmutes explicitly (mirrors previous behavior).
         await this.applyTrackMute(this.muted);
       });
+      // Premium Voice v2: gate rides on the live mic track (publish only).
+      this.startNoiseGate();
     } catch (err) {
       this.publishing = false;
       this.error = err instanceof Error ? err.message : 'Failed to enable microphone';
@@ -897,6 +971,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     const room = this.room;
     if (!room) return;
     if (!this.publishing) return; // idempotent
+    this.stopNoiseGate();
     try {
       // 2026-10-19 stability fix: serialize — see publish().
       await this.enqueueNativeOp(() =>
