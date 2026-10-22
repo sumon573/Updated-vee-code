@@ -12,7 +12,7 @@
  * seat switch — count unique user IDs only.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
@@ -20,33 +20,44 @@ export function useLiveAudienceCounts(roomIds: string[]): Record<string, number>
   const [counts, setCounts] = useState<Record<string, number>>({});
   // Stable key so the effect only re-subscribes when the room set changes.
   const key = [...roomIds].sort().join(',');
+  const lastJsonRef = useRef('');
 
   useEffect(() => {
     if (!key) {
-      setCounts({});
+      if (lastJsonRef.current !== '{}') {
+        lastJsonRef.current = '{}';
+        setCounts({});
+      }
       return;
     }
     const ids = key.split(',').filter(Boolean);
     const unsubs: Array<() => void> = [];
-    // Per-room seat-user sets + audience counts; recompute on any change.
+    // Per-room seat-user sets + LIVE audience-user sets; recompute on change.
     const seatUsers = new Map<string, Set<string>>();
-    const audCounts = new Map<string, number>();
+    const audUsers = new Map<string, Set<string>>();
 
     const recompute = () => {
       const next: Record<string, number> = {};
       for (const id of ids) {
-        const seats = seatUsers.get(id);
-        const aud = audCounts.get(id) ?? 0;
-        // Audience members already on a seat are removed from audience by
-        // takeSeat, but dedupe defensively anyway.
-        next[id] = (seats ? seats.size : 0) + aud;
+        // 2026-10-22: TRUE UNION count. Seated users now KEEP their
+        // audience entry (chat access), so seats + audience must be
+        // deduped by uid — a plain sum double-counts everyone seated.
+        const union = new Set<string>(seatUsers.get(id) ?? []);
+        for (const uid of audUsers.get(id) ?? []) union.add(uid);
+        next[id] = union.size;
       }
+      // Equality guard (2026-10-22 perf audit): heartbeat snapshots fire
+      // constantly; only setState when a visible count actually changed,
+      // so the room-home screen stops re-rendering on every heartbeat.
+      const json = JSON.stringify(next);
+      if (json === lastJsonRef.current) return;
+      lastJsonRef.current = json;
       setCounts(next);
     };
 
     for (const id of ids) {
       seatUsers.set(id, new Set());
-      audCounts.set(id, 0);
+      audUsers.set(id, new Set());
       const seatsRef = ref(database, `rooms/${id}/seats`);
       const audRef = ref(database, `rooms/${id}/audience`);
       unsubs.push(
@@ -66,15 +77,17 @@ export function useLiveAudienceCounts(roomIds: string[]): Record<string, number>
           // heartbeat (<150s). Ghosts (crashed sessions whose onDisconnect
           // never fired, pre-heartbeat entries with no ts) must not make an
           // empty room show members.
-          let live = 0;
+          const live = new Set<string>();
           if (snap.exists()) {
             const now = Date.now();
             snap.forEach((child) => {
-              const a = child.val() as { ts?: number } | null;
-              if (typeof a?.ts === 'number' && now - a.ts < 150_000) live++;
+              const a = child.val() as { ts?: number; userId?: string } | null;
+              if (typeof a?.ts === 'number' && now - a.ts < 150_000) {
+                live.add(a.userId ?? (child.key as string));
+              }
             });
           }
-          audCounts.set(id, live);
+          audUsers.set(id, live);
           recompute();
         }),
       );

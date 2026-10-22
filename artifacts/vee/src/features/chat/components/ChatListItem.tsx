@@ -1,5 +1,6 @@
 import { memo, useEffect, useState, useCallback } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
+import { Image } from 'expo-image';
 import ScalePress from '@/components/ScalePress';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -115,6 +116,8 @@ function ChatListItem({ chat, onPress, onLongPress }: Props) {
             <Image
               source={{ uri: avatarUri }}
               style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
+              cachePolicy="memory-disk"
+              recyclingKey={chat.participantId}
             />
           ) : (
             <View style={{

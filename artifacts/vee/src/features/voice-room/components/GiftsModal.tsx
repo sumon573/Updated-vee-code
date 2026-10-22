@@ -20,7 +20,8 @@
  * self-gift routing, giftFeed push, 70/30 commission via walletService,
  * gift-only-inside-rooms.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { Image as ExpoImage } from 'expo-image';
 import {
   View, Text, ScrollView, Alert, Pressable, Modal, Image,
   FlatList, Dimensions,
@@ -106,6 +107,77 @@ function catalogToGiftItem(cg: CatalogGift): GiftItem {
 }
 
 type ImoTab = 'hot' | 'rank' | 'recent' | 'event';
+
+/**
+ * Perf (2026-10-22 audit): one gift tile, memoized. Previously every tile
+ * re-rendered on any modal state change (selection, balance tick) and the
+ * thumbnail used uncached RN Image — the panel flickered and re-downloaded
+ * art on every open. expo-image memory-disk cache fixes the downloads;
+ * memo + stable props fix the re-renders.
+ */
+const GiftTile = memo(function GiftTile({
+  g, width, isSelected, locked, lockBadge, disabled, onSelect,
+}: {
+  g: GiftItem;
+  width: number;
+  isSelected: boolean;
+  locked: boolean;
+  lockBadge: string | null;
+  disabled: boolean;
+  onSelect: (g: GiftItem) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onSelect(g)}
+      disabled={disabled}
+      style={{
+        width,
+        alignItems: 'center',
+        marginBottom: 14,
+        opacity: locked ? 0.55 : 1,
+      }}>
+      <View style={{
+        width: 64, height: 64, borderRadius: 18,
+        backgroundColor: IMO_TILE,
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: isSelected ? 2 : 0,
+        borderColor: isSelected ? IMO_BLUE : 'transparent',
+        overflow: 'hidden',
+      }}>
+        {g.thumbnailUrl ? (
+          <ExpoImage
+            source={{ uri: g.thumbnailUrl }}
+            style={{ width: 50, height: 50, borderRadius: 10 }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={g.id}
+          />
+        ) : (
+          <Feather name="gift" size={26} color={IMO_SUB} />
+        )}
+        {locked && lockBadge && (
+          <View style={{
+            position: 'absolute', top: 2, right: 2,
+            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8,
+            paddingHorizontal: 4, paddingVertical: 1,
+          }}>
+            <Text style={{ color: '#FFD54F', fontSize: 9, fontWeight: '700' }}>
+              {lockBadge}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text
+        style={{ color: IMO_SUB, fontSize: 12, marginTop: 4, textAlign: 'center' }}
+        numberOfLines={1}>
+        {g.nameKey}
+      </Text>
+      <Text style={{ color: IMO_SUB, fontSize: 11, marginTop: 1 }}>
+        💎{formatCompact(g.coins)}
+      </Text>
+    </Pressable>
+  );
+});
 
 /* ── Component ──────────────────────────────────────────────── */
 
@@ -488,64 +560,33 @@ export function GiftsModal({
     { id: 'event', label: t('voiceRoom.gifts.tabEvent') },
   ];
 
-  const renderGiftTile = ({ item: g }: { item: GiftItem }) => {
-    const isSelected = selectedGift?.id === g.id;
+  const handleSelectGift = useCallback((g: GiftItem) => {
+    setSelectedGift(g);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  // Perf (2026-10-22 audit): compute the visible list ONCE per
+  // tab/catalog/recent change — previously getVisibleGifts() ran twice per
+  // render, each time building a fresh array (new FlatList data identity →
+  // full grid re-render on every keystroke of state change).
+  const visibleGifts = useMemo(() => getVisibleGifts(), [getVisibleGifts]);
+
+  const renderGiftTile = useCallback(({ item: g }: { item: GiftItem }) => {
     const svipLocked = !!g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel;
     const nobleLocked = g.minNobleRank != null && g.minNobleRank >= 0 && myNobleRank < g.minNobleRank;
     const locked = svipLocked || nobleLocked;
     return (
-      <Pressable
-        onPress={() => {
-          setSelectedGift(g);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }}
+      <GiftTile
+        g={g}
+        width={(screenW - 40 - 24) / 4}
+        isSelected={selectedGift?.id === g.id}
+        locked={locked}
+        lockBadge={locked ? (nobleLocked ? '♛' : `👑${g.minSvipLevel}`) : null}
         disabled={sending}
-        style={{
-          width: (screenW - 40 - 24) / 4,
-          alignItems: 'center',
-          marginBottom: 14,
-          opacity: locked ? 0.55 : 1,
-        }}>
-        <View style={{
-          width: 64, height: 64, borderRadius: 18,
-          backgroundColor: IMO_TILE,
-          alignItems: 'center', justifyContent: 'center',
-          borderWidth: isSelected ? 2 : 0,
-          borderColor: isSelected ? IMO_BLUE : 'transparent',
-          overflow: 'hidden',
-        }}>
-          {g.thumbnailUrl ? (
-            <Image
-              source={{ uri: g.thumbnailUrl }}
-              style={{ width: 50, height: 50, borderRadius: 10 }}
-              resizeMode="cover"
-            />
-          ) : (
-            <Feather name="gift" size={26} color={IMO_SUB} />
-          )}
-          {locked && (
-            <View style={{
-              position: 'absolute', top: 2, right: 2,
-              backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8,
-              paddingHorizontal: 4, paddingVertical: 1,
-            }}>
-              <Text style={{ color: '#FFD54F', fontSize: 9, fontWeight: '700' }}>
-                {nobleLocked ? '♛' : `👑${g.minSvipLevel}`}
-              </Text>
-            </View>
-          )}
-        </View>
-        <Text
-          style={{ color: IMO_SUB, fontSize: 12, marginTop: 4, textAlign: 'center' }}
-          numberOfLines={1}>
-          {g.nameKey}
-        </Text>
-        <Text style={{ color: IMO_SUB, fontSize: 11, marginTop: 1 }}>
-          💎{formatCompact(g.coins)}
-        </Text>
-      </Pressable>
+        onSelect={handleSelectGift}
+      />
     );
-  };
+  }, [selectedGift?.id, mySvipTier, myNobleRank, sending, screenW, handleSelectGift]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -711,7 +752,7 @@ export function GiftsModal({
                 {t('voiceRoom.gifts.loading')}
               </Text>
             </View>
-          ) : getVisibleGifts().length === 0 ? (
+          ) : visibleGifts.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 40 }}>
               <Text style={{ color: IMO_SUB, fontSize: 13 }}>
                 {t('voiceRoom.gifts.emptyCategory')}
@@ -719,7 +760,7 @@ export function GiftsModal({
             </View>
           ) : (
             <FlatList
-              data={getVisibleGifts()}
+              data={visibleGifts}
               renderItem={renderGiftTile}
               keyExtractor={(g) => g.id}
               numColumns={4}

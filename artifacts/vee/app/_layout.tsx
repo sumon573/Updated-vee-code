@@ -77,6 +77,7 @@ import * as Haptics from 'expo-haptics';
 import {
   subscribeIncomingCall,
   removeCallSignal,
+  cleanupCallSignal,
   updateCallSignal,
   type IncomingCall } from '@/src/features/audio-call/services/firebaseCallService';
 import { isInteractionBlocked } from '@/src/services/blockService';
@@ -760,7 +761,7 @@ function IncomingCallListener({
         // Only auto-dismiss genuinely NEW incoming calls (busy) while in a call.
         const status = (call as { status?: string } | null)?.status;
         // background: safe to swallow — signaling cleanup
-        if (call && status !== 'accepted') removeCallSignal(uid).catch(() => {});
+        if (call && status !== 'accepted') cleanupCallSignal(uid);
         return;
       }
       // 2026-10-11 FIX: never pop the incoming-call modal for a stale
@@ -776,7 +777,7 @@ function IncomingCallListener({
       // /audio-call and orphan the minimized session (leaked mic + peer
       // connection). Auto-decline as busy instead.
       if (call && (call as { status?: string }).status !== 'accepted' && getMinimizedCall()) {
-        removeCallSignal(uid).catch(() => {});
+        cleanupCallSignal(uid);
         return;
       }
       // 2026-10-19 stability fix: mutual exclusion — auto-decline an incoming
@@ -784,14 +785,14 @@ function IncomingCallListener({
       // Accepting would run two mic captures on one audio session (native
       // contention = hard crash). The caller sees it as busy/declined.
       if (call && (call as { status?: string }).status !== 'accepted' && isVoiceRoomAudioActive()) {
-        removeCallSignal(uid).catch(() => {});
+        cleanupCallSignal(uid);
         return;
       }
       // Block enforcement: auto-decline calls from blocked users (either way).
       if (call) {
         const blocked = await isInteractionBlocked(uid, call.callerId).catch(() => false);
         if (blocked) {
-          removeCallSignal(uid).catch(() => {});
+          cleanupCallSignal(uid);
           return;
         }
       }
@@ -834,7 +835,7 @@ function IncomingCallListener({
     if (getMinimizedCall()) {
       userDismissedRef.current = true;
       setIncomingState(null);
-      removeCallSignal(uid).catch(() => {});
+      cleanupCallSignal(uid);
       return;
     }
     // 2026-10-13: accept race — the caller may have cancelled in the ms
@@ -878,7 +879,7 @@ function IncomingCallListener({
     userDismissedRef.current = true;
     setIncomingState(null);
     // background: safe to swallow — signaling cleanup
-    removeCallSignal(uid).catch(() => {});
+    cleanupCallSignal(uid);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // MISSED CALL LOG (2026-10-09): record in chat inbox like IMO.
     logMissedCall(call.callerId);

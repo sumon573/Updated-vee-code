@@ -8,7 +8,7 @@
  *           All rooms come from Firebase (subscribeActiveRooms) — no mock data.
  */
 import type { ComponentProps } from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -220,10 +220,26 @@ export default function VoiceRoomHome({
   // stale, so compute the true live count from actual seats+audience nodes.
   // Entering the room counts — seat NOT required.
   const liveCounts = useLiveAudienceCounts([...allRooms, ...myRooms].map(r => r.id));
-  const liveAudienceOf = (r: RoomInfo): number => {
+  const liveAudienceOf = useCallback((r: RoomInfo): number => {
     const real = liveCounts[r.id];
     if (real !== undefined) return real;
     return (r.memberCount ?? 0) + (r.listenerCount ?? 0);
+  }, [liveCounts]);
+
+  // Perf (2026-10-22 audit): stable per-room VoiceRoom objects + press
+  // handlers, so memoized RoomCard/RoomListItem rows only re-render when
+  // their room's visible data actually changes — not on every heartbeat.
+  const voiceRoomCacheRef = useRef(new Map<string, { sig: string; vr: VoiceRoom }>());
+  const voiceRoomOf = (r: RoomInfo): VoiceRoom => {
+    const sig = [r.name, r.topic, r.themeColor, r.memberCount, r.maxMembers,
+      r.isLive, r.isTrending, r.category, r.ownerId, r.ownerName, r.allowGifts,
+      r.createdAt, r.coverImageUrl, r.isPublic,
+      JSON.stringify(r.memberPreviews ?? [])].join('|');
+    const hit = voiceRoomCacheRef.current.get(r.id);
+    if (hit && hit.sig === sig) return hit.vr;
+    const vr = toVoiceRoom(r);
+    voiceRoomCacheRef.current.set(r.id, { sig, vr });
+    return vr;
   };
 
   const [activeTab, setActiveTab] = useState<RecommendedTab>('trending');
@@ -259,6 +275,25 @@ export default function VoiceRoomHome({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinVerifying, setPinVerifying] = useState(false);
+  // Stable per-room press handlers for memoized cards (2026-10-22 audit):
+  // the closure resolves the FRESH room record at tap time, so PIN/owner
+  // logic always sees current data while the handler identity never changes.
+  const roomsByIdRef = useRef(new Map<string, RoomInfo>());
+  roomsByIdRef.current = new Map([...allRooms, ...myRooms].map(r => [r.id, r]));
+  const handleRoomPressRef = useRef<(room: RoomInfo) => Promise<void>>(async () => {});
+  const pressCacheRef = useRef(new Map<string, () => void>());
+  const pressFor = (roomId: string): (() => void) => {
+    let fn = pressCacheRef.current.get(roomId);
+    if (!fn) {
+      fn = () => {
+        const fresh = roomsByIdRef.current.get(roomId);
+        if (fresh) void handleRoomPressRef.current(fresh);
+      };
+      pressCacheRef.current.set(roomId, fn);
+    }
+    return fn;
+  };
+
   // Handle room card press — show PIN dialog for private rooms
   const handleRoomPress = async (room: RoomInfo) => {
     // Private rooms require PIN (isPublic === false OR undefined/missing = private by default for safety)
@@ -275,6 +310,7 @@ export default function VoiceRoomHome({
       goToRoom(room.id);
     }
   };
+  handleRoomPressRef.current = handleRoomPress;
 
   const handlePinSubmit = async () => {
     if (!pinDialogRoom) return;
@@ -384,8 +420,11 @@ export default function VoiceRoomHome({
     })();
   }, [activeTab, userLocation, locationDenied]);
 
-  // Filter recommended rooms by active tab
-  const recommended = (() => {
+  // Filter recommended rooms by active tab.
+  // Perf (2026-10-22 audit): memoized — previously this filter+sort ran
+  // inline on EVERY render, and liveCounts state changes (every room
+  // heartbeat) re-rendered the whole screen.
+  const recommended = useMemo(() => {
     // LIVE-AUDIENCE DEFINITION (2026-10-11): a room is "active" only when it
     // has > 0 live audience (seats + listeners, real-time). Sumon's rule:
     // rooms with NO live audience appear in NO category — only truly live
@@ -433,7 +472,7 @@ export default function VoiceRoomHome({
     }
     // For all other tabs, match by category — still activity-sorted, live only
     return byActivity(onlyLive(allRooms).filter(r => r.category === activeTab));
-  })();
+  }, [allRooms, activeTab, liveAudienceOf, userLocation]);
 
   const isLoading = myLoading || recLoading;
 
@@ -476,7 +515,7 @@ export default function VoiceRoomHome({
 
               {myRooms.map((r) => (
                 <View key={r.id} style={{ marginRight: 14 }}>
-                  <RoomCard room={toVoiceRoom(r)} liveCount={liveAudienceOf(r)} onPress={() => handleRoomPress(r)} />
+                  <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} />
                 </View>
               ))}
             </GHScrollView>
@@ -593,10 +632,10 @@ export default function VoiceRoomHome({
                     return (
                       <RoomListItem
                         key={r.id}
-                        room={toVoiceRoom(r)}
+                        room={voiceRoomOf(r)}
                         liveCount={liveAudienceOf(r)}
                         distanceKm={distanceKm}
-                        onPress={() => handleRoomPress(r)}
+                        onPress={pressFor(r.id)}
                       />
                     );
                   })
@@ -666,7 +705,7 @@ export default function VoiceRoomHome({
                 return matches.map(room => (
                   <RoomListItem
                     key={room.id}
-                    room={toVoiceRoom(room)}
+                    room={voiceRoomOf(room)}
                     onPress={() => {
                       setRoomSearchOpen(false);
                       setRoomSearchQuery('');

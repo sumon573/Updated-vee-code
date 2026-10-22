@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View, Text, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +9,10 @@ const SIZE = 84;
 
 type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number };
 
-export default function RoomCard({ room, onPress, liveCount }: Props) {
+// Perf (2026-10-22 audit): memoized — VoiceRoomHome passes stable room
+// objects + stable press handlers, so cards re-render only when their own
+// room's visible data or live count changes.
+export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, 4) ?? [];
 
@@ -106,4 +110,4 @@ export default function RoomCard({ room, onPress, liveCount }: Props) {
       </View>
     </ScalePress>
   );
-}
+});

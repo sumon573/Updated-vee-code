@@ -88,6 +88,37 @@ export async function removeCallSignal(calleeUid: string): Promise<void> {
 }
 
 /**
+ * Reliability (2026-10-22 audit): fire-and-forget cleanup that NEVER
+ * rejects and never fails silently. A swallowed removeCallSignal failure
+ * leaves a stale calls/{uid} node behind, which re-fires the incoming-call
+ * modal on the next snapshot — the recurring "phantom ringing" bug class.
+ * Failures are logged with the uid and retried once after a short delay.
+ */
+export function cleanupCallSignal(calleeUid: string): void {
+  void (async () => {
+    try {
+      await removeCallSignal(calleeUid);
+    } catch (e) {
+      console.warn(
+        '[call] removeCallSignal failed — retrying once',
+        calleeUid,
+        (e as Error)?.message ?? String(e),
+      );
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        await removeCallSignal(calleeUid);
+      } catch (e2) {
+        console.warn(
+          '[call] removeCallSignal retry FAILED — stale signal may re-fire',
+          calleeUid,
+          (e2 as Error)?.message ?? String(e2),
+        );
+      }
+    }
+  })();
+}
+
+/**
  * Update the call signal status — used by the callee on accept.
  * Sets status='accepted' so the caller knows the call is connecting
  * (and doesn't start the decline timer).

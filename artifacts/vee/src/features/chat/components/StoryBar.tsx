@@ -1,4 +1,5 @@
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
+import { Image } from 'expo-image';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -142,6 +143,8 @@ function StoryTile({
             <Image
               source={{ uri: userStory.userAvatar }}
               style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
+              cachePolicy="memory-disk"
+              recyclingKey={userStory.userId}
             />
           ) : (
             <InitialsAvatar name={name} size={AVATAR_SIZE} color={colorFor(userStory.userId)} />

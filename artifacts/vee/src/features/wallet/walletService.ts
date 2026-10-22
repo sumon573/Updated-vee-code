@@ -796,6 +796,49 @@ async function sendGiftViaFirebase(
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
 }
 
+/**
+ * Double-debit guard (2026-10-22 audit): after a timeout/abort or a 5xx,
+ * the server outcome is UNKNOWN — it may have committed the debit while
+ * its response was lost. The api-server pushes the sender transaction
+ * (carrying this idempotencyKey) only AFTER the debit commits, and the
+ * sender can read their own wallet history. Finding that entry proves the
+ * charge landed — the Firebase fallback must NOT run. Returns the
+ * post-charge balance when confirmed, null when no trace appears within
+ * ~4 s (server never got there → fallback is safe).
+ */
+async function confirmServerGiftLanded(
+  idempotencyKey: string,
+): Promise<{ newBalance: number } | null> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const snap = await get(
+        query(ref(database, `wallets/${uid}/transactions`), orderByKey(), limitToLast(25)),
+      );
+      let found = false;
+      if (snap.exists()) {
+        snap.forEach((child) => {
+          const tx = child.val() as { type?: string; idempotencyKey?: string } | null;
+          if (tx?.type === 'gift_sent' && tx?.idempotencyKey === idempotencyKey) {
+            found = true;
+          }
+        });
+      }
+      if (found) {
+        const balSnap = await get(ref(database, `wallets/${uid}/balance`));
+        const bal = balSnap.val();
+        return { newBalance: typeof bal === 'number' ? bal : 0 };
+      }
+    } catch {
+      // Read failed (offline/rules) — keep polling briefly; a miss after
+      // the full window is treated as "not landed" by the caller.
+    }
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
+
 export async function sendGift({
   toUid,
   giftId,
@@ -809,6 +852,71 @@ export async function sendGift({
   // credits the same account (net-zero), so the gift animation and history
   // still work for testing/showcase.
   const key = idempotencyKey ?? Crypto.randomUUID();
+
+  // Shared post-success bookkeeping for the server path (noble XP, level
+  // XP, gift counts, weekly boards, intimacy) — runs exactly once per gift,
+  // whether the success came back in the HTTP response or was confirmed
+  // afterwards by the double-debit guard.
+  const handleServerSuccess = (newBalance: number, receipt: unknown): SendGiftResult => {
+    // P1-1 (2026-10-12): Noble XP on the PRIMARY (VPS) gift path too.
+    // The fallback path is mutually exclusive, so this runs exactly once
+    // per gift. Self-gifts excluded (anti-farming), mirroring the fallback.
+    const serverFromUid = auth.currentUser?.uid;
+    // 2026-10-16 (Sumon): PERMANENT — use actual price (server-driven) for XP, not hardcoded map
+    const serverPrice = price ?? GIFT_PRICES[giftId];
+    if (serverFromUid && serverPrice && toUid !== serverFromUid) {
+      // 2026-10-19 perf: FIRE-AND-FORGET bookkeeping — the gift already
+      // completed on the server; XP/leaderboard writes must not serialize
+      // behind (or block) the gift UI's return.
+      import('@/src/services/nobleService').then(({ recordNobleXP }) =>
+        recordNobleXP(serverFromUid, serverPrice).catch(() => {
+          // XP write failed — gift stands; noble progress for this gift is lost.
+        }),
+      ).catch(() => {});
+      // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
+      import('@/src/services/levelService').then(({ recordLevelXP }) =>
+        recordLevelXP(serverFromUid, serverPrice).catch(() => {
+          // Level XP failed — non-critical.
+        }),
+      ).catch(() => {});
+      // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
+      recordGiftReceivedCount(toUid, giftId).catch(() => {});
+      // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
+      {
+        const me = auth.currentUser;
+        recordWeeklyLeaderboardStats({
+          fromUid: serverFromUid,
+          toUid,
+          price: serverPrice,
+          recipientAmount: Math.floor(serverPrice * 0.7),
+          senderName: me?.displayName,
+          senderPhotoURL: me?.photoURL,
+          receiverName: toName,
+          receiverPhotoURL: toPhotoURL,
+        }).catch(() => {
+          // Non-critical
+        });
+      }
+      // Weekly Top Rooms stat (server path) — self-gifts count for rooms.
+      if (roomId) {
+        recordWeeklyRoomGiftStat({ roomId, price: serverPrice }).catch(() => {});
+      }
+    }
+    // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy — gift already
+    // completed on the server; must not block the gift UI's return. Self-gifts
+    // excluded (anti-farming), mirroring noble XP.
+    if (serverFromUid && toUid !== serverFromUid && serverPrice) {
+      import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
+        recordIntimacy(serverFromUid, toUid, serverPrice).catch(() => {}),
+      ).catch(() => {});
+    }
+    return {
+      ok: true,
+      newBalance: newBalance,
+      receipt,
+    };
+  };
+
 
   // PRIMARY: VPS api-server (secure, atomic, server-authoritative catalog).
   // On ANY failure the Firebase-direct fallback below takes over — the server
@@ -831,8 +939,17 @@ export async function sendGift({
       // sitting frozen for the OS network timeout.
       timeoutMs: 6000,
     });
-  } catch {
-    // Network failure — res stays null, fallback below takes over.
+  } catch (e) {
+    // Network failure / 6s abort — res stays null. The outcome is UNKNOWN
+    // (the server may still commit the charge), so the guard below checks
+    // for a landed debit before any fallback. Log the real cause with the
+    // idempotency key — never swallow it silently.
+    console.warn(
+      '[wallet] send-gift primary failed',
+      key,
+      (e as Error)?.name ?? '',
+      (e as Error)?.message ?? String(e),
+    );
   }
 
   if (res && res.status === 202) {
@@ -847,63 +964,10 @@ export async function sendGift({
       receipt?: unknown;
     };
     if (data.ok) {
-      // P1-1 (2026-10-12): Noble XP on the PRIMARY (VPS) gift path too.
-      // The fallback path is mutually exclusive, so this runs exactly once
-      // per gift. Self-gifts excluded (anti-farming), mirroring the fallback.
-      const serverFromUid = auth.currentUser?.uid;
-      // 2026-10-16 (Sumon): PERMANENT — use actual price (server-driven) for XP, not hardcoded map
-      const serverPrice = price ?? GIFT_PRICES[giftId];
-      if (serverFromUid && serverPrice && toUid !== serverFromUid) {
-        // 2026-10-19 perf: FIRE-AND-FORGET bookkeeping — the gift already
-        // completed on the server; XP/leaderboard writes must not serialize
-        // behind (or block) the gift UI's return.
-        import('@/src/services/nobleService').then(({ recordNobleXP }) =>
-          recordNobleXP(serverFromUid, serverPrice).catch(() => {
-            // XP write failed — gift stands; noble progress for this gift is lost.
-          }),
-        ).catch(() => {});
-        // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
-        import('@/src/services/levelService').then(({ recordLevelXP }) =>
-          recordLevelXP(serverFromUid, serverPrice).catch(() => {
-            // Level XP failed — non-critical.
-          }),
-        ).catch(() => {});
-        // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
-        recordGiftReceivedCount(toUid, giftId).catch(() => {});
-        // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
-        {
-          const me = auth.currentUser;
-          recordWeeklyLeaderboardStats({
-            fromUid: serverFromUid,
-            toUid,
-            price: serverPrice,
-            recipientAmount: Math.floor(serverPrice * 0.7),
-            senderName: me?.displayName,
-            senderPhotoURL: me?.photoURL,
-            receiverName: toName,
-            receiverPhotoURL: toPhotoURL,
-          }).catch(() => {
-            // Non-critical
-          });
-        }
-        // Weekly Top Rooms stat (server path) — self-gifts count for rooms.
-        if (roomId) {
-          recordWeeklyRoomGiftStat({ roomId, price: serverPrice }).catch(() => {});
-        }
-      }
-      // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy — gift already
-      // completed on the server; must not block the gift UI's return. Self-gifts
-      // excluded (anti-farming), mirroring noble XP.
-      if (serverFromUid && toUid !== serverFromUid && serverPrice) {
-        import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
-          recordIntimacy(serverFromUid, toUid, serverPrice).catch(() => {}),
-        ).catch(() => {});
-      }
-      return {
-        ok: true,
-        newBalance: typeof data.newBalance === 'number' ? data.newBalance : 0,
-        receipt: data.receipt,
-      };
+      return handleServerSuccess(
+        typeof data.newBalance === 'number' ? data.newBalance : 0,
+        data.receipt,
+      );
     }
     // 200-but-not-ok: the server PROCESSED the request (charged or rejected).
     // 2026-10-12 audit fix (HIGH): do NOT fall through to Firebase fallback —
@@ -911,9 +975,21 @@ export async function sendGift({
     // Surface the server's failure instead.
     throw new GiftError('Gift failed on server, please retry');
   }
-  // Server failed (4xx/5xx) or network failed → Firebase fallback is safe
-  // (server did not process a 4xx/5xx charge; network failure means unknown,
-  // but the idempotency key protects the retry).
+  // DOUBLE-DEBIT GUARD (2026-10-22 audit): when the primary outcome is
+  // UNKNOWN (network failure/abort → res null, or a 5xx), first confirm
+  // the server did NOT already land the debit. If its sender-transaction
+  // record is found, the gift succeeded server-side — run the normal
+  // success bookkeeping and return WITHOUT the fallback debit.
+  if (res === null || res.status >= 500) {
+    const landed = await confirmServerGiftLanded(key).catch(() => null);
+    if (landed) {
+      console.warn('[wallet] send-gift confirmed landed server-side after unknown outcome', key);
+      return handleServerSuccess(landed.newBalance, { via: 'server', giftId, price });
+    }
+  }
+  // Server rejected (4xx) or confirmed-not-landed → Firebase fallback is
+  // safe (a 4xx is decided before any claim/charge; the guard above found
+  // no landed debit for the unknown cases).
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {

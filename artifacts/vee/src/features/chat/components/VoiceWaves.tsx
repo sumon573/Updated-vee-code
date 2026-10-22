@@ -13,25 +13,30 @@ const BAR_W = 3;
 const GAP = 3;
 
 function Bar({ delay, color }: { delay: number; color: string }) {
-  const h = useRef(new Animated.Value(6)).current;
+  // Perf (2026-10-22 audit): animate transform scaleY on the NATIVE driver.
+  // Animating `height` (layout) with useNativeDriver:false forced JS-thread
+  // layout work every frame during recording. Fixed height 18 (the old max)
+  // scaled 1/3→1 looks identical and costs nothing on the JS thread.
+  const s = useRef(new Animated.Value(6 / 18)).current;
 
   useEffect(() => {
     const seq = Animated.sequence([
-      Animated.timing(h, { toValue: 18, duration: 350, delay, useNativeDriver: false }),
-      Animated.timing(h, { toValue: 6, duration: 350, useNativeDriver: false }),
+      Animated.timing(s, { toValue: 1, duration: 350, delay, useNativeDriver: true }),
+      Animated.timing(s, { toValue: 6 / 18, duration: 350, useNativeDriver: true }),
     ]);
     const loop = Animated.loop(seq);
     loop.start();
     return () => loop.stop();
-  }, [h, delay]);
+  }, [s, delay]);
 
   return (
     <Animated.View
       style={{
         width: BAR_W,
-        height: h,
+        height: 18,
         borderRadius: BAR_W / 2,
         backgroundColor: color,
+        transform: [{ scaleY: s }],
       }}
     />
   );

@@ -10,7 +10,7 @@
  * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image } from 'react-native';
+import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,10 +89,16 @@ export default function IMOHomeScreen() {
       unsubs.push(
         subscribeUser(uid, (p) => {
           if (!p) return;
-          setLiveProfiles((prev) => ({
-            ...prev,
-            [uid]: { name: p.name, photoURL: p.photoURL || undefined },
-          }));
+          // Perf guard (2026-10-22 audit): subscribeUser fires on ANY field
+          // change of the full user node (presence/lastSeen churn included).
+          // Only name/photoURL matter here — skip the state write when they
+          // are unchanged so the whole home shell stops re-rendering.
+          setLiveProfiles((prev) => {
+            const photo = p.photoURL || undefined;
+            const cur = prev[uid];
+            if (cur && cur.name === p.name && cur.photoURL === photo) return prev;
+            return { ...prev, [uid]: { name: p.name, photoURL: photo } };
+          });
         }),
       );
     }
@@ -380,6 +386,10 @@ export default function IMOHomeScreen() {
             data={imoChats}
             keyExtractor={(item) => item.id}
             getItemLayout={getRowLayout}
+            windowSize={11}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            removeClippedSubviews={Platform.OS === 'android'}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
             }

@@ -9,6 +9,7 @@
  * count, and up to 6 real member DPs (photoURL, falling back to initials).
  */
 
+import { memo } from 'react';
 import { View, Text, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -35,7 +36,8 @@ function formatDistance(km: number): string {
   return `${km.toFixed(1)}km`;
 }
 
-export default function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
+// Perf (2026-10-22 audit): memoized — see RoomCard note.
+export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, MAX_DP) ?? [];
   const isPrivate = room.isPublic === false;
@@ -198,4 +200,4 @@ export default function RoomListItem({ room, onPress, distanceKm, liveCount }: P
       </View>
     </ScalePress>
   );
-}
+});

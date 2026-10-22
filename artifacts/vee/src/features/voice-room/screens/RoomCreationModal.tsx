@@ -50,20 +50,15 @@ function Field({
   maxLength?: number;
 }) {
   const [focused, setFocused] = useState(false);
-  const anim = useRef(new Animated.Value(0)).current;
 
-  const fade = (v: number) =>
-    Animated.timing(anim, { toValue: v, duration: 200, useNativeDriver: false }).start();
-
-  const borderColor = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [C.border, C.glow] });
-
+  // Perf (2026-10-22 audit): the border tint used to be a JS-thread
+  // Animated color interpolation on every focus/blur. A direct state-driven
+  // borderColor looks the same and costs no animation frames.
   return (
     <Animated.View style={{
       flexDirection: multiline ? 'column' : 'row',
       alignItems: multiline ? 'flex-start' : 'center',
-      borderRadius: 16, borderWidth: 1.5, borderColor,
+      borderRadius: 16, borderWidth: 1.5, borderColor: focused ? C.glow : C.border,
       backgroundColor: C.inputBg,
       paddingHorizontal: 16, paddingVertical: multiline ? 12 : 0,
       minHeight: multiline ? 90 : 56, marginBottom: 14,
@@ -85,8 +80,8 @@ function Field({
         multiline={multiline}
         numberOfLines={multiline ? 3 : 1}
         maxLength={maxLength}
-        onFocus={() => { setFocused(true); fade(1); }}
-        onBlur={() => { setFocused(false); fade(0); }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         autoCorrect={false}
       />
       {maxLength && value.length > 0 && (

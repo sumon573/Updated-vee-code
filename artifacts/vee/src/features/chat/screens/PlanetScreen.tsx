@@ -12,8 +12,9 @@
  *   viewCount via transactions) — never local-only counters.
  * - Every error surfaces its actual cause (getErrorCause).
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, FlatList, Pressable, Image, Dimensions, Share, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { View, Text, FlatList, Pressable, Dimensions, Share, Alert } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
 import { useRealAuthor } from '../hooks/useRealAuthor';
@@ -256,7 +257,7 @@ function PlanetOverlay({
       <View style={{ position: 'absolute', left: 12, bottom: 100, right: 80 }}>
         <Pressable onPress={handleUserPress} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
           {author.avatar ? (
-            <Image source={{ uri: author.avatar }} style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }} />
+            <Image source={{ uri: author.avatar }} style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }} cachePolicy="memory-disk" />
           ) : (
             <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
               <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
@@ -281,7 +282,7 @@ function PlanetImageItem({ item, active, overlay }: { item: PlanetItem; active: 
   return (
     <View style={{ width, height: height, backgroundColor: '#000' }}>
       {item.story.musicUrl && <PlanetBackgroundMusic uri={item.story.musicUrl} active={active} />}
-      <Image source={{ uri: item.story.content }} style={{ width, height: '100%' }} resizeMode="cover" />
+      <Image source={{ uri: item.story.content }} style={{ width, height: '100%' }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.key} />
       {/* Text overlay (2026-10-11) */}
       {item.story.overlayText && (
         <View style={{ position: 'absolute', top: '40%', left: 0, right: 0, alignItems: 'center' }}>
@@ -314,6 +315,19 @@ function PlanetTextItem({ item, active, overlay }: { item: PlanetItem; active: b
     </View>
   );
 }
+
+// Perf (2026-10-22 audit): memoized feed items. The comparator ignores
+// the freshly-created overlay element (it is derived from `item`) and
+// re-renders only when the item object or the active flag changes — so a
+// swipe re-renders just the two affected full-screen items, not all of them.
+const planetItemPropsEqual = (
+  p: { item: PlanetItem; active: boolean; overlay: React.ReactNode },
+  n: { item: PlanetItem; active: boolean; overlay: React.ReactNode },
+) => p.item === n.item && p.active === n.active;
+const PlanetVideoItemMemo = memo(PlanetVideoItem, planetItemPropsEqual);
+const PlanetImageItemMemo = memo(PlanetImageItem, planetItemPropsEqual);
+const PlanetAudioItemMemo = memo(PlanetAudioItem, planetItemPropsEqual);
+const PlanetTextItemMemo = memo(PlanetTextItem, planetItemPropsEqual);
 
 export default function PlanetScreen() {
   const router = useRouter();
@@ -389,22 +403,26 @@ export default function PlanetScreen() {
     }
   }, [items, activeKey]);
 
-  const renderItem = ({ item }: { item: PlanetItem }) => {
+  // Perf (2026-10-22 audit): stable renderItem + memoized item components.
+  // Swiping changes activeKey — previously EVERY mounted full-screen item
+  // re-rendered (overlay + author hook included). Now only the items whose
+  // item data or active flag actually changed re-render.
+  const renderItem = useCallback(({ item }: { item: PlanetItem }) => {
     const active = item.key === activeKey;
     const overlay = (
       <PlanetOverlay item={item} router={router} t={t} viewerUid={user?.uid} />
     );
     if (item.story.type === 'video') {
-      return <PlanetVideoItem item={item} active={active} overlay={overlay} />;
+      return <PlanetVideoItemMemo item={item} active={active} overlay={overlay} />;
     }
     if (item.story.type === 'image') {
-      return <PlanetImageItem item={item} active={active} overlay={overlay} />;
+      return <PlanetImageItemMemo item={item} active={active} overlay={overlay} />;
     }
     if (item.story.type === 'audio') {
-      return <PlanetAudioItem item={item} active={active} overlay={overlay} />;
+      return <PlanetAudioItemMemo item={item} active={active} overlay={overlay} />;
     }
-    return <PlanetTextItem item={item} active={active} overlay={overlay} />;
-  };
+    return <PlanetTextItemMemo item={item} active={active} overlay={overlay} />;
+  }, [activeKey, router, t, user?.uid]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>

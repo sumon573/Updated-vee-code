@@ -221,9 +221,22 @@ export function LeaderboardModal({
         delete seatedCountsRef.current[id];
       }
     });
+    // Perf (2026-10-22 audit): coalesce pushes — up to ~80 rooms × 2
+    // listeners used to setState the whole modal on EVERY heartbeat/seat
+    // snapshot. Now pushes flush at most every 400 ms and only when a
+    // count actually changed.
+    let pushTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastPushJson = '';
     const push = () => {
-      setLiveCounts({ ...counts });
-      setSeatedCounts({ ...seatedCountsRef.current });
+      if (pushTimer) return;
+      pushTimer = setTimeout(() => {
+        pushTimer = null;
+        const json = JSON.stringify(counts) + '|' + JSON.stringify(seatedCountsRef.current);
+        if (json === lastPushJson) return;
+        lastPushJson = json;
+        setLiveCounts({ ...counts });
+        setSeatedCounts({ ...seatedCountsRef.current });
+      }, 400);
     };
     let seededAny = false;
     // Seed newly-added rooms from stored values so the list never flashes
@@ -249,12 +262,17 @@ export function LeaderboardModal({
         });
         // 2026-10-20 (boss): audience counts only LIVE entries (fresh
         // heartbeat <150s) — ghost entries never inflate a room's count.
+        // 2026-10-22: seated users KEEP an audience entry (chat access) —
+        // exclude them here or every seated user is counted twice.
         let aud = 0;
         if (audSnap.exists()) {
           const now = Date.now();
           audSnap.forEach((ch: any) => {
-            const a = ch.val() as { ts?: number } | null;
-            if (typeof a?.ts === 'number' && now - a.ts < 150_000) aud++;
+            const a = ch.val() as { ts?: number; userId?: string } | null;
+            if (typeof a?.ts === 'number' && now - a.ts < 150_000) {
+              const uid = a.userId ?? (ch.key as string);
+              if (!seen.has(uid)) aud++;
+            }
           });
         }
         counts[room.id] = seated + aud;

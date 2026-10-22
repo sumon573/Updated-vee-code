@@ -18,7 +18,7 @@
  *  2) <GiftReceiveBanners roomId> — RECEIVER side (unchanged): subscribes to
  *     rooms/{roomId}/giftFeed, combo-counting banners, queued.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   Animated, Dimensions, Easing, Image, StyleSheet, Text, View,
 } from 'react-native';
@@ -130,7 +130,11 @@ const FLY_MS = 1500;     // fly to recipient seat
 const BANNER_MS = 1600;  // follow-up banner
 const BIG_BANNER_MS = 4200; // IMO gold broadcast for big gifts
 
-function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void }) {
+// Perf (2026-10-22 audit): memoized — with stable props the player no
+// longer re-renders when the parent queue state churns; it re-renders
+// only when its own show object changes (which is exactly when the combo
+// count grows, via setActive({...active}) in enqueueOrMerge).
+const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void }) {
   const { width: W, height: H } = Dimensions.get('window');
   const { t } = useTranslation();
   const isBig = show.coins >= BIG_GIFT_COINS;
@@ -321,7 +325,7 @@ function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void
       )}
     </View>
   );
-}
+});
 
 export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAnimation(_props, fwdRef) {
   // IMO: fullscreen shows QUEUE — one at a time, never overlapping.
@@ -390,14 +394,12 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
 
   const handleDone = useCallback(() => { setActiveBoth(null); }, [setActiveBoth]);
 
-  // Re-render the active player when its combo count grows (for the xN pop).
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (active) {
-      const t = setInterval(() => setTick((x) => x + 1), 500);
-      return () => clearInterval(t);
-    }
-  }, [active]);
+  // Perf (2026-10-22 audit): the 500ms force-re-render interval that used
+  // to live here is GONE. It re-rendered the whole fullscreen overlay tree
+  // twice a second for the entire gift show, fighting the animation. Combo
+  // growth already flows through enqueueOrMerge → setActive({...active}),
+  // which hands the memoized player a fresh show object (and its pop
+  // effect fires on show.count) — no polling needed.
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 50 }]} pointerEvents="none">

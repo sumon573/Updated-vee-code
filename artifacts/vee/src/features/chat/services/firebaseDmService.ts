@@ -673,57 +673,75 @@ export function subscribeUserChats(
   callback: (chats: Chat[]) => void,
 ): () => void {
   const chatsRef = ref(database, `userChats/${myUid}`);
-  return onValue(chatsRef, async (snap) => {
-    if (!snap.exists()) { callback([]); return; }
-    const chats: Chat[] = [];
-    const refreshPromises: Promise<void>[] = [];
-    snap.forEach((child) => {
-      const sanitized = sanitizeChat(child.key!, child.val());
-      // Filter out hidden chats (they reappear on new message via isHidden:false)
-      if (sanitized && !sanitized.isHidden) {
-        chats.push(sanitized);
-        // 2026-10-13 (Sumon): Fix "Unknown" name + missing DP for Google users.
-        // If participantName is Unknown/empty or avatar missing, fetch live user data.
-        // Session-এ একবারই চেষ্টা — resolve না হলে পরের snapshot-এ আবার get() নয়।
-        if (((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar)
-          && sanitized.participantId
-          && shouldRefreshProfile(sanitized.participantId)) {
-          refreshPromises.push((async () => {
-              try {
-                const userSnap = await get(ref(database, `users/${sanitized.participantId}`));
-                if (userSnap.exists()) {
-                  const u = userSnap.val();
-                  // Use || (not ??) — Google users can have empty-string names
-                  const liveName = (u.name || u.displayName || '').trim();
-                  const liveAvatar = u.photoURL || u.avatar || u.dp || '';
-                  const updates: Record<string, any> = {};
-                  if (liveName && (!sanitized.participantName || sanitized.participantName === 'Unknown')) {
-                    updates.participantName = liveName;
-                    sanitized.participantName = liveName;
-                  }
-                  if (liveAvatar && !sanitized.participantAvatar) {
-                    updates.participantAvatar = liveAvatar;
-                    sanitized.participantAvatar = liveAvatar;
-                  }
-                  if (Object.keys(updates).length > 0) {
-                    await update(ref(database, `userChats/${myUid}/${child.key}`), updates);
-                  }
-                }
-              } catch { /* non-critical */ }
-            })());
+  // Reliability (2026-10-22 audit): the listener callback is SYNCHRONOUS.
+  // An async onValue callback turns any throw after an await into an
+  // unhandled rejection, and its write-back → re-snapshot loop was
+  // invisible. Profile repairs now run in a separate fire-and-forget
+  // worker with its own try/catch; consumers get the normal callback per
+  // snapshot plus ONE follow-up callback when repairs actually changed
+  // something (same contract as before).
+  return onValue(chatsRef, (snap) => {
+    try {
+      if (!snap.exists()) { callback([]); return; }
+      const chats: Chat[] = [];
+      const repairs: Array<{ participantId: string; chatKey: string; sanitized: Chat }> = [];
+      snap.forEach((child) => {
+        const sanitized = sanitizeChat(child.key!, child.val());
+        // Filter out hidden chats (they reappear on new message via isHidden:false)
+        if (sanitized && !sanitized.isHidden) {
+          chats.push(sanitized);
+          // 2026-10-13 (Sumon): Fix "Unknown" name + missing DP for Google users.
+          // If participantName is Unknown/empty or avatar missing, fetch live user data.
+          // Session-এ একবারই চেষ্টা — resolve না হলে পরের snapshot-এ আবার get() নয়।
+          if (((!sanitized.participantName || sanitized.participantName === 'Unknown') || !sanitized.participantAvatar)
+            && sanitized.participantId
+            && shouldRefreshProfile(sanitized.participantId)) {
+            repairs.push({
+              participantId: sanitized.participantId,
+              chatKey: child.key!,
+              sanitized,
+            });
+          }
         }
+      });
+      // Sort by lastMessageTime descending
+      chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
+      callback(chats);
+      if (repairs.length > 0) {
+        void (async () => {
+          let changed = false;
+          await Promise.all(repairs.map(async ({ participantId, chatKey, sanitized }) => {
+            try {
+              const userSnap = await get(ref(database, `users/${participantId}`));
+              if (!userSnap.exists()) return;
+              const u = userSnap.val();
+              // Use || (not ??) — Google users can have empty-string names
+              const liveName = (u.name || u.displayName || '').trim();
+              const liveAvatar = u.photoURL || u.avatar || u.dp || '';
+              const updates: Record<string, any> = {};
+              if (liveName && (!sanitized.participantName || sanitized.participantName === 'Unknown')) {
+                updates.participantName = liveName;
+                sanitized.participantName = liveName;
+              }
+              if (liveAvatar && !sanitized.participantAvatar) {
+                updates.participantAvatar = liveAvatar;
+                sanitized.participantAvatar = liveAvatar;
+              }
+              if (Object.keys(updates).length > 0) {
+                changed = true;
+                await update(ref(database, `userChats/${myUid}/${chatKey}`), updates);
+              }
+            } catch { /* non-critical — repair is best-effort */ }
+          }));
+          if (changed) {
+            chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
+            callback([...chats]);
+          }
+        })().catch(() => {});
       }
-    });
-    // Sort by lastMessageTime descending
-    chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
-    callback(chats);
-    // Refresh stale names/avatars in background
-    if (refreshPromises.length > 0) {
-      Promise.all(refreshPromises).then(() => {
-        // Re-sort and re-callback with refreshed data
-        chats.sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
-        callback([...chats]);
-      }).catch(() => {});
+    } catch (e) {
+      // Never let a malformed snapshot kill the listener silently.
+      console.warn('[dm] subscribeUserChats snapshot failed', (e as Error)?.message ?? String(e));
     }
   });
 }
