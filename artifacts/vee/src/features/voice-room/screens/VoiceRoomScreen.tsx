@@ -5,7 +5,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { ref, get, onValue, update, set, serverTimestamp, onDisconnect } from 'firebase/database';
+import { ref, get, onValue, update, set, serverTimestamp } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1453,7 +1453,9 @@ export default function VoiceRoomScreen() {
             seatData.muted = mutedRef.current;
             const seatRef = ref(database, `rooms/${roomId}/seats/${seatIdx}`);
             await set(seatRef, { ...seatData, seatTs: serverTimestamp() }).catch(() => {});
-            onDisconnect(seatRef).remove().catch(() => {});
+            // 2026-10-22 ROOT FIX: deliberately NO onDisconnect re-arm —
+            // socket drops must never delete a live user's seat again
+            // (see firebaseRoomService takeSeat note).
             persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
           } else {
             mySeatIdxRef.current = -1;

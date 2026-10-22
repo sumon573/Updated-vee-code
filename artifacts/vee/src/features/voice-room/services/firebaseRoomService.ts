@@ -737,11 +737,15 @@ export async function joinRoomAsAudience(
   // entry ages out (see sweepStaleAudience) instead of showing a phantom
   // member in an empty room forever.
   await set(audienceRef, { ...entry, ts: serverTimestamp() });
-  // BUG 14/15 fix: if the app crashes/loses connection without an explicit
-  // leave, Firebase removes this audience entry automatically so the room
-  // doesn't show ghost members. The room info (active:true) is NOT touched
-  // by this onDisconnect — rooms only close via an explicit closeRoom() call.
-  onDisconnect(audienceRef).remove().catch(() => {/* non-critical */});
+  // 2026-10-22 ROOT FIX (boss, server-log proven): NO onDisconnect removal
+  // for presence entries anymore. The old BUG 14/15 arm deleted the entry
+  // on ANY RTDB socket drop — and backgrounded phones drop that socket
+  // routinely (Doze/OEM network freezes) while the user is still live in
+  // the room on LiveKit, so seats/audience vanished mid-session (falls at
+  // 18:42 + 18:45 on 2026-10-22 while the user never left). Presence is
+  // now heartbeat-based: entries carry `ts`, and VeeGuard sweeps only
+  // entries stale >5 min whose user is NOT a live LiveKit participant.
+  // Explicit leave still removes the entry immediately (leaveAudience).
   // Record this room in the joiner's persistent "My Room" index (never
   // cleared on leave/exit — see recordUserRoomVisit).
   // background: safe to swallow — analytics index write
@@ -904,14 +908,16 @@ async function takeSeatInner(
         }).catch(() => {});
       }
     }
-    // (Re)arm the audience onDisconnect: on a dropped connection BOTH the
-    // seat and the audience entry are removed — no ghost presence remains.
-    onDisconnect(audienceRef).remove().catch(() => {/* non-critical */});
+    // 2026-10-22 ROOT FIX: no onDisconnect re-arm for the audience entry
+    // (see joinRoomAsAudience) — presence is heartbeat + VeeGuard based.
   } catch { /* non-critical — server guard restores seated audience entries */ }
-  // 2026-10-14 (Sumon): App killed from background must free the seat.
-  // If user force-closes app while on seat, Firebase removes the seat entry
-  // automatically so the room doesn't show ghost members.
-  onDisconnect(seatRef).remove().catch(() => {/* non-critical */});
+  // 2026-10-22 ROOT FIX (replaces the 2026-10-14 onDisconnect arm): the
+  // seat is NOT deleted when the RTDB socket drops. Socket drops in
+  // background are routine and the user is usually still live on LiveKit;
+  // deleting on drop threw seated users off their seats (server-log
+  // proven 2026-10-22 18:42/18:45). A truly dead seat (app killed) is
+  // swept by VeeGuard once seatTs is >5 min stale AND the user is absent
+  // from LiveKit participants — a live participant is never swept.
   // Belt-and-suspenders: also record in "My Room" index in case a seat was
   // taken directly without going through joinRoomAsAudience first.
   // background: safe to swallow — analytics index write
@@ -1089,7 +1095,8 @@ export async function leaveSeat(
     // 2026-10-22: stamp a fresh heartbeat so the re-added entry is never
     // swept as stale before the next 60s audience heartbeat lands.
     ops.push(set(audienceRef, { ...audienceMember, ts: serverTimestamp() }));
-    onDisconnect(audienceRef).remove().catch(() => {/* non-critical */});
+    // 2026-10-22 ROOT FIX: no onDisconnect arm for the re-added audience
+    // entry — heartbeat + VeeGuard own presence lifetime now.
   }
   await Promise.all(ops);
   _updateCounts(roomId).catch(() => {}); // best-effort
