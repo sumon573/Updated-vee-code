@@ -109,44 +109,6 @@ function Particle({
 }
 
 /* ═══════════════════════════════════════════
-   Glow/Shimmer overlay component
-═══════════════════════════════════════════ */
-
-function GlowPulse({ color, size }: { color: string; size: number }) {
-  const scale = useRef(new Animated.Value(0.8)).current;
-  const opacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale, { toValue: 1.2, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(scale, { toValue: 0.8, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 0.6, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.3, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        ]),
-      ])
-    );
-    anim.start();
-    return () => anim.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <Animated.View style={{
-      position: 'absolute',
-      width: size, height: size,
-      borderRadius: size / 2,
-      backgroundColor: color,
-      opacity,
-      transform: [{ scale }],
-    }} />
-  );
-}
-
-/* ═══════════════════════════════════════════
    Main luxury effect component
 ═══════════════════════════════════════════ */
 
@@ -256,33 +218,11 @@ export function GiftLuxuryEffect({ giftId, size }: { giftId: string; size: numbe
     return particles;
   };
 
-  // Glow color per effect
-  const getGlowColor = (): string => {
-    switch (effect) {
-      case 'pink-hearts': return 'rgba(255, 105, 180, 0.3)';
-      case 'snow-ice': return 'rgba(173, 216, 230, 0.3)';
-      case 'petal-glow': return 'rgba(255, 182, 193, 0.3)';
-      case 'crystal-prism': return 'rgba(147, 112, 219, 0.3)';
-      case 'golden-clouds': return 'rgba(255, 215, 0, 0.3)';
-      case 'sakura-aura': return 'rgba(255, 183, 197, 0.3)';
-      case 'emerald-leaf': return 'rgba(50, 205, 50, 0.3)';
-      case 'fairy-dust': return 'rgba(218, 112, 214, 0.3)';
-      case 'speed-glow': return 'rgba(255, 69, 0, 0.3)';
-      case 'romantic-hearts': return 'rgba(255, 105, 180, 0.35)';
-      case 'musical-sparkle': return 'rgba(135, 206, 250, 0.3)';
-      case 'mystery-glow': return 'rgba(75, 0, 130, 0.35)';
-      case 'vee-majestic': return 'rgba(255, 215, 0, 0.4)'; // Gold for Vee Brand
-      case 'golden-sparkle': return 'rgba(255, 215, 0, 0.35)'; // Royal gold
-      case 'minimal': return 'rgba(255, 182, 193, 0.15)'; // Very subtle pink
-      default: return 'rgba(255, 215, 0, 0.3)';
-    }
-  };
-
   return (
     <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
-      {/* Pulsing glow behind the gift */}
-      <GlowPulse color={getGlowColor()} size={size * 1.3} />
-      {/* Floating particles */}
+      {/* 2026-10-22 (Sumon): the round glow disc behind every gift is
+          REMOVED — it made every gift look boxed in a circle. Only the
+          gift's own art + floating particles remain. */}
       {renderParticles()}
     </View>
   );

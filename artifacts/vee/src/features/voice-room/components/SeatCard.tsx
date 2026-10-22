@@ -241,32 +241,40 @@ export const SeatCard = memo(function SeatCard({
         </>
       ) : (
         /* ── Empty / locked seat — dashed circle with user-plus
-            (pre-IMO-port placeholder visual, restored 2026-10-20 per boss) */
+            (pre-IMO-port placeholder visual, restored 2026-10-20 per boss)
+            HOST SEAT (2026-10-22, Sumon): seat 1 (index 0) shows "HOST"
+            written inside the gold dashed circle while nobody sits there. */
         <>
           <View style={{
             marginTop: 6,
             width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
-            backgroundColor: locked ? C.gold + '11' : accent + '0D',
+            backgroundColor: locked ? C.gold + '11' : seatNum === 1 ? C.gold + '14' : accent + '0D',
             borderWidth: 1.5,
-            borderColor: locked ? C.gold + '55' : accent + '44',
+            borderColor: locked ? C.gold + '55' : seatNum === 1 ? C.gold + '88' : accent + '44',
             borderStyle: 'dashed',
             alignItems: 'center', justifyContent: 'center',
-            shadowColor: locked ? C.gold : accent,
+            shadowColor: locked || seatNum === 1 ? C.gold : accent,
             shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
             elevation: 2,
           }}>
-            <Feather
-              name={locked ? 'lock' : 'user-plus'}
-              size={16}
-              color={locked ? C.gold : '#94A3B8'}
-            />
+            {locked ? (
+              <Feather name="lock" size={16} color={C.gold} />
+            ) : seatNum === 1 ? (
+              <Text style={{ color: C.gold, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>HOST</Text>
+            ) : (
+              <Feather name="user-plus" size={16} color="#94A3B8" />
+            )}
           </View>
           <Text style={{
-            color: locked ? C.gold : (labelColor ?? C.muted),
+            color: locked || seatNum === 1 ? C.gold : (labelColor ?? C.muted),
             fontSize: 10, marginTop: 5, fontWeight: '600',
             textAlign: 'center',
           }} numberOfLines={1}>
-            {locked ? t('voiceRoom.seatCard.locked') : t('voiceRoom.seatCard.empty')}
+            {locked
+              ? t('voiceRoom.seatCard.locked')
+              : seatNum === 1
+                ? t('voiceRoom.seatCard.host')
+                : t('voiceRoom.seatCard.empty')}
           </Text>
         </>
       )}

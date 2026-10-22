@@ -89,22 +89,26 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
           {room.isPublic === false ? '🔒 ' : ''}{room.name}
         </Text>
 
-        {/* Topic pill */}
+        {/* Topic label + text — 2026-10-22 (Sumon): small soft label;
+            the topic text itself is lightly highlighted. */}
         {!!room.topic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 5, flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 4, flexWrap: 'wrap' }}>
             <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 3,
-              backgroundColor: '#F97316', borderRadius: 999,
-              paddingHorizontal: 7, paddingVertical: 3,
+              flexDirection: 'row', alignItems: 'center', gap: 2,
+              backgroundColor: 'rgba(249,115,22,0.13)', borderRadius: 999,
+              paddingHorizontal: 5, paddingVertical: 2,
             }}>
-              <Text style={{ fontSize: 8 }}>💬</Text>
-              <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{t('voiceRoom.card.topic')}</Text>
+              <Text style={{ fontSize: 7 }}>💬</Text>
+              <Text style={{ color: '#EA580C', fontSize: 7.5, fontWeight: '800' }}>{t('voiceRoom.card.topic')}</Text>
             </View>
-            <Text numberOfLines={1} style={{
-              color: '#8E8E93', fontSize: 10, flex: 1,
+            <View style={{
+              backgroundColor: 'rgba(249,115,22,0.10)', borderRadius: 6,
+              paddingHorizontal: 6, paddingVertical: 2, flexShrink: 1,
             }}>
-              {room.topic}
-            </Text>
+              <Text numberOfLines={1} style={{ color: '#9A3412', fontSize: 10, fontWeight: '600' }}>
+                {room.topic}
+              </Text>
+            </View>
           </View>
         )}
       </View>

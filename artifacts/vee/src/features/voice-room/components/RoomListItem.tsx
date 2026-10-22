@@ -117,20 +117,28 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
           )}
         </View>
 
-        {/* Topic pill + topic text (readable) */}
+        {/* Topic label + topic text — 2026-10-22 (Sumon): the "Topic" label
+            was big and loud while the actual topic looked plain. Label is
+            now small and soft; the TOPIC TEXT itself carries a light
+            highlight so the real topic is what the eye catches. */}
         {!!room.topic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
             <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 4,
-              backgroundColor: '#F97316', borderRadius: 999,
-              paddingHorizontal: 10, paddingVertical: 4,
+              flexDirection: 'row', alignItems: 'center', gap: 3,
+              backgroundColor: 'rgba(249,115,22,0.13)', borderRadius: 999,
+              paddingHorizontal: 7, paddingVertical: 2.5,
             }}>
-              <Text style={{ fontSize: 11 }}>💬</Text>
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>{t('voiceRoom.card.topic')}</Text>
+              <Text style={{ fontSize: 9 }}>💬</Text>
+              <Text style={{ color: '#EA580C', fontSize: 9.5, fontWeight: '800' }}>{t('voiceRoom.card.topic')}</Text>
             </View>
-            <Text numberOfLines={1} style={{ color: C.sub, fontSize: 13, flex: 1 }}>
-              {room.topic}
-            </Text>
+            <View style={{
+              backgroundColor: 'rgba(249,115,22,0.10)', borderRadius: 8,
+              paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1,
+            }}>
+              <Text numberOfLines={1} style={{ color: '#9A3412', fontSize: 12.5, fontWeight: '600' }}>
+                {room.topic}
+              </Text>
+            </View>
           </View>
         )}
 

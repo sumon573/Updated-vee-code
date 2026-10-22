@@ -26,7 +26,7 @@ const C = {
   micOff: '#EF4444',
 } as const;
 
-export default function MinimizedRoomBar() {
+export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffsetOverride?: number } = {}) {
   const [room, setRoom] = useState<MinimizedRoom>(getMinimizedRoom());
   // 2026-10-16 (Sumon): detect the stuck case — bar floating over the
   // exited room screen after a cold-start auto-return (no back stack).
@@ -178,8 +178,13 @@ export default function MinimizedRoomBar() {
 
   if (!room) return null;
 
-  const bottomOffset =
-    Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 0) + 80; // above bottom nav
+  // Default: above the bottom nav. Hosts rendered inside a full-screen
+  // modal (the rooms list) have no tab bar beneath them, so they pass a
+  // small override — a bar mounted in the root layout is COVERED by an
+  // RN Modal, which is why a second instance lives inside that modal
+  // (2026-10-22, Sumon: minimize bar invisible on the My Rooms screen).
+  const bottomOffset = bottomOffsetOverride ??
+    (Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 0) + 80);
 
   const handleReturn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
