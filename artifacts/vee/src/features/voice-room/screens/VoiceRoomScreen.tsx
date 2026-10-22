@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image, BackHandler, Modal, KeyboardAvoidingView, Keyboard } from 'react-native';
+import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image, BackHandler, Modal, KeyboardAvoidingView, Keyboard, AppState } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1156,6 +1156,38 @@ export default function VoiceRoomScreen() {
     return () => clearInterval(timer);
   }, [roomId, myUid]);
 
+  // 2026-10-22 (boss): BACKGROUND-FREEZE RECOVERY. Android (esp. Tecno/HiOS)
+  // freezes the app while it sits in a voice room in the background: the JS
+  // heartbeat timers stop and the LiveKit socket starves, so the server
+  // drops the participant and VeeGuard sweeps the seat — the user comes back
+  // to find himself thrown out of the room. On return to foreground:
+  // refresh both heartbeats at once, re-register presence (restores the seat
+  // when it was swept and the slot is still his/free; demotes to audience if
+  // someone else took it), and auto-retry the voice connection when the
+  // engine died while backgrounded — no dead Retry button left to find.
+  const autoVoiceRetryAtRef = useRef(0);
+  useEffect(() => {
+    const recover = () => {
+      if (hasLeftRef.current || !presenceReadyRef.current) return;
+      if (mySeatIdxRef.current >= 0) {
+        refreshSeatHeartbeat(roomId, mySeatIdxRef.current, myUid).catch(() => {});
+      }
+      refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
+      void reRegisterPresenceRef.current?.();
+      if (!voiceJoinedRef.current && voiceErrorRef.current) {
+        const now = Date.now();
+        if (now - autoVoiceRetryAtRef.current > 15_000) {
+          autoVoiceRetryAtRef.current = now;
+          retryConnectionRef.current?.();
+        }
+      }
+    };
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') recover();
+    });
+    return () => sub.remove();
+  }, [roomId, myUid]);
+
   
   const hasAutoPublishedRef = useRef(false);
   useEffect(() => {
@@ -1238,6 +1270,16 @@ export default function VoiceRoomScreen() {
   const myNobleRankRef = useRef<number | undefined>(undefined);
   const mutedRef = useRef(false);
   useEffect(() => { mutedRef.current = muted; }, [muted]);
+  // 2026-10-22 (boss): background-freeze recovery plumbing — the Firebase
+  // reconnect effect publishes its presence re-register fn here so the
+  // AppState foreground handler can restore presence after a freeze.
+  const reRegisterPresenceRef = useRef<(() => Promise<void>) | null>(null);
+  const voiceJoinedRef = useRef(false);
+  useEffect(() => { voiceJoinedRef.current = voiceJoined; }, [voiceJoined]);
+  const voiceErrorRef = useRef<string | null>(null);
+  useEffect(() => { voiceErrorRef.current = voiceError; }, [voiceError]);
+  const retryConnectionRef = useRef(retryConnection);
+  useEffect(() => { retryConnectionRef.current = retryConnection; }, [retryConnection]);
 
   
   useEffect(() => {
@@ -1424,6 +1466,7 @@ export default function VoiceRoomScreen() {
         }
       } catch {  }
     };
+    reRegisterPresenceRef.current = reRegisterPresence;
     const unsub = onValue(connRef, (snap) => {
       const connected = snap.val() === true;
       if (!connected) { wasConnected = false; return; }

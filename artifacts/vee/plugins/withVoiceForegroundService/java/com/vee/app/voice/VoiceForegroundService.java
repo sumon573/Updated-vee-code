@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import androidx.core.app.NotificationCompat;
 
 /**
@@ -23,6 +24,13 @@ public class VoiceForegroundService extends Service {
   public static final int NOTIF_ID = 7001;
   public static final String EXTRA_TITLE = "title";
 
+  // 2026-10-22 (boss): PARTIAL_WAKE_LOCK for the service lifetime. Without
+  // it the CPU sleeps in Doze, the LiveKit WebSocket starves, the server
+  // drops the participant and the seat gets swept — users returned from
+  // background to find themselves thrown out of the room. WAKE_LOCK is
+  // already declared in the app manifest.
+  private PowerManager.WakeLock wakeLock;
+
   @Override
   public IBinder onBind(Intent intent) {
     return null;
@@ -33,6 +41,21 @@ public class VoiceForegroundService extends Service {
     String title = intent != null ? intent.getStringExtra(EXTRA_TITLE) : null;
     if (title == null || title.isEmpty()) {
       title = "Voice active";
+    }
+
+    // Acquire (or keep) the wake lock so the voice socket stays fed.
+    try {
+      if (wakeLock == null) {
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+          wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vee:voice");
+          wakeLock.setReferenceCounted(false);
+        }
+      }
+      if (wakeLock != null && !wakeLock.isHeld()) {
+        wakeLock.acquire();
+      }
+    } catch (Exception ignored) {
     }
 
     createChannel();
@@ -102,6 +125,13 @@ public class VoiceForegroundService extends Service {
 
   @Override
   public void onDestroy() {
+    try {
+      if (wakeLock != null && wakeLock.isHeld()) {
+        wakeLock.release();
+      }
+    } catch (Exception ignored) {
+    }
+    wakeLock = null;
     try {
       if (Build.VERSION.SDK_INT >= 24) {
         stopForeground(STOP_FOREGROUND_REMOVE);
