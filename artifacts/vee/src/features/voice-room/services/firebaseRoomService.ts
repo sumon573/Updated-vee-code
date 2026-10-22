@@ -688,6 +688,30 @@ export function subscribeAudience(
   });
 }
 
+/**
+ * Subscribe to the room's admin registry (rooms/{roomId}/admins).
+ * 2026-10-22 (boss): the registry is the SOURCE OF TRUTH for admin role —
+ * the security rules check it, so the UI must too. Deriving role only from
+ * seat/audience labels lost admin powers on every rejoin (the audience
+ * write carried no role) until the server guard healed the label.
+ */
+export function subscribeRoomAdmins(
+  roomId: string,
+  callback: (adminUids: Set<string>) => void,
+): () => void {
+  return onValue(ref(database, `rooms/${roomId}/admins`), (snap) => {
+    const uids = new Set<string>();
+    if (snap.exists()) {
+      snap.forEach((child) => {
+        if (child.val() === true && child.key) uids.add(child.key);
+      });
+    }
+    callback(uids);
+  }, () => {
+    callback(new Set<string>());
+  });
+}
+
 // ─── Audience ─────────────────────────────────────────────────────────────────
 
 /** Add user to audience when they enter the room. */
@@ -696,10 +720,23 @@ export async function joinRoomAsAudience(
   member: RoomAudienceMember,
 ): Promise<void> {
   const audienceRef = ref(database, `rooms/${roomId}/audience/${member.userId}`);
+  // 2026-10-22 (boss): the admins registry is the source of truth for role.
+  // This set() used to write the member object with NO role at all, so every
+  // join/reconnect silently demoted admins to 'member' in the UI until the
+  // server guard healed the label (up to a minute of lost powers — and any
+  // seat claimed in that window carried 'member' too). Stamp the registry
+  // role into the entry at write time.
+  let entry: RoomAudienceMember = member;
+  try {
+    const adminSnap = await get(ref(database, `rooms/${roomId}/admins/${member.userId}`));
+    if (adminSnap.exists() && adminSnap.val() === true) {
+      entry = { ...member, role: 'admin', roleLevel: 8000 };
+    }
+  } catch { /* best-effort — the live registry subscription still applies */ }
   // 2026-10-20 (boss): stamp the heartbeat so a crashed session's leftover
   // entry ages out (see sweepStaleAudience) instead of showing a phantom
   // member in an empty room forever.
-  await set(audienceRef, { ...member, ts: serverTimestamp() });
+  await set(audienceRef, { ...entry, ts: serverTimestamp() });
   // BUG 14/15 fix: if the app crashes/loses connection without an explicit
   // leave, Firebase removes this audience entry automatically so the room
   // doesn't show ghost members. The room info (active:true) is NOT touched
@@ -825,15 +862,55 @@ async function takeSeatInner(
     // are recomputed best-effort below.
   }
 
-  // Seat won — clear the audience onDisconnect and register one for the seat
-  // so a dropped connection frees the seat rather than leaving a ghost.
+  // 2026-10-22 (boss): seated users KEEP their audience entry. The chat
+  // rules require an audience entry to post, so deleting it here silently
+  // broke room comments for every seated non-owner/non-admin member
+  // ("sometimes comments don't send"). The kept entry also anchors
+  // presence: the server guard cross-checks LiveKit before sweeping a seat
+  // whose holder still has a live audience record, so a backgrounded phone
+  // no longer loses its seat mid-conversation.
   const audienceRef = ref(database, `rooms/${roomId}/audience/${member.userId}`);
-  onDisconnect(audienceRef).cancel().catch(() => {/* non-critical */});
-  await remove(audienceRef);
+  try {
+    const audSnap = await get(audienceRef);
+    if (!audSnap.exists()) {
+      // Seat taken directly (e.g. app-restart seat restore) without joining
+      // the audience first — create the entry from the seat record,
+      // carrying the registry role so admins keep their powers here too.
+      let audRole: 'admin' | 'member' = member.role === 'admin' ? 'admin' : 'member';
+      try {
+        const adminSnap = await get(ref(database, `rooms/${roomId}/admins/${member.userId}`));
+        if (adminSnap.exists() && adminSnap.val() === true) audRole = 'admin';
+      } catch { /* best-effort */ }
+      const audEntry: RoomAudienceMember = {
+        userId: member.userId,
+        userName: member.userName,
+        initials: member.initials,
+        color: member.color,
+        ...(member.photoURL ? { photoURL: member.photoURL } : {}),
+        ...(member.activeFrame ? { activeFrame: member.activeFrame } : {}),
+        ...(typeof member.nobleRankIndex === 'number'
+          ? { nobleRankIndex: member.nobleRankIndex }
+          : {}),
+        role: audRole,
+        roleLevel: audRole === 'admin' ? 8000 : 7000,
+      };
+      try {
+        await set(audienceRef, { ...audEntry, ts: serverTimestamp() });
+      } catch {
+        // If the role-carrying write is ever denied, still land the entry —
+        // chat access matters more than the label (registry drives powers).
+        await set(audienceRef, {
+          ...audEntry, role: 'member', roleLevel: 7000, ts: serverTimestamp(),
+        }).catch(() => {});
+      }
+    }
+    // (Re)arm the audience onDisconnect: on a dropped connection BOTH the
+    // seat and the audience entry are removed — no ghost presence remains.
+    onDisconnect(audienceRef).remove().catch(() => {/* non-critical */});
+  } catch { /* non-critical — server guard restores seated audience entries */ }
   // 2026-10-14 (Sumon): App killed from background must free the seat.
   // If user force-closes app while on seat, Firebase removes the seat entry
-  // automatically so the room doesn't show ghost members. The audience
-  // onDisconnect was already cancelled above (user is now on seat, not audience).
+  // automatically so the room doesn't show ghost members.
   onDisconnect(seatRef).remove().catch(() => {/* non-critical */});
   // Belt-and-suspenders: also record in "My Room" index in case a seat was
   // taken directly without going through joinRoomAsAudience first.
@@ -1009,7 +1086,9 @@ export async function leaveSeat(
   const ops: Promise<void>[] = [remove(seatRef)];
   if (audienceMember) {
     const audienceRef = ref(database, `rooms/${roomId}/audience/${userId}`);
-    ops.push(set(audienceRef, audienceMember));
+    // 2026-10-22: stamp a fresh heartbeat so the re-added entry is never
+    // swept as stale before the next 60s audience heartbeat lands.
+    ops.push(set(audienceRef, { ...audienceMember, ts: serverTimestamp() }));
     onDisconnect(audienceRef).remove().catch(() => {/* non-critical */});
   }
   await Promise.all(ops);
@@ -1804,7 +1883,14 @@ async function _updateCounts(roomId: string): Promise<void> {
       });
     }
     if (audSnap.exists()) {
-      audSnap.forEach(() => { listenerCount++; });
+      audSnap.forEach((child) => {
+        // 2026-10-22: seated users keep an audience entry (for chat access)
+        // and are already counted in memberCount — never double-count them
+        // as listeners. (Mirrors the server sync-counts dedupe.)
+        const uid = child.key ?? (child.val() as { userId?: string })?.userId;
+        if (uid && seenUserIds.has(uid)) return;
+        listenerCount++;
+      });
     }
 
     // liveCount = everyone in the room (seated + audience) — for room list/trending.

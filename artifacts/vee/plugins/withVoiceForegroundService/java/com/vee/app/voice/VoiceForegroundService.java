@@ -75,7 +75,12 @@ public class VoiceForegroundService extends Service {
     } else {
       startForeground(NOTIF_ID, notif);
     }
-    return START_NOT_STICKY;
+    // 2026-10-22 (boss): STICKY — if the OEM task killer reaps the process
+    // mid-room/call, Android restarts the service (null intent → default
+    // title) instead of leaving voice permanently dead until the user
+    // reopens the app. NOT_STICKY let aggressive OEMs (HiOS/Tecno etc.)
+    // kill background voice for good.
+    return START_STICKY;
   }
 
   private void createChannel() {

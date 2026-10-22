@@ -21,6 +21,11 @@ import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { submitReport } from '@/src/services/reportService';
 
 import { getErrorCause } from '@/src/utils/errorDisplay';
+import { useKeepAwake } from 'expo-keep-awake';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  isBatteryExempt, requestBatteryExemption,
+} from '@/src/services/voiceForegroundService';
 import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
@@ -67,7 +72,7 @@ import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../com
 import { checkVoiceBan, type VoiceBanInfo } from '../services/voiceBanService';
 import {
   subscribeSeats, subscribeAudience, subscribeRoomInfo,
-  subscribeLockedSeats,
+  subscribeLockedSeats, subscribeRoomAdmins,
   joinRoomAsAudience, leaveAudience, takeSeat, leaveSeat as fbLeaveSeat,
   setSeatMute, setSeatRole, removeSeat, removeAudienceMember,
   lockSeat as fbLockSeat, unlockSeat as fbUnlockSeat, setAudienceRole,
@@ -105,6 +110,9 @@ export default function VoiceRoomScreen() {
   const { t } = useTranslation();
 
   const roomId = paramRoomId ?? '';
+  // 2026-10-22 (boss): the display must never sleep while the user is
+  // inside a voice room (reported: screen turning off mid-conversation).
+  useKeepAwake();
   const { backgroundUrl: storeBgUrl, micDecorUrl } = useStoreRoomDecor(roomId || null);
   const myUid  = user?.uid ?? 'anonymous';
   const myUidRef = useRef(myUid);
@@ -134,23 +142,12 @@ export default function VoiceRoomScreen() {
     }
   }, [(myProfile as any)?.activeFrame]);
 
-  useEffect(() => {
-    if (!roomId || !myUid || myUid === 'anonymous') return;
-    const syncFrame = () => {
-      const frame = (myProfile as any)?.activeFrame;
-      const seatIdx = mySeatIdxRef.current;
-      if (!frame || seatIdx < 0) return;
-      update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
-        .then(() => console.log(`[VoiceRoom] ✅ Periodic seat ${seatIdx} frame sync: ${frame}`))
-        .catch((e) => console.log(`[VoiceRoom] ❌ Periodic seat frame sync FAILED:`, e?.message || e));
-    };
-    const initial = setTimeout(syncFrame, 5000);
-    const interval = setInterval(syncFrame, 30000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(interval);
-    };
-  }, [roomId, myUid]);
+  // 2026-10-22 (boss, heat/lag): the 30s PERIODIC frame-sync interval that
+  // used to live here is REMOVED. It rewrote seats/{idx}.activeFrame every
+  // 30s even when nothing changed — and every write re-fires the seats
+  // subscription on EVERY member's phone, cascading full-room re-renders
+  // forever. The change-driven effect above already syncs the frame the
+  // moment it actually changes, and buildSeatData includes it on claim.
 
   const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
   const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
@@ -274,6 +271,15 @@ export default function VoiceRoomScreen() {
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
+  // 2026-10-22 (boss): admin registry (rooms/{id}/admins) — the SOURCE OF
+  // TRUTH for role, exactly like the security rules. See myRole below.
+  const [roomAdminUids, setRoomAdminUids] = useState<Set<string>>(new Set<string>());
+  // Perf guards (2026-10-22): seats/audience snapshots also fire on pure
+  // heartbeat writes (60s ts refresh by every member). A signature of the
+  // VISIBLE fields lets the handlers skip setState — and the full-screen
+  // re-render it triggers — when nothing visible actually changed.
+  const seatsSigRef = useRef('');
+  const audienceSigRef = useRef('');
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
   
   const amChatBlocked = useMemo(
@@ -1014,17 +1020,36 @@ export default function VoiceRoomScreen() {
 
   useEffect(() => {
     return subscribeSeats(roomId, (fbSeats) => {
-      setSeats(fbSeats.map(seat =>
+      const mapped = fbSeats.map(seat =>
         seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
-      ));
+      );
+      // Perf guard (2026-10-22): heartbeat-only snapshots (60s seatTs
+      // refreshes from every seated user) map to identical visible state —
+      // skip the setState so the whole room screen doesn't re-render.
+      const sig = mapped.map(s => (s
+        ? `${s.id}|${s.role}|${s.muted ? 1 : 0}|${s.speaking ? 1 : 0}|${s.activeFrame ?? ''}|${s.name}|${s.photoURL ?? ''}|${s.nobleRankIndex ?? ''}`
+        : '-')).join(';');
+      if (sig === seatsSigRef.current) return;
+      seatsSigRef.current = sig;
+      setSeats(mapped);
     });
   }, [roomId]);
 
   useEffect(() => {
     return subscribeAudience(roomId, (fbAudience) => {
       const participants = fbAudience.map(fbAudToParticipant);
+      // Perf guard (2026-10-22): same heartbeat-skip as seats above.
+      const sig = participants.map(m =>
+        `${m.id}|${m.role}|${m.name}|${m.photoURL ?? ''}|${m.activeFrame ?? ''}|${m.nobleRankIndex ?? ''}`,
+      ).join(';');
+      if (sig === audienceSigRef.current) return;
+      audienceSigRef.current = sig;
       setAudience(participants);
     });
+  }, [roomId]);
+
+  useEffect(() => {
+    return subscribeRoomAdmins(roomId, setRoomAdminUids);
   }, [roomId]);
 
   useEffect(() => {
@@ -1407,14 +1432,54 @@ export default function VoiceRoomScreen() {
   }, [seatMembers, audience]);
 
   const myRole: Role = useMemo(() => {
+    // 2026-10-22 (boss): role resolution order FIXED. The old code read
+    // ONLY seat/audience labels — and the audience label was wiped on
+    // every join (role-less set), so admins lost their powers on each
+    // rejoin until the server guard healed the label. The registry
+    // (rooms/{id}/admins) is what the security rules check, so it now
+    // outranks every label: owner → registry admin → seat label →
+    // audience label → member.
+    if (ownerId && ownerId === myUid) return 'host';
+    if (roomAdminUids.has(myUid)) return 'admin';
     const mySeat = seats.find((s: Participant | null) => s?.id === myUid);
-    if (mySeat?.role) return mySeat.role;
+    if (mySeat?.role === 'host' || mySeat?.role === 'admin') return mySeat.role;
     const myAud = audience.find((m: Participant) => m.id === myUid);
     if (myAud?.role === 'admin') return 'admin';
-    return (ownerId && ownerId === myUid ? 'host' : 'member');
-  }, [seats, audience, myUid, ownerId]);
+    if (mySeat?.role) return mySeat.role;
+    return 'member';
+  }, [seats, audience, myUid, ownerId, roomAdminUids]);
 
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
+
+  // 2026-10-22 (boss): one-time battery-exemption ask. Aggressive OEM power
+  // managers kill backgrounded apps even with a foreground service — the
+  // root of "app dies in background, voice/call disconnects". Ask ONCE
+  // (AsyncStorage-gated) after the user actually joins a room; the system
+  // dialog itself is opened by the native module.
+  const batteryPromptDoneRef = useRef(false);
+  useEffect(() => {
+    if (!hasJoined || Platform.OS !== 'android' || batteryPromptDoneRef.current) return;
+    batteryPromptDoneRef.current = true;
+    (async () => {
+      try {
+        const asked = await AsyncStorage.getItem('vee_battery_prompt_v1');
+        if (asked) return;
+        if (await isBatteryExempt()) {
+          await AsyncStorage.setItem('vee_battery_prompt_v1', 'exempt');
+          return;
+        }
+        await AsyncStorage.setItem('vee_battery_prompt_v1', 'asked');
+        Alert.alert(
+          'Keep voice alive',
+          'Allow Vee to run without battery restrictions so your voice room or call never disconnects when the screen is off or the app is in the background.',
+          [
+            { text: 'Later', style: 'cancel' },
+            { text: 'Allow', onPress: () => requestBatteryExemption() },
+          ],
+        );
+      } catch { /* non-critical */ }
+    })();
+  }, [hasJoined]);
 
   const myRoleLevel: number = useMemo(() => roleToLevel(myRole), [myRole]);
 

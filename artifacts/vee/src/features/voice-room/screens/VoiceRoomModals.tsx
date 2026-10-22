@@ -168,6 +168,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onClose={() => p.setSettingsOpen(false)}
         isOwnerOrAdmin={p.isOwnerOrAdmin}
         canEdit={p.myRole === 'host'}
+        canChangeTheme={p.isOwnerOrAdmin}
         topic={p.roomTopic}
         setTopic={(newTopic) => {
           p.setRoomTopic(newTopic);

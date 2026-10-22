@@ -34,6 +34,7 @@ import { useRouter, useNavigation } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { useKeepAwake } from 'expo-keep-awake';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { startOutgoingTone, stopOutgoingTone } from './services/outgoingCallTone';
 import { WebRTCCallSession } from './services/webrtcCallService';
@@ -143,10 +144,11 @@ export default function AudioCallScreen({
   const router = useRouter();
   const navigation = useNavigation();
   const { t } = useTranslation();
-  // 2026-10-19 polish (stale comment corrected): there is NO keep-awake call
-  // here — the screen MAY sleep mid-call. Audio keeps running because the
-  // Android mic foreground service holds the process (voiceForegroundService),
-  // not because the display stays on.
+  // 2026-10-22 (boss): keep the display awake during a call (speaker/desk
+  // use must not sleep mid-conversation — same rule as the voice room).
+  // Proximity-to-ear behaviour is unaffected; audio also keeps running
+  // with the screen off via the mic foreground service.
+  useKeepAwake();
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);

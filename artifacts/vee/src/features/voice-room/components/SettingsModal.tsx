@@ -19,7 +19,7 @@ import { storeRoomPin } from '../services/firebaseRoomService';
  * "Mute New Joiners" toggle has been removed as per product decision.
  */
 export function SettingsModal({
-  visible, onClose, isOwnerOrAdmin, canEdit,
+  visible, onClose, isOwnerOrAdmin, canEdit, canChangeTheme,
   topic, setTopic,
   description, setDescription,
   activeThemeId, onThemeChange,
@@ -29,12 +29,19 @@ export function SettingsModal({
 }: {
   visible: boolean; onClose: () => void; isOwnerOrAdmin: boolean;
   /**
-   * 2026-10-12: room settings (topic/description/privacy/PIN/theme) are
+   * 2026-10-12: room settings (topic/description/privacy/PIN) are
    * OWNER-only — the security rules deny admin writes to rooms/$roomId/info
    * and roomPins, so the UI must not offer editing to admins. Admins keep
    * full moderation powers; they can still VIEW settings + operation history.
    */
   canEdit: boolean;
+  /**
+   * 2026-10-22 (boss): THEME is the exception — the rules now carry a
+   * scoped write for rooms/$roomId/info/themeId (owner || registry admin
+   * || platform), so admins CAN change the room theme. Gate only the
+   * theme section on this; everything else stays canEdit (owner).
+   */
+  canChangeTheme: boolean;
   topic: string; setTopic: (t: string) => void;
   /** Room description — editable alongside topic (2026-10-11). */
   description: string; setDescription: (d: string) => void;
@@ -232,7 +239,7 @@ export function SettingsModal({
           <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>
             <Pressable
               onPress={() => {
-                if (!canEdit) {
+                if (!canChangeTheme) {
                   Alert.alert(t('voiceRoom.settings.permissionDenied'), t('voiceRoom.settings.permissionDeniedMsg'));
                   return;
                 }
@@ -246,7 +253,7 @@ export function SettingsModal({
                   {t('voiceRoom.settings.themeLabel')}
                 </Text>
                 <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                  {canEdit ? t('voiceRoom.settings.themeTapHint') : t('voiceRoom.settings.themeAdminOnly')}
+                  {canChangeTheme ? t('voiceRoom.settings.themeTapHint') : t('voiceRoom.settings.themeAdminOnly')}
                 </Text>
               </View>
               <View style={{
@@ -260,10 +267,10 @@ export function SettingsModal({
                 </Text>
               </View>
               <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={16}
-                color={canEdit ? C.sub : C.muted} />
+                color={canChangeTheme ? C.sub : C.muted} />
             </Pressable>
 
-            {showThemes && canEdit && (
+            {showThemes && canChangeTheme && (
               <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {ROOM_THEMES.map(theme => {
                   const isActive = activeThemeId === theme.id;

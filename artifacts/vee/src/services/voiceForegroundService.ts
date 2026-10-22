@@ -12,7 +12,14 @@
  */
 import { NativeModules, Platform } from 'react-native';
 
-const M = (NativeModules as { VoiceForegroundService?: { start: (t: string) => void; stop: () => void } })
+type VoiceNativeModule = {
+  start: (t: string) => void;
+  stop: () => void;
+  isIgnoringBatteryOptimizations?: () => Promise<boolean>;
+  openBatteryOptimizationSettings?: () => void;
+};
+
+const M = (NativeModules as { VoiceForegroundService?: VoiceNativeModule })
   ?.VoiceForegroundService;
 
 let refCount = 0;
@@ -36,6 +43,31 @@ export function stopVoiceForegroundService(): void {
     if (refCount === 0) {
       M?.stop();
     }
+  } catch {
+    // non-critical
+  }
+}
+
+/**
+ * 2026-10-22 (boss): is the app exempt from battery optimization?
+ * Returns true when exempt, on iOS, or when the native module is missing
+ * (no point prompting for a settings screen we cannot open).
+ */
+export async function isBatteryExempt(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  try {
+    if (!M?.isIgnoringBatteryOptimizations) return true;
+    return !!(await M.isIgnoringBatteryOptimizations());
+  } catch {
+    return true;
+  }
+}
+
+/** Open the system dialog/screen where the user can exempt Vee. */
+export function requestBatteryExemption(): void {
+  if (Platform.OS !== 'android') return;
+  try {
+    M?.openBatteryOptimizationSettings?.();
   } catch {
     // non-critical
   }
