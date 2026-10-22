@@ -10,7 +10,7 @@
  * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image, Platform } from 'react-native';
+import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,6 +44,7 @@ import IMOTabBar, { type HomeTab } from '@/src/features/home/components/IMOTabBa
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
+import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
 import StoryViewer from '@/src/features/chat/screens/StoryViewer';
 import StoryCreator from '@/src/features/chat/screens/StoryCreator';
@@ -493,14 +494,23 @@ export default function IMOHomeScreen() {
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
           <VoiceRoomHome />
+          {/* 2026-10-22 (Sumon): the minimized-room bar is mounted in the
+              root layout, but an RN Modal renders ABOVE it — so the bar
+              never showed on this screen. A second, store-driven instance
+              lives inside the modal (no tab bar here → small offset). */}
+          <MinimizedRoomBar bottomOffsetOverride={20} />
+          {/* 2026-10-22 (Sumon): close button polished — it was jammed
+              into the screen corner over the status bar. Now it sits in
+              the header row, LEFT of the search icon with a clear gap,
+              so both buttons take taps precisely. */}
           <TouchableOpacity
             onPress={() => setVoiceRoomsVisible(false)}
             activeOpacity={0.7}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{
               position: 'absolute',
-              top: 14,
-              right: 14,
+              top: (StatusBar.currentHeight ?? 24) + 24,
+              right: 64,
               width: 38,
               height: 38,
               borderRadius: 19,
