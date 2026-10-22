@@ -818,6 +818,31 @@ async function takeSeatInner(
   seatIndex: number,
   member: NonNullable<RoomSeat>,
 ): Promise<{ success: boolean }> {
+  // HOST SEAT (2026-10-22, Sumon): seat 1 (index 0) is reserved — only the
+  // room owner or a registered admin may sit there; members never can, on
+  // any path (direct tap, invite, queue admit, restore). Privilege is
+  // verified against the room's own records (info.ownerId + admins
+  // registry); the caller's claimed role is only a fallback when those
+  // reads are unavailable.
+  if (seatIndex === 0) {
+    let privileged =
+      member.role === 'host' || member.role === 'admin' ||
+      ((member as { roleLevel?: number }).roleLevel ?? 0) >= 8000;
+    try {
+      const [infoSnap, adminSnap] = await Promise.all([
+        get(ref(database, `rooms/${roomId}/info`)),
+        get(ref(database, `rooms/${roomId}/admins/${member.userId}`)),
+      ]);
+      const ownerId = (infoSnap.val() as { ownerId?: string } | null)?.ownerId;
+      if (ownerId || adminSnap.exists()) {
+        privileged = ownerId === member.userId || adminSnap.val() === true;
+      }
+    } catch {
+      /* best-effort — keep the role-based verdict */
+    }
+    if (!privileged) return { success: false };
+  }
+
   const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
   const result = await runTransaction(seatRef, (current) => {
     // P1 fix (2026-10-12): Firebase passes `undefined` (not `null`) for
