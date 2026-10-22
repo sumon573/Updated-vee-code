@@ -199,6 +199,8 @@ const bn = {
       accessDeniedMsg: 'আপনাকে এই রুম থেকে ব্লক করা হয়েছে।',
       lockedSeat: 'সিট লক',
       lockedSeatMsg: 'এই সিটটি হোস্ট লক করেছেন।',
+      hostSeatTitle: 'হোস্ট সিট',
+      hostSeatMsg: '১ নম্বর সিট শুধুমাত্র হোস্ট ও অ্যাডমিনদের জন্য সংরক্ষিত।',
       emptySeat: 'খালি সিট',
       emptySeatMsg: 'সিট {{number}}-এ বসতে চান?',
       requestSeat: 'অনুরোধ করুন ✋',
@@ -623,6 +625,7 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
       admin: 'অ্যাডমিন',
       locked: 'লক',
       empty: 'খালি',
+      host: 'হোস্ট',
     },
     chat: {
       holdToReply: '· উত্তর দিতে ধরুন',
