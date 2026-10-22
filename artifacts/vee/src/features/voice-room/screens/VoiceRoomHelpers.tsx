@@ -91,22 +91,22 @@ export function LiveAudiencePill({ count, onPress, person }: { count: number; on
   };
   const photoURL = person?.photoURL;
   return (
-    <ScalePress onPress={onPress} style={{ marginLeft: 8 }}>
+    <ScalePress onPress={onPress}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: '#F1F5F9',
-        borderRadius: 20, paddingLeft: 12, paddingRight: 6, paddingVertical: 4,
+        borderRadius: 16, paddingLeft: 10, paddingRight: 5, paddingVertical: 3,
         borderWidth: 1, borderColor: '#E2E8F0' }}>
-        <Text style={{ color: '#111827', fontSize: 14, fontWeight: '800', marginRight: 6 }}>
+        <Text style={{ color: '#111827', fontSize: 13, fontWeight: '800', marginRight: 5 }}>
           {formatCount(count)}
         </Text>
         {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+          <Image source={{ uri: photoURL }} style={{ width: 24, height: 24, borderRadius: 12 }} />
         ) : (
           <View style={{
-            width: 28, height: 28, borderRadius: 14,
+            width: 24, height: 24, borderRadius: 12,
             backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>{person?.initials || ''}</Text>
+            <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '800' }}>{person?.initials || ''}</Text>
           </View>
         )}
       </View>

@@ -29,7 +29,7 @@ import {
 import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
-import { fmtDiamonds, getWeekStart } from '../utils/format';
+import { getWeekStart } from '../utils/format';
 import { SeatCard } from '../components/SeatCard';
 import PairLink, { PAIR_LINK_W, PAIR_LINK_H } from '../components/PairLink';
 import { resolveDesign } from '../components/handshakeDesigns';
@@ -1612,6 +1612,15 @@ export default function VoiceRoomScreen() {
     if (!isOwnerOrAdmin) {
       if (member && member.id !== myUid) { setActiveMember(member); return; }
       if (!member) {
+        // HOST SEAT (2026-10-22, Sumon): seat 1 is host/admin only —
+        // members get a clear message, never a request or a seat.
+        if (seatIdx === 0) {
+          Alert.alert(
+            t('voiceRoom.screen.hostSeatTitle'),
+            t('voiceRoom.screen.hostSeatMsg'),
+          );
+          return;
+        }
         if (lockedSeats.has(seatIdx)) {
           Alert.alert(
             t('voiceRoom.screen.lockedSeat'),
@@ -1730,6 +1739,16 @@ export default function VoiceRoomScreen() {
 
   const joinSeat = useCallback(async (seatIdx: number) => {
     if (mySeatIdx === seatIdx) return;
+    // HOST SEAT (2026-10-22, Sumon): seat 1 is reserved for owner/admins —
+    // backstop guard for every joinSeat path (mic bar, invites, restores);
+    // the service layer enforces the same rule authoritatively.
+    if (seatIdx === 0 && !isOwnerOrAdmin) {
+      Alert.alert(
+        t('voiceRoom.screen.hostSeatTitle'),
+        t('voiceRoom.screen.hostSeatMsg'),
+      );
+      return;
+    }
     const target = seats[seatIdx];
     if (target && target.id !== myUid) {
       Alert.alert(t('voiceRoom.screen.seatOccupied'), t('voiceRoom.screen.seatOccupiedFirst'));
@@ -1761,7 +1780,7 @@ export default function VoiceRoomScreen() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData]);
+  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData, isOwnerOrAdmin]);
 
   
   const handleMicBarPress = useCallback(() => {
@@ -1770,7 +1789,8 @@ export default function VoiceRoomScreen() {
       return;
     }
     const firstAvail = seats.findIndex(
-      (s: Participant | null, idx: number) => !s && !lockedSeats.has(idx),
+      (s: Participant | null, idx: number) =>
+        !s && !lockedSeats.has(idx) && (idx !== 0 || isOwnerOrAdmin),
     );
     if (firstAvail >= 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1781,7 +1801,7 @@ export default function VoiceRoomScreen() {
         t('voiceRoom.screen.noSeatsMsg'),
       );
     }
-  }, [mySeatIdx, toggleMic, seats, lockedSeats, joinSeat, t]);
+  }, [mySeatIdx, toggleMic, seats, lockedSeats, joinSeat, t, isOwnerOrAdmin]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -2271,7 +2291,9 @@ export default function VoiceRoomScreen() {
 
   
   const bottomPad  = Math.max(insets.bottom, Platform.OS === 'web' ? 20 : 8) + 14;
-  const BOTTOM_BAR_H = bottomPad + 4 + 68;
+  // 2026-10-22 (Sumon): bottom-bar labels removed → bar content is now
+  // 50dp (was 68 with the label row); the freed ~18dp goes to chat/seats.
+  const BOTTOM_BAR_H = bottomPad + 4 + 50;
 
   
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -2363,7 +2385,7 @@ export default function VoiceRoomScreen() {
       <AnimatedThemeBackground accentColor={accentColor} />
       <SafeAreaView edges={['top']}>
         {}
-        <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 4 }}>
+        <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)}>
@@ -2408,17 +2430,10 @@ export default function VoiceRoomScreen() {
             )}
 
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-              {}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 999,
-                paddingHorizontal: 10, paddingVertical: 5,
-                borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' }}>
-                <Text style={{ color: C.gold, fontSize: 13 }}>💎</Text>
-                <Text style={{ color: C.gold, fontSize: 13, fontWeight: '800' }}>
-                  {fmtDiamonds(walletBalance)}
-                </Text>
-              </View>
-
+              {/* 2026-10-22 (Sumon): diamond balance pill REMOVED from the room
+                  header on his order — balance shows in the gift box when
+                  sending a gift, which he says is enough. walletBalance state
+                  still feeds GiftsModal. */}
               {}
               {isOwnerOrAdmin && pendingRequests.length > 0 && (
                 <ScalePress
@@ -2447,15 +2462,15 @@ export default function VoiceRoomScreen() {
             </View>
           </View>
           {}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 8 }}>
             {}
             <ScalePress onPress={() => setLeaderboardOpen(true)}>
               <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
+                flexDirection: 'row', alignItems: 'center', gap: 5,
                 backgroundColor: C.card,
-                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                <Text style={{ fontSize: 16 }}>🏆</Text>
-                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
+                borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Text style={{ fontSize: 13 }}>🏆</Text>
+                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
                   Hourly Rank
                 </Text>
               </View>
@@ -2470,13 +2485,13 @@ export default function VoiceRoomScreen() {
             {announcement && (
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
                   backgroundColor: 'rgba(255,193,7,0.18)',
-                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+                  borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5,
                   maxWidth: 180,
                 }}>
-                  <Text style={{ fontSize: 16 }}>📢</Text>
-                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 13, fontWeight: '700', flexShrink: 1 }}>
+                  <Text style={{ fontSize: 13 }}>📢</Text>
+                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 12, fontWeight: '700', flexShrink: 1 }}>
                     {announcement.content}
                   </Text>
                 </View>
@@ -2485,34 +2500,26 @@ export default function VoiceRoomScreen() {
             {!announcement && isOwnerOrAdmin && (
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
                   backgroundColor: C.card,
-                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                  <Text style={{ fontSize: 16 }}>📢</Text>
-                  <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
+                  borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <Text style={{ fontSize: 13 }}>📢</Text>
+                  <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
                     {t('voiceRoom.announcement.post')}
                   </Text>
                 </View>
               </ScalePress>
             )}
-            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIntimacyOpen(true); }}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: C.card,
-                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                <Text style={{ fontSize: 16 }}>💕</Text>
-                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
-                  {t('voiceRoom.intimacy.title')}
-                </Text>
-              </View>
-            </ScalePress>
+            {/* 2026-10-22 (Sumon): Intimacy pill REMOVED from the header on
+                his order. IntimacyModal/state stay wired (harmless); the
+                header entry point is gone. */}
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBackpackOpen(true); }}>
               <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
+                flexDirection: 'row', alignItems: 'center', gap: 5,
                 backgroundColor: C.card,
-                borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                <Text style={{ fontSize: 16 }}>🎒</Text>
-                <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>
+                borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Text style={{ fontSize: 13 }}>🎒</Text>
+                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
                   {t('voiceRoom.backpack.title')}
                 </Text>
               </View>
@@ -2521,11 +2528,11 @@ export default function VoiceRoomScreen() {
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
                   backgroundColor: '#E3F2FD',
-                  borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                  <Feather name="clock" size={14} color="#007AFF" />
-                  <Text style={{ color: '#007AFF', fontSize: 13, fontWeight: '800' }}>
+                  borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <Feather name="clock" size={13} color="#007AFF" />
+                  <Text style={{ color: '#007AFF', fontSize: 12, fontWeight: '800' }}>
                     {t('voiceRoom.queue.youAreNext', { n: myQueuePosition })}
                   </Text>
                 </View>
@@ -2606,7 +2613,7 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
-        <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4 }}>
+        <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4, marginHorizontal: -6 }}>
         {/* ── Seat grid — clean 5-column professional layout ── */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {seats.map((member: Participant | null, idx: number) => (
@@ -2614,7 +2621,7 @@ export default function VoiceRoomScreen() {
             <View
               key={idx}
               collapsable={false}
-              style={{ width: '20%', alignItems: 'center', paddingVertical: 3 }}
+              style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
               ref={(v) => {
                 const id = member?.id;
                 if (!id) return;
@@ -2638,10 +2645,11 @@ export default function VoiceRoomScreen() {
           ))}
         </View>
         {/* Mic Handshake pair links — between adjacent related seats.
-            Avatar centre sits ~42.5dp below a cell's top (cell pad 3 +
-            pressable pad 4 + avatar margin 6 + half of the 53dp avatar);
-            the +44 offset preserves the link's long-standing position
-            relative to the avatar centre after the cell-pad tightening. */}
+            Avatar centre sits below the cell's top by cell pad 6 +
+            pressable pad 4 + avatar margin 6 + half of the 53dp avatar,
+            plus the long-standing empirical calibration; the +47 offset
+            (was +44 with cell pad 3) keeps the link centred on the avatar
+            after the 2026-10-22 seat-polish spacing (cell pad 3 → 6). */}
         {adjacentPairs.map((p) => {
           const d = pairData[p.key];
           if (!d || d.value < 1) return null;
@@ -2652,7 +2660,7 @@ export default function VoiceRoomScreen() {
             <View
               key={p.key}
               pointerEvents="none"
-              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 44 - PAIR_LINK_H / 2, zIndex: 30 }}
+              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 47 - PAIR_LINK_H / 2, zIndex: 30 }}
             >
               <PairLink design={resolveDesign(d.designKey, intimacyLevelFor(d.value).id)} />
             </View>

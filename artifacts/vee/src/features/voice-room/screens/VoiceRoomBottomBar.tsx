@@ -1,14 +1,14 @@
 /**
  * VoiceRoomBottomBar — extracted from VoiceRoomScreen.tsx (IMO port Phase 1c split).
  * Floating action buttons (mic, speaker, tasks, gift, invite, exit). No logic changes.
+ * 2026-10-22 (Sumon): text labels under the buttons REMOVED — icon-only bar,
+ * slimmer, and the reclaimed height goes to the seats/chat above.
  */
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
-import { C } from '../constants/theme';
 import {
   PulseMicButton, LiquidGoldSpeaker, LiveDateIcon,
   ObsidianGiftButton, SapphireInviteButton, ObsidianExitButton,
@@ -34,10 +34,8 @@ export interface VoiceRoomBottomBarProps {
 }
 
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
-  const { t } = useTranslation();
   const {
     keyboardOpen, bottomPad, handleMicBarPress, mySeatIdx, muted, accentColor,
-    onBg, onBgSub,
     toggleSpeaker, speakerOn,
     setTaskCenterOpen, setGiftsOpen, setInviteOpen, setExitModalOpen,
   } = props;
@@ -59,7 +57,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={handleMicBarPress}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
             {/* 2026-10-15 (Sumon): Option C Pulse Ring mic button.
                 Join Seat keeps user-plus; seated uses PulseMicButton. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
@@ -69,13 +67,6 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
               <PulseMicButton muted={muted} />
             )}
             </View>
-            <Text style={{
-              color: mySeatIdx < 0 ? accentColor : muted ? C.red : '#007AFF',
-              fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {mySeatIdx < 0
-                ? t('voiceRoom.screen.joinSeat')
-                : t('voiceRoom.screen.mic')}
-            </Text>
           </View>
         </ScalePress>
         </View>
@@ -83,14 +74,11 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Speaker — uniform circle */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={toggleSpeaker}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
             {/* 2026-10-15 (Sumon): Option E Liquid Gold speaker. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiquidGoldSpeaker speakerOn={speakerOn} />
             </View>
-            <Text style={{ color: speakerOn ? '#D4AF37' : (onBgSub ?? C.sub), fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.speaker')}
-            </Text>
           </View>
         </ScalePress>
         </View>
@@ -100,13 +88,10 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
             design never changes. */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <LiveDateIcon />
             </View>
-            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              Tasks
-            </Text>
           </View>
         </ScalePress>
         </View>
@@ -114,14 +99,11 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Gifts — hero */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
             {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianGiftButton />
             </View>
-            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.gift')}
-            </Text>
           </View>
         </ScalePress>
         </View>
@@ -129,14 +111,11 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Invite — uniform circle */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => setInviteOpen(true)}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
             {/* 2026-10-15 (Sumon): Option B Sapphire Orbit invite button. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <SapphireInviteButton />
             </View>
-            <Text style={{ color: onBg ?? C.text, fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.invite')}
-            </Text>
           </View>
         </ScalePress>
         </View>
@@ -144,14 +123,11 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Exit Room — uniform circle */}
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-          <View style={{ alignItems: 'center', gap: 4 }}>
+          <View style={{ alignItems: 'center' }}>
             {/* 2026-10-15 (Sumon): Option B Obsidian Exit button. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianExitButton />
             </View>
-            <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '700', textAlign: 'center' }}>
-              {t('voiceRoom.screen.exit')}
-            </Text>
           </View>
         </ScalePress>
         </View>
