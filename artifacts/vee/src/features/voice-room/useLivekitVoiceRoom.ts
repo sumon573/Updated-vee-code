@@ -242,7 +242,7 @@ let tokenCache: {
 
 const TOKEN_CACHE_TTL_MS = 45000;
 
-async function fetchLivekitToken(roomId: string, userName: string): Promise<LivekitTokenData> {
+async function fetchLivekitTokenOnce(roomId: string, userName: string): Promise<LivekitTokenData> {
   const fbUser = auth.currentUser;
   if (!fbUser) throw new Error('Not signed in');
   const idToken = await fbUser.getIdToken();
@@ -278,6 +278,36 @@ async function fetchLivekitToken(roomId: string, userName: string): Promise<Live
     throw new Error('Voice server returned an invalid response');
   }
   return { token: data.token, url: data.url };
+}
+
+/**
+ * Token fetch with automatic retries (2026-10-22, boss: "কথা হয় না").
+ * A single 20 s attempt gives up forever on a transient network dip —
+ * boss's phone hit exactly that: 4G throughput collapsed (~15 K/s) mid-room,
+ * the LiveKit connection dropped, and the one-shot token re-fetch timed out
+ * even though the server answered other users in <1 s. Retry transient
+ * failures (timeout / network error / 5xx) up to 3 attempts with 1 s / 2.5 s
+ * backoff so a bad patch self-heals without the user tapping Retry.
+ * Non-transient errors (4xx, not signed in, invalid response) fail fast.
+ */
+async function fetchLivekitToken(roomId: string, userName: string): Promise<LivekitTokenData> {
+  const backoffsMs = [1000, 2500];
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= backoffsMs.length; attempt++) {
+    try {
+      return await fetchLivekitTokenOnce(roomId, userName);
+    } catch (e) {
+      lastError = e;
+      const message = e instanceof Error ? e.message : '';
+      const transient =
+        message.includes('timed out') ||
+        message.includes('(network)') ||
+        /\(5\d\d\)$/.test(message);
+      if (!transient || attempt === backoffsMs.length) throw e;
+      await new Promise((resolve) => setTimeout(resolve, backoffsMs[attempt]));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Voice server request failed (network)');
 }
 
 /** Fire-and-forget: warm the token cache for a room the user is entering. */

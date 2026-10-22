@@ -17,13 +17,12 @@
  * the callee ALWAYS answers. Role comes from the AudioCallScreen route param.
  *
  * ── NAT / TURN NOTICE ──────────────────────────────────────────────────────
- * No TURN server is configured: ICE uses only the public Google STUN server
- * (stun:stun.l.google.com:19302). Host/srflx candidates succeed for the vast
- * majority of NAT pairs, but roughly 5–15% of symmetric-NAT ↔ symmetric-NAT
- * pairs cannot establish a direct path and the call will fail with
- * `connectionState === 'failed'`. The documented fallback is to deploy a
- * TURN server (coturn) on the team's LiveKit VPS and add it to ICE_SERVERS
- * below as `{ urls: 'turn:<host>:3478', username: '...', credential: '...' }`.
+ * ICE uses Google STUN + our OWN TURN relay on the Vee VPS
+ * (turn:207.180.253.22:3479, node-turn, task VeeTurn) — added 2026-10-22
+ * after the free OpenRelay TURN died and CGNAT↔CGNAT calls (the common BD
+ * case) could no longer connect. If the VPS TURN is unreachable, symmetric-
+ * NAT pairs will still fail with `connectionState === 'failed'`; keep the
+ * VeeTurn task alive (see ICE_SERVERS below).
  *
  * Safety:
  *   • `registerGlobals()` runs once at module load, skipped in Expo Go where
@@ -76,23 +75,23 @@ if (!isExpoGo()) {
 
 const SIGNAL_ROOT = 'webrtc';
 
-/** Public STUN only — see the NAT/TURN notice in the header comment. */
-// TURN FIX (2026-10-10): Added free TURN server as fallback for restrictive NATs.
-// When STUN alone can't establish P2P (symmetric NAT, firewall), TURN relays
-// the media. Uses OpenRelay (metered.ca) free tier. For production, deploy
-// coturn on the VPS for zero-cost self-hosted TURN.
+/** STUN + self-hosted TURN — see the NAT/TURN notice in the header comment. */
+// TURN (2026-10-22, boss): the free OpenRelay TURN (metered.ca) is DEAD —
+// verified 2026-10-22 from the VPS: no STUN/TURN response at all. With STUN
+// alone, calls between two carrier-NAT (CGNAT) BD networks can never connect
+// ("network blocked" after ~15 s — boss's Adda-culb call, 2026-10-22 01:12).
+// Replaced with our OWN TURN relay on the Vee VPS (node-turn, UDP 3479,
+// relay ports 49200–49400, scheduled task VeeTurn) — zero cost, no
+// third-party dependency. Allocate verified from the VPS and from a BD
+// home network on 2026-10-22.
+const TURN_CREDENTIAL = 'R2CxcKae18wTjoIZG5Uf';
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
+    urls: 'turn:207.180.253.22:3479',
+    username: 'vee',
+    credential: TURN_CREDENTIAL,
   },
 ];
 
