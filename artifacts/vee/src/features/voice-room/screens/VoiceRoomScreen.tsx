@@ -201,15 +201,16 @@ export default function VoiceRoomScreen() {
       try {
         await destroyPersistedVoiceRoomEngineAsync();
       } catch {  }
+      // 2026-10-22 FIX (boss): leaving a room must NEVER strip the leaver's
+      // own room-admin grant. The old code demoted/revoked SELF here (and in
+      // handleLeave) — reusing the KICK path for a voluntary exit — so every
+      // admin who left and re-entered came back as a plain member. Admin is
+      // removed only by the owner (dismissAdmin) or a kick/block of that user.
       if (prev.mySeatIdx >= 0) {
-        const demoteUid = prev.role === 'admin' ? (prev.myUid || myUid) : undefined;
-        removeSeat(prev.id, prev.mySeatIdx, demoteUid).catch(() => {});
+        removeSeat(prev.id, prev.mySeatIdx).catch(() => {});
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
       } else {
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
-        if (prev.role === 'admin') {
-          revokeRoomAdmin(prev.id, prev.myUid || myUid).catch(() => {});
-        }
       }
       setMinimizedRoom(null);
     })();
@@ -1888,16 +1889,15 @@ export default function VoiceRoomScreen() {
       clearPersistedActiveRoom().catch(() => {});
       sentJoinMsgKeys.delete(`${roomId}:${myUid}`);
 
+      // 2026-10-22 FIX (boss): voluntary exit removes PRESENCE ONLY — never
+      // the admin grant (see the minimized-room cleanup above). Demotion is
+      // reserved for owner dismiss / kick / block of that user.
       if (mySeatIdx >= 0) {
         try { stopPublishing(); } catch {  }
-        const demoteUid = myRole === 'admin' ? myUid : undefined;
-        removeSeat(roomId, mySeatIdx, demoteUid).catch(() => {});
+        removeSeat(roomId, mySeatIdx).catch(() => {});
         leaveAudience(roomId, myUid).catch(() => {});
       } else if (hasJoined) {
         leaveAudience(roomId, myUid).catch(() => {});
-        if (myRole === 'admin') {
-          revokeRoomAdmin(roomId, myUid).catch(() => {});
-        }
       }
     } finally {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
