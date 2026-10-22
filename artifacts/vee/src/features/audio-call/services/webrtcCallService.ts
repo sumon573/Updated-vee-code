@@ -53,6 +53,7 @@ import {
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/services/voiceForegroundService';
+import { NoiseGate, extractMediaSourceLevel } from '@/src/services/noiseGate';
 import { buildCallRoomId } from './firebaseCallService';
 import { isExpoGo } from '@/src/utils/platform';
 
@@ -134,6 +135,43 @@ type IcePayload = {
   sdpMid: string | null;
 };
 
+/**
+ * Premium Voice v2 (2026-10-22, Sumon): pin the Opus fmtp on our own
+ * offer/answer SDP — in-band FEC so packet loss on BD mobile networks
+ * doesn't turn voice robotic, 64 kbps full-band headroom, mono voice,
+ * DTX on (silence costs ~nothing and pairs with the noise gate).
+ * Only keys that are missing are added; an existing fmtp is respected.
+ */
+export function withOpusFec(sdp: string): string {
+  try {
+    const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+    if (!m) return sdp;
+    const pt = m[1];
+    const wanted: Array<[string, string]> = [
+      ['useinbandfec', '1'],
+      ['minptime', '10'],
+      ['maxaveragebitrate', '64000'],
+      ['stereo', '0'],
+      ['sprop-stereo', '0'],
+      ['usedtx', '1'],
+    ];
+    const fmtpRe = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+    if (fmtpRe.test(sdp)) {
+      return sdp.replace(fmtpRe, (_full, params: string) => {
+        let p = params.trim();
+        for (const [k, v] of wanted) {
+          if (!new RegExp(`${k}=`, 'i').test(p)) p += `;${k}=${v}`;
+        }
+        return `a=fmtp:${pt} ${p}`;
+      });
+    }
+    const line = `a=fmtp:${pt} ${wanted.map(([k, v]) => `${k}=${v}`).join(';')}\r\n`;
+    return sdp.replace(new RegExp(`(a=rtpmap:${pt} opus/48000/2\\r?\\n)`), `$1${line}`);
+  } catch {
+    return sdp;
+  }
+}
+
 // ─── Session ─────────────────────────────────────────────────────────────────
 
 /**
@@ -165,6 +203,9 @@ export class WebRTCCallSession {
   private localOfferEpoch = 0;
   private appliedRemoteEpoch = 0;
   private iceRestartAttempts = 0;
+  // Premium Voice v2: audio sender (bitrate pinning) + noise gate.
+  private audioSender: { getParameters?: () => { encodings?: Array<Record<string, unknown>> }; setParameters?: (p: unknown) => Promise<void> } | null = null;
+  private noiseGate: NoiseGate | null = null;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly MAX_ICE_RESTARTS = 4;
 
@@ -268,8 +309,20 @@ export class WebRTCCallSession {
       };
 
       // ── Mic capture ────────────────────────────────────────────────────
+      // Premium Voice v2 (2026-10-22, Sumon): pin the same processing the
+      // voice rooms use — hardware echo/noise suppression + AGC and a
+      // full-band mono 48 kHz capture. This call path previously captured
+      // with a bare `audio: true` and no pinned settings at all.
       const stream = await mediaDevices.getUserMedia({
-        audio: true,
+        // The RN fork's MediaTrackConstraints type omits the audio
+        // processing keys; the native capturer honors them at runtime.
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        } as Record<string, unknown>,
         video: false,
       });
       if (this.ended) {
@@ -283,11 +336,16 @@ export class WebRTCCallSession {
       this.localStream = stream;
       stream.getTracks().forEach((track) => {
         try {
-          pc.addTrack(track, stream);
+          const sender = pc.addTrack(track, stream);
+          if (track.kind === 'audio' && sender) {
+            this.audioSender = sender as unknown as typeof this.audioSender;
+          }
         } catch {
           /* non-critical — continue with remaining tracks */
         }
       });
+      this.applyAudioSenderParams();
+      this.startNoiseGate();
 
       // ── Crash safety: remove the ephemeral node if this client dies ───
       const nodeRef = ref(database, `${SIGNAL_ROOT}/${this.roomId}`);
@@ -310,6 +368,8 @@ export class WebRTCCallSession {
         // Caller ALWAYS creates the offer. Initial exchange = epoch 1.
         this.localOfferEpoch = 1;
         const offer = await pc.createOffer();
+        // Premium Voice v2: Opus FEC/bitrate fmtp pinned on our offer.
+        if (offer.sdp) offer.sdp = withOpusFec(offer.sdp);
         await pc.setLocalDescription(offer);
         if (this.ended) return;
         await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/offer`), {
@@ -339,6 +399,51 @@ export class WebRTCCallSession {
           : `Failed to start WebRTC call: ${raw}`,
       );
       this.hangup();
+    }
+  }
+
+  /** Premium Voice v2: pin the audio sender to 64 kbps (full-band Opus). */
+  private applyAudioSenderParams(): void {
+    const sender = this.audioSender;
+    if (!sender?.getParameters || !sender?.setParameters) return;
+    try {
+      const params = sender.getParameters() as { encodings?: Array<Record<string, unknown>> };
+      const enc = { ...(params.encodings?.[0] ?? {}), maxBitrate: 64000 };
+      void sender.setParameters({ ...params, encodings: [enc] }).catch(() => {
+        /* non-critical — capture constraints + fmtp still apply */
+      });
+    } catch {
+      /* non-critical */
+    }
+  }
+
+  /** Premium Voice v2: conservative noise gate on the call mic. The gate
+   *  flips the same raw track `enabled` flag mute uses, but it steps aside
+   *  completely while the user is muted, so the two never fight. */
+  private startNoiseGate(): void {
+    this.stopNoiseGate();
+    const gate = new NoiseGate({
+      readLevel: async () => {
+        if (!this.pc) return null;
+        return extractMediaSourceLevel(await this.pc.getStats());
+      },
+      setTrackEnabled: (enabled: boolean) => {
+        try {
+          this.localStream?.getAudioTracks().forEach((t) => { t.enabled = enabled; });
+        } catch {
+          /* non-critical */
+        }
+      },
+      isUserMuted: () => this.muted,
+    });
+    this.noiseGate = gate;
+    gate.start();
+  }
+
+  private stopNoiseGate(): void {
+    if (this.noiseGate) {
+      try { this.noiseGate.stop(); } catch { /* non-critical */ }
+      this.noiseGate = null;
     }
   }
 
@@ -381,6 +486,7 @@ export class WebRTCCallSession {
   hangup(): void {
     if (this.ended) return;
     this.ended = true;
+    this.stopNoiseGate();
     this.clearRecoveryTimer();
     // 2026-10-15 (Sumon): call over — drop the foreground service.
     stopVoiceForegroundService();
@@ -599,6 +705,8 @@ export class WebRTCCallSession {
         new RTCSessionDescription({ sdp: offer.sdp, type: offer.type }),
       );
       const answer = await this.pc.createAnswer();
+      // Premium Voice v2: Opus FEC/bitrate fmtp pinned on our answer too.
+      if (answer.sdp) answer.sdp = withOpusFec(answer.sdp);
       await this.pc.setLocalDescription(answer);
       if (this.ended) return;
       await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/answer`), {
@@ -674,6 +782,8 @@ export class WebRTCCallSession {
       this.localOfferEpoch += 1;
       const epoch = this.localOfferEpoch;
       const offer = await pc.createOffer({ iceRestart: true });
+      // Premium Voice v2: keep the Opus fmtp pins across ICE restarts.
+      if (offer.sdp) offer.sdp = withOpusFec(offer.sdp);
       await pc.setLocalDescription(offer);
       if (this.ended) return;
       await set(ref(database, `${SIGNAL_ROOT}/${this.roomId}/offer`), {
