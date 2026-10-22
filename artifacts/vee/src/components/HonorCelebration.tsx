@@ -40,6 +40,10 @@ export function HonorCelebration() {
       if (entries.length > 0) {
         // Use functional update to avoid stale closure on `pending`
         setPending((prev) => prev ?? (entries[0] as HonorNotification));
+      } else {
+        // 2026-10-22 (boss): no unread grants left (e.g. marked read from
+        // the server) — never leave a stale celebration modal on screen.
+        setPending(null);
       }
     });
     return unsub;
@@ -47,8 +51,15 @@ export function HonorCelebration() {
 
   const dismiss = async () => {
     if (!user?.uid || !pending) return;
-    // Mark as read
-    await update(ref(database, `notifications/${user.uid}/${pending.id}`), { read: true });
+    // Mark as read — but ALWAYS close locally (2026-10-22, boss): the old
+    // code awaited this write with no guard, and notifications rules denied
+    // it for recipients, so the throw skipped setPending(null) and the
+    // modal froze the whole app (back button hit the same path). A failed
+    // mark-read must never trap the user; the record can be repaired
+    // server-side.
+    try {
+      await update(ref(database, `notifications/${user.uid}/${pending.id}`), { read: true });
+    } catch { /* non-critical — the modal must close regardless */ }
     setPending(null);
   };
 
