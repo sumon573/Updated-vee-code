@@ -2507,35 +2507,10 @@ export default function VoiceRoomScreen() {
               onPress={() => setMembersOpen(true)}
               person={allMembers[0]}
             />
-            {/* 2026-10-19 (IMO gap fill): announcement / intimacy / backpack */}
-            {announcement && (
-              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: 'rgba(255,193,7,0.18)',
-                  borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5,
-                  maxWidth: 180,
-                }}>
-                  <Text style={{ fontSize: 13 }}>📢</Text>
-                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 12, fontWeight: '700', flexShrink: 1 }}>
-                    {announcement.content}
-                  </Text>
-                </View>
-              </ScalePress>
-            )}
-            {!announcement && isOwnerOrAdmin && (
-              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: C.card,
-                  borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
-                  <Text style={{ fontSize: 13 }}>📢</Text>
-                  <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
-                    {t('voiceRoom.announcement.post')}
-                  </Text>
-                </View>
-              </ScalePress>
-            )}
+            {/* 2026-10-23 (boss): announcement entry REMOVED from the header.
+                Posting/editing now lives inside Settings; a posted
+                announcement shows as a slim highlighted strip pinned at
+                the top of the chat box (see chat panel below). */}
             {/* 2026-10-22 (Sumon): Intimacy pill REMOVED from the header on
                 his order. IntimacyModal/state stay wired (harmless); the
                 header entry point is gone. */}
@@ -2700,7 +2675,31 @@ export default function VoiceRoomScreen() {
           backgroundColor: themeSurface + '55',
           borderWidth: 1, borderColor: accentColor + '22',
           overflow: 'hidden' }}>
-          {}
+          {/* 2026-10-23 (boss): the room announcement pins as a slim,
+              lightly highlighted strip at the TOP of the comment box —
+              fixed above the message list (never scrolls away, never
+              covers messages; content is capped at 100 chars so it can
+              never fill the box). Tap opens the announcement panel. */}
+          {announcement && (
+            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setAnnouncementOpen(true); }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(255,193,7,0.16)',
+                borderBottomWidth: 1, borderBottomColor: 'rgba(255,193,7,0.45)',
+                paddingHorizontal: 10, paddingVertical: 6,
+              }}>
+                <Text style={{ fontSize: 13 }}>📢</Text>
+                <Text numberOfLines={2} style={{ color: C.text, fontSize: 12.5, fontWeight: '700', flex: 1, lineHeight: 17 }}>
+                  {announcement.content}
+                </Text>
+                {!!announcement.createdByName && (
+                  <Text numberOfLines={1} style={{ color: C.sub, fontSize: 10.5, fontWeight: '600', maxWidth: 90 }}>
+                    {announcement.createdByName}
+                  </Text>
+                )}
+              </View>
+            </ScalePress>
+          )}
           <FlatList<ChatMsg>
             ref={chatRef}
             data={messages}
@@ -2926,6 +2925,8 @@ export default function VoiceRoomScreen() {
         activeThemeIdRef={activeThemeIdRef}
         weeklyEarned={weeklyEarned}
         walletBalance={walletBalance}
+        announcement={announcement}
+        setAnnouncementOpen={setAnnouncementOpen}
         seats={seats}
         audience={audience}
         allMembers={allMembers}
