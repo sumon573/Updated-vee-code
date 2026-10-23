@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 
 export interface RankMember {
   uid: string;
@@ -240,7 +241,10 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
             <Text style={{ flex: 1, color: '#000', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
               {myRow.member?.name || t('voiceRoom.rank.you')}
             </Text>
-            <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '800' }}>💎{fmtCompact(myRow.coins)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <DiamondIcon size={14} />
+              <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '800', marginLeft: 3 }}>{fmtCompact(myRow.coins)}</Text>
+            </View>
           </View>
         )}
       </View>
