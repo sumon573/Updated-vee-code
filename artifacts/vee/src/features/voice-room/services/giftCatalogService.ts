@@ -50,11 +50,20 @@ const prefetchedUrls = new Set<string>();
  */
 export function prefetchGiftAnimations(gifts: CatalogGift[]): void {
   try {
-    // 2026-10-23 (boss): warm the BIG fullscreen gifts first — they are
-    // the largest files and the ones whose absence is most visible at
-    // send time. Cheapest-first ordering left them downloading last.
-    const ordered = [...gifts].sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
     const urls: string[] = [];
+    // Pass 1 — thumbnails first: a thumbnail is the send-time POSTER
+    // (shown the instant a gift is sent, while its animation is still
+    // downloading), so posters must be cached before anything else.
+    for (const g of gifts) {
+      if (g.thumbnailUrl && !prefetchedUrls.has(g.thumbnailUrl)) {
+        prefetchedUrls.add(g.thumbnailUrl);
+        urls.push(g.thumbnailUrl);
+      }
+    }
+    // Pass 2 — animations, BIG fullscreen gifts first (2026-10-23,
+    // boss): they are the largest files and the ones whose absence is
+    // most visible at send time.
+    const ordered = [...gifts].sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
     for (const g of ordered) {
       if (g.animationType === 'webp' && g.animationUrl && !prefetchedUrls.has(g.animationUrl)) {
         prefetchedUrls.add(g.animationUrl);
