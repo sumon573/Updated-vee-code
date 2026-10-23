@@ -15,6 +15,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert, Image } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -195,9 +196,12 @@ export default function SvipScreen() {
                     </Text>
                   </View>
                   {tier.priceDiamonds > 0 ? (
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#007AFF' }}>
-                      💎{tier.priceDiamonds}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <DiamondIcon size={15} />
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#007AFF' }}>
+                        {tier.priceDiamonds}
+                      </Text>
+                    </View>
                   ) : (
                     <Text style={{ fontSize: 12, color: '#BDBDBD' }}>Price soon</Text>
                   )}
