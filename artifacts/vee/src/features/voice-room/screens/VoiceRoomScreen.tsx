@@ -74,7 +74,7 @@ import { checkVoiceBan, type VoiceBanInfo } from '../services/voiceBanService';
 import {
   subscribeSeats, subscribeAudience, subscribeRoomInfo,
   subscribeLockedSeats, subscribeRoomAdmins,
-  joinRoomAsAudience, leaveAudience, takeSeat, leaveSeat as fbLeaveSeat,
+  joinRoomAsAudience, leaveAudience, takeSeat, clearOtherSeats, leaveSeat as fbLeaveSeat,
   setSeatMute, setSeatRole, removeSeat, removeAudienceMember,
   lockSeat as fbLockSeat, unlockSeat as fbUnlockSeat, setAudienceRole,
   grantRoomAdmin, revokeRoomAdmin,
@@ -707,6 +707,7 @@ export default function VoiceRoomScreen() {
         target: null, // remote gifts use top-center fallback
         animationUrl: event.animationUrl || undefined,
         animationType: event.animationType || undefined,
+        thumbnailUrl: event.thumbnailUrl || undefined,
         videoSize: event.videoSize || undefined,
         videoFullscreen: event.videoFullscreen || undefined,
       });
@@ -1362,6 +1363,24 @@ export default function VoiceRoomScreen() {
       ]);
       if (noble && !noble.lapsed) myNobleRankRef.current = noble.rankIndex;
       if (cancelled) return;
+      // 2026-10-23 (boss: রুমে entry নিলে অন্যরা লেটে দেখে): publish
+      // presence IMMEDIATELY — the join chain below (lock checks, seat
+      // restore, previous-room cleanup) takes several round trips and
+      // nobody should wait for it to become visible in the room. Only
+      // when the room is known-unlocked from the already-delivered info;
+      // a locked room keeps the gated path so a rejected user never
+      // appears inside it.
+      const earlyInfo = pinInfoRef.current;
+      if (earlyInfo && earlyInfo.isLocked !== true) {
+        joinRoomAsAudience(roomId, {
+          userId: myUid,
+          userName: myName,
+          initials: myInitials,
+          color: myColor,
+          ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+        }).catch(() => {});
+      }
       try {
         if (blockSnap?.exists()) return;
         const cachedInfo = pinInfoRef.current;
@@ -1510,6 +1529,11 @@ export default function VoiceRoomScreen() {
             seatData.muted = mutedRef.current;
             const seatRef = ref(database, `rooms/${roomId}/seats/${seatIdx}`);
             await set(seatRef, { ...seatData, seatTs: serverTimestamp() }).catch(() => {});
+            // 2026-10-23 (boss: একটা আইডি দুই জায়গায়): this direct write
+            // can resurrect a seat the user already left for another one
+            // (the captured seatIdx went stale mid-reconnect) — clear any
+            // OTHER seat of mine so I never appear twice.
+            await clearOtherSeats(roomId, myUid, seatIdx).catch(() => {});
             // 2026-10-22 ROOT FIX: deliberately NO onDisconnect re-arm —
             // socket drops must never delete a live user's seat again
             // (see firebaseRoomService takeSeat note).
@@ -2279,6 +2303,7 @@ export default function VoiceRoomScreen() {
         target,
       animationUrl: info.animationUrl,
       animationType: info.animationType,
+      thumbnailUrl: info.thumbnailUrl,
       videoSize: info.videoSize,
       videoFullscreen: info.videoFullscreen});
     };
@@ -2335,6 +2360,7 @@ export default function VoiceRoomScreen() {
         toAvatar: r.photoURL || null,
       animationUrl: info.animationUrl || null,
       animationType: info.animationType || null,
+      thumbnailUrl: thumb || null,
       videoSize: info.videoSize || null,
       videoFullscreen: info.videoFullscreen || null }).catch(() => {});
     }
