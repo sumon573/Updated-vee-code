@@ -838,11 +838,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         },
         // Premium Voice v2: pin publish quality instead of SDK defaults —
         // musicHighQuality = 96 kbps full-band Opus (voice sounds full,
-        // never thin), RED redundancy + DTX pinned so network loss and
+        // never thin), RED redundancy pinned so network loss and
         // future SDK default changes can't silently degrade quality.
+        // 2026-10-23 (Sumon order): DTX is OFF — with DTX on, the encoder
+        // stops sending during silence and the first syllable after a
+        // pause gets clipped/delayed ("কথা ধরছে না"). Instant, uncut
+        // speech pickup outranks the tiny silence-bandwidth saving.
         publishDefaults: {
           audioPreset: lk.AudioPresets.musicHighQuality,
-          dtx: true,
+          dtx: false,
           red: true,
           forceStereo: false,
         },
@@ -953,13 +957,20 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // setMicrophoneEnabled() overlapping room.disconnect() natively
       // crashes Android (SIGSEGV) — this await guarantees ordering.
       await this.enqueueNativeOp(async () => {
-        // DTX enabled on the mic publish path (matches getCapabilities()).
-        await room.localParticipant.setMicrophoneEnabled(true, undefined, { dtx: true });
+        // DTX OFF on the mic publish path (2026-10-23, Sumon — see
+        // publishDefaults note): speech must be picked up the instant it
+        // starts, never clipped after a pause.
+        await room.localParticipant.setMicrophoneEnabled(true, undefined, { dtx: false });
         // Start muted — the user unmutes explicitly (mirrors previous behavior).
         await this.applyTrackMute(this.muted);
       });
-      // Premium Voice v2: gate rides on the live mic track (publish only).
-      this.startNoiseGate();
+      // 2026-10-23 (Sumon order): the NoiseGate is RETIRED. It closed the
+      // raw mic track after ~900ms of quiet and needed up to a 250ms poll
+      // tick to reopen — after any pause, the start of the next sentence
+      // was lost/delayed ("চুপ থাকলে mic বন্ধ হয়ে যায়, কথা দেরিতে
+      // ধরে"). The mic now stays live continuously; hardware AEC/NS/AGC
+      // (pinned in audioCaptureDefaults) handles steady background noise.
+      // startNoiseGate() intentionally not called anymore.
     } catch (err) {
       this.publishing = false;
       this.error = err instanceof Error ? err.message : 'Failed to enable microphone';
@@ -1032,7 +1043,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       maxStageSpeakers: 20,
       maxListenersPerRoom: 10000,
       supportsSelectiveSubscription: true,
-      dtxEnabled: true,
+      dtxEnabled: false,
     };
   }
 
