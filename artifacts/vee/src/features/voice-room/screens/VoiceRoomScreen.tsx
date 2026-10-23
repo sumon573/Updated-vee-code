@@ -2226,11 +2226,29 @@ export default function VoiceRoomScreen() {
   }, []);
 
   const handleGiftSent = useCallback((info: GiftSentInfo) => {
+    // 2026-10-23 (Sumon picked Option A): structured gift message — the chat
+    // renders a highlight gift card (sender DP → gift thumb → receiver DP +
+    // diamonds) from `gift`. `text` stays as the plain fallback for older
+    // clients and satisfies the chat rules (text + ts are required).
+    const quantity = info.quantity && info.quantity > 0 ? info.quantity : 1;
+    const totalCoins = info.coins * quantity * Math.max(1, info.recipients.length);
+    const thumb = info.thumbnailUrl || (info.emoji && info.emoji.startsWith('http') ? info.emoji : null);
     sendRoomChatMsg(roomId, {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
-      text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: info.coins }),
+      text: t('voiceRoom.screen.sentGift', { emoji: info.giftName || info.emoji, names: info.recipients.map((r) => r.name).join(', '), coins: totalCoins }),
+      kind: 'gift',
+      gift: {
+        giftId: info.giftId,
+        giftName: info.giftName || info.giftId,
+        thumbnailUrl: thumb,
+        coins: info.coins,
+        quantity,
+        totalCoins,
+        senderAvatar: info.senderAvatar || null,
+        recipients: info.recipients.map((r) => ({ uid: r.uid, name: r.name, photoURL: r.photoURL || null })),
+      },
       ts: Date.now() }).catch(() => {});
 
     for (const r of info.recipients) {
