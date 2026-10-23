@@ -37,7 +37,17 @@ export const MAX_SEATS = 10;
    These are applied throughout the room screen so changing themes feels
    like a full premium repaint, not just a border-color swap.
 ─────────────────────────────────────────────────────────────────────── */
-export const ROOM_THEMES: { id: string; name: string; accent: string; bg: string; surface: string; onBg: string; onBgSub: string }[] = [
+/* 2026-10-23 (boss): SCENE themes — an animated scene lives in the room
+   BACKGROUND only (AnimatedThemeBackground, zIndex 0). Seats, DPs, chat,
+   buttons and every text render on top of it and are never covered. */
+export type SceneKind = 'ocean' | 'cherry' | 'sunset' | 'rain' | 'snow' | 'valley';
+
+export type RoomTheme = {
+  id: string; name: string; accent: string; bg: string; surface: string;
+  onBg: string; onBgSub: string; scene?: SceneKind;
+};
+
+export const ROOM_THEMES: RoomTheme[] = [
   { id: 'imo-light', name: '💙 IMO Light', accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9', onBg: '#111827', onBgSub: '#64748B' },
   { id: 'ocean',    name: '🌊 Ocean',       accent: '#0284C7', bg: '#E0F2FE', surface: '#F0F9FF', onBg: '#0C4A6E', onBgSub: '#0369A1' },
   { id: 'forest',   name: '🌿 Forest',      accent: '#16A34A', bg: '#DCFCE7', surface: '#F0FDF4', onBg: '#14532D', onBgSub: '#15803D' },
@@ -48,4 +58,14 @@ export const ROOM_THEMES: { id: string; name: string; accent: string; bg: string
   { id: 'rose',     name: '🌹 Rose',        accent: '#E11D48', bg: '#FFE4E6', surface: '#FFF1F2', onBg: '#4C0519', onBgSub: '#9F1239' },
   { id: 'aurora',   name: '🍃 Mint',        accent: '#059669', bg: '#D1FAE5', surface: '#ECFDF5', onBg: '#022C22', onBgSub: '#065F46' },
   { id: 'midnight', name: '🖤 Midnight',   accent: '#3B82F6', bg: '#050506', surface: '#101114', onBg: '#F8FAFC', onBgSub: '#94A3B8' },
+  /* Scene themes (boss picked all 6, 2026-10-23 — previews v3):
+     Ocean Waves, Cherry Blossom, Golden Sunset, Rainy Day, Snowfall,
+     Rainbow Valley. Palettes stay light enough that onBg text keeps full
+     contrast over the scene's sky area. */
+  { id: 'scene-ocean',  name: '🌊 Ocean Waves',    accent: '#0284C7', bg: '#7DD3FC', surface: '#F0F9FF', onBg: '#082F49', onBgSub: '#075985', scene: 'ocean' },
+  { id: 'scene-cherry', name: '🌸 Cherry Blossom', accent: '#DB2777', bg: '#FCE7F3', surface: '#FDF2F8', onBg: '#500724', onBgSub: '#9D174D', scene: 'cherry' },
+  { id: 'scene-sunset', name: '🌇 Golden Sunset',   accent: '#EA580C', bg: '#FDBA74', surface: '#FFF7ED', onBg: '#431407', onBgSub: '#7C2D12', scene: 'sunset' },
+  { id: 'scene-rain',   name: '🌧️ Rainy Day',      accent: '#0369A1', bg: '#94A3B8', surface: '#F1F5F9', onBg: '#0F172A', onBgSub: '#1E293B', scene: 'rain' },
+  { id: 'scene-snow',   name: '❄️ Snowfall',       accent: '#7C6FB8', bg: '#A8BCE0', surface: '#EFF6FF', onBg: '#1E2A4A', onBgSub: '#3B4A7A', scene: 'snow' },
+  { id: 'scene-valley', name: '🌈 Rainbow Valley', accent: '#16A34A', bg: '#BAE6FD', surface: '#F0FDF4', onBg: '#052E16', onBgSub: '#166534', scene: 'valley' },
 ];
