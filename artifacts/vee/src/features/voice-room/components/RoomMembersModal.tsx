@@ -7,7 +7,9 @@
  * Tapping a member opens member management (host/admin) or profile view.
  *
  * All data is real (Firebase seats + audience). No demo entries.
- * Styled for the voice room's dark theme.
+ * 2026-10-23 (Sumon): LIGHT theme like the rest of the app — this modal
+ * kept its own hardcoded dark palette ("Live Audience-এর জায়গাটা ব্ল্যাক
+ * থাকবে না"); it now uses the shared voice-room theme tokens.
  */
 
 import { memo, useCallback, useMemo } from 'react';
@@ -19,20 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import type { Participant } from '@/src/features/voice-room/types/room';
 import { VerifiedName } from '@/src/components/VerifiedName';
-
-const C = {
-  bg: '#14101F',
-  card: '#1E1830',
-  text: '#FFFFFF',
-  muted: 'rgba(255,255,255,0.6)',
-  dim: 'rgba(255,255,255,0.35)',
-  border: 'rgba(255,255,255,0.09)',
-  inputBg: 'rgba(255,255,255,0.07)',
-  primary: '#8B5CF6',
-  gold: '#F5A623',
-  green: '#22C55E',
-  red: '#EF4444',
-} as const;
+import { C } from '../constants/theme';
 
 type Props = {
   visible: boolean;
@@ -75,7 +64,7 @@ function RoleBadge({ role }: { role: 'host' | 'admin' | 'member' }) {
     }}>
       <Text style={{
         fontSize: 10, fontWeight: '800',
-        color: isHost ? C.gold : C.primary,
+        color: isHost ? C.gold : '#7C3AED',
       }}>
         {isHost ? 'Owner' : 'Admin'}
       </Text>
@@ -109,13 +98,13 @@ const MemberRow = memo(function MemberRow({
           />
           <RoleBadge role={item.role} />
         </View>
-        <Text style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>
+        <Text style={{ color: C.sub, fontSize: 12, marginTop: 2 }}>
           {item.speaking ? 'Speaking…' : item.muted ? 'Muted' : 'In room'}
         </Text>
       </View>
       {item.muted
         ? <Feather name="mic-off" size={16} color={C.red} />
-        : <Feather name="mic" size={16} color={C.green} />}
+        : <Feather name="mic" size={16} color={C.mic} />}
     </Pressable>
   );
 });
@@ -239,7 +228,7 @@ export default function RoomMembersModal({
             maxToRenderPerBatch={20}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 60 }}>
-                <Feather name="users" size={40} color={C.dim} />
+                <Feather name="users" size={40} color={C.muted} />
                 <Text style={{ color: C.muted, fontSize: 14, marginTop: 12 }}>
                   No members yet
                 </Text>
