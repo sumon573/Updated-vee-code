@@ -30,6 +30,7 @@ import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
 import { getWeekStart } from '../utils/format';
+import { truncateTo12 } from '@/src/utils/truncateName';
 import { SeatCard } from '../components/SeatCard';
 import PairLink, { PAIR_LINK_W, PAIR_LINK_H } from '../components/PairLink';
 import { resolveDesign } from '../components/handshakeDesigns';
@@ -740,6 +741,29 @@ export default function VoiceRoomScreen() {
   const historyCleanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chatInput,    setChatInput]    = useState('');
   const [replyingTo,   setReplyingTo]   = useState<ChatMsg | null>(null);
+  // 2026-10-23 (Sumon): long-press a user TEXT message → Copy/Reply sheet.
+  const [actionMsg,    setActionMsg]    = useState<ChatMsg | null>(null);
+  const [copiedToast,  setCopiedToast]  = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCopyMsg = useCallback(async () => {
+    if (!actionMsg) return;
+    const text = actionMsg.text;
+    setActionMsg(null);
+    try {
+      await Clipboard.setStringAsync(text);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setCopiedToast(true);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopiedToast(false), 1400);
+    } catch { /* clipboard unavailable — nothing to show */ }
+  }, [actionMsg]);
+
+  const handleReplyFromAction = useCallback(() => {
+    if (!actionMsg) return;
+    setReplyingTo(actionMsg);
+    setActionMsg(null);
+  }, [actionMsg]);
   
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [sendingMsg,   setSendingMsg]   = useState(false);
@@ -2310,7 +2334,7 @@ export default function VoiceRoomScreen() {
 
   const renderChatMessage = useCallback(
     ({ item }: { item: ChatMsg }) => (
-      <RoomChatMessage item={item} accentColor={accentColor} onReply={setReplyingTo} />
+      <RoomChatMessage item={item} accentColor={accentColor} onReply={setReplyingTo} onAction={setActionMsg} />
     ),
     [accentColor],
   );
@@ -2899,6 +2923,75 @@ export default function VoiceRoomScreen() {
         setInviteOpen={setInviteOpen}
         setExitModalOpen={setExitModalOpen}
       />
+      {/* 2026-10-23 (Sumon): message action sheet — long-press a user TEXT
+          message → Copy Text / Reply. Gift cards and system messages never
+          open this (RoomChatMessage routes only plain text here). */}
+      <Modal
+        visible={!!actionMsg}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionMsg(null)}
+      >
+        <Pressable
+          onPress={() => setActionMsg(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        >
+          <Pressable onPress={() => {}} style={{
+            backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16),
+          }}>
+            {actionMsg && (
+              <View style={{ marginBottom: 8 }}>
+                <Text style={{ color: actionMsg.color, fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                  {truncateTo12(actionMsg.sender)}
+                </Text>
+                <Text style={{ color: C.sub, fontSize: 13, marginTop: 2 }} numberOfLines={2}>
+                  {actionMsg.text}
+                </Text>
+              </View>
+            )}
+            <Pressable onPress={handleCopyMsg} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              paddingVertical: 13, borderTopWidth: 1, borderTopColor: '#EEF1F5' }}>
+              <Feather name="copy" size={19} color={C.text} />
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                {t('voiceRoom.chat.copyText')}
+              </Text>
+            </Pressable>
+            <Pressable onPress={handleReplyFromAction} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              paddingVertical: 13, borderTopWidth: 1, borderTopColor: '#EEF1F5' }}>
+              <Feather name="corner-up-left" size={19} color={C.text} />
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                {t('voiceRoom.chat.replyText')}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setActionMsg(null)} style={{
+              alignItems: 'center', paddingVertical: 13,
+              borderTopWidth: 1, borderTopColor: '#EEF1F5' }}>
+              <Text style={{ color: C.muted, fontSize: 15, fontWeight: '700' }}>
+                {t('common.cancel', 'Cancel')}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Copied confirmation toast */}
+      {copiedToast && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', left: 0, right: 0, bottom: BOTTOM_BAR_H + 76,
+          alignItems: 'center', zIndex: 60 }}>
+          <View style={{
+            backgroundColor: 'rgba(15,23,42,0.92)', borderRadius: 999,
+            paddingHorizontal: 16, paddingVertical: 8 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>
+              {t('voiceRoom.chat.copiedToast')}
+            </Text>
+          </View>
+        </View>
+      )}
+
       <VoiceRoomModals
         accentColor={accentColor}
         roomId={roomId}
