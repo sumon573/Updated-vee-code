@@ -10,8 +10,8 @@ import { stickerUrl } from '../services/stickerCatalog';
  * transparent background, NO plate/disc behind them (his explicit call;
  * font glyphs were rejected as "demo"). The artwork is an animated WebP
  * served from the VPS static host; this component pops it in with a
- * spring over the seat DP, slightly larger than the DP so the character
- * performs ON the seat like IMO.
+ * spring over the seat DP, fitted exactly to the DP so the character
+ * fills the seat circle cleanly, IMO-style.
  *
  * Any non-sticker value (an emoji broadcast by an older client still in
  * the room) falls back to a simple bouncing glyph so nothing breaks.
