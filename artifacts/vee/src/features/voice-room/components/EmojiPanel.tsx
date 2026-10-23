@@ -4,7 +4,12 @@ import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
 import { C } from '../constants/theme';
 
-const REACTION_EMOJIS = ['😂', '👍', '🥰', '😘', '😭', '👋', '😯', '🙂', '🫣'];
+// 2026-10-23 (Sumon): expanded to a designed set of 16 — every one has its
+// own motion inside the seat DP (see SeatEmojiReaction).
+const REACTION_EMOJIS = [
+  '😂', '🤣', '👍', '👏', '🥰', '😍', '😘', '❤️',
+  '😭', '👋', '😯', '🙂', '🫣', '🔥', '😎', '🥳',
+];
 
 /* ─────────────────────────── Emoji Panel ─────────────────────────── */
 export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
@@ -36,13 +41,14 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
         position: 'absolute', bottom: bottomOffset, left: 12, right: 12, zIndex: 100,
         transform: [{ translateY: slideAnim }], opacity: opacityAnim,
         backgroundColor: '#FFFFFF', borderRadius: 22, borderWidth: 1.5, borderColor: C.border,
-        paddingVertical: 14, paddingHorizontal: 18,
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingVertical: 12, paddingHorizontal: 14,
+        flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center',
+        rowGap: 10,
         shadowColor: C.primary, shadowOpacity: 0.4, shadowRadius: 20,
         shadowOffset: { width: 0, height: -4 }, elevation: 20,
       }}>
         {REACTION_EMOJIS.map(emoji => (
-          <ScalePress key={emoji} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(emoji); }}>
+          <ScalePress key={emoji} style={{ width: '12.5%', alignItems: 'center' }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(emoji); }}>
             <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center',
               justifyContent: 'center', backgroundColor: 'rgba(5,181,250,0.10)' }}>
               <Text style={{ fontSize: 22 }}>{emoji}</Text>
