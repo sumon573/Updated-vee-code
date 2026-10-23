@@ -138,8 +138,9 @@ type IcePayload = {
 /**
  * Premium Voice v2 (2026-10-22, Sumon): pin the Opus fmtp on our own
  * offer/answer SDP — in-band FEC so packet loss on BD mobile networks
- * doesn't turn voice robotic, 64 kbps full-band headroom, mono voice,
- * DTX on (silence costs ~nothing and pairs with the noise gate).
+ * doesn't turn voice robotic, 64 kbps full-band headroom, mono voice.
+ * 2026-10-23 (Sumon order): DTX OFF (usedtx=0) — DTX clipped the first
+ * syllable after every pause; instant uncut pickup wins.
  * Only keys that are missing are added; an existing fmtp is respected.
  */
 export function withOpusFec(sdp: string): string {
@@ -153,7 +154,7 @@ export function withOpusFec(sdp: string): string {
       ['maxaveragebitrate', '64000'],
       ['stereo', '0'],
       ['sprop-stereo', '0'],
-      ['usedtx', '1'],
+      ['usedtx', '0'],
     ];
     const fmtpRe = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
     if (fmtpRe.test(sdp)) {
@@ -345,7 +346,10 @@ export class WebRTCCallSession {
         }
       });
       this.applyAudioSenderParams();
-      this.startNoiseGate();
+      // 2026-10-23 (Sumon order): NoiseGate retired — it closed the raw
+      // mic track during quiet and reopened up to ~250ms late, clipping
+      // speech onsets after pauses. Mic stays live; AEC/NS/AGC handles
+      // steady noise. startNoiseGate() intentionally not called.
 
       // ── Crash safety: remove the ephemeral node if this client dies ───
       const nodeRef = ref(database, `${SIGNAL_ROOT}/${this.roomId}`);
