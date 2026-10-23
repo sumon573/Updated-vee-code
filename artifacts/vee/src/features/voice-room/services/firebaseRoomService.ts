@@ -904,7 +904,14 @@ async function takeSeatInner(
     // take as "occupied". `!= null` handles both.
     if (current != null) {
       // Seat already taken by someone else — abort the transaction.
-      return undefined;
+      // 2026-10-23 (boss: empty-looking seat said "Seat Occupied"): a
+      // record WITHOUT a userId is a malformed ghost — it renders as
+      // empty, so it must be claimable, not a blocker. My OWN record
+      // (state rebuilt after a reconnect) is re-stamped, not a block.
+      const occupant = (current as { userId?: string }).userId;
+      if (occupant && occupant !== member.userId) {
+        return undefined;
+      }
     }
     // P1 ghost-seat fix (2026-10-12): stamp the heartbeat on claim.
     // 2026-10-19 (IMO port Phase 1): stamp numeric roleLevel from string role
