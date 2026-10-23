@@ -577,7 +577,11 @@ export async function checkNobleMaintenance(uid: string): Promise<number> {
     if (now <= s.maintenanceDeadline) return undefined; // No change needed - abort
     return applyNobleGift(cur, 0, now);
   });
-  if (!result.committed) return prevRank;
+  if (!result.committed) {
+    // 2026-10-23 (Sumon): CURRENT-RANK-ONLY enforcement on every maintenance check.
+    healMissingNobleItems(uid).catch(() => {});
+    return prevRank;
+  }
   const next = coerceState(result.snapshot.val());
   const nextRank = next?.rankIndex ?? 0;
   if (nextRank < prevRank) {
@@ -593,6 +597,8 @@ export async function checkNobleMaintenance(uid: string): Promise<number> {
       await renewNobleRankValidity(uid, nextRank, next.maintenanceDeadline);
     } catch {}
   }
+  // 2026-10-23 (Sumon): CURRENT-RANK-ONLY enforcement on every maintenance check.
+  healMissingNobleItems(uid).catch(() => {});
   return nextRank;
 }
 
