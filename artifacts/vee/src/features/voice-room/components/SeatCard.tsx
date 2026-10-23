@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Animated } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
 import { Avatar } from './Avatar';
+import SeatEmojiReaction from './SeatEmojiReaction';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
@@ -129,15 +130,22 @@ export const SeatCard = memo(function SeatCard({
             shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
             elevation: member.speaking ? 0 : 4,
           }}>
+            {/* 2026-10-23 (Sumon): the reaction emoji now performs INSIDE
+                the DP — big, centered over the avatar on a soft scrim,
+                each emoji with its own designed motion (SeatEmojiReaction).
+                The old float-up-over-the-DP demo look is gone. */}
             {reaction && (
-              <Animated.Text style={{
-                position: 'absolute', top: -24, left: 0, right: 0,
-                textAlign: 'center', fontSize: 22,
-                transform: [{ translateY: reaction.translateY }],
-                opacity: reaction.opacity, zIndex: 20,
+              <View pointerEvents="none" style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                alignItems: 'center', justifyContent: 'center', zIndex: 20,
               }}>
-                {reaction.emoji}
-              </Animated.Text>
+                <View style={{
+                  position: 'absolute',
+                  width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
+                  backgroundColor: 'rgba(0,0,0,0.22)',
+                }} />
+                <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={37} />
+              </View>
             )}
             <Avatar
               initials={member.initials}
