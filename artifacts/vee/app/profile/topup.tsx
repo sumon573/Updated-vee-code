@@ -23,6 +23,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -240,7 +241,7 @@ export default function TopUpScreen() {
               {/* IMO balance header (DiamondsOrderFragment pattern) */}
               <View style={styles.balanceCard}>
                 <View style={styles.diamondIcon}>
-                  <Text style={{ fontSize: 26 }}>💎</Text>
+                  <DiamondIcon size={26} />
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={{ color: C.muted, fontSize: 13 }}>
@@ -331,7 +332,7 @@ export default function TopUpScreen() {
                           styles.pkgIcon,
                           selected && { backgroundColor: '#D6EBFF' },
                         ]}>
-                          <Text style={{ fontSize: 24 }}>💎</Text>
+                          <DiamondIcon size={24} />
                         </View>
                         <View style={{ flex: 1, marginLeft: 12 }}>
                           <Text style={{ color: C.textDark, fontSize: 16, fontWeight: '800' }}>
@@ -399,7 +400,7 @@ export default function TopUpScreen() {
                       <View key={h.id}>
                         <View style={styles.row}>
                           <View style={styles.histIcon}>
-                            <Text style={{ fontSize: 20 }}>💎</Text>
+                            <DiamondIcon size={20} />
                           </View>
                           <View style={{ flex: 1, marginLeft: 12 }}>
                             <Text style={{ color: C.textDark, fontSize: 15, fontWeight: '600' }}>
