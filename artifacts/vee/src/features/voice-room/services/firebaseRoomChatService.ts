@@ -15,6 +15,17 @@
 import { ref, push, set, get, onValue, query, limitToLast, orderByKey, endBefore } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
+export type RoomChatGift = {
+  giftId: string;
+  giftName: string;
+  thumbnailUrl?: string | null;
+  coins: number;
+  quantity: number;
+  totalCoins: number;
+  senderAvatar?: string | null;
+  recipients: Array<{ uid: string; name: string; photoURL?: string | null }>;
+};
+
 export type RoomChatMsg = {
   id: string;
   senderId: string;
@@ -28,6 +39,11 @@ export type RoomChatMsg = {
     text: string;
     color: string;
   };
+  /** 2026-10-23 gift card (Option A): kind === 'gift' + structured payload.
+   *  The plain `text` fallback is always written too (rules require it and
+   *  older clients render it). */
+  kind?: string;
+  gift?: RoomChatGift;
 };
 
 /**
