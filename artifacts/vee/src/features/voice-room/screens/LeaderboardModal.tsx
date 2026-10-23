@@ -15,6 +15,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ref, query, orderByChild, limitToLast, startAfter, onValue, get } from 'firebase/database';
@@ -661,9 +662,12 @@ export function LeaderboardModal({
           <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{statLabel}</Text>
         </View>
         <View style={{ alignItems: 'flex-end', marginLeft: 10, flexShrink: 0 }}>
-          <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 17, fontWeight: '800' }}>
-            💎{fmtCompact(stat)}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <DiamondIcon size={16} />
+            <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 17, fontWeight: '800' }}>
+              {fmtCompact(stat)}
+            </Text>
+          </View>
         </View>
       </Pressable>
     );
@@ -762,9 +766,12 @@ export function LeaderboardModal({
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end', marginLeft: 10, flexShrink: 0 }}>
-          <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 18, fontWeight: '800' }}>
-            💎{fmtCompact(item.weeklyReceived)}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <DiamondIcon size={16} />
+            <Text style={{ color: top3 ? TINT_TX[rank - 1] : C.primary, fontSize: top3 ? 19 : 18, fontWeight: '800' }}>
+              {fmtCompact(item.weeklyReceived)}
+            </Text>
+          </View>
           <Text style={{ color: C.muted, fontSize: 11 }}>
             {t('leaderboard.diamondsReceived', { defaultValue: 'diamonds received' })}
           </Text>
@@ -805,9 +812,12 @@ export function LeaderboardModal({
         <Text style={{ color: C.text, fontSize: 15, fontWeight: '800' }} numberOfLines={1}>{myName}</Text>
       </View>
       <View style={{ alignItems: 'flex-end', flexShrink: 1, marginLeft: 10, maxWidth: '52%' }}>
-        <Text style={{ color: C.text, fontSize: 16, fontWeight: '800' }} numberOfLines={1}>
-          {stat !== null ? `💎${fmtCompact(stat)}` : '–'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+          {stat !== null && <DiamondIcon size={14} />}
+          <Text style={{ color: C.text, fontSize: 16, fontWeight: '800' }} numberOfLines={1}>
+            {stat !== null ? fmtCompact(stat) : '–'}
+          </Text>
+        </View>
         <Text style={{ color: C.muted, fontSize: 11, textAlign: 'right' }} numberOfLines={2}>{rank > 0 ? statLabel : emptyHint}</Text>
       </View>
     </View>
