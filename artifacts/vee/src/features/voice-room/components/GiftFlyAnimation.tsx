@@ -48,6 +48,7 @@ export type GiftFlyEvent = {
   target?: { x: number; y: number } | null;
   animationUrl?: string;
   animationType?: string;
+  thumbnailUrl?: string;
   videoSize?: number;
   videoFullscreen?: boolean;
 };
@@ -119,6 +120,7 @@ type QueuedShow = {
   fromAvatar?: string;
   animationUrl?: string;
   animationType?: string;
+  thumbnailUrl?: string;
   videoSize?: number;
   videoFullscreen?: boolean;
   recipients: ShowRecipient[];
@@ -170,7 +172,11 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
   const [ready, setReady] = useState(false);
   const handleReady = useCallback(() => setReady(true), []);
   useEffect(() => {
-    const cap = setTimeout(() => setReady(true), 1500);
+    // 2026-10-23 (boss: বড় gift send হলে দেখাই যায় না): the cap used to
+    // be 1.5 s — a 2-3.5 MB WebP on mobile data needs longer, and the
+    // show then played out INVISIBLY (the poster below now covers the
+    // wait visually too). 4 s cap; the clock still starts at true load.
+    const cap = setTimeout(() => setReady(true), 4000);
     return () => clearTimeout(cap);
   }, []);
 
@@ -239,6 +245,7 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
         <AnimatedGift
           giftId={show.giftId} emoji={show.emoji} size={displaySize}
           animationUrl={show.animationUrl} animationType={show.animationType}
+          thumbnailUrl={show.thumbnailUrl}
           videoSize={displaySize} videoFullscreen
           onReady={handleReady}
         />
@@ -381,6 +388,7 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
       giftId: e.giftId, emoji: e.emoji, coins: e.coins,
       fromName: e.fromName, fromAvatar: e.fromAvatar,
       animationUrl: e.animationUrl, animationType: e.animationType,
+      thumbnailUrl: e.thumbnailUrl,
       videoSize: e.videoSize, videoFullscreen: e.videoFullscreen,
       recipients: [recipient], count: 1, startedAt: now,
     };
