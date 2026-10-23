@@ -12,7 +12,7 @@
  *   roomBlocks/{roomId}/{userId} → RoomBlockRecord
  */
 
-import { ref, push, set, get, onValue, query, limitToLast, orderByKey, endBefore } from 'firebase/database';
+import { ref, push, set, get, query, limitToLast, orderByKey, endBefore, onChildAdded, onChildChanged, onChildRemoved } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
 export type RoomChatGift = {
@@ -75,7 +75,15 @@ export async function loadOlderMessages(
 
 /** Subscribe to room chat (last 50 messages).
  *  2026-10-13: limitToLast(15) → 50 — pagination লজিক (`visible.length >= 50`
- *  দিয়ে hasOlderMsgs) আর কমেন্ট 50 ধরে লেখা, 15-এ "Load earlier" ভুল হতো। */
+ *  দিয়ে hasOlderMsgs) আর কমেন্ট 50 ধরে লেখা, 15-এ "Load earlier" ভুল হতো।
+ *  2026-10-23 (Sumon: "সব কিছু সুপার ফাস্ট send হবে"): INCREMENTAL child
+ *  listeners instead of onValue. The old onValue re-downloaded and
+ *  re-parsed the ENTIRE 50-message window on every single new message —
+ *  the main receiver-side lag. Now each event transfers only the one
+ *  changed message; the array is maintained locally and the callback
+ *  still receives the full sorted window (same contract as before).
+ *  Events are coalesced per tick so the initial 50-child burst produces
+ *  one callback, not fifty. */
 export function subscribeRoomChat(
   roomId: string,
   myUid: string,
@@ -85,20 +93,42 @@ export function subscribeRoomChat(
     ref(database, `rooms/${roomId}/chat`),
     limitToLast(50),
   );
-  return onValue(chatRef, (snap) => {
-    if (!snap.exists()) { callback([]); return; }
-    const msgs: RoomChatMsg[] = [];
-    snap.forEach((child) => {
-      const v = child.val() as Omit<RoomChatMsg, 'id' | 'isMe'>;
-      msgs.push({
-        ...v,
-        id: child.key!,
-        isMe: v.senderId === myUid,
-      });
-    });
-    msgs.sort((a, b) => a.ts - b.ts);
+  const byId = new Map<string, RoomChatMsg>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let delivered = false;
+  const flush = () => {
+    flushTimer = null;
+    const msgs = Array.from(byId.values());
+    msgs.sort((a, b) => (a.ts - b.ts) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    delivered = true;
     callback(msgs);
+  };
+  const schedule = () => {
+    if (flushTimer !== null) return;
+    flushTimer = setTimeout(flush, 0);
+  };
+  const upsert = (key: string | null, val: unknown) => {
+    if (!key || !val || typeof val !== 'object') return;
+    const v = val as Omit<RoomChatMsg, 'id' | 'isMe'>;
+    byId.set(key, { ...v, id: key, isMe: v.senderId === myUid });
+    schedule();
+  };
+  const unsubAdd = onChildAdded(chatRef, (snap) => upsert(snap.key, snap.val()));
+  const unsubChange = onChildChanged(chatRef, (snap) => upsert(snap.key, snap.val()));
+  const unsubRemove = onChildRemoved(chatRef, (snap) => {
+    if (snap.key) byId.delete(snap.key);
+    schedule();
   });
+  // Empty room: no child events ever fire — deliver [] once so the UI
+  // doesn't sit in its initial state forever (onValue did this too).
+  const emptyTimer = setTimeout(() => { if (!delivered) callback([]); }, 1200);
+  return () => {
+    if (flushTimer !== null) clearTimeout(flushTimer);
+    clearTimeout(emptyTimer);
+    unsubAdd();
+    unsubChange();
+    unsubRemove();
+  };
 }
 
 /**
@@ -111,21 +141,49 @@ export function subscribeRoomChat(
  *
  * @throws {Error} if the sender is blocked from sending messages.
  */
+/** 2026-10-23 (Sumon: super-fast sends): the block check used to cost a
+ *  full extra RTDB round trip BEFORE every write. The room screen already
+ *  holds a LIVE block listener (amChatBlocked) that gates the UI instantly;
+ *  this service-level check is the second line of defence, so its result
+ *  is cached per (room, sender) for 20 s — a fresh block still bites
+ *  within 20 s here and instantly in the UI. */
+const blockCheckCache = new Map<string, { blocked: boolean; at: number }>();
+const BLOCK_CHECK_TTL_MS = 20_000;
+
+async function isChatBlocked(roomId: string, senderId: string): Promise<boolean> {
+  const cacheKey = `${roomId}/${senderId}`;
+  const hit = blockCheckCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < BLOCK_CHECK_TTL_MS) return hit.blocked;
+  let blocked = false;
+  const blockSnap = await get(ref(database, `roomBlocks/${roomId}/${senderId}`));
+  if (blockSnap.exists()) {
+    const block = blockSnap.val() as { action: string };
+    blocked = block.action === 'comment-block' || block.action === 'room-block';
+  }
+  blockCheckCache.set(cacheKey, { blocked, at: Date.now() });
+  return blocked;
+}
+
+/** Pre-generate a chat message key so the UI can render an optimistic
+ *  echo under the SAME id the subscription will later deliver — the
+ *  snapshot then replaces the echo in place instead of duplicating it. */
+export function createRoomChatKey(roomId: string): string {
+  return push(ref(database, `rooms/${roomId}/chat`)).key!;
+}
+
 export async function sendRoomChatMsg(
   roomId: string,
   msg: Omit<RoomChatMsg, 'id' | 'isMe'>,
+  msgId?: string,
 ): Promise<void> {
   // System messages (join/leave/gift notifications) always go through
   if (msg.senderId !== 'system') {
-    const blockSnap = await get(ref(database, `roomBlocks/${roomId}/${msg.senderId}`));
-    if (blockSnap.exists()) {
-      const block = blockSnap.val() as { action: string };
-      // Both room-block and comment-block prevent chat messages
-      if (block.action === 'comment-block' || block.action === 'room-block') {
-        throw new Error('blocked');
-      }
+    if (await isChatBlocked(roomId, msg.senderId)) {
+      throw new Error('blocked');
     }
   }
-  const msgRef = push(ref(database, `rooms/${roomId}/chat`));
+  const msgRef = msgId
+    ? ref(database, `rooms/${roomId}/chat/${msgId}`)
+    : push(ref(database, `rooms/${roomId}/chat`));
   await set(msgRef, msg);
 }
