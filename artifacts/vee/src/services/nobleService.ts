@@ -377,6 +377,23 @@ async function revokeNobleRankItems(uid: string, rankIndex: number): Promise<voi
   } catch {}
 }
 
+/* ── 2026-10-23 (Sumon): CURRENT-RANK-ONLY rule ──
+ * A noble holds ONLY the rewards of the rank they currently hold —
+ * rewards never accumulate across ranks. Ranking up replaces the set;
+ * dropping removes the higher set; stale items from any other rank
+ * are revoked (and any active pointer to them cleared). */
+async function revokeNobleRanksExcept(
+  uid: string,
+  keepRankIndex: number,
+  onlyRanks?: number[],
+): Promise<void> {
+  const targets = onlyRanks ?? NOBLE_RANKS.map((_, i) => i);
+  for (const r of targets) {
+    if (r === keepRankIndex) continue;
+    await revokeNobleRankItems(uid, r).catch(() => {});
+  }
+}
+
 /* ── 2026-10-16 (Sumon): Renew reward validity on successful maintenance ──
  * 2026-10-19 perf: (1) skip when the stored deadline already equals the new
  * one — same-rank gifts recompute an identical deadline, so one cheap read
@@ -431,74 +448,48 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     const hasRipple = ripplesSnap?.exists() && ripplesSnap.hasChild(`noble-ripple-${rank.key}`);
     const hasEffect = effectsSnap?.exists() && effectsSnap.hasChild(`noble-effect-${rank.key}`);
 
-    // 2026-10-15 (Sumon): Also update icons if catalog has newer design URLs.
-    // grantNobleRankItems uses set() so it's safe to re-run — updates stale fallback icons.
-    // Check ALL ranks up to current (not just current) — old ranks may have stale fallback icons.
-    // 2026-10-15 (Sumon): Check nameplates AND badges AND frames — no demo icons ever.
+    // 2026-10-23 (Sumon): CURRENT-RANK-ONLY — heal grants/refreshes ONLY
+    // the current rank's items (grantNobleRankItems is idempotent and
+    // set()s fresh catalog icons), and revokes any other rank's items
+    // still present in the user's collections.
     const catalog = rewardsForRank(state.rankIndex);
     let needsUpdate = !hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect;
-    if (!needsUpdate) {
-      for (let i = 0; i <= state.rankIndex; i++) {
-        const r = NOBLE_RANKS[i];
-        if (!r) continue;
-        const rankCatalog = rewardsForRank(i);
-        if (!rankCatalog) continue;
-        // Check nameplate
-        const plateId = `noble-plate-${r.key}`;
-        const existingPlate = platesSnap?.child(plateId).val();
-        if (existingPlate) {
-          const expectedIcon = rewardIcon(rankCatalog.nameplate);
-          if (existingPlate.icon !== expectedIcon) {
-            needsUpdate = true;
-            break;
-          }
-        }
-        // Check badge
-        if (rankCatalog.badge) {
-          const badgeId = `noble-badge-${r.key}`;
-          const existingBadge = badgesSnap?.child(badgeId).val();
-          if (existingBadge) {
-            const expectedBadgeIcon = rewardIcon(rankCatalog.badge);
-            if (existingBadge.icon !== expectedBadgeIcon) {
-              needsUpdate = true;
-              break;
-            }
-          }
-        }
-        // Check frame
-        if (rankCatalog.frame) {
-          const frameId = `noble-frame-${r.key}`;
-          const existingFrame = framesSnap?.child(frameId).val();
-          if (existingFrame) {
-            const expectedFrameIcon = rewardIcon(rankCatalog.frame);
-            if (existingFrame.icon !== expectedFrameIcon) {
-              needsUpdate = true;
-              break;
-            }
-          }
-        }
-      }
-    }
     if (!needsUpdate && catalog) {
-      // Check if existing plate has outdated icon
-      const plateId = `noble-plate-${rank.key}`;
-      const existingPlate = platesSnap?.child(plateId).val();
-      const expectedIcon = rewardIcon(catalog.nameplate);
-      if (existingPlate && existingPlate.icon !== expectedIcon) {
-        needsUpdate = true;
+      const existingPlate = platesSnap?.child(`noble-plate-${rank.key}`).val();
+      if (existingPlate && existingPlate.icon !== rewardIcon(catalog.nameplate)) needsUpdate = true;
+      if (!needsUpdate && catalog.badge) {
+        const existingBadge = badgesSnap?.child(`noble-badge-${rank.key}`).val();
+        if (existingBadge && existingBadge.icon !== rewardIcon(catalog.badge)) needsUpdate = true;
+      }
+      if (!needsUpdate && catalog.frame) {
+        const existingFrame = framesSnap?.child(`noble-frame-${rank.key}`).val();
+        if (existingFrame && existingFrame.icon !== rewardIcon(catalog.frame)) needsUpdate = true;
       }
     }
-    // Grant only what's missing or outdated — grantNobleRankItems is idempotent per item
     if (needsUpdate) {
-      // Re-grant all ranks up to current to fix stale icons
-      for (let i = 0; i <= state.rankIndex; i++) {
-        await grantNobleRankItems(uid, i);
-      }
+      await grantNobleRankItems(uid, state.rankIndex);
+    }
+    // Enforcement: any OTHER rank with items present loses them now.
+    const staleRanks: number[] = [];
+    for (let i = 0; i < NOBLE_RANKS.length; i++) {
+      if (i === state.rankIndex) continue;
+      const k = NOBLE_RANKS[i].key;
+      const present =
+        platesSnap?.hasChild(`noble-plate-${k}`) ||
+        badgesSnap?.hasChild(`noble-badge-${k}`) ||
+        framesSnap?.hasChild(`noble-frame-${k}`) ||
+        ripplesSnap?.hasChild(`noble-ripple-${k}`) ||
+        effectsSnap?.hasChild(`noble-effect-${k}`);
+      if (present) staleRanks.push(i);
+    }
+    if (staleRanks.length) {
+      await revokeNobleRanksExcept(uid, state.rankIndex, staleRanks);
     }
   } catch {
     // Non-critical — will retry on next refresh
   }
 }
+
 export async function recordNobleXP(uid: string, price: number): Promise<void> {
   if (!uid || !(price > 0)) return;
   const nobleRef = ref(database, `users/${uid}/noble`);
@@ -524,6 +515,9 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
   if (next && (nextRank > prevRank || !existed)) {
     try {
       await grantNobleRankItems(uid, nextRank);
+      // 2026-10-23 (Sumon): CURRENT-RANK-ONLY — ranking up replaces the
+      // reward set: every lower rank's items are removed, not kept.
+      await revokeNobleRanksExcept(uid, nextRank);
     } catch {
       // Non-critical — items will be granted on the next rank-up / gift.
     }
@@ -532,9 +526,9 @@ export async function recordNobleXP(uid: string, price: number): Promise<void> {
   // revoke the higher rank's rewards. Rewards expire with the rank.
   if (next && nextRank < prevRank) {
     try {
-      for (let r = prevRank; r > nextRank; r--) {
-        await revokeNobleRankItems(uid, r);
-      }
+      // 2026-10-23 (Sumon): CURRENT-RANK-ONLY — after a drop, ONLY the
+      // new current rank's rewards may remain.
+      await revokeNobleRanksExcept(uid, nextRank);
     } catch {
       // Non-critical — items will be cleaned on next heal.
     }
@@ -588,9 +582,9 @@ export async function checkNobleMaintenance(uid: string): Promise<number> {
   const nextRank = next?.rankIndex ?? 0;
   if (nextRank < prevRank) {
     try {
-      for (let r = prevRank; r > nextRank; r--) {
-        await revokeNobleRankItems(uid, r);
-      }
+      // 2026-10-23 (Sumon): CURRENT-RANK-ONLY — only the new current
+      // rank's rewards may remain after a maintenance drop.
+      await revokeNobleRanksExcept(uid, nextRank);
     } catch {}
   }
   // 2026-10-16 (Sumon): Rank maintained — renew validity.
