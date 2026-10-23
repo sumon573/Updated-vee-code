@@ -139,20 +139,18 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation();
   return (
     <ScalePress onPress={onPress}>
-      <View style={{ width: 100, marginRight: 10 }}>
+      <View style={{ width: 82, marginRight: 8 }}>
         <View style={{
-          width: 84, height: 84, borderRadius: 18,
+          width: 68, height: 68, borderRadius: 16,
           backgroundColor: '#F2F2F7',
           borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.55)',
           borderStyle: 'dashed',
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#A855F7', shadowOpacity: 0.15,
-          shadowRadius: 16, shadowOffset: { width: 0, height: 0 } }}>
-          <Feather name="plus" size={30} color={C.glow} />
+          alignItems: 'center', justifyContent: 'center' }}>
+          <Feather name="plus" size={24} color={C.glow} />
         </View>
         <Text style={{
           color: C.text, fontSize: 13, fontWeight: '800',
-          marginTop: 8, textAlign: 'center' }}>
+          marginTop: 6, textAlign: 'center' }}>
           {t('voiceRoom.home.createRoom')}
         </Text>
       </View>
@@ -200,11 +198,14 @@ type VoiceRoomHomeProps = {
   /** Disables the parent horizontal pager while the user drags a nested horizontal list. */
   onLockParentScroll?: () => void;
   onUnlockParentScroll?: () => void;
+  /** When hosted in a modal, renders the close (✕) button in the header row. */
+  onClose?: () => void;
 };
 
 export default function VoiceRoomHome({
   onLockParentScroll,
-  onUnlockParentScroll }: VoiceRoomHomeProps = {}) {
+  onUnlockParentScroll,
+  onClose }: VoiceRoomHomeProps = {}) {
   const { user } = useAuth();
   const { t } = useTranslation();
 
@@ -498,6 +499,17 @@ export default function VoiceRoomHome({
               <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
                 <Feather name="search" size={22} color={C.text} />
               </Pressable>
+              {/* 2026-10-23 (Sumon): close sits IN the header row, right of
+                  the search icon, neatly fitted — no more floating corner
+                  button over the status bar. */}
+              {onClose && (
+                <Pressable onPress={onClose} hitSlop={8} style={{
+                  width: 34, height: 34, borderRadius: 17, marginLeft: 2,
+                  backgroundColor: 'rgba(0,0,0,0.06)',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="x" size={18} color={C.text} />
+                </Pressable>
+              )}
             </View>
 
             <GHScrollView
@@ -514,7 +526,7 @@ export default function VoiceRoomHome({
               <CreateRoomTile onPress={() => setCreateModalOpen(true)} />
 
               {myRooms.map((r) => (
-                <View key={r.id} style={{ marginRight: 14 }}>
+                <View key={r.id} style={{ marginRight: 10 }}>
                   <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} />
                 </View>
               ))}
