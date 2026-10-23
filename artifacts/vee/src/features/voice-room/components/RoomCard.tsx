@@ -5,7 +5,9 @@ import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
 import { VoiceRoom } from '../types/room';
 
-const SIZE = 84;
+// 2026-10-23 (Sumon): tiles slimmed down + flat — no glow shadow, just a
+// hairline border, so the My Rooms row looks clean and light.
+const SIZE = 68;
 
 type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number };
 
@@ -18,15 +20,13 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
 
   return (
     <ScalePress onPress={onPress}>
-      <View style={{ width: 100, marginRight: 10 }}>
+      <View style={{ width: 82, marginRight: 8 }}>
         <View style={{
-          width: SIZE, height: SIZE, borderRadius: 22,
+          width: SIZE, height: SIZE, borderRadius: 16,
           backgroundColor: room.themeColor,
           alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden',
-          borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
-          shadowColor: room.themeColor, shadowOpacity: 0.15,
-          shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8,
+          borderWidth: 1, borderColor: 'rgba(0,0,0,0.07)',
         }}>
           {room.coverImageUrl ? (
             <Image
@@ -42,7 +42,7 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
                 borderRadius: SIZE, top: -SIZE * 0.45, left: -SIZE * 0.25,
                 backgroundColor: 'rgba(255,255,255,0.12)',
               }} />
-              <Feather name="mic" size={28} color="rgba(255,255,255,0.9)" />
+              <Feather name="mic" size={23} color="rgba(255,255,255,0.9)" />
             </>
           )}
 
@@ -54,7 +54,7 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
             }}>
               {previews.map((p, i) => (
                 <View key={i} style={{
-                  width: 18, height: 18, borderRadius: 9,
+                  width: 16, height: 16, borderRadius: 8,
                   backgroundColor: p.color,
                   borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.4)',
                   alignItems: 'center', justifyContent: 'center',
@@ -84,7 +84,7 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
 
         {/* Name */}
         <Text numberOfLines={1} style={{
-          color: '#000000', fontSize: 13, fontWeight: '800', marginTop: 8,
+          color: '#000000', fontSize: 13, fontWeight: '800', marginTop: 6,
         }}>
           {room.isPublic === false ? '🔒 ' : ''}{room.name}
         </Text>
