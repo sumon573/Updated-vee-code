@@ -629,6 +629,10 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     },
     chat: {
       holdToReply: '· উত্তর দিতে ধরুন',
+      holdForActions: '· কপি/উত্তরের জন্য ধরুন',
+      copyText: 'টেক্সট কপি করুন',
+      replyText: 'উত্তর দিন',
+      copiedToast: '✓ কপি হয়েছে',
       giftSent: 'গিফট পাঠিয়েছেন',
       giftTo: 'কে',
     },
