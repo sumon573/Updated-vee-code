@@ -19,6 +19,7 @@ import {
   type RoomGame, type GameCandidate, type VoteTally,
 } from '../../services/roomGameService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 
 export interface SeatPerson {
   uid: string;
@@ -219,7 +220,10 @@ export function VoteGameModal({ visible, roomId, hostUid, hostName, seats, gameI
                     <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: '#000' }} numberOfLines={1}>
                       {c.name}{i === 0 && c.coins > 0 ? ' 👑' : ''}
                     </Text>
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>💎{fmtCompact(c.coins)}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <DiamondIcon size={14} />
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B', marginLeft: 3 }}>{fmtCompact(c.coins)}</Text>
+                    </View>
                   </View>
                   <View style={{ height: 8, borderRadius: 4, backgroundColor: '#F2F2F7', overflow: 'hidden' }}>
                     <View style={{
