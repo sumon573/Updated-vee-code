@@ -29,6 +29,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -172,9 +173,12 @@ const GiftTile = memo(function GiftTile({
         numberOfLines={1}>
         {g.nameKey}
       </Text>
-      <Text style={{ color: IMO_SUB, fontSize: 11, marginTop: 1 }}>
-        💎{formatCompact(g.coins)}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 1 }}>
+        <DiamondIcon size={11} />
+        <Text style={{ color: IMO_SUB, fontSize: 11, marginLeft: 2 }}>
+          {formatCompact(g.coins)}
+        </Text>
+      </View>
     </Pressable>
   );
 });
@@ -789,7 +793,7 @@ export function GiftsModal({
               backgroundColor: IMO_TILE, borderRadius: 999,
               paddingHorizontal: 10, paddingVertical: 8, gap: 6,
             }}>
-            <Text style={{ fontSize: 14 }}>💎</Text>
+            <DiamondIcon size={14} />
             <Text style={{ color: IMO_TITLE, fontSize: 13, fontWeight: '800' }}>
               {formatCompact(walletBalance)}
             </Text>
