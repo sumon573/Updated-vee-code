@@ -1093,6 +1093,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const identityRef = useRef({ roomID: '', userID: '', userName: '' });
   /** Latest attachHandlers closure — re-attached after a retry's leave(). */
   const attachRef = useRef<(engine: LivekitVoiceRoomEngine) => void>(() => {});
+  // 2026-10-23 (boss: error banner + manual Retry is not professional):
+  // silent auto-recovery bookkeeping — see onLocalStateChange below.
+  const autoRetryAttemptsRef = useRef(0);
+  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryConnectionRef = useRef<() => void>(() => {});
 
   const [joined,        setJoined]        = useState(false);
   const [muted,         setMuted]         = useState(true);
@@ -1133,7 +1138,38 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           setSpeakerOn(s.speakerOn);
           setIsPublishing(s.publishing);
           setLocalSpeaking(s.localSpeaking);
-          setError(s.error);
+          // 2026-10-23 (boss): SILENT AUTO-RECOVERY. An unexpected
+          // disconnect (voice-server restart, network collapse) used to
+          // surface a red error banner and wait for a manual Retry tap.
+          // Now the hook rejoins by itself with backoff (1s→30s, up to
+          // 6 attempts ≈ a minute of silent recovery) and the error is
+          // only surfaced if every attempt fails. Big apps never make
+          // the user fix the connection by hand.
+          if (s.connection === 'connected') {
+            autoRetryAttemptsRef.current = 0;
+            if (autoRetryTimerRef.current) {
+              clearTimeout(autoRetryTimerRef.current);
+              autoRetryTimerRef.current = null;
+            }
+            setError(s.error);
+          } else if (s.connection === 'failed' && !isCleaningUpRef.current) {
+            if (autoRetryAttemptsRef.current < 6) {
+              setError(null); // hidden while auto-recovery runs
+              if (!autoRetryTimerRef.current) {
+                const delays = [1000, 2000, 4000, 8000, 15000, 30000];
+                const delay = delays[Math.min(autoRetryAttemptsRef.current, delays.length - 1)];
+                autoRetryTimerRef.current = setTimeout(() => {
+                  autoRetryTimerRef.current = null;
+                  autoRetryAttemptsRef.current += 1;
+                  retryConnectionRef.current();
+                }, delay);
+              }
+            } else {
+              setError(s.error); // recovery exhausted — manual Retry
+            }
+          } else {
+            setError(s.error);
+          }
           setJoined(s.connection === 'connected');
         },
         onSpeakingChange: (speakingUserId: string, speaking: boolean) => {
@@ -1283,6 +1319,12 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
       appStateSub.remove();
+      // Silent auto-recovery must not outlive the screen.
+      if (autoRetryTimerRef.current) {
+        clearTimeout(autoRetryTimerRef.current);
+        autoRetryTimerRef.current = null;
+      }
+      autoRetryAttemptsRef.current = 0;
 
       // Crash breadcrumb: the screen unmounted without a native crash, so any
       // in-flight join breadcrumb must not survive (a real crash never runs
@@ -1372,6 +1414,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // non-critical — engine.join() never throws; failures surface via state
     });
   }, []);
+  // Kept fresh for the silent auto-recovery scheduler above.
+  useEffect(() => { retryConnectionRef.current = retryConnection; }, [retryConnection]);
 
   /* ══════════════════════════════════════════════
      MIC / SPEAKER
