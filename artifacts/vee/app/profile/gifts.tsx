@@ -17,6 +17,7 @@ import { memo, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -456,9 +457,15 @@ export default function GiftDisplayScreen() {
           <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
             {displayName}
           </Text>
-          <Text style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
-            🎁 {totalGifts} gifts · 💎 {totalCoins.toLocaleString()} coins received
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: C.muted }}>
+              🎁 {totalGifts} gifts ·{' '}
+            </Text>
+            <DiamondIcon size={13} />
+            <Text style={{ fontSize: 13, color: C.muted }}>
+              {' '}{totalCoins.toLocaleString()} coins received
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -671,9 +678,12 @@ export default function GiftDisplayScreen() {
               {previewInfo?.name ?? 'Inactive gift'}
             </Text>
             {previewInfo && (
-              <Text style={{ fontSize: 16, fontWeight: '700', color: C.goldText, marginTop: 6 }}>
-                💎 {previewInfo.coins} diamonds
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                <DiamondIcon size={16} />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: C.goldText }}>
+                  {previewInfo.coins} diamonds
+                </Text>
+              </View>
             )}
             {previewGift && (
               <Text style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>
