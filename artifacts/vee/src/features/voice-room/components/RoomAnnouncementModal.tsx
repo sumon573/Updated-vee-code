@@ -12,7 +12,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import {
-  setAnnouncement, clearAnnouncement, type RoomAnnouncement,
+  setAnnouncement, clearAnnouncement, ANNOUNCEMENT_MAX_CHARS, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
@@ -110,16 +110,20 @@ export function RoomAnnouncementModal({
                 value={draft}
                 onChangeText={setDraft}
                 multiline
-                maxLength={500}
+                maxLength={ANNOUNCEMENT_MAX_CHARS}
                 placeholder={t('voiceRoom.announcement.placeholder')}
                 placeholderTextColor="#999"
                 style={{
-                  minHeight: 120, borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 12,
+                  minHeight: 76, borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 12,
                   padding: 12, fontSize: 15, color: '#111', textAlignVertical: 'top',
                   backgroundColor: '#F8F9FA',
                 }}
                 autoFocus
               />
+              {/* 2026-10-23 (boss): short-notice limit, shown live. */}
+              <Text style={{ color: draft.length >= ANNOUNCEMENT_MAX_CHARS ? '#EF4444' : '#999', fontSize: 11, fontWeight: '600', textAlign: 'right', marginTop: 6 }}>
+                {draft.length}/{ANNOUNCEMENT_MAX_CHARS}
+              </Text>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
                 <Pressable
                   onPress={() => setEditing(false)}
