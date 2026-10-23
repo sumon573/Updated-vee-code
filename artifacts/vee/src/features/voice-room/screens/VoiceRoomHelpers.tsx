@@ -65,6 +65,32 @@ export function fbAudToParticipant(m: RoomAudienceMember): Participant {
 }
 
 export function fbChatToMsg(m: RoomChatMsg): ChatMsg {
+  // 2026-10-23 gift card: RTDB may return the recipients array as a
+  // numeric-keyed object — normalize to a real array either way, and drop
+  // null optional fields back to undefined for the UI types.
+  let gift: ChatMsg['gift'];
+  if (m.kind === 'gift' && m.gift) {
+    const rawRecipients: unknown = m.gift.recipients;
+    const recipients = (Array.isArray(rawRecipients)
+      ? rawRecipients
+      : rawRecipients && typeof rawRecipients === 'object'
+        ? Object.values(rawRecipients as Record<string, unknown>)
+        : []) as Array<{ uid: string; name: string; photoURL?: string | null }>;
+    gift = {
+      giftId: m.gift.giftId,
+      giftName: m.gift.giftName,
+      thumbnailUrl: m.gift.thumbnailUrl || undefined,
+      coins: m.gift.coins,
+      quantity: m.gift.quantity || 1,
+      totalCoins: m.gift.totalCoins || m.gift.coins,
+      senderAvatar: m.gift.senderAvatar || undefined,
+      recipients: recipients.map((r) => ({
+        uid: r.uid,
+        name: r.name,
+        photoURL: r.photoURL || undefined,
+      })),
+    };
+  }
   return {
     id: m.id,
     sender: m.senderName,
@@ -72,7 +98,9 @@ export function fbChatToMsg(m: RoomChatMsg): ChatMsg {
     text: m.text,
     isMe: m.isMe ?? false,
     ts: m.ts,
-    replyTo: m.replyTo };
+    replyTo: m.replyTo,
+    kind: m.kind,
+    gift };
 }
 
 /* ═══════════════════════════════════════════
