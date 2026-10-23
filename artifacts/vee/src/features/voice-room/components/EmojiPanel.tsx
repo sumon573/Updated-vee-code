@@ -47,21 +47,26 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
         shadowOffset: { width: 0, height: -4 }, elevation: 20,
       }}>
         {STICKERS.map(sticker => (
-          <ScalePress
-            key={sticker.id}
-            style={{ width: '25%', alignItems: 'center' }}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(sticker.id); }}
-          >
-            <View style={{ width: 58, height: 58, alignItems: 'center', justifyContent: 'center' }}>
-              <Image
-                source={{ uri: stickerUrl(sticker.id)! }}
-                style={{ width: 52, height: 52 }}
-                contentFit="contain"
-                cachePolicy="memory-disk"
-                recyclingKey={sticker.id}
-              />
-            </View>
-          </ScalePress>
+          /* 2026-10-23 (Sumon): the grid squeezed left with a gap on the
+             right — ScalePress puts `style` on its INNER view, so the
+             25% width never sized the cell; the outer Pressable shrank
+             to content width. The cell View now owns the 25% width
+             (4 even columns, 12 stickers = 3 full rows). */
+          <View key={sticker.id} style={{ width: '25%', alignItems: 'center' }}>
+            <ScalePress
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(sticker.id); }}
+            >
+              <View style={{ width: 62, height: 62, alignItems: 'center', justifyContent: 'center' }}>
+                <Image
+                  source={{ uri: stickerUrl(sticker.id)! }}
+                  style={{ width: 56, height: 56 }}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                  recyclingKey={sticker.id}
+                />
+              </View>
+            </ScalePress>
+          </View>
         ))}
       </Animated.View>
     </>
