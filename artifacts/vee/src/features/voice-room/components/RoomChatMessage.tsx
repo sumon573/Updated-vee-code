@@ -113,36 +113,38 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{
-            borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10,
+            borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7,
             borderWidth: 1, borderColor: '#F0B64F',
           }}
         >
-          {/* Sender line */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <CardAvatar name={item.sender} photoURL={g.senderAvatar} color={item.color} size={30} />
-            <Text style={{ color: '#7C2D12', fontSize: 12, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
+          {/* Sender line — 2026-10-23 (Sumon): card made compact; the
+              full-size version took too much chat height. Same design,
+              ~30% shorter: smaller thumb/avatars/fonts/paddings. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <CardAvatar name={item.sender} photoURL={g.senderAvatar} color={item.color} size={24} />
+            <Text style={{ color: '#7C2D12', fontSize: 11.5, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
               {truncateTo12(item.sender)}
             </Text>
-            <Text style={{ color: '#9A3412', fontSize: 11, fontWeight: '600' }}>
+            <Text style={{ color: '#9A3412', fontSize: 10.5, fontWeight: '600' }}>
               {t('voiceRoom.chat.giftSent')}
             </Text>
             <View style={{ flex: 1 }} />
             <View style={{
               backgroundColor: '#D97706', borderRadius: 999,
-              paddingHorizontal: 9, paddingVertical: 3,
+              paddingHorizontal: 7, paddingVertical: 2,
               flexDirection: 'row', alignItems: 'center',
             }}>
-              <DiamondIcon size={11} />
-              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', marginLeft: 3 }}>
+              <DiamondIcon size={10} />
+              <Text style={{ color: '#FFFFFF', fontSize: 10.5, fontWeight: '800', marginLeft: 3 }}>
                 {formatDiamonds(g.totalCoins)}
               </Text>
             </View>
           </View>
 
           {/* Gift → receiver line */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 9 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
             <View style={{
-              width: 50, height: 50, borderRadius: 14,
+              width: 38, height: 38, borderRadius: 11,
               backgroundColor: 'rgba(255,255,255,0.75)',
               borderWidth: 1, borderColor: '#F5C86B',
               alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
@@ -150,45 +152,45 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
               {g.thumbnailUrl ? (
                 <Image
                   source={{ uri: g.thumbnailUrl }}
-                  style={{ width: 42, height: 42 }}
+                  style={{ width: 32, height: 32 }}
                   contentFit="contain"
                   cachePolicy="memory-disk"
                   recyclingKey={g.giftId}
                 />
               ) : (
-                <Text style={{ fontSize: 26 }}>🎁</Text>
+                <Text style={{ fontSize: 20 }}>🎁</Text>
               )}
             </View>
             <View style={{ flexShrink: 1 }}>
-              <Text style={{ color: '#431407', fontSize: 13, fontWeight: '800' }} numberOfLines={1}>
+              <Text style={{ color: '#431407', fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
                 {g.giftName}
               </Text>
               {g.quantity > 1 && (
-                <Text style={{ color: '#B45309', fontSize: 11, fontWeight: '700', marginTop: 1 }}>
+                <Text style={{ color: '#B45309', fontSize: 10.5, fontWeight: '700' }}>
                   {'×' + g.quantity}
                 </Text>
               )}
             </View>
-            <Text style={{ color: '#D97706', fontSize: 16, fontWeight: '900' }}>➜</Text>
+            <Text style={{ color: '#D97706', fontSize: 14, fontWeight: '900' }}>➜</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {recipients.map((r, i) => (
-                <View key={r.uid} style={{ marginLeft: i === 0 ? 0 : -9, zIndex: recipients.length - i }}>
-                  <CardAvatar name={r.name} photoURL={r.photoURL} color="#BE123C" size={32} />
+                <View key={r.uid} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: recipients.length - i }}>
+                  <CardAvatar name={r.name} photoURL={r.photoURL} color="#BE123C" size={26} />
                 </View>
               ))}
               {extraCount > 0 && (
                 <View style={{
-                  marginLeft: -9, width: 32, height: 32, borderRadius: 16,
+                  marginLeft: -8, width: 26, height: 26, borderRadius: 13,
                   backgroundColor: '#9A3412', alignItems: 'center', justifyContent: 'center',
                   borderWidth: 1.5, borderColor: '#FFFFFF',
                 }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800' }}>
                     {'+' + extraCount}
                   </Text>
                 </View>
               )}
             </View>
-            <Text style={{ color: '#7C2D12', fontSize: 12, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+            <Text style={{ color: '#7C2D12', fontSize: 11.5, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
               {truncateTo12(recipientNames)}
             </Text>
           </View>

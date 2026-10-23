@@ -4,9 +4,10 @@
  * IMO behavior: every member sees the pinned announcement; owner/admin can
  * edit it inline. Vee backend: roomAnnouncementService (rooms/{roomId}/announcement).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, Modal, Pressable, TextInput, ScrollView, Alert, ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +34,20 @@ export function RoomAnnouncementModal({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // 2026-10-23 (Sumon bug): the keyboard covered the writing box — this
+  // bottom sheet had no keyboard handling at all, so the auto-focused
+  // input slid under the keyboard. Track the real keyboard height and
+  // lift the whole sheet by exactly that amount (KAV is unreliable
+  // inside RN Modals on Android; measured height is deterministic).
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const onShow = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKbHeight(e.endCoordinates?.height ?? 0);
+    });
+    const onHide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
 
   const startEdit = () => {
     setDraft(announcement?.content ?? '');
@@ -82,7 +97,7 @@ export function RoomAnnouncementModal({
           onPress={(e) => e.stopPropagation()}
           style={{
             backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-            maxHeight: '70%', paddingBottom: 28,
+            maxHeight: '70%', paddingBottom: 28, marginBottom: kbHeight,
           }}
         >
           {/* header */}
