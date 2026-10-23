@@ -103,6 +103,26 @@ import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, a
 import { VoiceRoomBottomBar } from './VoiceRoomBottomBar';
 import { VoiceRoomModals } from './VoiceRoomModals';
 
+/**
+ * 2026-10-23 (boss: একই "joined the room" লাইন বারবার): the single
+ * gate for the room join system-message. In-memory set (this session)
+ * + AsyncStorage timestamp (across restarts): at most one join line
+ * per room per user per 30 minutes. Returns true when the caller may
+ * send. Storage trouble never blocks a legitimate first send.
+ */
+async function claimJoinMsgSlot(joinKey: string): Promise<boolean> {
+  if (sentJoinMsgKeys.has(joinKey)) return false;
+  addSentJoinMsgKey(joinKey);
+  try {
+    const raw = await AsyncStorage.getItem('vee_join_msg_ts');
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    if (map[joinKey] && Date.now() - map[joinKey] < 30 * 60 * 1000) return false;
+    map[joinKey] = Date.now();
+    await AsyncStorage.setItem('vee_join_msg_ts', JSON.stringify(map));
+  } catch { /* fall through — send */ }
+  return true;
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   const isRestore = restore === '1';
@@ -1170,12 +1190,18 @@ export default function VoiceRoomScreen() {
     hasSentEntryChatMsgRef.current = true;
     const isOwner = ownerId && ownerId === myUid;
     const displayName = isOwner ? `${myName} 👑` : myName;
-    sendRoomChatMsg(roomId, {
-      senderId: 'system',
-      senderName: 'System',
-      senderColor: C.gold,
-      text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
-      ts: Date.now() }).catch(() => {});
+    // 2026-10-23 (boss: একই join লাইন বারবার): this effect used to send
+    // on EVERY screen mount — the persisted 30-minute slot below is
+    // now the single gate for both join-message send sites.
+    void (async () => {
+      if (!(await claimJoinMsgSlot(`${roomId}:${myUid}`))) return;
+      sendRoomChatMsg(roomId, {
+        senderId: 'system',
+        senderName: 'System',
+        senderColor: C.gold,
+        text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
+        ts: Date.now() }).catch(() => {});
+    })();
   }, [roomId, myUid, myName, ownerId, t]);
 
   
@@ -1473,13 +1499,16 @@ export default function VoiceRoomScreen() {
       const joinKey = `${roomId}:${myUid}`;
       if (!isRestore && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
-        addSentJoinMsgKey(joinKey);
-        sendRoomChatMsg(roomId, {
-          senderId: 'system',
-          senderName: 'System',
-          senderColor: C.gold,
-          text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-          ts: Date.now() }).catch(() => {});
+        // Single persisted gate (see claimJoinMsgSlot): one join line
+        // per room per 30 minutes, across mounts AND app restarts.
+        if (await claimJoinMsgSlot(joinKey)) {
+          sendRoomChatMsg(roomId, {
+            senderId: 'system',
+            senderName: 'System',
+            senderColor: C.gold,
+            text: t('voiceRoom.screen.joinedRoom', { name: myName }),
+            ts: Date.now() }).catch(() => {});
+        }
       }
       presenceReadyRef.current = true;
     })();
