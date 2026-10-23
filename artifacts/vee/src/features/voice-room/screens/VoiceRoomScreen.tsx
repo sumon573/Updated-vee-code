@@ -334,6 +334,7 @@ export default function VoiceRoomScreen() {
   }, [wasRestored, seats]);
 
   const lastReactionTsRef = useRef(0);
+  const reactionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const handledInviteIds = useRef<Set<string>>(new Set());
 
@@ -453,22 +454,22 @@ export default function VoiceRoomScreen() {
       lastReactionTsRef.current = reaction.ts;
       const senderMember = seatsRef.current.find((m) => m && m.id === reaction.byUid);
       if (!senderMember) return;
-      const translateY = new Animated.Value(0);
-      const opacity = new Animated.Value(1);
-      const newReactions: Record<string, SeatReaction> = {
-        [senderMember.id]: { emoji: reaction.emoji, translateY, opacity } };
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: -55, duration: 1600, useNativeDriver: true }),
-        Animated.sequence([
-          Animated.delay(800),
-          Animated.timing(opacity, { toValue: 0, duration: 800, useNativeDriver: true }),
-        ]),
-      ]).start(() => {
+      // 2026-10-23 (Sumon): the emoji now performs inside the seat DP for
+      // ~3.3s (SeatEmojiReaction owns the motion); here we only mount it
+      // and schedule the unmount. A newer reaction on the same seat
+      // replaces the timer and remounts via its key.
+      const memberId = senderMember.id;
+      const key = reaction.ts;
+      setSeatReactions((prev: Record<string, SeatReaction>) => ({
+        ...prev, [memberId]: { emoji: reaction.emoji, key } }));
+      const old = reactionTimersRef.current[memberId];
+      if (old) clearTimeout(old);
+      reactionTimersRef.current[memberId] = setTimeout(() => {
         setSeatReactions((prev: Record<string, SeatReaction>) => {
-          const n = { ...prev }; delete n[senderMember.id]; return n;
+          if (prev[memberId]?.key !== key) return prev;
+          const n = { ...prev }; delete n[memberId]; return n;
         });
-      });
-      setSeatReactions((prev: Record<string, SeatReaction>) => ({ ...prev, ...newReactions }));
+      }, 3350);
     });
   }, [roomId]);
 
