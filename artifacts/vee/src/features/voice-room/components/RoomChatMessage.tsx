@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { ChatMsg } from '../types/room';
 import { fmt } from '../utils/format';
 import { MsgText } from './Avatar';
@@ -127,8 +128,9 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
               paddingHorizontal: 9, paddingVertical: 3,
               flexDirection: 'row', alignItems: 'center',
             }}>
-              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
-                {'💎 ' + formatDiamonds(g.totalCoins)}
+              <DiamondIcon size={11} />
+              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800', marginLeft: 3 }}>
+                {formatDiamonds(g.totalCoins)}
               </Text>
             </View>
           </View>
