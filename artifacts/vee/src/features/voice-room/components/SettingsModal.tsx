@@ -7,6 +7,7 @@ import * as Crypto from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
 import { C, ROOM_THEMES } from '../constants/theme';
 import { storeRoomPin } from '../services/firebaseRoomService';
+import type { RoomAnnouncement } from '../services/roomAnnouncementService';
 
 /* ─────────────────────────── Settings Modal ─────────────────────────── */
 
@@ -23,7 +24,7 @@ export function SettingsModal({
   topic, setTopic,
   description, setDescription,
   activeThemeId, onThemeChange,
-  onOpenHistory, accent,
+  onOpenHistory, announcement, onOpenAnnouncement, accent,
   roomIsPublic, roomIsLocked,
   onSaveSettings, roomId,
 }: {
@@ -47,6 +48,11 @@ export function SettingsModal({
   description: string; setDescription: (d: string) => void;
   activeThemeId: string; onThemeChange: (id: string) => void;
   onOpenHistory: () => void; accent: string;
+  /** 2026-10-23 (boss): announcement entry lives here now (moved out of
+   *  the room header). Shows the current announcement as the row's
+   *  subtitle; tapping opens the announcement panel (post/edit/clear). */
+  announcement: RoomAnnouncement | null;
+  onOpenAnnouncement: () => void;
   /** Current persisted value of isPublic from Firebase room info. */
   roomIsPublic: boolean;
   /** Current persisted value of isLocked from Firebase room info. */
@@ -293,6 +299,30 @@ export function SettingsModal({
               </View>
             )}
           </View>
+
+          {/* Announcement — 2026-10-23 (boss): moved here from the room
+              header. Post/edit/clear happens in the announcement panel. */}
+          <Pressable
+            onPress={() => { onOpenAnnouncement(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+            style={{ flexDirection: 'row', alignItems: 'center',
+              marginTop: 20, backgroundColor: 'rgba(255,193,7,0.08)',
+              borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: 'rgba(255,193,7,0.35)' }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12,
+              backgroundColor: 'rgba(255,193,7,0.18)',
+              alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Feather name="volume-2" size={18} color="#B45309" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                {t('voiceRoom.announcement.title')}
+              </Text>
+              <Text numberOfLines={1} style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                {announcement ? announcement.content : t('voiceRoom.announcement.post')}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={C.muted} />
+          </Pressable>
 
           {/* Operation History */}
           {isOwnerOrAdmin && (
