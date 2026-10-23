@@ -10,6 +10,7 @@ import { ChatMsg } from '../types/room';
 import { fmt } from '../utils/format';
 import { MsgText } from './Avatar';
 import { truncateTo12 } from '@/src/utils/truncateName';
+import { isStickerText, stickerLabel, stickerUrl } from '../services/stickerCatalog';
 
 type Props = {
   item: ChatMsg;
@@ -203,6 +204,43 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
     );
   }
 
+  /* ── Sticker messages (2026-10-23, Sumon): a reaction also lands in
+     chat as its designed animated sticker — character only, transparent,
+     no bubble. Long-press → reply (stickers are not copyable text). */
+  if (isStickerText(item.text)) {
+    return (
+      <Pressable
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onReply(item);
+        }}
+        style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
+      >
+        {!item.isMe && (
+          <Text style={{
+            color: item.color,
+            fontSize: 11, fontWeight: '800',
+            marginBottom: 3, marginLeft: 4,
+            letterSpacing: 0.2,
+          }}>
+            {truncateTo12(item.sender)}
+          </Text>
+        )}
+        <Image
+          source={{ uri: stickerUrl(item.text)! }}
+          style={{ width: 64, height: 64 }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          recyclingKey={item.text}
+        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+          marginTop: 3, marginHorizontal: 4 }}>
+          <Text style={{ color: C.muted, fontSize: 9 }}>{fmt(item.ts)}</Text>
+        </View>
+      </Pressable>
+    );
+  }
+
   const bubbleBg    = item.isMe ? accentColor + '30' : '#F1F5F9';
   const borderColor = item.isMe ? accentColor + '55' : '#E2E8F0';
 
@@ -252,7 +290,7 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
               ↩ {truncateTo12(item.replyTo.sender)}
             </Text>
             <Text style={{ color: C.sub, fontSize: 11 }} numberOfLines={2}>
-              {item.replyTo.text}
+              {isStickerText(item.replyTo.text) ? stickerLabel(item.replyTo.text) : item.replyTo.text}
             </Text>
           </View>
         )}

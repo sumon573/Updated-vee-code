@@ -130,21 +130,17 @@ export const SeatCard = memo(function SeatCard({
             shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
             elevation: member.speaking ? 0 : 4,
           }}>
-            {/* 2026-10-23 (Sumon): the reaction emoji now performs INSIDE
-                the DP — big, centered over the avatar on a soft scrim,
-                each emoji with its own designed motion (SeatEmojiReaction).
-                The old float-up-over-the-DP demo look is gone. */}
+            {/* 2026-10-23 (Sumon): the reaction is a DESIGNED animated
+                sticker — a glossy 3D character with a transparent
+                background and NO plate/disc (font glyphs rejected as
+                "demo"). It performs over the DP, slightly larger than
+                the DP itself, IMO-style. */}
             {reaction && (
               <View pointerEvents="none" style={{
                 position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                 alignItems: 'center', justifyContent: 'center', zIndex: 20,
               }}>
-                <View style={{
-                  position: 'absolute',
-                  width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
-                  backgroundColor: 'rgba(0,0,0,0.22)',
-                }} />
-                <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={37} />
+                <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={70} />
               </View>
             )}
             <Avatar

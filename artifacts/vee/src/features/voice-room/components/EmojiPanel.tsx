@@ -1,19 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, Pressable, Animated } from 'react-native';
+import { View, Pressable, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import ScalePress from '@/components/ScalePress';
 import { C } from '../constants/theme';
+import { STICKERS, stickerUrl } from '../services/stickerCatalog';
 
-// 2026-10-23 (Sumon): expanded to a designed set of 16 — every one has its
-// own motion inside the seat DP (see SeatEmojiReaction).
-const REACTION_EMOJIS = [
-  '😂', '🤣', '👍', '👏', '🥰', '😍', '😘', '❤️',
-  '😭', '👋', '😯', '🙂', '🫣', '🔥', '😎', '🥳',
-];
-
-/* ─────────────────────────── Emoji Panel ─────────────────────────── */
+/* ─────────────────────────── Sticker Panel ───────────────────────────
+   2026-10-23 (Sumon): the 😊 button opens the DESIGNED sticker set —
+   animated WebP characters (transparent background, no plate). His list:
+   👍 😂 😍 😡 😯 👋 🫣 🤔. Tapping one broadcasts the sticker id; the
+   sender's seat performs it and a sticker lands in chat. */
 export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
-  visible: boolean; onSelect: (emoji: string) => void; onClose: () => void; bottomOffset: number;
+  visible: boolean; onSelect: (stickerId: string) => void; onClose: () => void; bottomOffset: number;
 }) {
   const slideAnim   = useRef(new Animated.Value(80)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -41,17 +40,26 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
         position: 'absolute', bottom: bottomOffset, left: 12, right: 12, zIndex: 100,
         transform: [{ translateY: slideAnim }], opacity: opacityAnim,
         backgroundColor: '#FFFFFF', borderRadius: 22, borderWidth: 1.5, borderColor: C.border,
-        paddingVertical: 12, paddingHorizontal: 14,
-        flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center',
-        rowGap: 10,
+        paddingVertical: 12, paddingHorizontal: 10,
+        flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+        rowGap: 8,
         shadowColor: C.primary, shadowOpacity: 0.4, shadowRadius: 20,
         shadowOffset: { width: 0, height: -4 }, elevation: 20,
       }}>
-        {REACTION_EMOJIS.map(emoji => (
-          <ScalePress key={emoji} style={{ width: '12.5%', alignItems: 'center' }} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(emoji); }}>
-            <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center',
-              justifyContent: 'center', backgroundColor: 'rgba(5,181,250,0.10)' }}>
-              <Text style={{ fontSize: 22 }}>{emoji}</Text>
+        {STICKERS.map(sticker => (
+          <ScalePress
+            key={sticker.id}
+            style={{ width: '25%', alignItems: 'center' }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSelect(sticker.id); }}
+          >
+            <View style={{ width: 58, height: 58, alignItems: 'center', justifyContent: 'center' }}>
+              <Image
+                source={{ uri: stickerUrl(sticker.id)! }}
+                style={{ width: 52, height: 52 }}
+                contentFit="contain"
+                cachePolicy="memory-disk"
+                recyclingKey={sticker.id}
+              />
             </View>
           </ScalePress>
         ))}
