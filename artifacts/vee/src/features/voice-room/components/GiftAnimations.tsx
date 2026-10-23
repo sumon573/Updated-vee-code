@@ -446,34 +446,51 @@ function VideoGift({ animationUrl, size = 120, fullscreen = false }: {
 // 2026-10-21 (boss): onReady fires when the first frame is actually decoded —
 // the show clock in GiftFlyAnimation starts from THIS moment, so download
 // time never eats the gift's display time.
-function WebpGift({ animationUrl, size = 120, fullscreen = false, onReady }: {
+function WebpGift({ animationUrl, size = 120, fullscreen = false, thumbnailUrl, onReady }: {
   animationUrl: string;
   size?: number;
   fullscreen?: boolean;
+  thumbnailUrl?: string;
   onReady?: () => void;
 }) {
   const { width: screenW, height: screenH } = Dimensions.get('window');
   const giftSize = fullscreen ? Math.min(screenW * 0.92, screenH * 0.62) : size;
+  // 2026-10-23 (boss: gift send হলো কিন্তু দেখা গেলো না): a big WebP
+  // (2-3.5 MB) shows NOTHING while it downloads — the static thumbnail
+  // stands in as a poster from the first frame, so a send is visible
+  // immediately and the animation takes over the moment it is decoded.
+  const [loaded, setLoaded] = useState(false);
 
   return (
-    <ExpoImage
-      source={{ uri: animationUrl }}
-      style={{ width: giftSize, height: giftSize }}
-      contentFit="contain"
-      cachePolicy="memory-disk"
-      onLoad={onReady}
-      onError={onReady}
-      // Animated WebP loops natively via expo-image
-    />
+    <View style={{ width: giftSize, height: giftSize }}>
+      {thumbnailUrl && !loaded ? (
+        <ExpoImage
+          source={{ uri: thumbnailUrl }}
+          style={{ position: 'absolute', width: giftSize, height: giftSize }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+        />
+      ) : null}
+      <ExpoImage
+        source={{ uri: animationUrl }}
+        style={{ width: giftSize, height: giftSize }}
+        contentFit="contain"
+        cachePolicy="memory-disk"
+        onLoad={() => { setLoaded(true); onReady?.(); }}
+        onError={onReady}
+        // Animated WebP loops natively via expo-image
+      />
+    </View>
   );
 }
 
-export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, videoSize, videoFullscreen, onReady }: {
+export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animationType, thumbnailUrl, videoSize, videoFullscreen, onReady }: {
   giftId: string;
   emoji: string;
   size?: number;
   animationUrl?: string;
   animationType?: string;
+  thumbnailUrl?: string;
   videoSize?: number;
   videoFullscreen?: boolean;
   /** 2026-10-21 (boss): fires when the gift art is actually visible/decoded
@@ -494,7 +511,7 @@ export function AnimatedGift({ giftId, emoji, size = 26, animationUrl, animation
   // 2026-10-19: IMO gifts — animationType='webp' plays animated WebP fullscreen
   // via expo-image (native animated WebP support, no new native module).
   if (animationType === 'webp' && animationUrl) {
-    return <WebpGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} onReady={onReady} />;
+    return <WebpGift animationUrl={animationUrl} size={videoSize || Math.min(size * 2.5, 280)} fullscreen={videoFullscreen} thumbnailUrl={thumbnailUrl} onReady={onReady} />;
   }
   // 2026-10-17 (Sumon): CRITICAL FIX — server gifts with animationType='image'
   // must render the CDN image, not fall through to emoji!
