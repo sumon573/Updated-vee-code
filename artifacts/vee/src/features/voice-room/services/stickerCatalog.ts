@@ -13,7 +13,9 @@ export type StickerDef = { id: string; emoji: string };
 
 const STICKER_BASE = 'https://vee-club.duckdns.org/static/stickers';
 
-/** Order = Sumon's message order (2026-10-23). */
+/** Order = Sumon's message order (2026-10-23); 4 more added the same
+ *  evening on his order ("আরো কিছু emoji এরকম ডিজাইন করে add করো") —
+ *  same glossy-3D pipeline, ids stk_cry / stk_sad / stk_kiss / stk_clap. */
 export const STICKERS: StickerDef[] = [
   { id: 'stk_thumb', emoji: '👍' },
   { id: 'stk_laugh', emoji: '😂' },
@@ -23,6 +25,10 @@ export const STICKERS: StickerDef[] = [
   { id: 'stk_wave', emoji: '👋' },
   { id: 'stk_peek', emoji: '🫣' },
   { id: 'stk_think', emoji: '🤔' },
+  { id: 'stk_cry', emoji: '😭' },
+  { id: 'stk_sad', emoji: '🥺' },
+  { id: 'stk_kiss', emoji: '😘' },
+  { id: 'stk_clap', emoji: '👏' },
 ];
 
 const BY_ID = new Map(STICKERS.map((s) => [s.id, s]));
