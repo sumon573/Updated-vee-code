@@ -23,6 +23,7 @@ import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../com
 import { Role, Participant, BlockRecord } from '../types/room';
 import { submitReport } from '@/src/services/reportService';
 import { updateRoomSettings } from '../services/firebaseRoomService';
+import type { RoomAnnouncement } from '../services/roomAnnouncementService';
 
 export interface VoiceRoomModalsProps {
   accentColor: string;
@@ -50,6 +51,9 @@ export interface VoiceRoomModalsProps {
   activeThemeIdRef: React.MutableRefObject<string>;
   weeklyEarned: number;
   walletBalance: number;
+  /** 2026-10-23 (boss): announcement lives in Settings now. */
+  announcement: RoomAnnouncement | null;
+  setAnnouncementOpen: (v: boolean) => void;
   seats: Array<Participant | null>;
   audience: Participant[];
   allMembers: Participant[];
@@ -193,6 +197,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
           });
         }}
         onOpenHistory={() => { p.setSettingsOpen(false); p.setOpHistOpen(true); }}
+        announcement={p.announcement}
+        onOpenAnnouncement={() => { p.setSettingsOpen(false); p.setAnnouncementOpen(true); }}
         accent={p.accentColor}
         roomIsPublic={p.roomIsPublic}
         roomIsLocked={p.roomIsLocked}
