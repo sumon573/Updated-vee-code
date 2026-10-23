@@ -162,10 +162,11 @@ export type ChatMsg = {
   gift?: GiftChatInfo;
 };
 
-import { Animated } from 'react-native';
-
+/** A live seat emoji reaction. The animation lives in SeatEmojiReaction;
+    `key` (the reaction timestamp) remounts it so every reaction plays
+    fresh. 2026-10-23 (Sumon): replaces the old float-up Animated values —
+    the emoji now performs INSIDE the seat DP. */
 export type SeatReaction = {
   emoji: string;
-  translateY: Animated.Value;
-  opacity: Animated.Value;
+  key: number;
 };
