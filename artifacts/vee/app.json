@@ -8,7 +8,7 @@
     },
     "orientation": "portrait",
     "updates": {
-      "url": "https://u.expo.dev/76af2941-e66e-4252-afd1-bed9f3745348",
+      "url": "https://u.expo.dev/c1e01b64-922a-4383-9539-cbbe1ed50956",
       "enabled": true,
       "fallbackToCacheTimeout": 0,
       "checkAutomatically": "ON_LOAD"
@@ -135,9 +135,9 @@
         "origin": "https://vee.app"
       },
       "eas": {
-        "projectId": "76af2941-e66e-4252-afd1-bed9f3745348"
+        "projectId": "c1e01b64-922a-4383-9539-cbbe1ed50956"
       }
     },
-    "owner": "jegata5150s-team"
+    "owner": "hridoy5builds-team"
   }
 }
