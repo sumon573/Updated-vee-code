@@ -442,6 +442,12 @@
         ".write": "auth != null && !newData.exists() && (data.child('info').child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
         "info": {
           ".write": "auth != null && (!data.exists() || data.child('ownerId').val() === auth.uid || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+          // THEME FOR ADMINS (2026-10-22, boss): room admins may change ONLY
+          // the room theme. All other info fields stay owner-only (above).
+          "themeId": {
+            ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin' || auth.token.role === 'moderator')",
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
           "memberCount": {
             ".write": "auth != null && (root.child('rooms').child($roomId).child('info').child('ownerId').val() === auth.uid || root.child('rooms').child($roomId).child('admins').child(auth.uid).exists() || root.child('rooms').child($roomId).child('audience').child(auth.uid).exists() || auth.token.role === 'superAdmin' || auth.token.role === 'admin')",
             ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20"
