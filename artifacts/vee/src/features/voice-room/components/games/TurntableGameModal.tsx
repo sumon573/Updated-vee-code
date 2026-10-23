@@ -24,6 +24,7 @@ import {
 } from '../../services/roomGameService';
 import { fetchGiftCatalog, type CatalogGift } from '../../services/giftCatalogService';
 import { sendGift } from '@/src/features/wallet/walletService';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const SEGMENT_COLORS = ['#FF6B6B', '#FFA94D', '#FFD43B', '#69DB7C', '#4DABF7', '#B197FC'];
@@ -211,7 +212,10 @@ export function TurntableGameModal({ visible, roomId, hostUid, hostName, myUid, 
                       style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 10 }}
                     >
                       <Text style={{ flex: 1, fontSize: 14, color: '#000' }} numberOfLines={1}>{g.name}</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B' }}>💎{g.price}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <DiamondIcon size={13} />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B', marginLeft: 3 }}>{g.price}</Text>
+                      </View>
                     </Pressable>
                   ))}
                 </ScrollView>
