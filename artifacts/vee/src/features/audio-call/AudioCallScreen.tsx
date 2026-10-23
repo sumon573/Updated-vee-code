@@ -244,7 +244,21 @@ export default function AudioCallScreen({
 
   // ── End call (cleanup + navigate back) ───────────────────────────────────
   const endCall = useCallback((goBack = true) => {
-    if (cleaningUpRef.current) return;
+    if (cleaningUpRef.current) {
+      // 2026-10-23 (Sumon bug): cleanup already ran through an
+      // endCall(false) path (remote hangup while a persisted-session
+      // record existed) but this screen is STILL displayed — the user
+      // ends up stranded on the "Call Ended" page with a dead End
+      // button. Navigation is independent of cleanup: always honour a
+      // goBack request while the call screen is mounted.
+      if (goBack && isCallScreenMounted()) {
+        try {
+          if (router.canGoBack()) router.back();
+          else router.replace('/home');
+        } catch { /* non-critical — already dismissed */ }
+      }
+      return;
+    }
     cleaningUpRef.current = true;
     // 2026-10-13: bump the generation — an in-flight initiateCall checks
     // this afterwards and cleans up its stale signal write.
@@ -351,7 +365,8 @@ export default function AudioCallScreen({
       // whatever screen the user is on.
       if (isCallScreenMounted()) {
         try {
-          router.back();
+          if (router.canGoBack()) router.back();
+          else router.replace('/home');
         } catch { /* non-critical — already dismissed */ }
       }
     }
@@ -516,7 +531,12 @@ export default function AudioCallScreen({
                 clearTimeout(timeoutRef.current);
                 timeoutRef.current = null;
               }
-              if (getPersistedCallSession(roomId)) {
+              // 2026-10-23 (Sumon bug): the endCall(false) shortcut is
+              // ONLY for a genuinely minimized call (screen not mounted).
+              // On this returning path a persisted session ALWAYS exists,
+              // so the old check stranded the visible screen on
+              // "Call Ended" forever.
+              if (getPersistedCallSession(roomId) && !isCallScreenMounted()) {
                 endCall(false);
                 return;
               }
@@ -648,7 +668,11 @@ export default function AudioCallScreen({
             // দেরি করা টাইমার রাখলে পুরনো closure থেকে ১.৫ সেকেন্ড পরে endCall
             // চলতো; ব্যবহারকারী ওই ফাঁকে কলে ফিরলে টাইমারটি লাইভ সেশন মেরে
             // নতুন স্ক্রিন pop করে দিতো।
-            if (getPersistedCallSession(roomId)) {
+            // 2026-10-23 (Sumon bug): that shortcut must require the
+            // screen to be NOT mounted — a stale persisted record for
+            // this deterministic roomId otherwise stranded the visible
+            // screen on "Call Ended" with a dead End button.
+            if (getPersistedCallSession(roomId) && !isCallScreenMounted()) {
               endCall(false);
               return;
             }
