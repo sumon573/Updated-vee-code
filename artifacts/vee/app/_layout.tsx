@@ -84,6 +84,7 @@ import { isInteractionBlocked } from '@/src/services/blockService';
 import { tryGetApiBase } from '@/src/utils/platform';
 // NOTE 1 (2026-10-11): Global return-to-room bar for minimized voice rooms.
 import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
+import { destroyPersistedVoiceRoomEngineAsync } from '@/src/features/voice-room/useLivekitVoiceRoom';
 import RoomInvitePopup from '@/src/features/voice-room/components/RoomInvitePopup';
 import CallMinimizeBar from '@/src/features/audio-call/components/CallMinimizeBar';
 import {
@@ -702,6 +703,11 @@ function IncomingCallListener({
   // is also disabled while in flight.
   const acceptInFlightRef = useRef(false);
   const [accepting, setAccepting] = useState(false);
+  // 2026-10-23 (Sumon order): the ringing screen can be MINIMIZED to a
+  // small pill — the call keeps ringing (signal untouched, ringtone
+  // keeps playing), the user returns to what they were doing (e.g. a
+  // voice room) and taps the pill to bring the answer screen back.
+  const [ringMinimized, setRingMinimized] = useState(false);
   const setIncomingState = useCallback((call: IncomingCall | null) => {
     incomingRef.current = call;
     setIncoming(call);
@@ -722,6 +728,12 @@ function IncomingCallListener({
     return () => {
       stopIncomingCallAlert();
     };
+  }, [incoming]);
+
+  // A cleared call always resets the minimized-ring state, so the next
+  // incoming call opens full-screen again.
+  useEffect(() => {
+    if (!incoming) setRingMinimized(false);
   }, [incoming]);
 
   // 2026-10-19 CRASH-RISK fix: consume the push-tap-seeded incoming call so
@@ -780,14 +792,12 @@ function IncomingCallListener({
         cleanupCallSignal(uid);
         return;
       }
-      // 2026-10-19 stability fix: mutual exclusion — auto-decline an incoming
-      // 1-to-1 call while a voice room holds the native audio pipeline.
-      // Accepting would run two mic captures on one audio session (native
-      // contention = hard crash). The caller sees it as busy/declined.
-      if (call && (call as { status?: string }).status !== 'accepted' && isVoiceRoomAudioActive()) {
-        cleanupCallSignal(uid);
-        return;
-      }
+      // 2026-10-23 (Sumon order): NO auto-decline while in a voice room.
+      // The 2026-10-19 mutual-exclusion block silently killed incoming
+      // calls whenever the callee was in a room ("কল দিলে অটোমেটিক কেটে
+      // যায়"). Now the call RINGS normally over the room; the native
+      // audio handover happens only if the user ACCEPTS (see
+      // handleAccept), so the two pipelines still never overlap.
       // Block enforcement: auto-decline calls from blocked users (either way).
       if (call) {
         const blocked = await isInteractionBlocked(uid, call.callerId).catch(() => false);
@@ -856,6 +866,28 @@ function IncomingCallListener({
       logMissedCall(call.callerId);
       return;
     }
+    // 2026-10-23 (Sumon order): accepting from inside a voice room —
+    // hand the native audio pipeline over cleanly BEFORE joining the
+    // call. Dismiss the room screen if it's open (its unmount cleanup
+    // tears the engine down), destroy a minimized/persisted room engine
+    // if one exists, then wait (bounded) for the audio session to be
+    // fully released. This sequencing is what keeps the 2026-10-19
+    // two-pipelines-at-once crash impossible — without blocking the
+    // ring or the accept.
+    if (isVoiceRoomAudioActive()) {
+      try {
+        if (segmentsRef.current.includes('voice-room') && router.canDismiss()) {
+          router.dismiss();
+        }
+      } catch { /* non-critical — teardown below still runs */ }
+      try {
+        await destroyPersistedVoiceRoomEngineAsync();
+      } catch { /* non-critical — bounded wait below still applies */ }
+      const deadline = Date.now() + 2500;
+      while (isVoiceRoomAudioActive() && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
     // FIX (2026-10-10): Mark as accepted instead of deleting.
     // Deleting triggered the caller's decline timer, auto-cutting the call
     // after 1.5s even though the callee answered. The caller cleans up
@@ -886,6 +918,42 @@ function IncomingCallListener({
   }, [uid, logMissedCall, setIncomingState]);
 
   if (!incoming) return null;
+
+  // 2026-10-23 (Sumon order): minimized ringing state — a floating pill
+  // instead of the full-screen modal. The call is untouched: still
+  // ringing, and if the caller cancels the watcher clears `incoming`
+  // and this pill disappears (logged as missed, like an unanswered ring).
+  if (ringMinimized) {
+    return (
+      <Pressable
+        onPress={() => setRingMinimized(false)}
+        style={{
+          position: 'absolute', left: 16, right: 16, bottom: 24, zIndex: 60,
+          backgroundColor: '#1B1030', borderRadius: 999,
+          paddingVertical: 10, paddingHorizontal: 14,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          elevation: 10, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10,
+          borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+        }}
+      >
+        <View style={{
+          width: 34, height: 34, borderRadius: 17, backgroundColor: '#04be5a',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Feather name="phone-incoming" size={17} color="#fff" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+            {incoming.callerName}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11.5 }}>
+            Incoming voice call — tap to answer
+          </Text>
+        </View>
+        <Feather name="chevron-up" size={20} color="rgba(255,255,255,0.8)" />
+      </Pressable>
+    );
+  }
 
   // ── IMO port (2026-10-19): incoming call rebuilt in IMO's style.
   // IMO's incoming call is a FULL-SCREEN activity (not a bottom sheet):
@@ -926,6 +994,20 @@ function IncomingCallListener({
           }}
           edges={['top', 'bottom']}
         >
+          {/* 2026-10-23 (Sumon order): minimize the ringing screen to a
+              pill — the call keeps ringing; nothing is declined. */}
+          <Pressable
+            onPress={() => setRingMinimized(true)}
+            hitSlop={12}
+            style={{
+              position: 'absolute', top: 18, right: 18,
+              width: 40, height: 40, borderRadius: 20,
+              backgroundColor: 'rgba(255,255,255,0.14)',
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Feather name="chevron-down" size={22} color="#fff" />
+          </Pressable>
           {/* Caller info — centered (IMO: 72-96dp avatar, name, status) */}
           <View style={{ alignItems: 'center' }}>
             <View style={{
