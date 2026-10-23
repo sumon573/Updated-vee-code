@@ -196,6 +196,19 @@ export async function ensureAndroidChannel(): Promise<void> {
       lightColor: '#7C3AED',
       sound: 'notification_pop.wav',
     });
+    // 2026-10-23 (Sumon: incoming calls must arrive fast and be
+    // unmissable): a DEDICATED calls channel at MAX importance with
+    // public lock-screen visibility — the VPS sender targets
+    // 'vee_calls_v1' for type 'incoming-call' pushes only. MAX makes
+    // the call banner peek over other apps like a real call.
+    await Notifications.setNotificationChannelAsync('vee_calls_v1', {
+      name: 'Incoming Calls',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 400, 200, 400, 200, 400],
+      lightColor: '#22C55E',
+      sound: 'notification_pop.wav',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
     console.log('[FCM] Android channel ready');
   } catch (e) {
     console.log('[FCM] Channel setup error:', e);
