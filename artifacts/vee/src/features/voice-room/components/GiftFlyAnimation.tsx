@@ -265,7 +265,12 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
         </Text>
       </Animated.View>
 
-      {/* IMO big-gift gold broadcast (room-wide) */}
+      {/* IMO big-gift gold broadcast (room-wide) —
+          2026-10-23 (Sumon): banner looked far too big. Root cause: the
+          banner's AnimatedGift had no videoSize, so webp/video gifts
+          rendered at size × 2.5 (44 → 110dp) and stretched the whole
+          banner. Now pinned to an exact small thumb (videoSize 34) with
+          slimmer padding and text — a compact one-line-high broadcast. */}
       {isBig ? (
         <Animated.View style={{
           position: 'absolute', top: 100, left: 24, right: 24,
@@ -275,25 +280,26 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
             colors={['#ffe27a', '#ffb62e']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={{
-              borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10,
+              borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7,
               flexDirection: 'row', alignItems: 'center',
-              shadowColor: '#ffb62e', shadowOpacity: 0.5, shadowRadius: 12,
-              shadowOffset: { width: 0, height: 4 }, elevation: 8,
+              shadowColor: '#ffb62e', shadowOpacity: 0.5, shadowRadius: 8,
+              shadowOffset: { width: 0, height: 3 }, elevation: 6,
             }}>
-            <Text style={{ fontSize: 22, marginRight: 8 }}>🎉</Text>
+            <Text style={{ fontSize: 16, marginRight: 6 }}>🎉</Text>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#4a2f00', fontSize: 13, fontWeight: '900' }} numberOfLines={2}>
+              <Text style={{ color: '#4a2f00', fontSize: 12, fontWeight: '900' }} numberOfLines={1}>
                 {show.fromName} → {shownRecipients.map((r) => r.name).join(', ')}
                 {extraCount > 0 ? ` +${extraCount}` : ''}
               </Text>
-              <Text style={{ color: '#4a2f00', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+              <Text style={{ color: '#4a2f00', fontSize: 11, fontWeight: '700', marginTop: 1 }} numberOfLines={1}>
                 {t('voiceRoom.gifts.bigGiftSent', { coins: show.coins })}
                 {show.count > 1 ? ` ×${show.count}` : ''}
               </Text>
             </View>
             <AnimatedGift
-              giftId={show.giftId} emoji={show.emoji} size={44}
+              giftId={show.giftId} emoji={show.emoji} size={34}
               animationUrl={show.animationUrl} animationType={show.animationType}
+              videoSize={34}
             />
           </LinearGradient>
         </Animated.View>
@@ -310,6 +316,7 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
             <AnimatedGift
               giftId={show.giftId} emoji={show.emoji} size={30}
               animationUrl={show.animationUrl} animationType={show.animationType}
+              videoSize={30}
             />
             {show.count > 1 && <Text style={styles.comboInline}>×{show.count}</Text>}
             <Text style={styles.bannerArrow}>→</Text>
