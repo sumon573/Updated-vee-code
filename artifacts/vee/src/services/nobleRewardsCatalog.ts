@@ -107,7 +107,12 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     rankKey: 'marquis', rankName: 'Marquis', rankColor: '#EC407A',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-marquis.png?v=2',
+      // 2026-10-23 (Sumon): FINAL Marquis badge — design A "Heraldic"
+      // (burgundy enamel disc, rose-gold riveted rim, gold fleur-de-lis),
+      // animated slow sheen sweep across the enamel, glint on the gold.
+      // Approved by Sumon as final ("এটাই ফাইনাল"). Animated WebP on the
+      // VPS static host (expo-image surfaces render it animated).
+      designUrl: 'https://vee-club.duckdns.org/static/badges/marquis-badge-v1.webp',
       fallbackIcon: '👑',
     },
     frame: {
