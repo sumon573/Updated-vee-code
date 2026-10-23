@@ -15,6 +15,9 @@ type Props = {
   item: ChatMsg;
   accentColor: string;
   onReply: (msg: ChatMsg) => void;
+  /** Text messages only: long-press opens the Copy/Reply action sheet
+      (2026-10-23, Sumon — copy applies to user-sent text, nothing else). */
+  onAction?: (msg: ChatMsg) => void;
 };
 
 function initialsFor(name: string): string {
@@ -65,7 +68,7 @@ function CardAvatar({ name, photoURL, color, size }: {
  * @mention tokens are highlighted in the accent color via MsgText.
  * Memoized: every incoming message would otherwise re-render the whole list.
  */
-function RoomChatMessage({ item, accentColor, onReply }: Props) {
+function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
   const { t } = useTranslation();
   const isSystem = item.sender === 'System';
 
@@ -207,7 +210,9 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
     <Pressable
       onLongPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onReply(item);
+        // User-sent TEXT only → action sheet (Copy / Reply). Gift cards
+        // and system pills never reach this branch.
+        if (onAction) onAction(item); else onReply(item);
       }}
       style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
     >
@@ -260,7 +265,7 @@ function RoomChatMessage({ item, accentColor, onReply }: Props) {
         marginTop: 3, marginHorizontal: 4 }}>
         <Text style={{ color: C.muted, fontSize: 9 }}>{fmt(item.ts)}</Text>
         <Text style={{ color: C.muted + '66', fontSize: 9 }}>
-          {t('voiceRoom.chat.holdToReply')}
+          {t(onAction ? 'voiceRoom.chat.holdForActions' : 'voiceRoom.chat.holdToReply')}
         </Text>
       </View>
     </Pressable>
