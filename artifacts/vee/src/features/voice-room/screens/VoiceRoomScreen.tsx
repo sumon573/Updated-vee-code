@@ -2418,10 +2418,20 @@ export default function VoiceRoomScreen() {
   }
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      
+      style={{ flex: 1, backgroundColor: themeBg }}
       behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      keyboardVerticalOffset={0}
+      // 2026-10-23 (Sumon bug): after a theme change (Settings modal +
+      // keyboard cycles over the room), Android KAV kept a phantom
+      // paddingBottom — the whole room lifted and a white strip showed
+      // under the bottom bar (the navigator's white content background).
+      // On Android the window is adjustPan, so the OS itself keeps the
+      // focused input visible; KAV is only allowed to pad while OUR OWN
+      // keyboardDidShow/Hide ground truth says the keyboard is open.
+      // Keyboard closed ⇒ KAV can never pad ⇒ the room always reaches
+      // the very bottom, buttons never float above a gap. The themeBg
+      // on the KAV itself paints any transient frame in theme color.
+      enabled={Platform.OS !== 'android' || keyboardOpen}
     >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
       {}
