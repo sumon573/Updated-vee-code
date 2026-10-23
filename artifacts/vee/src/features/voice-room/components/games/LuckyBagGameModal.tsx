@@ -27,6 +27,7 @@ import {
 } from '../../services/roomGameService';
 import { fetchGiftCatalog, type CatalogGift } from '../../services/giftCatalogService';
 import { sendGift } from '@/src/features/wallet/walletService';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
 /** Entrance-fee options = gift-price amounts (wallet rules allow these debits). */
@@ -174,7 +175,10 @@ export function LuckyBagGameModal({ visible, roomId, hostUid, hostName, myUid, m
                     backgroundColor: fee === f ? '#E3F2FD' : '#F2F2F7',
                   }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: fee === f ? '#007AFF' : '#8E8E93' }}>💎{f}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <DiamondIcon size={14} />
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: fee === f ? '#007AFF' : '#8E8E93', marginLeft: 3 }}>{f}</Text>
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -198,7 +202,10 @@ export function LuckyBagGameModal({ visible, roomId, hostUid, hostName, myUid, m
                       <Text style={{ flex: 1, fontSize: 14, fontWeight: on ? '800' : '400', color: on ? '#007AFF' : '#000' }} numberOfLines={1}>
                         {g.name}
                       </Text>
-                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B' }}>💎{g.price}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <DiamondIcon size={13} />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B', marginLeft: 3 }}>{g.price}</Text>
+                      </View>
                     </Pressable>
                   );
                 })}
