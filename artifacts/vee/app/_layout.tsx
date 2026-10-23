@@ -390,6 +390,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [user?.uid]);
 
+  // 2026-10-23 (boss: অ্যাপ খুললেই সবকিছু রেডি থাকবে — রুমে গিয়ে যেই
+  // gift-ই পাঠাক, instant দেখা যাবে): warm the gift catalog (which also
+  // prefetches every gift thumbnail + animation into the image cache)
+  // the moment the user is signed in, while they are still browsing
+  // Home — NOT when the room or gift panel first opens; for a 3.5 MB
+  // WebP that is far too late.
+  useEffect(() => {
+    if (!user?.uid) return;
+    import('../src/features/voice-room/services/giftCatalogService')
+      .then(({ fetchGiftCatalog }) => { fetchGiftCatalog().catch(() => {}); })
+      .catch(() => {});
+  }, [user?.uid]);
+
   // BUG 13 fix: initializeOneSignal is Expo-Go-safe — it checks executionEnvironment
   // internally and is a no-op in Expo Go. Safe to call unconditionally here.
   useEffect(() => {
