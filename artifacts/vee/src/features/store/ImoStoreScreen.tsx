@@ -25,6 +25,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/context/AuthContext';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { fmtDiamonds } from '@/src/features/voice-room/utils/format';
 import {
@@ -126,7 +127,7 @@ function OwnBadge({ owned, using }: { owned: boolean; using: boolean }) {
 function Price({ value, size = 13 }: { value: number; size?: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 3 }}>
-      <Text style={{ fontSize: size }}>💎</Text>
+      <DiamondIcon size={size} />
       <Text style={{ color: C.text, fontSize: size, fontWeight: '800', marginLeft: 3 }}>
         {value.toLocaleString()}
       </Text>
@@ -251,7 +252,7 @@ function BackgroundCardInner({
           <Text style={{ color: C.green, fontSize: 12, fontWeight: '800', marginTop: 2 }}>Using</Text>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-            <Text style={{ fontSize: 12 }}>💎</Text>
+            <DiamondIcon size={12} />
             <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800', marginLeft: 3 }}>
               {item.price.toLocaleString()}
             </Text>
@@ -700,7 +701,7 @@ function PreviewSheet({
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ fontSize: 17 }}>💎</Text>
+            <DiamondIcon size={17} />
             <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800', marginLeft: 6 }}>
               {price.toLocaleString()}
             </Text>
@@ -933,7 +934,7 @@ export function ImoStoreScreen() {
           shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6,
           shadowOffset: { width: 0, height: 2 },
         }}>
-          <Text style={{ fontSize: 15 }}>💎</Text>
+          <DiamondIcon size={15} />
           <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', marginLeft: 4 }}>
             {fmtDiamonds(balance)}
           </Text>
