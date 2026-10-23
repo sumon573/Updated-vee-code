@@ -111,7 +111,11 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-marquis.png?v=2',
+      // 2026-10-23 (Sumon): FINAL Marquis frame — his own fantasy design
+      // (violet plumes + gold crest), animated slow upward sway, all vines
+      // moving, gold frozen. Approved by Sumon as final ("এটাই ফাইনাল").
+      // Animated WebP on the VPS static host (expo-image renders it animated).
+      designUrl: 'https://vee-club.duckdns.org/static/frames/marquis-frame-v5.webp',
       config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
