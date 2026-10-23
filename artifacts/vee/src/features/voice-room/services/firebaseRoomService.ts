@@ -664,6 +664,25 @@ export function subscribeSeats(
         if (idx >= 0 && idx < 10) seats[idx] = child.val() as NonNullable<RoomSeat>;
       });
     }
+    // 2026-10-23 (boss: "একটা আইডি দুই জায়গায় দেখাচ্ছে" — NEVER again):
+    // render-level guarantee — the same userId must never render in two
+    // seats at once, even in the brief window where a ghost seat still
+    // exists in the data. Keep the seat with the freshest heartbeat
+    // (seatTs); ties keep the lower seat index.
+    const bestIdxByUser = new Map<string, number>();
+    for (let i = 0; i < seats.length; i++) {
+      const s = seats[i] as { userId?: string; seatTs?: number } | null;
+      if (!s || !s.userId) continue;
+      const prev = bestIdxByUser.get(s.userId);
+      if (prev === undefined) { bestIdxByUser.set(s.userId, i); continue; }
+      const prevTs = (seats[prev] as { seatTs?: number } | null)?.seatTs ?? 0;
+      if ((s.seatTs ?? 0) > prevTs) {
+        seats[prev] = null;
+        bestIdxByUser.set(s.userId, i);
+      } else {
+        seats[i] = null;
+      }
+    }
     callback(seats);
   }, () => {
     callback(Array(10).fill(null));
@@ -813,6 +832,41 @@ export async function takeSeat(
   }
 }
 
+/**
+ * 2026-10-23 (boss: একটা আইডি দুই জায়গায় — NEVER again): a user may
+ * occupy exactly ONE seat per room. Atomically nulls every seat held by
+ * `userId` except `keepIdx`, and cancels the ghost seats' pending
+ * onDisconnect ops so a later socket drop cannot wipe the real seat.
+ * Called after every successful takeSeat claim AND after the reconnect
+ * presence re-register's direct seat write — the two paths that could
+ * otherwise leave a resurrected ghost seat behind.
+ */
+export async function clearOtherSeats(
+  roomId: string,
+  userId: string,
+  keepIdx: number,
+): Promise<void> {
+  try {
+    const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`));
+    if (!seatsSnap.exists()) return;
+    const ghostPaths: Record<string, null> = {};
+    seatsSnap.forEach((child) => {
+      const key = child.key ?? '';
+      const s = child.val() as { userId?: string } | null;
+      if (s && s.userId === userId && Number(key) !== keepIdx) {
+        ghostPaths[`rooms/${roomId}/seats/${key}`] = null;
+        onDisconnect(ref(database, `rooms/${roomId}/seats/${key}`)).cancel().catch(() => {});
+      }
+    });
+    if (Object.keys(ghostPaths).length > 0) {
+      await update(ref(database), ghostPaths);
+    }
+  } catch {
+    // Non-critical — subscribeSeats dedupes the render and VeeGuard
+    // sweeps duplicates server-side.
+  }
+}
+
 async function takeSeatInner(
   roomId: string,
   seatIndex: number,
@@ -864,32 +918,9 @@ async function takeSeatInner(
     return { success: false };
   }
 
-  // GHOST FIX (2026-10-09): atomically clear EVERY other seat held by this
-  // user. The UI's mySeatIdx-based removeSeat() is fire-and-forget and can be
-  // stale, leaving ghost profiles that inflate member counts and duplicate
-  // the member list. Clearing here (service level) is authoritative.
-  try {
-    const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`));
-    if (seatsSnap.exists()) {
-      const ghostPaths: Record<string, null> = {};
-      seatsSnap.forEach((child) => {
-        const key = child.key ?? '';
-        const s = child.val() as { userId?: string } | null;
-        if (s && s.userId === member.userId && Number(key) !== seatIndex) {
-          ghostPaths[`rooms/${roomId}/seats/${key}`] = null;
-          // Also cancel any lingering onDisconnect for the ghost seat so a
-          // later disconnect doesn't wipe the NEW seat by mistake.
-          onDisconnect(ref(database, `rooms/${roomId}/seats/${key}`)).cancel().catch(() => {});
-        }
-      });
-      if (Object.keys(ghostPaths).length > 0) {
-        await update(ref(database), ghostPaths);
-      }
-    }
-  } catch {
-    // Non-critical — ghosts will be cleaned on next seat change; counts
-    // are recomputed best-effort below.
-  }
+  // GHOST FIX (2026-10-09) — now the shared clearOtherSeats() helper
+  // (2026-10-23), also called by the reconnect presence re-register.
+  await clearOtherSeats(roomId, member.userId, seatIndex);
 
   // 2026-10-22 (boss): seated users KEEP their audience entry. The chat
   // rules require an audience entry to post, so deleting it here silently
@@ -1710,6 +1741,9 @@ export type RoomGiftEvent = {
   coins: number;
   animationUrl?: string | null;
   animationType?: string | null;
+  // 2026-10-23: static poster shown while the (large) animation downloads,
+  // so a send is never invisible.
+  thumbnailUrl?: string | null;
   // 2026-10-17 (Sumon): Server-driven video size.
   videoSize?: number | null;
   videoFullscreen?: boolean | null;
