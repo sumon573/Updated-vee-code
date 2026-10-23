@@ -18,6 +18,7 @@ import {
   DataSnapshot,
 } from 'firebase/database';
 import { database } from '../config/firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type VeeUser = {
   uid: string;
@@ -232,9 +233,28 @@ export function subscribeUser(
   uid: string,
   callback: (user: VeeUser | null) => void,
 ): () => void {
+  // 2026-10-23 (boss: offline-এ profile খোলে না): deliver the last
+  // known profile from the on-device cache IMMEDIATELY, then let the
+  // live listener overwrite it (and refresh the cache) when data
+  // arrives. Offline, the screen shows the real profile instead of
+  // an endless loader; online, nothing changes.
+  const cacheKey = `vee_user_cache_${uid}`;
+  AsyncStorage.getItem(cacheKey)
+    .then((raw) => {
+      if (!raw) return;
+      try {
+        const cached = JSON.parse(raw) as VeeUser;
+        if (cached && cached.uid === uid) callback(cached);
+      } catch { /* corrupt cache — live data will follow */ }
+    })
+    .catch(() => {});
   const userRef = ref(database, `users/${uid}`);
   return onValue(userRef, (snap) => {
-    callback(snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null);
+    const user = snap.exists() ? sanitizeVeeUser(uid, snap.val()) : null;
+    if (user) {
+      AsyncStorage.setItem(cacheKey, JSON.stringify(user)).catch(() => {});
+    }
+    callback(user);
   });
 }
 
