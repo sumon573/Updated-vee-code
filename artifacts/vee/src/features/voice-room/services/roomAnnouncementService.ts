@@ -21,6 +21,15 @@ export interface RoomAnnouncement {
   createdByName: string;
 }
 
+/**
+ * 2026-10-23 (boss): an announcement is a SHORT notice — it pins as a
+ * slim highlighted strip at the top of the chat box, so long text is
+ * not allowed (it would fill the whole comment box). 100 chars ≈ the
+ * two lines the strip can show. Enforced in the editor (maxLength +
+ * counter) and again here at write time.
+ */
+export const ANNOUNCEMENT_MAX_CHARS = 100;
+
 function announcementRef(roomId: string) {
   return ref(database, `rooms/${roomId}/announcement`);
 }
@@ -60,7 +69,7 @@ export async function setAnnouncement(
   userName: string,
   content: string,
 ): Promise<void> {
-  const trimmed = content.trim().slice(0, 500);
+  const trimmed = content.trim().slice(0, ANNOUNCEMENT_MAX_CHARS);
   if (!trimmed) throw new Error('empty');
   await set(announcementRef(roomId), {
     content: trimmed,
