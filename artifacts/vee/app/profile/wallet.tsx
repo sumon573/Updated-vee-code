@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -82,7 +83,11 @@ function TransactionItem({ tx, last }: { tx: WalletTransaction; last?: boolean }
           backgroundColor: isRecharge ? C.blueLight : isReceived ? '#E6F7ED' : C.tile,
           alignItems: 'center', justifyContent: 'center',
           marginRight: 12 }}>
-          <Text style={{ fontSize: 15 }}>{tx.emoji || (isRecharge ? '💎' : '🎁')}</Text>
+          {tx.emoji
+            ? <Text style={{ fontSize: 15 }}>{tx.emoji}</Text>
+            : isRecharge
+              ? <DiamondIcon size={15} />
+              : <Text style={{ fontSize: 15 }}>🎁</Text>}
         </View>
 
         {/* Info */}
@@ -99,11 +104,14 @@ function TransactionItem({ tx, last }: { tx: WalletTransaction; last?: boolean }
         </View>
 
         {/* Amount */}
-        <Text style={{
-          fontSize: 16, fontWeight: '800',
-          color: (isRecharge || isReceived) ? C.green : C.muted }}>
-          {(isRecharge || isReceived) ? '+' : '-'}{Math.abs(tx.diamonds)} 💎
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Text style={{
+            fontSize: 16, fontWeight: '800',
+            color: (isRecharge || isReceived) ? C.green : C.muted }}>
+            {(isRecharge || isReceived) ? '+' : '-'}{Math.abs(tx.diamonds)}
+          </Text>
+          <DiamondIcon size={14} />
+        </View>
       </View>
       {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
     </View>
@@ -197,9 +205,12 @@ export default function WalletScreen() {
               })()}
             </Text>
           )}
-          <Text style={{ color: C.blue, fontSize: 16, fontWeight: '800', marginTop: 2 }}>
-            💎 {t('wallet.diamondsLabel')}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <DiamondIcon size={16} />
+            <Text style={{ color: C.blue, fontSize: 16, fontWeight: '800' }}>
+              {t('wallet.diamondsLabel')}
+            </Text>
+          </View>
 
           {/* Top-up button — boss's standard: #E3F2FD bg + #007AFF text */}
           <Pressable
@@ -248,7 +259,7 @@ export default function WalletScreen() {
           </View>
         ) : rechargeTxs.length === 0 ? (
           <View style={[cardStyle, { alignItems: 'center', paddingVertical: 44 }]}>
-            <Text style={{ fontSize: 40 }}>💎</Text>
+            <DiamondIcon size={40} />
             <Text style={{ color: C.text, fontSize: 16, fontWeight: '800', marginTop: 14 }}>
               {t('wallet.noTransactions')}
             </Text>
