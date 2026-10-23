@@ -95,7 +95,7 @@ import {
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
 import {
-  subscribeRoomChat, sendRoomChatMsg, loadOlderMessages,
+  subscribeRoomChat, sendRoomChatMsg, loadOlderMessages, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
 
 
@@ -335,6 +335,14 @@ export default function VoiceRoomScreen() {
 
   const lastReactionTsRef = useRef(0);
   const reactionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // 2026-10-23 (Sumon: super-fast room sends): optimistic chat echoes —
+  // my own message/sticker renders the instant I tap send, under the same
+  // push key the subscription will deliver, so it never waits for the
+  // network round trip and never duplicates when the snapshot lands.
+  const pendingEchoesRef = useRef<ChatMsg[]>([]);
+  // My own seat reaction is performed locally at tap time; this marks it
+  // so the subscription copy of the same reaction is not played twice.
+  const lastLocalReactionRef = useRef<{ emoji: string; at: number } | null>(null);
 
   const handledInviteIds = useRef<Set<string>>(new Set());
 
@@ -451,6 +459,14 @@ export default function VoiceRoomScreen() {
       if (!reaction) return;
       if (reaction.ts <= lastReactionTsRef.current) return;
       if (Date.now() - reaction.ts > 5000) return;
+      // 2026-10-23: my own reaction already performed locally at tap
+      // time (see sendEmojiReaction) — never replay its subscription copy.
+      const local = lastLocalReactionRef.current;
+      if (reaction.byUid === myUid && local && reaction.emoji === local.emoji
+        && Date.now() - local.at < 4000) {
+        lastReactionTsRef.current = reaction.ts;
+        return;
+      }
       lastReactionTsRef.current = reaction.ts;
       const senderMember = seatsRef.current.find((m) => m && m.id === reaction.byUid);
       if (!senderMember) return;
@@ -767,7 +783,6 @@ export default function VoiceRoomScreen() {
   }, [actionMsg]);
   
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [sendingMsg,   setSendingMsg]   = useState(false);
 
   
   const [seatReactions,  setSeatReactions]  = useState<Record<string, SeatReaction>>({});
@@ -1104,7 +1119,16 @@ export default function VoiceRoomScreen() {
     return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
       const cutoff = historyCutoffTsRef.current;
       const visible = cutoff > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= cutoff) : fbMsgs;
-      setMessages(visible.map(fbChatToMsg));
+      const deliveredMsgs = visible.map(fbChatToMsg);
+      // 2026-10-23: optimistic echoes — drop the ones this snapshot now
+      // contains (same push key, so the delivered copy replaces them in
+      // place) and keep the still-in-flight ones appended at the end.
+      if (pendingEchoesRef.current.length > 0) {
+        const deliveredIds = new Set(deliveredMsgs.map((m) => m.id));
+        pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => !deliveredIds.has(e.id));
+      }
+      const pending = pendingEchoesRef.current;
+      setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
       if (visible.length > 0) {
         setChatOldestKey(visible[0].id);
         setHasOlderMsgs(visible.length >= 50);
@@ -2124,12 +2148,19 @@ export default function VoiceRoomScreen() {
 
   const sendingMsgRef = useRef(false);
 
-  const sendMessage = useCallback(async () => {
+  // 2026-10-23 (Sumon: room sends must be SUPER FAST): optimistic send.
+  // The old handler awaited TWO network round trips (block-check read,
+  // then the write) before the sender saw their own message, and a 1.5 s
+  // per-room lock silently swallowed quick follow-up messages. Now the
+  // message renders instantly as an echo under its final push key, the
+  // input clears immediately, the write happens in the background, and
+  // only a 300 ms anti-double-tap window remains.
+  const sendMessage = useCallback(() => {
     const text = chatInput.trim();
     if (!text || sendingMsgRef.current) return;
     const now = Date.now();
     const lastSent = lastChatSendAt.get(roomId) ?? 0;
-    if (now - lastSent < 1500) return;
+    if (now - lastSent < 300) return;
     if (amChatBlocked) {
       Alert.alert(
         t('voiceRoom.screen.blockedTitle'),
@@ -2139,35 +2170,42 @@ export default function VoiceRoomScreen() {
     }
     lastChatSendAt.set(roomId, now);
     sendingMsgRef.current = true;
-    setSendingMsg(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await sendRoomChatMsg(roomId, {
-        senderId: myUid,
-        senderName: myName,
-        senderColor: myColor,
-        text,
-        ts: Date.now(),
-        ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}) });
-      setChatInput('');
-      setReplyingTo(null);
-      setMentionQuery(null);
-      if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = setTimeout(() => {
-        scrollTimerRef.current = null;
-        chatRef.current?.scrollToEnd({ animated: true });
-      }, 80);
-    } catch (err) {
+    const id = createRoomChatKey(roomId);
+    const payload: Omit<RoomChatMsg, 'id' | 'isMe'> = {
+      senderId: myUid,
+      senderName: myName,
+      senderColor: myColor,
+      text,
+      ts: now,
+      ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}),
+    };
+    const echo = fbChatToMsg({ ...payload, id, isMe: true });
+    pendingEchoesRef.current = [...pendingEchoesRef.current, echo];
+    setMessages((prev: ChatMsg[]) => [...prev, echo]);
+    setChatInput('');
+    setReplyingTo(null);
+    setMentionQuery(null);
+    if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      scrollTimerRef.current = null;
+      chatRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+    sendRoomChatMsg(roomId, payload, id).catch((err) => {
+      // Write failed — pull the echo back; restore the typed text if the
+      // box is still empty so nothing the user wrote is lost.
+      pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== id);
+      setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== id));
       if (err instanceof Error && err.message === 'blocked') {
         Alert.alert(
           t('voiceRoom.screen.blockedTitle'),
           t('voiceRoom.screen.commentBlockedMsg'),
         );
+      } else {
+        setChatInput((cur: string) => (cur ? cur : text));
       }
-    } finally {
-      sendingMsgRef.current = false;
-      setSendingMsg(false);
-    }
+    });
+    sendingMsgRef.current = false;
   }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t, amChatBlocked]);
 
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
@@ -2304,13 +2342,42 @@ export default function VoiceRoomScreen() {
 
   const sendEmojiReaction = useCallback((emoji: string) => {
     setEmojiPanelOpen(false);
+    const now = Date.now();
+    // 2026-10-23 (Sumon: super-fast): perform MY OWN seat reaction
+    // locally, instantly — it used to wait for the RTDB round trip. The
+    // subscription copy is recognised and skipped (see the reaction
+    // subscription). Only when I'm actually seated, like the remote path.
+    if (seatsRef.current.some((m) => m && m.id === myUid)) {
+      lastLocalReactionRef.current = { emoji, at: now };
+      lastReactionTsRef.current = now;
+      setSeatReactions((prev: Record<string, SeatReaction>) => ({
+        ...prev, [myUid]: { emoji, key: now } }));
+      const old = reactionTimersRef.current[myUid];
+      if (old) clearTimeout(old);
+      reactionTimersRef.current[myUid] = setTimeout(() => {
+        setSeatReactions((prev: Record<string, SeatReaction>) => {
+          if (prev[myUid]?.key !== now) return prev;
+          const n = { ...prev }; delete n[myUid]; return n;
+        });
+      }, 3350);
+    }
     sendRoomEmojiReaction(roomId, { emoji, byUid: myUid, byName: myName }).catch(() => {});
-    sendRoomChatMsg(roomId, {
+    // Chat bubble/sticker: same optimistic echo as text messages.
+    const id = createRoomChatKey(roomId);
+    const payload: Omit<RoomChatMsg, 'id' | 'isMe'> = {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
       text: emoji,
-      ts: Date.now() }).catch(() => {});
+      ts: now,
+    };
+    const echo = fbChatToMsg({ ...payload, id, isMe: true });
+    pendingEchoesRef.current = [...pendingEchoesRef.current, echo];
+    setMessages((prev: ChatMsg[]) => [...prev, echo]);
+    sendRoomChatMsg(roomId, payload, id).catch(() => {
+      pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== id);
+      setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== id));
+    });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [roomId, myUid, myName, myColor]);
 
@@ -2898,13 +2965,13 @@ export default function VoiceRoomScreen() {
 
           <Pressable
             onPress={sendMessage}
-            disabled={sendingMsg || amChatBlocked}
+            disabled={amChatBlocked}
             hitSlop={8}
             style={{
               width: 46, height: 46, borderRadius: 23,
               backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? accentColor : C.muted),
               alignItems: 'center', justifyContent: 'center',
-              opacity: (sendingMsg || amChatBlocked) ? 0.5 : 1 }}
+              opacity: amChatBlocked ? 0.5 : 1 }}
           >
             <Feather name={amChatBlocked ? 'slash' : 'send'} size={18} color="#fff" />
           </Pressable>
