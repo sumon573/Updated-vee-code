@@ -512,6 +512,14 @@ export default function VoiceRoomScreen() {
     [activeThemeId],
   );
 
+  // 2026-10-23 (boss): scene themes — the animated scene renders inside
+  // AnimatedThemeBackground (background layer only, zIndex 0); seats, DPs,
+  // chat, buttons and texts all render on top and are never covered.
+  const themeScene = useMemo(
+    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.scene,
+    [activeThemeId],
+  );
+
   
   const [hasJoined, setHasJoined] = useState(false);
   const [isRoomMember, setIsRoomMember] = useState(false);
@@ -2400,7 +2408,7 @@ export default function VoiceRoomScreen() {
         />
       )}
       {}
-      <AnimatedThemeBackground accentColor={accentColor} />
+      <AnimatedThemeBackground accentColor={accentColor} scene={themeScene} />
       <SafeAreaView edges={['top']}>
         {}
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 2 }}>
