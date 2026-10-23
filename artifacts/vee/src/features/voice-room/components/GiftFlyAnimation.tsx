@@ -26,6 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { GiftLuxuryEffect } from './GiftLuxuryEffects';
 import { database } from '@/src/config/firebase';
 
@@ -326,7 +327,10 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
               </View>
             ))}
             {extraCount > 0 && <Text style={styles.bannerName}>+{extraCount}</Text>}
-            <Text style={styles.bannerCoins}>💎{show.coins}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
+              <DiamondIcon size={13} />
+              <Text style={[styles.bannerCoins, { marginLeft: 2 }]}>{show.coins}</Text>
+            </View>
           </View>
         </Animated.View>
       )}
@@ -529,7 +533,10 @@ function ReceiveBannerCard({
         <GiftAvatar photoURL={entry.toAvatar} name={entry.toName} size={34} />
         <Text style={styles.recvName} numberOfLines={1}>@{entry.toName}</Text>
         <Text style={styles.combo}>×{entry.count}</Text>
-        <Text style={styles.bannerCoins}>💎{entry.coins}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
+          <DiamondIcon size={13} />
+          <Text style={[styles.bannerCoins, { marginLeft: 2 }]}>{entry.coins}</Text>
+        </View>
       </View>
     </Animated.View>
   );
