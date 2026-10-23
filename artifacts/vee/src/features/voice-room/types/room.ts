@@ -102,7 +102,11 @@ export type GiftSentInfo = {
   giftId: string;
   emoji: string;
   giftName?: string;
-  
+  /** Real gift thumbnail (PNG) from the server catalog — for the gift card. */
+  thumbnailUrl?: string;
+  /** How many units of the gift were sent to each recipient (IMO stepper). */
+  quantity?: number;
+
   coins: number;
   senderUid: string;
   senderName: string;
@@ -127,6 +131,24 @@ export type BlockRecord = {
   isActive: boolean;
 };
 
+/**
+ * Structured payload for a gift chat message (2026-10-23, Sumon picked
+ * Option A — highlight gift card). Stored on the chat record alongside the
+ * plain-text fallback, so older clients still show a readable line.
+ */
+export type GiftChatInfo = {
+  giftId: string;
+  giftName: string;
+  thumbnailUrl?: string;
+  /** Unit price in diamonds. */
+  coins: number;
+  quantity: number;
+  /** Total diamonds for the whole send: coins × quantity × recipients. */
+  totalCoins: number;
+  senderAvatar?: string;
+  recipients: Array<{ uid: string; name: string; photoURL?: string }>;
+};
+
 export type ChatMsg = {
   id: string;
   sender: string;
@@ -135,6 +157,9 @@ export type ChatMsg = {
   isMe: boolean;
   ts: number;
   replyTo?: { sender: string; text: string; color: string };
+  /** 'gift' renders the highlight gift card instead of a plain bubble. */
+  kind?: string;
+  gift?: GiftChatInfo;
 };
 
 import { Animated } from 'react-native';
