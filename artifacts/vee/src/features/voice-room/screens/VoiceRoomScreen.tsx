@@ -32,8 +32,8 @@ import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, ro
 import { getWeekStart } from '../utils/format';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import { SeatCard } from '../components/SeatCard';
-import PairLink, { PAIR_LINK_W, PAIR_LINK_H } from '../components/PairLink';
-import { resolveDesign } from '../components/handshakeDesigns';
+import PairHalo, { HALO_R } from '../components/PairHalo';
+import { resolveDesign, HANDSHAKE_DESIGNS, BASIC_DESIGN_KEY } from '../components/handshakeDesigns';
 import {
   subscribeIntimacy, intimacyLevelFor, intimacyPairKey,
 } from '../services/intimacyService';
@@ -821,12 +821,44 @@ export default function VoiceRoomScreen() {
   const adjacentPairs = useMemo(() => {
     const out: { key: string; a: string; b: string }[] = [];
     for (let i = 0; i + 1 < seats.length; i++) {
-      if (i % 4 === 3) continue; // row edge — not adjacent
+      if (i % 5 === 4) continue; // 5-column grid — row edge, not adjacent
       const A = seats[i]; const B = seats[i + 1];
       if (A && B && A.id !== B.id) out.push({ key: intimacyPairKey(A.id, B.id), a: A.id, b: B.id });
     }
     return out;
   }, [seats]);
+  // ── Pair Halo groups (boss pick M, 2026-10-23) ─────────────────────────
+  // Chained active pairs in a row merge into ONE group halo (3–4 seats =
+  // one big ring around everyone). The group's design = the strongest
+  // pair in it: a premium Store design wins (richest pair if several),
+  // otherwise the basic tier of the highest intimacy value in the group.
+  const haloGroups = useMemo(() => {
+    type PairInfo = { value: number; designKey: string | null };
+    const groups: { key: string; uids: string[]; pairs: PairInfo[] }[] = [];
+    for (const p of adjacentPairs) {
+      const d = pairData[p.key];
+      if (!d || d.value < 1) continue;
+      const last = groups[groups.length - 1];
+      if (last && last.uids[last.uids.length - 1] === p.a) {
+        last.uids.push(p.b);
+        last.pairs.push(d);
+      } else {
+        groups.push({ key: p.key, uids: [p.a, p.b], pairs: [d] });
+      }
+    }
+    return groups.map((g) => {
+      let bestPremium: PairInfo | null = null;
+      for (const p of g.pairs) {
+        if (p.designKey && p.designKey !== BASIC_DESIGN_KEY && HANDSHAKE_DESIGNS[p.designKey]) {
+          if (!bestPremium || p.value > bestPremium.value) bestPremium = p;
+        }
+      }
+      const design = bestPremium
+        ? HANDSHAKE_DESIGNS[bestPremium.designKey as string]
+        : resolveDesign(null, intimacyLevelFor(Math.max(...g.pairs.map((p) => p.value))).id);
+      return { key: g.key, uids: g.uids, design };
+    });
+  }, [adjacentPairs, pairData]);
   const pairSig = adjacentPairs.map((p) => p.key).join('|');
   useEffect(() => {
     if (!adjacentPairs.length) { setPairData({}); return; }
@@ -2772,8 +2804,32 @@ export default function VoiceRoomScreen() {
 
         {}
         <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4, marginHorizontal: -6 }}>
+        {/* Pair Halo layer — rendered BEHIND the seats (zIndex 1 < 2) so
+            Nobel/store frames and seat names are never covered. Avatar
+            centre sits below the cell's top by cell pad 6 + pressable
+            pad 4 + avatar margin 6 + half of the 53dp avatar, plus the
+            long-standing empirical calibration (+47 total). One halo per
+            connected group: a 2-seat pair, or one big ring when 3–4
+            adjacent seats chain together (boss pick M, 2026-10-23). */}
+        {haloGroups.map((g) => {
+          const gf = cellGeom[g.uids[0]];
+          const gl = cellGeom[g.uids[g.uids.length - 1]];
+          if (!gf || !gl) return null;
+          const cx1 = gf.x + gf.w / 2;
+          const cx2 = gl.x + gl.w / 2;
+          const cy = gf.y + 47;
+          return (
+            <View
+              key={g.key}
+              pointerEvents="none"
+              style={{ position: 'absolute', left: cx1 - HALO_R, top: cy - HALO_R, zIndex: 1 }}
+            >
+              <PairHalo width={(cx2 - cx1) + HALO_R * 2} design={g.design} />
+            </View>
+          );
+        })}
         {/* ── Seat grid — clean 5-column professional layout ── */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', zIndex: 2, position: 'relative' }}>
           {seats.map((member: Participant | null, idx: number) => (
             
             <View
@@ -2802,28 +2858,6 @@ export default function VoiceRoomScreen() {
             </View>
           ))}
         </View>
-        {/* Mic Handshake pair links — between adjacent related seats.
-            Avatar centre sits below the cell's top by cell pad 6 +
-            pressable pad 4 + avatar margin 6 + half of the 53dp avatar,
-            plus the long-standing empirical calibration; the +47 offset
-            (was +44 with cell pad 3) keeps the link centred on the avatar
-            after the 2026-10-22 seat-polish spacing (cell pad 3 → 6). */}
-        {adjacentPairs.map((p) => {
-          const d = pairData[p.key];
-          if (!d || d.value < 1) return null;
-          const ga = cellGeom[p.a]; const gb = cellGeom[p.b];
-          if (!ga || !gb) return null;
-          const midX = (ga.x + ga.w / 2 + gb.x + gb.w / 2) / 2;
-          return (
-            <View
-              key={p.key}
-              pointerEvents="none"
-              style={{ position: 'absolute', left: midX - PAIR_LINK_W / 2, top: ga.y + 47 - PAIR_LINK_H / 2, zIndex: 30 }}
-            >
-              <PairLink design={resolveDesign(d.designKey, intimacyLevelFor(d.value).id)} />
-            </View>
-          );
-        })}
         </View>
 
         {}
