@@ -13,6 +13,7 @@ import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
+import { stickerUrl } from '../services/stickerCatalog';
 
 // 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
 const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
@@ -83,6 +84,10 @@ export const SeatCard = memo(function SeatCard({
   const liveFrameId = useActiveFrame(member?.id);
   // 2026-10-16 (Sumon): Store mic sticker — equipped sticker badge on the seat.
   const micSticker = useActiveMicSticker(member?.id);
+  // 2026-10-23 (Sumon): while a designed sticker reaction plays, the seat
+  // shows ONLY the sticker — the DP photo hides behind nothing, there is
+  // no background/plate at all, just the emoji character itself.
+  const stickerActive = !!reaction && !!stickerUrl(reaction.emoji);
   const isAdmin = member?.role === 'admin';
 
   return (
@@ -133,27 +138,39 @@ export const SeatCard = memo(function SeatCard({
             {/* 2026-10-23 (Sumon): the reaction is a DESIGNED animated
                 sticker — a glossy 3D character with a transparent
                 background and NO plate/disc (font glyphs rejected as
-                "demo"). It performs over the DP, slightly larger than
-                the DP itself, IMO-style. */}
-            {reaction && (
+                "demo"). While it plays, ONLY the sticker is visible in
+                the seat: the DP photo is hidden, nothing sits behind
+                the emoji. Legacy glyph reactions overlay as before. */}
+            {stickerActive ? (
               <View pointerEvents="none" style={{
-                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                alignItems: 'center', justifyContent: 'center', zIndex: 20,
+                width: SEAT_SIZE, height: SEAT_SIZE,
+                alignItems: 'center', justifyContent: 'center',
               }}>
-                <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={SEAT_SIZE} />
+                <SeatEmojiReaction key={reaction!.key} emoji={reaction!.emoji} size={SEAT_SIZE} />
               </View>
+            ) : (
+              <>
+                {reaction && (
+                  <View pointerEvents="none" style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    alignItems: 'center', justifyContent: 'center', zIndex: 20,
+                  }}>
+                    <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={SEAT_SIZE} />
+                  </View>
+                )}
+                <Avatar
+                  initials={member.initials}
+                  color={member.color}
+                  size={SEAT_SIZE}
+                  speaking={member.speaking}
+                  accent={accent}
+                  photoURL={member.photoURL}
+                  frameType={liveFrameId || undefined}
+                  nobleRankIndex={member.nobleRankIndex}
+                  activeRipple={(member as any).activeRipple}
+                />
+              </>
             )}
-            <Avatar
-              initials={member.initials}
-              color={member.color}
-              size={SEAT_SIZE}
-              speaking={member.speaking}
-              accent={accent}
-              photoURL={member.photoURL}
-              frameType={liveFrameId || undefined}
-              nobleRankIndex={member.nobleRankIndex}
-              activeRipple={(member as any).activeRipple}
-            />
             {/* 2026-10-16 (Sumon): Store mic sticker badge — top-right */}
             {micSticker && (
               <Image
