@@ -152,8 +152,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // tap is the ONLY entry point and the call was silently missed.
   // The seeder verifies the RTDB call signal is STILL ALIVE before seeding
   // (a dead signal → stay silent), and applies the same guards as the live
-  // IncomingCallListener path (audio-call screen, minimized call, voice-room
-  // audio owner, block list). It NEVER pushes /audio-call with partial
+  // IncomingCallListener path (audio-call screen, minimized call, block
+  // list — the voice-room guard was removed 2026-10-23). It NEVER pushes /audio-call with partial
   // params — the modal (and its own accept-time liveness check) owns the
   // transition to the call screen.
   const [pendingIncomingCall, setPendingIncomingCall] = useState<IncomingCall | null>(null);
@@ -164,7 +164,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       const callerUid = typeof d?.callerUid === 'string' ? d.callerUid : '';
       if ((segments as string[])?.[0] === 'audio-call') return;
       if (getMinimizedCall()) return;
-      if (isVoiceRoomAudioActive()) return;
+      // 2026-10-23 (Sumon order): NO voice-room guard here anymore —
+      // matching the live listener, a tapped call notification must seed
+      // the ringing modal even while a voice room holds the audio
+      // pipeline; the accept-time handover handles the switch.
       if (callerUid) {
         const blocked = await isInteractionBlocked(uid, callerUid).catch(() => false);
         if (blocked) return;
