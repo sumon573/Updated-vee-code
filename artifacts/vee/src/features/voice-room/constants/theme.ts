@@ -48,7 +48,7 @@ export type RoomTheme = {
 };
 
 export const ROOM_THEMES: RoomTheme[] = [
-  { id: 'imo-light', name: '💙 IMO Light', accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9', onBg: '#111827', onBgSub: '#64748B' },
+  { id: 'imo-light', name: '💙 Light', accent: '#05b5fa', bg: '#FFFFFF', surface: '#F1F5F9', onBg: '#111827', onBgSub: '#64748B' },
   { id: 'ocean',    name: '🌊 Ocean',       accent: '#0284C7', bg: '#E0F2FE', surface: '#F0F9FF', onBg: '#0C4A6E', onBgSub: '#0369A1' },
   { id: 'forest',   name: '🌿 Forest',      accent: '#16A34A', bg: '#DCFCE7', surface: '#F0FDF4', onBg: '#14532D', onBgSub: '#15803D' },
   { id: 'cherry',   name: '🌸 Cherry',      accent: '#DB2777', bg: '#FCE7F3', surface: '#FDF2F8', onBg: '#500724', onBgSub: '#9D174D' },
