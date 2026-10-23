@@ -14,7 +14,7 @@ import React, {
 } from 'react';
 import { AppState } from 'react-native';
 import { User } from 'firebase/auth';
-import { onUserStateChanged, logout as firebaseLogout } from '../services/authService';
+import { onUserStateChanged, logout as firebaseLogout, getCurrentUser } from '../services/authService';
 import { withTimeout } from '../utils/withTimeout';
 import {
   setupPresence, setUserOffline, getUser, setUserVId, generateAndReserveVId,
@@ -115,7 +115,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!loadingDoneRef.current) {
         loadingDoneRef.current = true;
         setLoading(false);
-        setAuthTimedOut(true);
+        // 2026-10-23 (boss: offline-এ app-এ ঢোকাই যায় না): Firebase
+        // persists the session on-device — if a user is already signed
+        // in locally, fail OPEN with that user so the app opens offline
+        // instead of sitting on "Connecting… retrying" forever. The
+        // real auth callback still arrives when the network returns
+        // and refreshes profile/ban state then.
+        const persisted = getCurrentUser();
+        if (persisted) {
+          setUser(persisted);
+          setAuthTimedOut(false);
+        } else {
+          setAuthTimedOut(true);
+        }
       }
     }, AUTH_LOADING_TIMEOUT_MS);
 
