@@ -14,18 +14,21 @@ import { useAuth } from '@/src/context/AuthContext';
 import { createRoom, getUserColor, getInitials } from '../services/firebaseRoomService';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 
+// 2026-10-23 (Sumon): light, flat, professional theme — the old near-black
+// purple look is gone. White surface, hairline borders, soft grey inputs,
+// zero shadows; the violet brand color survives only as an accent.
 const C = {
-  bg:          '#07020F',
-  card:        '#0F0A1E',
+  bg:          '#FFFFFF',
+  card:        '#F7F7FA',
   primary:     '#7C3AED',
   glow:        '#8B5CF6',
-  text:        '#FFFFFF',
-  muted:       '#B8A6D9',
-  mutedDim:    '#6B5E8A',
-  border:      'rgba(139,92,246,0.28)',
-  borderFaint: 'rgba(255,255,255,0.09)',
-  inputBg:     'rgba(139,92,246,0.07)',
-  error:       '#FF4B4B',
+  text:        '#17131F',
+  muted:       '#6F6A82',
+  mutedDim:    '#A6A1B5',
+  border:      'rgba(23,19,31,0.12)',
+  borderFaint: 'rgba(23,19,31,0.07)',
+  inputBg:     '#F7F7FA',
+  error:       '#E5484D',
   gold:        '#F59E0B' } as const;
 
 const AVATAR_COLORS = [
@@ -58,16 +61,14 @@ function Field({
     <Animated.View style={{
       flexDirection: multiline ? 'column' : 'row',
       alignItems: multiline ? 'flex-start' : 'center',
-      borderRadius: 16, borderWidth: 1.5, borderColor: focused ? C.glow : C.border,
-      backgroundColor: C.inputBg,
+      borderRadius: 14, borderWidth: 1, borderColor: focused ? C.primary : C.border,
+      backgroundColor: focused ? '#FFFFFF' : C.inputBg,
       paddingHorizontal: 16, paddingVertical: multiline ? 12 : 0,
-      minHeight: multiline ? 90 : 56, marginBottom: 14,
-      shadowColor: C.glow, shadowOpacity: focused ? 0.2 : 0,
-      shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+      minHeight: multiline ? 90 : 54, marginBottom: 12 }}>
       <View style={{
         flexDirection: 'row', alignItems: 'center',
         marginBottom: multiline ? 6 : 0, marginRight: multiline ? 0 : 10 }}>
-        <Feather name={icon} size={16} color={focused ? C.glow : C.mutedDim} />
+        <Feather name={icon} size={16} color={focused ? C.primary : C.mutedDim} />
       </View>
       <TextInput
         style={{ flex: 1, color: C.text, fontSize: 15, fontWeight: '500',
@@ -293,12 +294,10 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
             <View style={{ alignItems: 'center', marginBottom: 28 }}>
               <Pressable onPress={pickImage}>
                 <View style={{
-                  width: 100, height: 100, borderRadius: 26,
+                  width: 96, height: 96, borderRadius: 24,
                   backgroundColor: profileImage ? 'transparent' : profileColor,
                   alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 2.5, borderColor: profileColor,
-                  shadowColor: profileColor, shadowOpacity: 0.5,
-                  shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+                  borderWidth: 1, borderColor: 'rgba(23,19,31,0.08)',
                   overflow: 'hidden' }}>
                   {profileImage
                     ? <Image source={{ uri: profileImage }} style={{ width: '100%', height: '100%' }} />
@@ -321,11 +320,8 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                   <View style={{
                     width: 34, height: 34, borderRadius: 17,
                     backgroundColor: color,
-                    borderWidth: profileColor === color ? 3 : 0,
-                    borderColor: '#fff',
-                    shadowColor: color,
-                    shadowOpacity: profileColor === color ? 0.7 : 0,
-                    shadowRadius: 8 }} />
+                    borderWidth: profileColor === color ? 3 : 1,
+                    borderColor: profileColor === color ? C.text : 'rgba(23,19,31,0.10)' }} />
                 </Pressable>
               ))}
             </View>
@@ -366,9 +362,9 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
               {roomTypeOptions.map((opt) => (
                 <ScalePress key={String(opt.value)} onPress={() => setIsPublic(opt.value)}>
                   <View style={{
-                    flex: 1, borderRadius: 16, padding: 14,
-                    backgroundColor: isPublic === opt.value ? C.primary + '22' : C.inputBg,
-                    borderWidth: 1.5,
+                    flex: 1, borderRadius: 14, padding: 14,
+                    backgroundColor: isPublic === opt.value ? C.primary + '14' : C.inputBg,
+                    borderWidth: 1,
                     borderColor: isPublic === opt.value ? C.primary : C.border }}>
                     <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>
                       {opt.label}
@@ -389,10 +385,10 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                 </Text>
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',
-                  borderRadius: 16, borderWidth: 1.5,
+                  borderRadius: 14, borderWidth: 1,
                   borderColor: pinError ? C.error : C.border,
                   backgroundColor: C.inputBg, paddingHorizontal: 16,
-                  minHeight: 56 }}>
+                  minHeight: 54 }}>
                   <Feather name={'lock'} size={16} color={pinError ? C.error : C.mutedDim} style={{ marginRight: 10 }} />
                   <TextInput
                     style={{ flex: 1, color: C.text, fontSize: 22, fontWeight: '700', letterSpacing: 10 }}
@@ -435,8 +431,8 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                     style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9,
-                      backgroundColor: isActive ? C.primary + '22' : C.inputBg,
-                      borderWidth: 1.5,
+                      backgroundColor: isActive ? C.primary + '14' : C.inputBg,
+                      borderWidth: 1,
                       borderColor: isActive ? C.primary : C.border }}
                   >
                     <Text style={{ fontSize: 14 }}>{opt.emoji}</Text>
@@ -451,11 +447,9 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
             {/* Create button */}
             <ScalePress onPress={handleCreate} disabled={creating}>
               <View style={{
-                borderRadius: 18, padding: 18,
+                borderRadius: 14, padding: 16,
                 backgroundColor: C.primary,
                 alignItems: 'center',
-                shadowColor: C.primary, shadowOpacity: 0.5,
-                shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
                 opacity: creating ? 0.7 : 1 }}>
                 {creating
                   ? <PremiumLoader size="medium" />
