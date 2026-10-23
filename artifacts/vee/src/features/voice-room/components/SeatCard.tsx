@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
@@ -33,6 +34,29 @@ function useServerBadgeIcon() {
     });
   }, []);
   return icon;
+}
+
+/* 2026-10-23 (Sumon pick: Style A — Glass Pod, ROUND): custom seat icons.
+   Empty seat = a gradient mic with a sparkle ("tap to take the mic");
+   host seat = a gold crown. Drawn as SVG — no font glyphs, no emoji. */
+function MicSparkleIcon({ size = 25 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="9" y="3" width="6" height="11" rx="3" stroke="#1FA2FF" strokeWidth="1.8" />
+      <Path d="M5.8 11a6.2 6.2 0 0 0 12.4 0" stroke="#1FA2FF" strokeWidth="1.8" strokeLinecap="round" />
+      <Path d="M12 17.2v3" stroke="#1FA2FF" strokeWidth="1.8" strokeLinecap="round" />
+      <Path d="M18.4 2.4l.62 1.72 1.72.62-1.72.62-.62 1.72-.62-1.72-1.72-.62 1.72-.62.62-1.72Z" fill="#7A5CFF" />
+    </Svg>
+  );
+}
+
+function CrownSeatIcon({ size = 25 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 17.5 4.6 8.2 9 12 12 5.6 15 12l4.4-3.8L21 17.5H3Z" fill="rgba(245,176,32,0.20)" stroke="#D9930D" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M4 20.4h16" stroke="#D9930D" strokeWidth="1.7" strokeLinecap="round" />
+    </Svg>
+  );
 }
 
 /* ─────────────────────────── Seat Card ───────────────────────────
@@ -158,17 +182,55 @@ export const SeatCard = memo(function SeatCard({
                     <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={SEAT_SIZE} />
                   </View>
                 )}
-                <Avatar
-                  initials={member.initials}
-                  color={member.color}
-                  size={SEAT_SIZE}
-                  speaking={member.speaking}
-                  accent={accent}
-                  photoURL={member.photoURL}
-                  frameType={liveFrameId || undefined}
-                  nobleRankIndex={member.nobleRankIndex}
-                  activeRipple={(member as any).activeRipple}
-                />
+                {/* 2026-10-23 (Sumon pick: Style A — Glass Pod): occupied
+                    seats get the same gradient ring as the empty pods —
+                    gold for the host, sky→violet for members, green→sky
+                    while speaking. SKIPPED when a Nobel/store frame is
+                    equipped: frame art is the decoration and must never
+                    be wrapped or clipped. */}
+                {liveFrameId ? (
+                  <Avatar
+                    initials={member.initials}
+                    color={member.color}
+                    size={SEAT_SIZE}
+                    speaking={member.speaking}
+                    accent={accent}
+                    photoURL={member.photoURL}
+                    frameType={liveFrameId || undefined}
+                    nobleRankIndex={member.nobleRankIndex}
+                    activeRipple={(member as any).activeRipple}
+                  />
+                ) : (
+                  <View style={{
+                    width: SEAT_SIZE + 6, height: SEAT_SIZE + 6,
+                    borderRadius: (SEAT_SIZE + 6) / 2,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <LinearGradient
+                      colors={member.speaking
+                        ? ['#34D399', '#0EA5E9']
+                        : isOwner
+                          ? ['#FFD964', '#F0A92E']
+                          : ['#7ED0FF', '#8E7BFF']}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        borderRadius: (SEAT_SIZE + 6) / 2,
+                      }}
+                    />
+                    <Avatar
+                      initials={member.initials}
+                      color={member.color}
+                      size={SEAT_SIZE}
+                      speaking={member.speaking}
+                      accent={accent}
+                      photoURL={member.photoURL}
+                      frameType={undefined}
+                      nobleRankIndex={member.nobleRankIndex}
+                      activeRipple={(member as any).activeRipple}
+                    />
+                  </View>
+                )}
               </>
             )}
             {/* 2026-10-16 (Sumon): Store mic sticker badge — top-right */}
@@ -261,30 +323,47 @@ export const SeatCard = memo(function SeatCard({
           )}
         </>
       ) : (
-        /* ── Empty / locked seat — dashed circle with user-plus
-            (pre-IMO-port placeholder visual, restored 2026-10-20 per boss)
-            HOST SEAT (2026-10-22, Sumon): seat 1 (index 0) shows "HOST"
-            written inside the gold dashed circle while nobody sits there. */
+        /* ── Empty / locked seat — 2026-10-23 (Sumon pick: Style A
+            "Glass Pod", ROUND seats): a frosted-glass disc with a
+            gradient ring and a custom icon (mic + sparkle; gold crown
+            for the host seat). Replaces the dashed placeholder circle
+            he called "demo type". HOST SEAT (2026-10-22): seat 1 is
+            the gold host seat while nobody sits there. */
         <>
           <View style={{
             marginTop: 6,
             width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
-            backgroundColor: locked ? C.gold + '11' : seatNum === 1 ? C.gold + '14' : accent + '0D',
-            borderWidth: 1.5,
-            borderColor: locked ? C.gold + '55' : seatNum === 1 ? C.gold + '88' : accent + '44',
-            borderStyle: 'dashed',
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: locked || seatNum === 1 ? C.gold : accent,
-            shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
-            elevation: 2,
+            shadowColor: locked || seatNum === 1 ? C.gold : '#4A90D9',
+            shadowOpacity: 0.28, shadowRadius: 7, shadowOffset: { width: 0, height: 2 },
+            elevation: 3,
           }}>
-            {locked ? (
-              <Feather name="lock" size={16} color={C.gold} />
-            ) : seatNum === 1 ? (
-              <Text style={{ color: C.gold, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>HOST</Text>
-            ) : (
-              <Feather name="user-plus" size={16} color="#94A3B8" />
-            )}
+            <LinearGradient
+              colors={locked || seatNum === 1 ? ['#FFD964', '#F0A92E'] : ['#7ED0FF', '#8E7BFF']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ flex: 1, borderRadius: SEAT_SIZE / 2, padding: 2 }}
+            >
+              <LinearGradient
+                colors={locked || seatNum === 1 ? ['#FFFDF4', '#FFEDBE'] : ['#FFFFFF', '#D9EFFF']}
+                start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+                style={{
+                  flex: 1, borderRadius: (SEAT_SIZE - 4) / 2, overflow: 'hidden',
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {/* glass sheen */}
+                <View pointerEvents="none" style={{
+                  position: 'absolute', top: 3, left: 9, right: 9, height: 13,
+                  borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.8)',
+                }} />
+                {locked ? (
+                  <Feather name="lock" size={17} color="#B8860B" />
+                ) : seatNum === 1 ? (
+                  <CrownSeatIcon size={26} />
+                ) : (
+                  <MicSparkleIcon size={25} />
+                )}
+              </LinearGradient>
+            </LinearGradient>
           </View>
           <Text style={{
             color: locked || seatNum === 1 ? C.gold : (labelColor ?? C.muted),
