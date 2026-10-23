@@ -629,6 +629,8 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     },
     chat: {
       holdToReply: '· উত্তর দিতে ধরুন',
+      giftSent: 'গিফট পাঠিয়েছেন',
+      giftTo: 'কে',
     },
   },
   chat: {

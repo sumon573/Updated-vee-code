@@ -621,6 +621,8 @@ removedMsg: 'You have been removed from this room by the host.',
     },
     chat: {
       holdToReply: '· hold to reply',
+      giftSent: 'sent a gift',
+      giftTo: 'to',
     },
   },
   chat: {
