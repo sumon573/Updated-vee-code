@@ -612,13 +612,15 @@ async function sendGiftViaFirebase(
   // Step 1: Decrement sender's balance (atomic, validated by rules:
   // own balance may only DECREASE by a valid gift price).
   const senderBalRef = ref(database, `wallets/${fromUid}/balance`);
-  let senderResult;
-  try {
-    senderResult = await runTransaction(senderBalRef, (current) => {
+  const attemptDebit = () =>
+    runTransaction(senderBalRef, (current) => {
       const bal = coerceBalance(current);
       if (bal < price) return; // Abort — insufficient funds
       return bal - price;
     });
+  let senderResult;
+  try {
+    senderResult = await attemptDebit();
   } catch (e) {
     // 2026-10-12 audit fix (M3): distinguish transport/permission failures
     // from true insufficient funds. If the debit may have committed
@@ -626,12 +628,32 @@ async function sendGiftViaFirebase(
     // double-charge (C1 is fixed, but the UX must not lie).
     const msg = e instanceof Error ? e.message : '';
     if (/permission|denied/i.test(msg)) {
-      throw new GiftError('Wallet access denied — please re-login');
-    }
-    if (/network|timeout|unavailable|offline/i.test(msg)) {
+      // 2026-10-24 PERMANENT FIX (boss: never again): a permission denial
+      // here is almost never "not logged in" — it is a stale RTDB auth
+      // token race (or, before the 2026-10-24 rules patch, a gift price
+      // the rules didn't list). A permission rejection commits NOTHING,
+      // so retrying cannot double-charge. Refresh + settle (RTDB re-auth)
+      // + retry once. If it still denies, say so truthfully — never tell
+      // a signed-in user to "re-login" for a rules/transient failure.
+      try {
+        await auth.currentUser?.getIdToken(true);
+        await new Promise((r) => setTimeout(r, 500));
+        senderResult = await attemptDebit();
+      } catch (e2) {
+        const msg2 = e2 instanceof Error ? e2.message : '';
+        if (/permission|denied/i.test(msg2)) {
+          throw new GiftError('Gift failed — please try again');
+        }
+        if (/network|timeout|unavailable|offline/i.test(msg2)) {
+          throw new GiftError('Network error — check your balance before retrying');
+        }
+        throw new InsufficientFundsError('Not enough diamonds');
+      }
+    } else if (/network|timeout|unavailable|offline/i.test(msg)) {
       throw new GiftError('Network error — check your balance before retrying');
+    } else {
+      throw new InsufficientFundsError('Not enough diamonds');
     }
-    throw new InsufficientFundsError('Not enough diamonds');
   }
   if (!senderResult.committed) {
     throw new InsufficientFundsError('Not enough diamonds');
@@ -647,7 +669,10 @@ async function sendGiftViaFirebase(
   // under concurrency, and validated by the existing .write rule (existing
   // balance must grow by exactly a gift price; missing balance is created
   // with exactly the gift price).
-  if (toUid !== fromUid) {
+  // 2026-10-24 PERMANENT FIX: skip a zero-credit (price-1 gifts floor to
+  // 40% = 0; increment(0) is rejected by the rules' increase branch, which
+  // would falsely fail the gift and break the refund).
+  if (toUid !== fromUid && recipientAmount > 0) {
     const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
     try {
       // Recipient receives 40% (platform keeps 60% commission)
