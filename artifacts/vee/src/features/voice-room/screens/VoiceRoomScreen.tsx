@@ -43,6 +43,8 @@ import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
+import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
+import { RoomMusicModal } from '../components/RoomMusicModal';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
@@ -62,6 +64,9 @@ import { PropsBackpackModal } from '../components/PropsBackpackModal';
 import {
   subscribeAnnouncement, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
+import {
+  subscribeRoomMusic, type RoomMusic,
+} from '../services/roomMusicService';
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
@@ -942,6 +947,17 @@ export default function VoiceRoomScreen() {
   const [announcement,     setAnnouncement]     = useState<RoomAnnouncement | null>(null);
   const [gameNav,         setGameNav]         = useState<{ kind: GameType; gameId: string | null } | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
+  // 2026-10-25 (boss): three-dot customize panel + room music state.
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [musicOpen,     setMusicOpen]     = useState(false);
+  const [music,         setMusic]         = useState<RoomMusic | null>(null);
+  useEffect(() => {
+    if (!roomId) {
+      setMusic(null);
+      return;
+    }
+    return subscribeRoomMusic(roomId, setMusic);
+  }, [roomId]);
   // 2026-10-19 (IMO gap fill): live room announcement banner.
   useEffect(() => {
     if (!roomId) {
@@ -2766,6 +2782,11 @@ export default function VoiceRoomScreen() {
                   <Feather name="settings" size={26} color={C.sub} />
                 </ScalePress>
               )}
+              {/* 2026-10-25 (boss): three-dot customize panel next to the
+                  gear — everyone (members too: music read-only + games). */}
+              <ScalePress onPress={() => setCustomizeOpen(true)}>
+                <Feather name="more-vertical" size={26} color={C.sub} />
+              </ScalePress>
             </View>
           </View>
           {}
@@ -2980,6 +3001,26 @@ export default function VoiceRoomScreen() {
                     {announcement.createdByName}
                   </Text>
                 )}
+              </View>
+            </ScalePress>
+          )}
+          {/* 2026-10-25 (boss): now-playing strip — mirrors the announcement
+              strip above the message list. Tap opens the music modal. */}
+          {music?.current && (music.state === 'playing' || music.state === 'paused') && (
+            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: 'rgba(139,92,246,0.16)',
+                borderBottomWidth: 1, borderBottomColor: 'rgba(139,92,246,0.45)',
+                paddingHorizontal: 10, paddingVertical: 6,
+              }}>
+                <Text style={{ fontSize: 13 }}>🎵</Text>
+                <Text numberOfLines={2} style={{ color: C.text, fontSize: 12.5, fontWeight: '700', flex: 1, lineHeight: 17 }}>
+                  {music.current.title.replace(/\.[^.]+$/, '')}
+                </Text>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 10.5, fontWeight: '600', maxWidth: 90 }}>
+                  {music.state === 'playing' ? 'Playing' : 'Paused'}
+                </Text>
               </View>
             </ScalePress>
           )}
@@ -3375,6 +3416,25 @@ export default function VoiceRoomScreen() {
         onCreateGame={(kind: GameType) => { setGamesOpen(false); setGameNav({ kind, gameId: null }); }}
         onOpenRank={() => { setGamesOpen(false); setRankOpen(true); }}
         onOpenProps={() => { setGamesOpen(false); setPropsOpen(true); }}
+      />
+      {/* 2026-10-25 (boss): imo-style customize panel + room music modal. */}
+      <RoomCustomizePanel
+        visible={customizeOpen}
+        onClose={() => setCustomizeOpen(false)}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        nowPlayingTitle={music?.current ? music.current.title.replace(/\.[^.]+$/, '') : null}
+        onOpenMusic={() => { setCustomizeOpen(false); setMusicOpen(true); }}
+        onOpenGames={() => { setCustomizeOpen(false); setGamesOpen(true); }}
+        onOpenAnnouncement={() => { setCustomizeOpen(false); setAnnouncementOpen(true); }}
+        onOpenSettings={() => { setCustomizeOpen(false); setSettingsOpen(true); }}
+        onOpenHistory={() => { setCustomizeOpen(false); setOpHistOpen(true); }}
+      />
+      <RoomMusicModal
+        visible={musicOpen}
+        onClose={() => setMusicOpen(false)}
+        roomId={roomId}
+        canControl={isOwnerOrAdmin}
+        myName={myName}
       />
       <RoomRankModal
         visible={rankOpen}
