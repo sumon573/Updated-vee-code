@@ -21,7 +21,7 @@ import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import { submitReport } from '@/src/services/reportService';
 
 import { getErrorCause } from '@/src/utils/errorDisplay';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useSafeKeepAwake } from '@/src/hooks/useSafeKeepAwake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   isBatteryExempt, requestBatteryExemption,
@@ -133,7 +133,7 @@ export default function VoiceRoomScreen() {
   const roomId = paramRoomId ?? '';
   // 2026-10-22 (boss): the display must never sleep while the user is
   // inside a voice room (reported: screen turning off mid-conversation).
-  useKeepAwake();
+  useSafeKeepAwake('voice-room');
   const { backgroundUrl: storeBgUrl, micDecorUrl } = useStoreRoomDecor(roomId || null);
   const myUid  = user?.uid ?? 'anonymous';
   const myUidRef = useRef(myUid);

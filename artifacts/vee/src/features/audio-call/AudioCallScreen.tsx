@@ -34,7 +34,7 @@ import { useRouter, useNavigation } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useSafeKeepAwake } from '@/src/hooks/useSafeKeepAwake';
 import { initiateCall, removeCallSignal } from './services/firebaseCallService';
 import { startOutgoingTone, stopOutgoingTone } from './services/outgoingCallTone';
 import { WebRTCCallSession, type WebRTCCallCallbacks } from './services/webrtcCallService';
@@ -148,7 +148,7 @@ export default function AudioCallScreen({
   // use must not sleep mid-conversation — same rule as the voice room).
   // Proximity-to-ear behaviour is unaffected; audio also keeps running
   // with the screen off via the mic foreground service.
-  useKeepAwake();
+  useSafeKeepAwake('audio-call');
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const webrtcRef      = useRef<WebRTCCallSession | null>(null);
