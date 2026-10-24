@@ -444,7 +444,7 @@ export default function VoiceRoomScreen() {
                 result = await takeSeat(roomId, invite.seatIdx, {
                   userId: myUid, userName: myName,
                   initials: myInitials, color: myColor,
-                  muted: true, role: 'member',
+                  muted: false, role: 'member',
                   ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
                   ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
                   ...(isVerified ? { verified: true } : {}) });
@@ -1908,6 +1908,12 @@ export default function VoiceRoomScreen() {
 
   const buildSeatData = useCallback((): NonNullable<RoomSeat> => {
     const seatRole: Role = (ownerId && ownerId === myUid) ? 'host' : myRole;
+    // 2026-10-24 (boss concept: free speech by default): a seat take starts
+    // UNMUTED — everyone speaks freely first. Only a SELF-chosen mute
+    // carries across a seat switch; a HOST mute never carries, because it
+    // binds to the old seat only — switching to another (unlocked) seat
+    // frees the user to talk again.
+    const wasHostMuted = mySeatIdx >= 0 && seats[mySeatIdx]?.hostMuted === true;
     return {
       userId: myUid,
       userName: myName,
@@ -1919,10 +1925,10 @@ export default function VoiceRoomScreen() {
       ...((myProfile as any)?.activeEntryEffect ? { activeEntryEffect: (myProfile as any).activeEntryEffect } : {}),
       ...((myProfile as any)?.activeNameplate ? { activeNameplate: (myProfile as any).activeNameplate } : {}),
       ...(myVerified ? { verified: true } : {}),
-      muted: mySeatIdx >= 0 ? muted : true,
+      muted: mySeatIdx >= 0 && !wasHostMuted ? muted : false,
       role: seatRole,
       ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
-  }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted]);
+  }, [myUid, myName, myInitials, myColor, myPhotoURL, myProfile, myVerified, myRole, ownerId, mySeatIdx, muted, seats]);
 
   const joinSeat = useCallback(async (seatIdx: number) => {
     if (mySeatIdx === seatIdx) return;
@@ -1963,7 +1969,9 @@ export default function VoiceRoomScreen() {
       removeSeat(roomId, oldIdx).catch(() => {});
     } else if (oldIdx < 0) {
       startPublishing();
-      setMicMuted(true);
+      // 2026-10-24 (boss concept): audience → seat starts UNMUTED — the old
+      // setMicMuted(true) here is exactly what auto-muted every seat take.
+      setMicMuted(false);
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
