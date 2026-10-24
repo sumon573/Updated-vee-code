@@ -5,7 +5,8 @@
  * Medium intensity: visible but elegant.
  */
 import React, { useEffect, useRef } from 'react';
-import { View, Image, Animated, Easing, StyleSheet } from 'react-native';
+import { View, Animated, Easing, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
 
 type MistParticle = {
   anim: Animated.Value;
@@ -80,7 +81,7 @@ export default function MistNameplate({
       <Image
         source={{ uri: imageUrl }}
         style={{ width, height }}
-        resizeMode={fit}
+        contentFit={fit}
       />
       {/* Mist overlay — clipped inside */}
       <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', borderRadius: height / 2 }]}>

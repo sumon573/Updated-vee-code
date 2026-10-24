@@ -29,7 +29,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
 import { resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
-import { View, Text, ScrollView, Pressable, Modal, Image, Alert, Animated } from 'react-native';
+import { View, Text, ScrollView, Pressable, Modal, Alert, Animated } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -257,7 +258,7 @@ export default function HonorScreen() {
                 <Image
                   source={{ uri: activePlate.icon }}
                   style={{ width: 60, height: 12, marginRight: 6 }}
-                  resizeMode="contain"
+                  contentFit="contain"
                 />
               ) : (
                 <Text style={{ fontSize: 12, marginRight: 4 }}>{activePlate.icon}</Text>
@@ -340,7 +341,7 @@ export default function HonorScreen() {
                         <Image
                           source={{ uri: n.icon }}
                           style={{ width: 80, height: 16 }}
-                          resizeMode="contain"
+                          contentFit="contain"
                         />
                       ) : (
                         <Text style={{ fontSize: 30 }}>{n.icon}</Text>
@@ -405,7 +406,7 @@ export default function HonorScreen() {
             {/* Badge with spring "moves a bit" animation — imo-style: large, no box */}
             <Animated.View style={{ transform: [{ scale: badgeScale }] }}>
               {/^https?:\/\//i.test(selected?.icon || '') ? (
-                <Image source={{ uri: selected!.icon }} style={{ width: 220, height: 220 }} resizeMode="contain" />
+                <Image source={{ uri: selected!.icon }} style={{ width: 220, height: 220 }} contentFit="contain" />
               ) : (
                 <Text style={{ fontSize: 160 }}>{selected?.icon}</Text>
               )}
@@ -468,7 +469,7 @@ function BadgeSection({
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
               alignItems: 'center', justifyContent: 'center' }}>
               {/^https?:\/\//i.test(b.icon || '') ? (
-                <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
+                <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} contentFit="contain" />
               ) : (
                 <Text style={{ fontSize: 34 }}>{b.icon}</Text>
               )}

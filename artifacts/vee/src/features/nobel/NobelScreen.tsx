@@ -21,7 +21,8 @@
  * Light mode only. Errors show their actual cause.
  */
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, Pressable, Image, ScrollView, Alert, Dimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert, Dimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { useRouter } from 'expo-router';
@@ -202,7 +203,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       <View key={def.key} style={{ width: (width - 48) / 3, alignItems: 'center', marginBottom: 24 }}>
         <View style={{ opacity: rankLocked ? 0.3 : 1, alignItems: 'center' }}>
           {art ? (
-            <Image source={art} style={{ width: 84, height: 84 }} resizeMode="contain" />
+            <Image source={art} style={{ width: 84, height: 84 }} contentFit="contain" />
           ) : (
             <View style={{
               width: 84, height: 84, borderRadius: 42,
@@ -237,7 +238,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     // The header shows Baron's own wide badge slot; other ranks use the pill.
     if (rank.key === 'baron') {
       return (
-        <Image source={rankBadgeBaronSource()} style={{ width: 150, height: 52 }} resizeMode="contain" />
+        <Image source={rankBadgeBaronSource()} style={{ width: 150, height: 52 }} contentFit="contain" />
       );
     }
     const crown = rankCrownSource(rank.key);
@@ -246,7 +247,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: '#2AA198', borderWidth: 2, borderColor: '#C9A227',
         borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 }}>
-        <Image source={crown} style={{ width: 26, height: 26 }} resizeMode="contain" />
+        <Image source={crown} style={{ width: 26, height: 26 }} contentFit="contain" />
         <Text style={{ fontSize: 17, fontWeight: '800', fontStyle: 'italic', color: '#fff', marginLeft: 8 }}>
           {rank.name} {ROMAN[sub - 1]}
         </Text>
@@ -356,7 +357,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                       borderBottomWidth: activeTab ? 3 : 0,
                       borderBottomColor: IMO_ORANGE }}
                   >
-                    <Image source={crown} style={{ width: 30, height: 30, marginRight: 6 }} resizeMode="contain" />
+                    <Image source={crown} style={{ width: 30, height: 30, marginRight: 6 }} contentFit="contain" />
                     <Text style={{
                       fontSize: 17,
                       fontWeight: activeTab ? '700' : '400',

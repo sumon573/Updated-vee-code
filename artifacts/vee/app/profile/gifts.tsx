@@ -337,6 +337,15 @@ export default function GiftDisplayScreen() {
     [giftCounts],
   );
 
+  // 2026-10-24 (Sumon): compact diamond totals (402k, not 402,042) so the
+  // header line never runs off the card.
+  const fmtCompact = (n: number): string => {
+    if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
+    if (n >= 1_000_000) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
+    if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`;
+    return `${n}`;
+  };
+
   // Contributors: aggregate by sender uid. The api-server writes `fromUid`;
   // fall back to the typed `counterpartUid` for any legacy shape.
   // P2-3 (2026-10-12): rank by total diamond VALUE (price x count), not raw
@@ -462,8 +471,8 @@ export default function GiftDisplayScreen() {
               🎁 {totalGifts} gifts ·{' '}
             </Text>
             <DiamondIcon size={13} />
-            <Text style={{ fontSize: 13, color: C.muted }}>
-              {' '}{totalCoins.toLocaleString()} coins received
+            <Text style={{ fontSize: 13, color: C.muted, flexShrink: 1 }} numberOfLines={1}>
+              {' '}{fmtCompact(totalCoins)} diamonds received
             </Text>
           </View>
         </View>

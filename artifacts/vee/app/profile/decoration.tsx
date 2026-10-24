@@ -16,7 +16,8 @@
  */
 import { useEffect, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
-import { View, Text, ScrollView, Pressable, Image, FlatList } from 'react-native';
+import { View, Text, ScrollView, Pressable, FlatList } from 'react-native';
+import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -116,20 +117,11 @@ function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: stri
     }
   }
   if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
-    /* 2026-10-15: Fallback to catalog emoji if image fails */
-    const fallbackEntry = getActiveCatalog().find((r) =>
-      `noble-plate-${r.rankKey}` === itemId ||
-      `noble-badge-${r.rankKey}` === itemId ||
-      `noble-frame-${r.rankKey}` === itemId
-    );
-    const fallbackIcon = fallbackEntry ? (
-      itemId?.includes('plate-') ? fallbackEntry.nameplate.fallbackIcon :
-      itemId?.includes('badge-') ? fallbackEntry.badge?.fallbackIcon :
-      fallbackEntry.frame?.fallbackIcon
-    ) : '🎖️';
     const isFrame = itemId?.includes('frame-');
-    // 2026-10-16 (Sumon): Only show fallback emoji if image FAILS to load.
-    // Frames have transparent centers — emoji would show through!
+    // 2026-10-24 (Sumon, NO-DEMO law): noble art is animated WebP — only
+    // expo-image decodes it (RN Image failed → demo emoji showed). Rendered
+    // via expo-image now; if a load still fails, show a clean empty tile —
+    // NEVER a demo emoji.
     // 2026-10-15 (Sumon): Frames show as SQUARE (not circle) — full design visible
     return (
       <View style={{
@@ -142,11 +134,11 @@ function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: stri
           <Image
             source={{ uri: icon }}
             style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, position: 'absolute' }}
-            resizeMode="contain"
+            contentFit="contain"
             onError={() => setImgError(true)}
           />
         ) : (
-          <Text style={{ fontSize: 24 }}>{fallbackIcon}</Text>
+          <View style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, backgroundColor: C.tile }} />
         )}
       </View>
     );
