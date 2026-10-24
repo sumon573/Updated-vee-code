@@ -1315,6 +1315,21 @@ export default function VoiceRoomScreen() {
   }, [roomId, myUid]);
 
   
+  // 2026-10-24 (boss: mic must NEVER cycle off→on on return): when
+  // returning from minimize, the minimized-room record already knows the
+  // seat (and that the mic was ON). Capture it on mount — before the
+  // focus effects clear the minimized record — so publishing can start
+  // the moment voice joins, without waiting for the seats subscription
+  // round-trip. Only when the mic was ON (muted === false); a muted
+  // return keeps the normal seat-driven path so a muted mic never
+  // leaks open. Safety: the seat-sync effect below stops publishing
+  // the moment live seats show no seat (kicked while minimized).
+  const [returningSeatIdx] = useState(() => {
+    const prev = getMinimizedRoom();
+    if (prev && prev.id === roomId && prev.mySeatIdx >= 0 && prev.muted === false) return prev.mySeatIdx;
+    return -1;
+  });
+
   // 2026-10-24 (boss: mic must actually open): seated + voice-connected +
   // not-publishing means publishing was skipped or died silently (seat-take
   // raced the LiveKit join, or a silent publish early-return). The old
@@ -1322,11 +1337,14 @@ export default function VoiceRoomScreen() {
   // a seat that showed unmuted with no mic track at all. Now every entry
   // into this state (re)starts publishing; the isPublishing guard stops
   // loops (a failed publish changes no dep, so this does not re-fire).
+  // 2026-10-24 return fast-path: a returning seat (captured above) also
+  // counts as seated, so the mic re-opens the instant voice joins.
   useEffect(() => {
-    if (!voiceJoined || mySeatIdx < 0 || isPublishing) return;
+    if (!voiceJoined || isPublishing) return;
+    if (mySeatIdx < 0 && returningSeatIdx < 0) return;
     if (!hasJoined) setHasJoined(true);
     startPublishing();
-  }, [voiceJoined, mySeatIdx, isPublishing]);
+  }, [voiceJoined, mySeatIdx, isPublishing, returningSeatIdx]);
 
   
   useEffect(() => {
