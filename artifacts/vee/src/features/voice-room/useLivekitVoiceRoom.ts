@@ -1279,7 +1279,25 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // BACKGROUND AUDIO (2026-10-09): Do NOT mute on background — Sumon
       // requires voice to continue when the app is backgrounded (like IMO).
       // The previous privacy-mute behavior is removed.
-      return;
+      // 2026-10-24 (boss: mic dies on reopen): the screen stays mounted
+      // across minimize/foreground, so no remount and no fresh join ever
+      // runs — and the old auto-retry only fires on 'failed', never on a
+      // zombie 'connecting'/'disconnected' engine. When the app comes back
+      // to the foreground with a voice engine that is not 'connected',
+      // force a rejoin (leave + fresh join, new token fetch) so voice
+      // recovers instead of staying dead with no fetch.
+      if (nextState !== 'active') return;
+      const engine = engineRef.current;
+      if (!engine || !mountedRef.current) return;
+      let connected = false;
+      try {
+        connected = engine.getLocalState().connection === 'connected';
+      } catch {
+        connected = false;
+      }
+      if (!connected) {
+        retryConnectionRef.current();
+      }
     };
 
     // ── Normal cleanup helper ─────────────────────────────────────────────
