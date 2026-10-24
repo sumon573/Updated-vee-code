@@ -39,9 +39,12 @@ export function getApiBase(): string {
     const normalised = domain.replace(/\/$/, '');
     return normalised.startsWith('http') ? normalised : `https://${normalised}`;
   }
-  throw new Error(
-    'API endpoint is not configured. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_DOMAIN.',
-  );
+  // OTA bundles do not inherit eas.json build-profile env, so the env vars
+  // above are undefined on every EAS Update bundle. Never throw here: a
+  // throw kills every API call (token, wallet, sync-counts) client-side
+  // before any network I/O, misclassified as a transient network failure.
+  // The fallback is the same public, stable URL already in eas.json.
+  return 'https://vee-club.duckdns.org';
 }
 
 /**
