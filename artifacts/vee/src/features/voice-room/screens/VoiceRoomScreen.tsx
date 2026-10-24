@@ -1305,14 +1305,18 @@ export default function VoiceRoomScreen() {
   }, [roomId, myUid]);
 
   
-  const hasAutoPublishedRef = useRef(false);
+  // 2026-10-24 (boss: mic must actually open): seated + voice-connected +
+  // not-publishing means publishing was skipped or died silently (seat-take
+  // raced the LiveKit join, or a silent publish early-return). The old
+  // one-shot ref fired a single startPublishing and never retried, leaving
+  // a seat that showed unmuted with no mic track at all. Now every entry
+  // into this state (re)starts publishing; the isPublishing guard stops
+  // loops (a failed publish changes no dep, so this does not re-fire).
   useEffect(() => {
-    if (hasAutoPublishedRef.current) return;
-    if (!voiceJoined || mySeatIdx < 0) return;
-    hasAutoPublishedRef.current = true;
+    if (!voiceJoined || mySeatIdx < 0 || isPublishing) return;
     if (!hasJoined) setHasJoined(true);
     startPublishing();
-  }, [voiceJoined, mySeatIdx]);
+  }, [voiceJoined, mySeatIdx, isPublishing]);
 
   
   useEffect(() => {
@@ -1772,6 +1776,22 @@ export default function VoiceRoomScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!isPublishing) {
+      // 2026-10-24 (boss: mic button must NEVER silently do nothing): a tap
+      // while voice isn't connected used to return without any feedback —
+      // the seat showed unmuted while no mic track existed at all. Now the
+      // tap says exactly why, and offers a Retry that reconnects voice.
+      if (!voiceJoined) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        Alert.alert(
+          t('voiceRoom.screen.micNoVoiceTitle', { defaultValue: 'Voice connect হয়নি' }),
+          t('voiceRoom.screen.micNoVoiceMsg', { defaultValue: 'Voice server-এর সাথে connection এখনো তৈরি হয়নি, তাই mic খুলছে না। Retry করলে আবার connect করবে।' }),
+          [
+            { text: t('voiceRoom.screen.retry', { defaultValue: 'Retry' }), onPress: () => retryConnection() },
+            { text: t('voiceRoom.screen.ok', { defaultValue: 'OK' }) },
+          ],
+        );
+        return;
+      }
       startPublishing();
       return;
     }
@@ -1781,7 +1801,7 @@ export default function VoiceRoomScreen() {
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
     setSeatMute(roomId, mySeatIdx, newMuted).catch(() => {});
-  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId, seats, t]);
+  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId, seats, t, voiceJoined, retryConnection]);
 
   const toggleSpeaker = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
