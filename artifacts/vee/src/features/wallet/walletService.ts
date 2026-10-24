@@ -560,10 +560,11 @@ async function sendGiftViaFirebase(
   const price = priceOverride ?? GIFT_PRICES[giftId];
   if (!price) throw new GiftError('Invalid gift');
 
-  // PLATFORM COMMISSION (2026-10-12): 30% platform fee on gifts.
-  // Sender pays full price; recipient receives 70%; platform keeps 30%.
-  // Example: 10 diamond gift → recipient gets 7, platform keeps 3.
-  const PLATFORM_COMMISSION_RATE = 0.30;
+  // PLATFORM COMMISSION: 60% platform fee on gifts (raised from 30% by
+  // Sumon's order 2026-10-24 — recipient 40% / platform 60%, matching the
+  // api-server's split). Sender pays full price; recipient receives 40%.
+  // Example: 10 diamond gift → recipient gets 4, platform keeps 6.
+  const PLATFORM_COMMISSION_RATE = 0.60;
   const recipientAmount = Math.floor(price * (1 - PLATFORM_COMMISSION_RATE));
   const platformCommission = price - recipientAmount;
 
@@ -649,7 +650,7 @@ async function sendGiftViaFirebase(
   if (toUid !== fromUid) {
     const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
     try {
-      // Recipient receives 70% (platform keeps 30% commission)
+      // Recipient receives 40% (platform keeps 60% commission)
       await set(recipientBalRef, increment(recipientAmount));
     } catch {
       // Recipient credit failed — refund sender (best effort)
@@ -666,8 +667,8 @@ async function sendGiftViaFirebase(
       // Commission tracking failed — gift stands; revenue record lost
     }
   } else {
-    // 2026-10-12 (Sumon's order): self-gift returns 70% (commission deducted).
-    // Sender pays full price, gets back recipientAmount (70%). Net loss = 30%.
+    // Self-gift (admin-only since 2026-10-24) returns the recipient share
+    // (40%; commission deducted). Net loss = the 60% commission.
     try {
       await set(senderBalRef, increment(recipientAmount));
     } catch {
@@ -844,7 +845,7 @@ async function confirmServerGiftLanded(
  * for testing. Identified by users/{uid}/adminRole or /role in RTDB —
  * the same markers the admin system uses. Cached per app session. */
 let selfSendAllowedCache: Promise<boolean> | null = null;
-function canSelfSend(uid: string): Promise<boolean> {
+export function canSelfSend(uid: string): Promise<boolean> {
   if (!selfSendAllowedCache) {
     selfSendAllowedCache = (async () => {
       try {
@@ -918,7 +919,7 @@ export async function sendGift({
           fromUid: serverFromUid,
           toUid,
           price: serverPrice,
-          recipientAmount: Math.floor(serverPrice * 0.7),
+          recipientAmount: Math.floor(serverPrice * 0.4),
           senderName: me?.displayName,
           senderPhotoURL: me?.photoURL,
           receiverName: toName,

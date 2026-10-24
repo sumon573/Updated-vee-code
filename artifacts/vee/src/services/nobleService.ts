@@ -32,7 +32,7 @@
 import { ref, onValue, get, set, update, runTransaction, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
-import { rewardsForRank, rewardIcon, loadServerNobleRewards, type RewardDesign } from './nobleRewardsCatalog';
+import { rewardsForRank, rewardIcon, loadServerNobleRewards, prefetchNobleRankArt, type RewardDesign } from './nobleRewardsCatalog';
 
 export const NOBLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -663,6 +663,13 @@ export async function refreshNobleState(uid: string): Promise<NobleState | null>
     /* 2026-10-15 (Sumon): Self-heal — grant any missing rank rewards.
      * Non-blocking: runs in background, never fails the refresh. */
     healMissingNobleItems(uid).catch(() => {});
+    /* 2026-10-24 (Sumon): Nobel rewards must load FAST — warm the image
+     * cache with this rank's art (badge/frame/nameplate/entry) in the
+     * background so they render instantly wherever they appear. */
+    if (next) {
+      const rankKey = NOBLE_RANKS[next.rankIndex]?.key;
+      if (rankKey) prefetchNobleRankArt(rankKey).catch(() => {});
+    }
     return next;
   } catch {
     return null;

@@ -242,6 +242,27 @@ export function rewardIcon(design: RewardDesign): string {
  * the ACTIVE (server-merged) catalog's designUrl for the item's rank slot;
  * the stored icon is used only when no design exists anywhere.
  */
+/**
+ * 2026-10-24 (Sumon): Nobel rewards must load FAST. Warm the image cache
+ * with a rank's reward art in the background so the profile nameplate,
+ * seat frames and room entry effect appear instantly — never a wait.
+ * Best-effort and fire-and-forget at call sites.
+ */
+export async function prefetchNobleRankArt(rankKey: string): Promise<void> {
+  try {
+    const entry = rewardsForRankKey(rankKey);
+    if (!entry) return;
+    const urls = [entry.badge, entry.frame, entry.nameplate, entry.entryEffect]
+      .map((d) => d?.designUrl)
+      .filter((u): u is string => !!u);
+    if (!urls.length) return;
+    const { Image } = await import('expo-image');
+    await Promise.all(urls.map((u) => Image.prefetch(u).catch(() => false)));
+  } catch {
+    // Warm-up is best-effort — display paths still load on demand.
+  }
+}
+
 export function resolveGrantedArt(
   itemId: string | undefined,
   storedIcon: string | undefined,

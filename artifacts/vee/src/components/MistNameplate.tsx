@@ -38,11 +38,15 @@ export default function MistNameplate({
   mistColor = '#BBDEFB',
   width = 120,
   height = 40,
+  fit = 'contain',
 }: {
   imageUrl: string;
   mistColor?: string;
   width?: number;
   height?: number;
+  /** 2026-10-24 (Sumon): 'cover' fills the box completely (profile pill —
+   * nameplates must be the SAME size as the Level/Follower pills). */
+  fit?: 'contain' | 'cover';
 }) {
   const particlesRef = useRef<MistParticle[]>(createParticles(12, width, height));
 
@@ -76,7 +80,7 @@ export default function MistNameplate({
       <Image
         source={{ uri: imageUrl }}
         style={{ width, height }}
-        resizeMode="contain"
+        resizeMode={fit}
       />
       {/* Mist overlay — clipped inside */}
       <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', borderRadius: height / 2 }]}>

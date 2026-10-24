@@ -40,7 +40,7 @@ import { ref, push, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Participant, GiftSentInfo } from '../types/room';
 import {
-  sendGift, getBalance, getWalletBalance,
+  sendGift, getBalance, getWalletBalance, canSelfSend,
   InsufficientFundsError, NetworkError,
 } from '@/src/features/wallet/walletService';
 import {
@@ -220,6 +220,23 @@ export function GiftsModal({
   const [mySvipTier, setMySvipTier] = useState(0);
   /** Sender's noble rank index (-1 = none) — for noble-gated gifts. */
   const [myNobleRank, setMyNobleRank] = useState(-1);
+  /* 2026-10-24 (Sumon): self-gift is ADMIN-ONLY and for regular users the
+   * option must not EXIST — no self entry in the picker, no self chip, no
+   * message. Admins (boss testing) still see themselves. */
+  const [selfAllowed, setSelfAllowed] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    let live = true;
+    canSelfSend(myUid).then((ok) => {
+      if (!live) return;
+      setSelfAllowed(ok);
+      if (!ok) setSelected((prev) => prev.filter((id) => id !== myUid));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [visible, myUid]);
+
+  const pickableMembers = selfAllowed ? members : members.filter((m) => m.id !== myUid);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,7 +334,7 @@ export function GiftsModal({
     setSelected((prev) => prev.filter((x) => x !== id));
   };
 
-  const selectedMembers = members.filter((m) => selected.includes(m.id));
+  const selectedMembers = pickableMembers.filter((m) => selected.includes(m.id));
 
   const bumpRecent = useCallback((giftId: string) => {
     setRecentIds((prev) => {
@@ -676,7 +693,7 @@ export function GiftsModal({
         {pickerOpen && (
           <View style={{ maxHeight: 220, borderTopWidth: 1, borderTopColor: '#eef0f0', marginTop: 8 }}>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {members.map((m) => {
+              {pickableMembers.map((m) => {
                 const isSel = selected.includes(m.id);
                 return (
                   <Pressable

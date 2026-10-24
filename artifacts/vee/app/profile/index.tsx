@@ -1020,12 +1020,12 @@ export default function ProfileScreen({
             {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
               <View style={{ marginRight: 6 }}>
                 {nameplateMist ? (
-                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={pillW} height={20} />
+                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={pillW} height={20} fit="cover" />
                 ) : (
                   <Image
                     source={{ uri: activeNameplate.icon }}
                     style={{ width: pillW, height: 20 }}
-                    resizeMode="contain"
+                    contentFit="cover"
                   />
                 )}
               </View>
