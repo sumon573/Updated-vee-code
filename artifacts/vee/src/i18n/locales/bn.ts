@@ -226,6 +226,9 @@ const bn = {
       userRoomBlocked: '{{name}}-কে রুম থেকে ব্লক করা হয়েছে।',
       userCommentBlocked: '{{name}}-এর মন্তব্য ব্লক করা হয়েছে।',
       error: 'ত্রুটি',
+      micNoVoiceTitle: 'Voice connect হয়নি',
+      micNoVoiceMsg:
+        'Voice server-এর সাথে connection এখনো তৈরি হয়নি, তাই mic খুলছে না। Retry করলে আবার connect করবে।',
       // TODO i18n: English fallbacks — need proper Bengali translations
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',

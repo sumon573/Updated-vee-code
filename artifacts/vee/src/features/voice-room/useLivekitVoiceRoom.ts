@@ -885,7 +885,30 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       this.registerRoomListeners(room);
       markVoiceStage('listeners_registered', roomId);
       markVoiceStage('connect_started', roomId);
-      await room.connect(data.url, data.token);
+      // 2026-10-24 (boss: mic never opens — Alert proved voiceJoined false):
+      // room.connect() had NO timeout — a hanging websocket handshake left
+      // the join stuck in 'connecting' forever: no error, no auto-retry
+      // (retry runs only on 'failed'), mic button dead. Bound it at 20s
+      // (same as the token timeout): a timeout throws into the catch below
+      // → 'failed' → auto-retry engages, and the mic button's Retry unsticks.
+      const connectPromise = room.connect(data.url, data.token);
+      // A timed-out attempt may still settle later; never surface it as an
+      // unhandled rejection.
+      connectPromise.catch(() => {});
+      let connectTimer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        await Promise.race([
+          connectPromise,
+          new Promise<never>((_, reject) => {
+            connectTimer = setTimeout(
+              () => reject(new Error('Voice server connection timed out (20s)')),
+              20000,
+            );
+          }),
+        ]);
+      } finally {
+        if (connectTimer) clearTimeout(connectTimer);
+      }
       if (this.joinAborted(myGeneration)) {
         // leave() ran during connect() — tear down this Room NOW so it can
         // never leak as a ghost participant with a stuck audio session.

@@ -1783,8 +1783,8 @@ export default function VoiceRoomScreen() {
       if (!voiceJoined) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         Alert.alert(
-          t('voiceRoom.screen.micNoVoiceTitle', { defaultValue: 'Voice connect হয়নি' }),
-          t('voiceRoom.screen.micNoVoiceMsg', { defaultValue: 'Voice server-এর সাথে connection এখনো তৈরি হয়নি, তাই mic খুলছে না। Retry করলে আবার connect করবে।' }),
+          t('voiceRoom.screen.micNoVoiceTitle', { defaultValue: 'Voice not connected' }),
+          t('voiceRoom.screen.micNoVoiceMsg', { defaultValue: 'The voice server connection is not ready yet, so the mic cannot open. Retry will reconnect.' }),
           [
             { text: t('voiceRoom.screen.retry', { defaultValue: 'Retry' }), onPress: () => retryConnection() },
             { text: t('voiceRoom.screen.ok', { defaultValue: 'OK' }) },

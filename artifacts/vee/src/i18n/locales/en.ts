@@ -226,6 +226,9 @@ const en = {
       userRoomBlocked: '{{name}} has been room-blocked.',
       userCommentBlocked: '{{name}} has been comment-blocked.',
       error: 'Error',
+      micNoVoiceTitle: 'Voice not connected',
+      micNoVoiceMsg:
+        'The voice server connection is not ready yet, so the mic cannot open. Retry will reconnect.',
       roomNotFound: 'Room not found.',
       settingsSaveError: 'Could not save room settings. Try again.',
       muteFailedWithCause: 'Could not change mute state. Reason: {{cause}}',
