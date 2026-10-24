@@ -86,11 +86,15 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 ];
 
 import MistNameplate from '@/src/components/MistNameplate';
-import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 
-function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
+function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
   // 2026-10-16: Hooks must be at top level — before any early returns
   const [imgError, setImgError] = useState(false);
+  // 2026-10-24 (Sumon): NEVER a demo picture — if the grant's stored icon is
+  // a stale fallback emoji but the (server-driven) catalog has the item's
+  // real design, show the design. See resolveGrantedArt.
+  const icon = resolveGrantedArt(itemId, storedIcon);
   const isOfficial = (frameId || '').toLowerCase().includes('official') ||
     (frameName || '').toLowerCase().includes('official');
   if (isOfficial) {
@@ -105,7 +109,7 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
   }
   /* 2026-10-15 (Sumon): Mist animation for Viscount+ nameplates */
   if (itemId && /^https?:\/\//i.test(icon)) {
-    const mistEntry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === itemId);
+    const mistEntry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === itemId);
     const mistColor = mistEntry?.nameplate.mistColor;
     if (mistColor) {
       return <MistNameplate imageUrl={icon} mistColor={mistColor} width={100} height={34} />;
@@ -113,7 +117,7 @@ function ItemIcon({ icon, frameId, frameName, itemId }: { icon: string; frameId?
   }
   if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
     /* 2026-10-15: Fallback to catalog emoji if image fails */
-    const fallbackEntry = NOBLE_REWARDS_CATALOG.find((r) =>
+    const fallbackEntry = getActiveCatalog().find((r) =>
       `noble-plate-${r.rankKey}` === itemId ||
       `noble-badge-${r.rankKey}` === itemId ||
       `noble-frame-${r.rankKey}` === itemId

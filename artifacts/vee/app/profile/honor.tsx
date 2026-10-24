@@ -28,6 +28,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkNobleMaintenance } from '@/src/services/nobleService';
+import { resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { View, Text, ScrollView, Pressable, Modal, Image, Alert, Animated } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -139,7 +140,9 @@ export default function HonorScreen() {
     try {
       unsubBadges = subscribeBadges(viewUid, (b) => {
         badgesDone = true;
-        setBadges(b);
+        // 2026-10-24 (Sumon): resolve art at data level — a stale emoji
+        // icon never renders when the server catalog has the real design.
+        setBadges(b.map((x) => ({ ...x, icon: resolveGrantedArt(x.id, x.icon) })));
         maybeDone();
       });
     } catch (e) {
@@ -150,7 +153,7 @@ export default function HonorScreen() {
     try {
       unsubPlates = subscribeNameplates(viewUid, (p) => {
         platesDone = true;
-        setNameplates(p);
+        setNameplates(p.map((x) => ({ ...x, icon: resolveGrantedArt(x.id, x.icon) })));
         maybeDone();
       });
     } catch (e) {

@@ -32,7 +32,7 @@
 import { ref, onValue, get, set, update, runTransaction, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantBadge, grantFrame, grantNameplate, grantRipple, grantEntryEffect } from './badgeService';
-import { rewardsForRank, rewardIcon } from './nobleRewardsCatalog';
+import { rewardsForRank, rewardIcon, loadServerNobleRewards, type RewardDesign } from './nobleRewardsCatalog';
 
 export const NOBLE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -271,10 +271,28 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
   const catalog = rewardsForRank(rankIndex);
   const now = Date.now();
   const desc = `Noble privilege — earned by reaching ${rank.name} rank.`;
+  /* 2026-10-24 (Sumon): NEVER DOWNGRADE ART — a grant (re)write must never
+   * replace a stored picture URL with a fallback emoji. A client holding a
+   * stale catalog once rewrote a holder's good nameplate icon back to 🎖️
+   * (his "demo" screenshot). If the existing grant already carries a URL
+   * and this catalog's icon for the slot is not a URL, keep the URL. */
+  const keepArt = async (
+    node: 'nameplates' | 'badges' | 'frames' | 'ripples' | 'entryEffects',
+    id: string,
+    icon: string,
+  ): Promise<string> => {
+    if (/^https?:\/\//i.test(icon)) return icon;
+    try {
+      const s = await get(ref(database, `users/${uid}/${node}/${id}`));
+      const old = s?.val()?.icon;
+      if (typeof old === 'string' && /^https?:\/\//i.test(old)) return old;
+    } catch { /* keep the catalog icon */ }
+    return icon;
+  };
   await grantNameplate(uid, {
     id: `noble-plate-${rank.key}`,
     name: `${rank.name} Nameplate`,
-    icon: catalog ? rewardIcon(catalog.nameplate) : '🎖️',
+    icon: await keepArt('nameplates', `noble-plate-${rank.key}`, catalog ? rewardIcon(catalog.nameplate) : '🎖️'),
     obtainedAt: now,
     validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
     source: 'official',
@@ -285,7 +303,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
     await grantBadge(uid, {
       id: `noble-badge-${rank.key}`,
       name: `${rank.name} Noble`,
-      icon: rewardIcon(catalog.badge),
+      icon: await keepArt('badges', `noble-badge-${rank.key}`, rewardIcon(catalog.badge)),
       obtainedAt: now,
       validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'official',
@@ -298,7 +316,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
     await grantFrame(uid, {
       id: `noble-frame-${rank.key}`,
       name: `${rank.name} Frame`,
-      icon: rewardIcon(catalog.frame),
+      icon: await keepArt('frames', `noble-frame-${rank.key}`, rewardIcon(catalog.frame)),
       obtainedAt: now,
       validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'official',
@@ -310,7 +328,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
     await grantRipple(uid, {
       id: `noble-ripple-${rank.key}`,
       name: `${rank.name} Ripple`,
-      icon: rewardIcon(catalog.ripple),
+      icon: await keepArt('ripples', `noble-ripple-${rank.key}`, rewardIcon(catalog.ripple)),
       colors: catalog.ripple.config?.colors as string[] | undefined,
       obtainedAt: now,
       validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
@@ -323,7 +341,7 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
     await grantEntryEffect(uid, {
       id: `noble-effect-${rank.key}`,
       name: `${rank.name} Entry`,
-      icon: rewardIcon(catalog.entryEffect),
+      icon: await keepArt('entryEffects', `noble-effect-${rank.key}`, rewardIcon(catalog.entryEffect)),
       obtainedAt: now,
       validity: now + NOBLE_WINDOW_MS, // 2026-10-16 (Sumon): 30-day validity, expires with rank
       source: 'noble',
@@ -433,6 +451,12 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     const rank = NOBLE_RANKS[state.rankIndex];
     if (!rank) return;
 
+    // 2026-10-24 (Sumon): refresh the SERVER catalog before comparing any
+    // icons — a catalog copy loaded at app start can predate a design the
+    // server published minutes ago, and comparing against it once rewrote
+    // a holder's good icons back to fallback emoji (his "demo" report).
+    await loadServerNobleRewards(true).catch(() => {});
+
     // Check existing items in parallel
     const [platesSnap, badgesSnap, framesSnap, ripplesSnap, effectsSnap] = await Promise.all([
       get(ref(database, `users/${uid}/nameplates`)).catch(() => null),
@@ -455,16 +479,21 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     const catalog = rewardsForRank(state.rankIndex);
     let needsUpdate = !hasPlate || !hasBadge || !hasFrame || !hasRipple || !hasEffect;
     if (!needsUpdate && catalog) {
-      const existingPlate = platesSnap?.child(`noble-plate-${rank.key}`).val();
-      if (existingPlate && existingPlate.icon !== rewardIcon(catalog.nameplate)) needsUpdate = true;
-      if (!needsUpdate && catalog.badge) {
-        const existingBadge = badgesSnap?.child(`noble-badge-${rank.key}`).val();
-        if (existingBadge && existingBadge.icon !== rewardIcon(catalog.badge)) needsUpdate = true;
-      }
-      if (!needsUpdate && catalog.frame) {
-        const existingFrame = framesSnap?.child(`noble-frame-${rank.key}`).val();
-        if (existingFrame && existingFrame.icon !== rewardIcon(catalog.frame)) needsUpdate = true;
-      }
+      // 2026-10-24 (Sumon): stale-icon check for ALL slots (ripple + entry
+      // effect were missing). Never-downgrade: a stored picture URL vs a
+      // non-URL catalog icon is NOT stale — see grantNobleRankItems.
+      const isStale = (existing: any, design: RewardDesign | null | undefined): boolean => {
+        if (!existing || !design) return false;
+        const catIcon = rewardIcon(design);
+        if (existing.icon === catIcon) return false;
+        if (/^https?:\/\//i.test(existing.icon || '') && !/^https?:\/\//i.test(catIcon)) return false;
+        return true;
+      };
+      if (isStale(platesSnap?.child(`noble-plate-${rank.key}`).val(), catalog.nameplate)) needsUpdate = true;
+      if (!needsUpdate && isStale(badgesSnap?.child(`noble-badge-${rank.key}`).val(), catalog.badge)) needsUpdate = true;
+      if (!needsUpdate && isStale(framesSnap?.child(`noble-frame-${rank.key}`).val(), catalog.frame)) needsUpdate = true;
+      if (!needsUpdate && isStale(ripplesSnap?.child(`noble-ripple-${rank.key}`).val(), catalog.ripple)) needsUpdate = true;
+      if (!needsUpdate && isStale(effectsSnap?.child(`noble-effect-${rank.key}`).val(), catalog.entryEffect)) needsUpdate = true;
     }
     if (needsUpdate) {
       await grantNobleRankItems(uid, state.rankIndex);

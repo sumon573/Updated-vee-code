@@ -11,7 +11,7 @@ import { View, Text, Alert, Modal, Pressable, FlatList, Animated } from 'react-n
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import MistNameplate from '@/src/components/MistNameplate';
-import { NOBLE_REWARDS_CATALOG } from '@/src/services/nobleRewardsCatalog';
+import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
@@ -544,7 +544,12 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) { setGrantedFrames([]); setGrantedNameplates([]); return; }
     const unsubF = subscribeFrames(displayUid, setGrantedFrames);
-    const unsubN = subscribeNameplates(displayUid, setGrantedNameplates);
+    // 2026-10-24 (Sumon): never render a stale demo icon — resolve the
+    // nameplate art from the server-driven catalog when the stored icon
+    // is only a fallback emoji.
+    const unsubN = subscribeNameplates(displayUid, (plates) =>
+      setGrantedNameplates(plates.map((x) => ({ ...x, icon: resolveGrantedArt(x.id, x.icon) })))
+    );
     return () => { unsubF(); unsubN(); };
   }, [displayUid]);
 
@@ -845,7 +850,7 @@ export default function ProfileScreen({
   /* Mist color for Viscount+ nameplates */
   const nameplateMist = (() => {
     if (!activeNameplate) return null;
-    const entry = NOBLE_REWARDS_CATALOG.find((r) => `noble-plate-${r.rankKey}` === activeNameplate.id);
+    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === activeNameplate.id);
     return entry?.nameplate.mistColor || null;
   })();
   const giftEntries = Object.entries(receivedGifts);

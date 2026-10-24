@@ -232,6 +232,38 @@ export function rewardIcon(design: RewardDesign): string {
 }
 
 /**
+ * 2026-10-24 (Sumon): NEVER show a demo/fallback picture for a granted item
+ * whose real design exists. A grant's stored `icon` is a copy made at grant
+ * time — if the design arrived later (or the granting client ran a stale
+ * catalog), the stored icon stays an emoji forever and list screens showed
+ * that emoji as a big "demo" picture (his Decoration screenshot, Marquis
+ * Frame showing 🖼️ while the real frame art existed on the server).
+ * Display surfaces resolve art HERE instead: a stored URL wins; otherwise
+ * the ACTIVE (server-merged) catalog's designUrl for the item's rank slot;
+ * the stored icon is used only when no design exists anywhere.
+ */
+export function resolveGrantedArt(
+  itemId: string | undefined,
+  storedIcon: string | undefined,
+): string {
+  if (storedIcon && /^https?:\/\//i.test(storedIcon)) return storedIcon;
+  if (itemId) {
+    const m = /^noble-(badge|frame|plate|ripple|effect)-(.+)$/.exec(itemId);
+    if (m) {
+      const entry = rewardsForRankKey(m[2]);
+      const slot =
+        m[1] === 'badge' ? entry?.badge :
+        m[1] === 'frame' ? entry?.frame :
+        m[1] === 'plate' ? entry?.nameplate :
+        m[1] === 'ripple' ? entry?.ripple :
+        entry?.entryEffect;
+      if (slot?.designUrl) return slot.designUrl;
+    }
+  }
+  return storedIcon ?? '';
+}
+
+/**
  * Get rewards for a rank index (0-9). Returns null for invalid index.
  */
 export function rewardsForRank(rankIndex: number): RankRewards | null {
@@ -320,8 +352,8 @@ export function rewardsForRankKey(rankKey: string): RankRewards | null {
  * Load server Nobel rewards from Firebase. Call once at app startup.
  * Non-blocking — falls back to hardcoded if fetch fails.
  */
-export async function loadServerNobleRewards(): Promise<void> {
-  if (serverLoadAttempted) return;
+export async function loadServerNobleRewards(force = false): Promise<void> {
+  if (serverLoadAttempted && !force) return;
   serverLoadAttempted = true;
   try {
     const { ref, get } = await import('firebase/database');
