@@ -1776,20 +1776,11 @@ export default function VoiceRoomScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!isPublishing) {
-      // 2026-10-24 (boss: mic button must NEVER silently do nothing): a tap
-      // while voice isn't connected used to return without any feedback —
-      // the seat showed unmuted while no mic track existed at all. Now the
-      // tap says exactly why, and offers a Retry that reconnects voice.
+      // 2026-10-24 (boss order: NO dialog, big-app behaviour): a tap while
+      // voice isn't connected silently retries the connection — when it
+      // comes up, the auto-publish effect opens the mic on its own.
       if (!voiceJoined) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        Alert.alert(
-          t('voiceRoom.screen.micNoVoiceTitle', { defaultValue: 'Voice not connected' }),
-          t('voiceRoom.screen.micNoVoiceMsg', { defaultValue: 'The voice server connection is not ready yet, so the mic cannot open. Retry will reconnect.' }),
-          [
-            { text: t('voiceRoom.screen.retry', { defaultValue: 'Retry' }), onPress: () => retryConnection() },
-            { text: t('voiceRoom.screen.ok', { defaultValue: 'OK' }) },
-          ],
-        );
+        retryConnection();
         return;
       }
       startPublishing();

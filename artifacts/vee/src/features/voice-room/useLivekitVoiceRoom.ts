@@ -833,7 +833,16 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       } catch {
         // non-critical — SDK defaults are the same communication preset
       }
-      await rnSdk.AudioSession.startAudioSession();
+      // 2026-10-24 (boss: a peripheral failure must NEVER kill the whole
+      // voice connection): startAudioSession is unprotected here — if it
+      // throws (stale session, OS audio busy), the outer catch marks the
+      // join 'failed' and every retry dies the same way. The session may
+      // already be up (a previous attempt's leak) — connect anyway.
+      try {
+        await rnSdk.AudioSession.startAudioSession();
+      } catch {
+        // non-critical — connect proceeds; SDK defaults apply
+      }
       if (this.joinAborted(myGeneration)) {
         try {
           await rnSdk.AudioSession.stopAudioSession();
@@ -845,7 +854,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // 2026-10-15 (Sumon): BACKGROUND AUDIO — foreground service (microphone)
       // keeps talking + hearing alive when the app is backgrounded (like IMO).
       // Without it Android suspends the app and the mic dies.
-      startVoiceForegroundService('Voice room active');
+      // 2026-10-24 (boss: connection must never die on a peripheral): FGS
+      // start must not throw the join into 'failed' — it only guards
+      // background survival, so a failure here (notification/service
+      // restriction) must not block connecting at all.
+      try {
+        startVoiceForegroundService('Voice room active');
+      } catch {
+        // non-critical — connect proceeds without the background guard
+      }
       // Crash breadcrumb: native audio session started — next is WebRTC connect.
       markVoiceStage('audio_session_started', roomId);
       // 2026-10-22 (boss, heat/lag/lifetime fix): adaptiveStream + dynacast
