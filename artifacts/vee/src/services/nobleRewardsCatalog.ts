@@ -105,7 +105,16 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'marquis', rankName: 'Marquis', rankColor: '#EC407A',
-    nameplate: { fallbackIcon: '🎖️' },
+    nameplate: {
+      // 2026-10-24 (Sumon): FINAL Marquis nameplate — his own supplied art
+      // (dark plate, gold borders, crown with purple gem, flowing purple
+      // satin ribbons, purple gems), fully animated INSIDE the plate only
+      // (ribbons flow, gold sheen, gems glow; the word stays stable).
+      // v2 = faster tempo (3 cycles/4s) per his note. Approved final
+      // 2026-10-24 ("nameplate এটাই ফাইনাল"). Animated WebP on VPS static.
+      designUrl: 'https://vee-club.duckdns.org/static/nameplates/marquis-nameplate-v2.webp',
+      fallbackIcon: '🎖️',
+    },
     badge: {
       // 2026-10-24 (Sumon): Marquis badge is STATIC — no animation
       // ("Badge এ কোনো অ্যানিমেশন দরকার নাই, শুধু badge"). The v1 animated
@@ -126,7 +135,16 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '🖼️',
     },
     ripple: null,
-    entryEffect: { fallbackIcon: '✨' },
+    entryEffect: {
+      // 2026-10-24 (Sumon): FINAL Marquis entry effect — his own supplied
+      // banner art (purple/gold, gem shield emblem), the WHOLE box animated
+      // (arrival sweep + dazzle glints + gem brilliance, ~4s loop). The
+      // entrant's live DP fills the left gold-ring socket and their live
+      // name fills the name slot — EntryBanner composites both over this
+      // clean art. Approved final 2026-10-24 ("entry effect এটাই ফাইনাল").
+      designUrl: 'https://vee-club.duckdns.org/static/entry/marquis-entry-v2.webp',
+      fallbackIcon: '✨',
+    },
   },
   {
     rankKey: 'duke', rankName: 'Duke', rankColor: '#FF7043',

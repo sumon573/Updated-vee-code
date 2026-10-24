@@ -14,7 +14,8 @@
  * shimmering rank-color background + sparkles.
  */
 import { useEffect, useRef } from 'react';
-import { View, Text, Image, Animated } from 'react-native';
+import { View, Text, Image, Animated, Dimensions } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
@@ -40,10 +41,35 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
   const catalog = rankKey ? rewardsForRankKey(rankKey) : null;
   const frameUrl = catalog?.frame?.designUrl;
+  // 2026-10-24 (Sumon): FULL entry art — when the rank's catalog entryEffect
+  // carries a designUrl (server-driven via RTDB nobel_rewards), the banner
+  // IS that animated art (arrival + dazzle are baked into the art itself):
+  // the entrant's live DP fills the art's left socket and their live name
+  // fills the name slot next to the crown. Marquis is the first rank with
+  // entry art (his own supplied design, approved final 2026-10-24).
+  const entryUrl = catalog?.entryEffect?.designUrl;
+  const hasEntryArt = isPremiumEntry && !!entryUrl;
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (hasEntryArt) {
+      // Art branch: no slide (the art sweeps in by itself) — fade in fast,
+      // hold for the art's ~4s loop, fade out at its own fade tail.
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+      const timer = setTimeout(() => {
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => onDismiss());
+      }, 3650);
+      return () => clearTimeout(timer);
+    }
     Animated.parallel([
       Animated.spring(slideAnim, {
         toValue: 0,
@@ -77,6 +103,89 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   }, []);
 
   const initials = name.trim().charAt(0).toUpperCase() || '?';
+
+  // 2026-10-24 (Sumon): ENTRY ART branch — full animated banner art with
+  // live DP + name composited into the art's own slots. Geometry is the
+  // art's native 1600x533 canvas, verified against the approved design:
+  // DP socket center (24.3% W, 48.7% H), disc 12.7% of W; name slot starts
+  // at 37.2% W with its baseline at 48.7% H, emblem begins at ~62.5% W.
+  if (hasEntryArt && theme) {
+    const bannerW = Math.min(Dimensions.get('window').width * 0.94, 470);
+    const bannerH = (bannerW * 533) / 1600;
+    const dpSize = bannerW * 0.127;
+    const nameFont = bannerW * 0.043;
+    return (
+      <Animated.View
+        style={{
+          opacity: opacityAnim,
+          position: 'absolute',
+          top: '42%',
+          alignSelf: 'center',
+          zIndex: 100,
+          width: bannerW,
+          height: bannerH,
+        }}
+        pointerEvents="none"
+      >
+        <ExpoImage
+          source={{ uri: entryUrl }}
+          style={{ position: 'absolute', width: bannerW, height: bannerH }}
+          contentFit="contain"
+        />
+        {/* Live DP inside the art's gold-ring socket */}
+        {photoURL ? (
+          <Image
+            source={{ uri: photoURL }}
+            style={{
+              position: 'absolute',
+              left: bannerW * 0.1788,
+              top: bannerH * 0.295,
+              width: dpSize,
+              height: dpSize,
+              borderRadius: dpSize / 2,
+            }}
+          />
+        ) : (
+          <View
+            style={{
+              position: 'absolute',
+              left: bannerW * 0.1788,
+              top: bannerH * 0.295,
+              width: dpSize,
+              height: dpSize,
+              borderRadius: dpSize / 2,
+              backgroundColor: '#3B1470',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: dpSize * 0.42, fontWeight: '800' }}>
+              {initials}
+            </Text>
+          </View>
+        )}
+        {/* Live name in the art's name slot (gold, beside the crown) */}
+        <Text
+          style={{
+            position: 'absolute',
+            left: bannerW * 0.3719,
+            top: bannerH * 0.372,
+            width: bannerW * 0.245,
+            color: '#FFD94D',
+            fontSize: nameFont,
+            lineHeight: nameFont * 1.1,
+            fontWeight: '800',
+            textShadowColor: 'rgba(30,10,0,0.85)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 3,
+          }}
+          numberOfLines={1}
+        >
+          {name}
+        </Text>
+      </Animated.View>
+    );
+  }
 
   // 2026-10-15 (Sumon): PREMIUM entry for Count+ — wide banner from right,
   // DP with crown frame, name only, shimmering rank color + sparkles.
