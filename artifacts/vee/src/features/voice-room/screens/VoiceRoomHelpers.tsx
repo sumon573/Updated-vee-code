@@ -33,6 +33,9 @@ export function fbSeatToParticipant(
     photoURL: seat.photoURL,
     speaking: speakingUsers[seat.userId] === true,
     muted: seat.muted,
+    // 2026-10-24 (boss: host-mute must stick): carry the host-mute flag
+    // through to Participants — without this the screen never sees it.
+    hostMuted: seat.hostMuted,
     role: seat.role,
     // 2026-10-19 (IMO port Phase 1): dual-read numeric roleLevel —
     // use stored value when present, else derive from the string role.

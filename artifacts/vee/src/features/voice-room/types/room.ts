@@ -79,6 +79,9 @@ export type Participant = {
   photoURL?: string;   // profile picture URL (optional, falls back to initials)
   speaking: boolean; // true ONLY when the voice engine signals real audio — no fake pulse
   muted: boolean;
+  /** 2026-10-24 (boss: host-mute must stick): host/admin mute flag,
+      separate from the member's own `muted`. Effective mic = muted || hostMuted. */
+  hostMuted?: boolean;
   role: Role;
   /** 2026-10-19 (IMO port Phase 1): numeric role level (9000/8000/7000/0).
       Written going forward; read with dual-read fallback to string role. */

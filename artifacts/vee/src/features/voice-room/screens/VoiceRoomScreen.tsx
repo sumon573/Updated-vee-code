@@ -75,7 +75,7 @@ import {
   subscribeSeats, subscribeAudience, subscribeRoomInfo,
   subscribeLockedSeats, subscribeRoomAdmins,
   joinRoomAsAudience, leaveAudience, takeSeat, clearOtherSeats, leaveSeat as fbLeaveSeat,
-  setSeatMute, setSeatRole, removeSeat, removeAudienceMember,
+  setSeatMute, setSeatHostMute, setSeatRole, removeSeat, removeAudienceMember,
   lockSeat as fbLockSeat, unlockSeat as fbUnlockSeat, setAudienceRole,
   grantRoomAdmin, revokeRoomAdmin,
   closeRoom, updateRoomSettings, getUserColor, getInitials,
@@ -1128,7 +1128,7 @@ export default function VoiceRoomScreen() {
       // refreshes from every seated user) map to identical visible state —
       // skip the setState so the whole room screen doesn't re-render.
       const sig = mapped.map(s => (s
-        ? `${s.id}|${s.role}|${s.muted ? 1 : 0}|${s.speaking ? 1 : 0}|${s.activeFrame ?? ''}|${s.name}|${s.photoURL ?? ''}|${s.nobleRankIndex ?? ''}`
+        ? `${s.id}|${s.role}|${s.muted ? 1 : 0}|${s.hostMuted ? 1 : 0}|${s.speaking ? 1 : 0}|${s.activeFrame ?? ''}|${s.name}|${s.photoURL ?? ''}|${s.nobleRankIndex ?? ''}`
         : '-')).join(';');
       if (sig === seatsSigRef.current) return;
       seatsSigRef.current = sig;
@@ -1325,6 +1325,31 @@ export default function VoiceRoomScreen() {
   
   const prevFbMutedRef = useRef<boolean | null>(null);
   const prevMySeatIdxRef = useRef<number>(-1);
+  // 2026-10-24 (boss: host-mute must stick): host-mute enforcement.
+  // myHostMuted comes from the seat's hostMuted flag (owner/admin only).
+  // While it is true the member's own mic button CANNOT unmute them:
+  // the engine is forced muted, and the toggle below refuses to flip it.
+  // On host-unmute the engine falls back to the seat's own `muted` flag
+  // (the member's self choice) — fail-closed, never a surprise unmute.
+  const prevHostMutedRef = useRef<boolean | null>(null);
+  const prevHostSeatIdxRef = useRef<number>(-1);
+  useEffect(() => {
+    if (mySeatIdx < 0) {
+      prevHostMutedRef.current = null;
+      prevHostSeatIdxRef.current = -1;
+      return;
+    }
+    if (prevHostSeatIdxRef.current !== mySeatIdx) {
+      prevHostMutedRef.current = null;
+      prevHostSeatIdxRef.current = mySeatIdx;
+    }
+    const mySeat = seats[mySeatIdx];
+    if (!mySeat || !isPublishing) return;
+    const hostMuted = mySeat.hostMuted === true;
+    if (prevHostMutedRef.current === hostMuted) return;
+    prevHostMutedRef.current = hostMuted;
+    setMicMuted(hostMuted ? true : (mySeat.muted ?? true));
+  }, [seats, mySeatIdx, isPublishing]);
   useEffect(() => {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
@@ -1347,6 +1372,8 @@ export default function VoiceRoomScreen() {
     }
     if (prevFbMutedRef.current === fbMuted) return; // no change
     prevFbMutedRef.current = fbMuted;
+    // Host-mute wins: never let the self-mute sync unmute a host-muted mic.
+    if (mySeat.hostMuted === true) return;
     setMicMuted(fbMuted);
   }, [seats, mySeatIdx, isPublishing]);
 
@@ -1355,7 +1382,7 @@ export default function VoiceRoomScreen() {
     if (!speakingUsers) return;
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
       if (!s || s.id === myUid) return s;
-      const isSpeaking = speakingUsers[s.id] === true && !s.muted;
+      const isSpeaking = speakingUsers[s.id] === true && !s.muted && !s.hostMuted;
       return isSpeaking !== s.speaking ? { ...s, speaking: isSpeaking } : s;
     }));
   }, [speakingUsers, myUid]);
@@ -1729,6 +1756,19 @@ export default function VoiceRoomScreen() {
 
   const toggleMic = useCallback(() => {
     if (mySeatIdx < 0) return;
+    // 2026-10-24 (boss: host-mute must stick): a host-muted member's own
+    // mic button must NOT unmute them — previously this tap flipped the
+    // engine AND overwrote the host's mute in RTDB (setSeatMute false),
+    // which is exactly how members unmuted themselves. Refuse the tap
+    // (and never write the seat) while hostMuted is set.
+    if (seats[mySeatIdx]?.hostMuted === true) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        t('voiceRoom.screen.micHostMutedTitle', { defaultValue: 'Muted by host' }),
+        t('voiceRoom.screen.micHostMutedMsg', { defaultValue: 'The room owner or an admin muted you on this seat. Only they can unmute you.' }),
+      );
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!isPublishing) {
@@ -1741,7 +1781,7 @@ export default function VoiceRoomScreen() {
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
     setSeatMute(roomId, mySeatIdx, newMuted).catch(() => {});
-  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId]);
+  }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId, seats, t]);
 
   const toggleSpeaker = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1810,23 +1850,28 @@ export default function VoiceRoomScreen() {
     return map;
   }, [handleSeatPress]);
 
+  // 2026-10-24 (boss: host-mute must stick + owner can mute admin):
+  // host/admin mute now writes ONLY the hostMuted flag — never the
+  // member's own `muted` — so the member's mic button can no longer
+  // overwrite it. The sheet gates this action (canManage, plus the
+  // explicit owner→admin carve-out, mirroring Down).
   const muteToggleMember = useCallback((memberId: string) => {
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
     const seat = seatIdx >= 0 ? seats[seatIdx] : null;
     if (!seat || seatIdx < 0) return;
-    const prevMuted = seat.muted ?? false;
-    const newMuted = !prevMuted;
-    if (newMuted) muteRemoteUser(memberId);
+    const prevHostMuted = seat.hostMuted ?? false;
+    const newHostMuted = !prevHostMuted;
+    if (newHostMuted) muteRemoteUser(memberId);
     else playUserStream(memberId);
     setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
-      (i === seatIdx && s ? { ...s, muted: newMuted } : s),
+      (i === seatIdx && s ? { ...s, hostMuted: newHostMuted } : s),
     ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSeatMute(roomId, seatIdx, newMuted).catch((e: unknown) => {
+    setSeatHostMute(roomId, seatIdx, newHostMuted).catch((e: unknown) => {
       setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
-        (i === seatIdx && s ? { ...s, muted: prevMuted } : s),
+        (i === seatIdx && s ? { ...s, hostMuted: prevHostMuted } : s),
       ));
-      if (newMuted) playUserStream(memberId);
+      if (newHostMuted) playUserStream(memberId);
       else muteRemoteUser(memberId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(

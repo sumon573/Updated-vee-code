@@ -254,13 +254,13 @@ export const SeatCard = memo(function SeatCard({
             <View style={{
               position: 'absolute', bottom: 0, left: 0,
               width: 18, height: 18, borderRadius: 9,
-              backgroundColor: member.muted ? C.red : '#FFFFFF',
+              backgroundColor: (member.muted || member.hostMuted) ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 1.5, borderColor: C.bg,
-              shadowColor: member.muted ? C.red : '#000',
+              shadowColor: (member.muted || member.hostMuted) ? C.red : '#000',
               shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
             }}>
-              <Feather name={member.muted ? 'mic-off' : 'mic'} size={9} color={member.muted ? '#fff' : '#333'} />
+              <Feather name={(member.muted || member.hostMuted) ? 'mic-off' : 'mic'} size={9} color={(member.muted || member.hostMuted) ? '#fff' : '#333'} />
             </View>
             {micDecorUrl && (
               <Image

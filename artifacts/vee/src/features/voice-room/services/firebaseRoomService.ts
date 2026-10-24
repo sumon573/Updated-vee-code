@@ -46,6 +46,13 @@ export type RoomSeat = {
   color: string;
   photoURL?: string;
   muted: boolean;
+  /** 2026-10-24 (boss: host-mute must stick): SEPARATE host-mute flag.
+      `muted` is the member's OWN mic choice (written by their mic button);
+      `hostMuted` is set ONLY by room owner/admins and can ONLY be cleared
+      by them. The old single-flag model let the member's mic button
+      overwrite a host mute (setSeatMute false) and unmute themselves —
+      that is the bug this flag kills. Effective mic = muted || hostMuted. */
+  hostMuted?: boolean;
   role: 'host' | 'admin' | 'member';
   /** 2026-10-19 (IMO port Phase 1): numeric role level (9000/8000/7000).
       Written going forward; readers fall back to string role when absent. */
@@ -918,7 +925,14 @@ async function takeSeatInner(
     // so every seat claim carries the ChannelRole hierarchy going forward.
     const claimRoleLevel = (member as { roleLevel?: number }).roleLevel
       ?? (member.role === 'host' ? 9000 : member.role === 'admin' ? 8000 : 7000);
-    return { ...member, roleLevel: claimRoleLevel, seatTs: serverTimestamp() };
+    // 2026-10-24 (boss: host-mute must stick): a rejoin must NOT clear a
+    // host mute — otherwise a muted member evades by leaving + rejoining.
+    // Same occupant re-claiming keeps hostMuted: true; a new occupant
+    // starts clean (hostMuted absent).
+    const keepHostMute = current != null
+      && (current as { userId?: string }).userId === member.userId
+      && (current as { hostMuted?: boolean }).hostMuted === true;
+    return { ...member, roleLevel: claimRoleLevel, seatTs: serverTimestamp(), ...(keepHostMute ? { hostMuted: true } : {}) };
   });
 
   if (!result.committed) {
@@ -1175,6 +1189,31 @@ export async function setSeatMute(
   const snap = await get(seatRef).catch(() => null);
   if (!snap?.exists()) return; // Don't create phantom seats
   await update(seatRef, { muted });
+}
+
+/** 2026-10-24 (boss: host-mute must stick): set/clear the HOST-mute flag
+    on a seat. Only the room owner/admins may call this (the client gates
+    it; the RTDB rules enforce it). Never called by the seat holder's own
+    mic button — that path writes `muted` only, so it can never clear a
+    host mute. */
+export async function setSeatHostMute(
+  roomId: string,
+  seatIndex: number,
+  hostMuted: boolean,
+): Promise<void> {
+  const seatRef = ref(database, `rooms/${roomId}/seats/${seatIndex}`);
+  const snap = await get(seatRef).catch(() => null);
+  if (!snap?.exists()) return; // Don't create phantom seats
+  await update(seatRef, { hostMuted });
+}
+
+/** Read a seat's host-mute flag once (minimized-bar mic guard). */
+export async function getSeatHostMuted(
+  roomId: string,
+  seatIndex: number,
+): Promise<boolean> {
+  const snap = await get(ref(database, `rooms/${roomId}/seats/${seatIndex}`)).catch(() => null);
+  return snap?.exists() ? (snap.val() as { hostMuted?: boolean }).hostMuted === true : false;
 }
 
 /** Update role in a seat. */

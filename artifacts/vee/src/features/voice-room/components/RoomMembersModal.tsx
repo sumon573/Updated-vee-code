@@ -99,10 +99,10 @@ const MemberRow = memo(function MemberRow({
           <RoleBadge role={item.role} />
         </View>
         <Text style={{ color: C.sub, fontSize: 12, marginTop: 2 }}>
-          {item.speaking ? 'Speaking…' : item.muted ? 'Muted' : 'In room'}
+          {item.speaking ? 'Speaking…' : (item.muted || item.hostMuted) ? 'Muted' : 'In room'}
         </Text>
       </View>
-      {item.muted
+      {(item.muted || item.hostMuted)
         ? <Feather name="mic-off" size={16} color={C.red} />
         : <Feather name="mic" size={16} color={C.mic} />}
     </Pressable>

@@ -154,6 +154,20 @@ export async function togglePersistedVoiceRoomMic(): Promise<boolean> {
   return newMuted;
 }
 
+/** 2026-10-24 (boss: host-mute must stick): force the persisted
+    (minimized) room's mic to a given state. Used by the minimized-bar
+    host-mute guard — a host-muted member minimized must not be able to
+    unmute from the bar either. */
+export async function setPersistedVoiceRoomMic(muted: boolean): Promise<void> {
+  if (!_persistedRoom) return;
+  try {
+    await _persistedRoom.engine.setMuted(muted);
+  } catch {
+    // non-critical — keep local state in sync anyway
+  }
+  _persistedRoom.muted = muted;
+}
+
 /**
  * Fully tear down the persisted room.
  * Call from MinimizedRoomBar's close (X) button so audio stops

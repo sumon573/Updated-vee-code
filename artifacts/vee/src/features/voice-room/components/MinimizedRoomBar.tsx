@@ -11,8 +11,8 @@ import {
   subscribeMinimizedRoom,
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
-import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
-import { removeSeat, leaveAudience, refreshSeatHeartbeat } from '@/src/features/voice-room/services/firebaseRoomService';
+import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
+import { removeSeat, leaveAudience, refreshSeatHeartbeat, getSeatHostMuted } from '@/src/features/voice-room/services/firebaseRoomService';
 import { clearPersistedActiveRoom } from '@/src/store/activeRoom';
 
 const C = {
@@ -170,6 +170,19 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   }, [room?.muted]);
   const handleMicToggle = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // 2026-10-24 (boss: host-mute must stick): the minimized bar's mic
+    // button must not unmute a host-muted member either — check the
+    // seat's hostMuted flag first and force muted if it is set.
+    const r0 = getMinimizedRoom();
+    if (r0 && r0.mySeatIdx >= 0) {
+      const hostMuted = await getSeatHostMuted(r0.id, r0.mySeatIdx).catch(() => false);
+      if (hostMuted) {
+        await setPersistedVoiceRoomMic(true);
+        setMicMuted(true);
+        setMinimizedRoom({ ...r0, muted: true });
+        return;
+      }
+    }
     const newMuted = await togglePersistedVoiceRoomMic();
     setMicMuted(newMuted);
     const r = getMinimizedRoom();

@@ -109,9 +109,13 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
     });
   }
 
-  // Mute / Unmute
-  if (canManage) {
-    const isMuted = member?.muted ?? false;
+  // Mute / Unmute (2026-10-24, boss: host-mute must stick + owner can
+  // mute admin): this toggles the HOST-mute flag (hostMuted), never the
+  // member's own `muted` — so the member's mic button cannot clear it.
+  // Gate mirrors Down: canManage, plus the explicit owner→admin
+  // carve-out, so the owner can always mute an admin on a seat.
+  if (canManage || (isOwner && targetIsAdmin)) {
+    const isMuted = member?.hostMuted ?? false;
     actions.push({
       icon: isMuted ? 'mic' : 'mic-off',
       label: isMuted ? t('voiceRoom.seatAction.unmute') : t('voiceRoom.seatAction.mute'),
