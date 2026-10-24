@@ -17,7 +17,7 @@ import { C } from '../constants/theme';
  */
 export function RoomCustomizePanel({
   visible, onClose, isOwnerOrAdmin, nowPlayingTitle,
-  onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenSettings, onOpenHistory,
+  onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenSettings, onOpenHistory, onOpenPk,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -28,6 +28,7 @@ export function RoomCustomizePanel({
   onOpenAnnouncement: () => void;
   onOpenSettings: () => void;
   onOpenHistory: () => void;
+  onOpenPk: () => void;
 }) {
   const tap = (fn: () => void) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -88,6 +89,26 @@ export function RoomCustomizePanel({
               <Feather name="x" size={22} color={C.sub} />
             </Pressable>
           </View>
+
+          {/* Room Mode — 1vs1 PK (2026-10-25, boss concept). */}
+          <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginBottom: 12 }}>
+            Room Mode
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 20, paddingBottom: 4 }}>
+            <Pressable onPress={() => tap(onOpenPk)}
+              style={{ alignItems: 'center', width: 72 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 30,
+                backgroundColor: 'rgba(239,68,68,0.15)', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)' }}>
+                <Feather name="zap" size={26} color={C.red} />
+              </View>
+              <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
+                textAlign: 'center' }}>
+                1vs1 PK
+              </Text>
+            </Pressable>
+          </ScrollView>
 
           {/* Room Game */}
           <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginBottom: 12 }}>

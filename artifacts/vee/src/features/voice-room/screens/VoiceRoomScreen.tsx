@@ -46,6 +46,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { FloatingMusicIcon } from '../components/FloatingMusicIcon';
+import { PkModal } from '../components/PkModal';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
@@ -68,6 +69,9 @@ import {
 import {
   subscribeRoomMusic, type RoomMusic,
 } from '../services/roomMusicService';
+import {
+  subscribeRoomPk, acceptPk, removePk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
+} from '../services/roomPkService';
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
@@ -960,6 +964,32 @@ export default function VoiceRoomScreen() {
     }
     return subscribeRoomMusic(roomId, setMusic);
   }, [roomId]);
+  // 2026-10-25 (boss): 1v1 PK — challenge prompt for the opponent.
+  const [pkOpen, setPkOpen] = useState(false);
+  const [pk, setPk] = useState<RoomPk | null>(null);
+  const pkAlertShownRef = useRef('');
+  useEffect(() => {
+    if (!roomId) {
+      setPk(null);
+      return;
+    }
+    return subscribeRoomPk(roomId, setPk);
+  }, [roomId]);
+  useEffect(() => {
+    if (!pk || pk.status !== 'challenge' || pk.opponent.uid !== myUid || pkOpen) return;
+    const key = String(pk.challengedAt);
+    if (pkAlertShownRef.current === key) return;
+    if (Date.now() > pk.challengedAt + PK_CHALLENGE_TIMEOUT_MS) return;
+    pkAlertShownRef.current = key;
+    Alert.alert(
+      'PK Challenge',
+      `${pk.challenger.name} challenged you to a 1vs1 PK battle!`,
+      [
+        { text: 'Decline', style: 'cancel', onPress: () => removePk(roomId).catch(() => {}) },
+        { text: 'Accept', onPress: () => { setPkOpen(true); acceptPk(roomId).catch(() => {}); } },
+      ],
+    );
+  }, [pk, myUid, pkOpen, roomId]);
   // 2026-10-19 (IMO gap fill): live room announcement banner.
   useEffect(() => {
     if (!roomId) {
@@ -3430,6 +3460,7 @@ export default function VoiceRoomScreen() {
         onOpenAnnouncement={() => { setCustomizeOpen(false); setAnnouncementOpen(true); }}
         onOpenSettings={() => { setCustomizeOpen(false); setSettingsOpen(true); }}
         onOpenHistory={() => { setCustomizeOpen(false); setOpHistOpen(true); }}
+        onOpenPk={() => { setCustomizeOpen(false); setPkOpen(true); }}
       />
       <RoomMusicModal
         visible={musicOpen}
@@ -3446,6 +3477,16 @@ export default function VoiceRoomScreen() {
           onPress={() => setMusicOpen(true)}
         />
       )}
+      <PkModal
+        visible={pkOpen}
+        onClose={() => setPkOpen(false)}
+        roomId={roomId}
+        myUid={myUid}
+        myName={myName}
+        mySeatIdx={mySeatIdx}
+        seats={seats}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+      />
       <RoomRankModal
         visible={rankOpen}
         roomId={roomId}
