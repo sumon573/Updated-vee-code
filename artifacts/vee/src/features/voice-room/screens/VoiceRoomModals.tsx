@@ -18,6 +18,7 @@ import RoomMembersModal from '../components/RoomMembersModal';
 import { GiftsModal } from '../components/GiftsModal';
 import { MemberManageModal } from '../components/MemberManageModal';
 import { ExitModal } from '../components/ExitModal';
+import { TaskCenterModal } from '../components/TaskCenterModal';
 import EntryBanner from '../components/EntryBanner';
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
 import { Role, Participant, BlockRecord } from '../types/room';
@@ -88,6 +89,9 @@ export interface VoiceRoomModalsProps {
   setActiveMember: (m: Participant | null) => void;
   exitModalOpen: boolean;
   setExitModalOpen: (v: boolean) => void;
+  /** 2026-10-24 (Sumon): Task Center (server-driven `task_events`). */
+  taskCenterOpen: boolean;
+  setTaskCenterOpen: (v: boolean) => void;
   pinGate: 'checking' | 'open' | 'passed';
   pinInput: string;
   setPinInput: (v: string) => void;
@@ -337,6 +341,10 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onLeave={p.handleLeave}
         onMinimize={p.handleMinimize}
         roomName={p.roomName}
+      />
+      <TaskCenterModal
+        visible={p.taskCenterOpen}
+        onClose={() => p.setTaskCenterOpen(false)}
       />
       {/* P0 security (2026-10-12): in-screen PIN gate overlay. Blocks the
           entire room UI until the correct 4-digit PIN is entered — closes

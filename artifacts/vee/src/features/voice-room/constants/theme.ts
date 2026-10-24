@@ -69,3 +69,82 @@ export const ROOM_THEMES: RoomTheme[] = [
   { id: 'scene-snow',   name: '❄️ Snowfall',       accent: '#7C6FB8', bg: '#A8BCE0', surface: '#EFF6FF', onBg: '#1E2A4A', onBgSub: '#3B4A7A', scene: 'snow' },
   { id: 'scene-valley', name: '🌈 Rainbow Valley', accent: '#16A34A', bg: '#BAE6FD', surface: '#F0FDF4', onBg: '#052E16', onBgSub: '#166534', scene: 'valley' },
 ];
+
+/* ─────────────────────────────────────────────────────────────
+ * 2026-10-24 (Sumon): SERVER-DRIVEN room themes.
+ * Loaded once at startup (AuthContext). RTDB `room_themes/{themeId}` —
+ * per-field merge over the hardcoded list above (missing fields fall
+ * back), and a theme id that only exists on the server is APPENDED as a
+ * brand-new theme. So themes can be recolored, renamed, or ADDED from
+ * the server with no app build. `scene` may only use the built-in
+ * SceneKind values (unknown scenes are ignored, colors still apply).
+ * ───────────────────────────────────────────────────────────── */
+
+const SCENE_KINDS: SceneKind[] = ['ocean', 'cherry', 'sunset', 'rain', 'snow', 'valley'];
+
+let serverThemes: RoomTheme[] | null = null;
+let themesLoadAttempted = false;
+
+export function getActiveThemes(): RoomTheme[] {
+  return serverThemes ?? ROOM_THEMES;
+}
+
+function mergeTheme(base: RoomTheme, raw: any): RoomTheme {
+  if (!raw || typeof raw !== 'object') return base;
+  const str = (v: any, fb: string) => (typeof v === 'string' && v ? v : fb);
+  return {
+    id: base.id,
+    name: str(raw.name, base.name),
+    accent: str(raw.accent, base.accent),
+    bg: str(raw.bg, base.bg),
+    surface: str(raw.surface, base.surface),
+    onBg: str(raw.onBg, base.onBg),
+    onBgSub: str(raw.onBgSub, base.onBgSub),
+    scene: SCENE_KINDS.includes(raw.scene) ? raw.scene : base.scene,
+  };
+}
+
+function sanitizeNewTheme(id: string, raw: any): RoomTheme | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.name !== 'string' || !raw.name) return null;
+  const str = (v: any, fb: string) => (typeof v === 'string' && v ? v : fb);
+  return {
+    id,
+    name: raw.name,
+    accent: str(raw.accent, '#05b5fa'),
+    bg: str(raw.bg, '#FFFFFF'),
+    surface: str(raw.surface, '#F1F5F9'),
+    onBg: str(raw.onBg, '#111827'),
+    onBgSub: str(raw.onBgSub, '#64748B'),
+    scene: SCENE_KINDS.includes(raw.scene) ? raw.scene : undefined,
+  };
+}
+
+export async function loadServerRoomThemes(): Promise<void> {
+  if (themesLoadAttempted) return;
+  themesLoadAttempted = true;
+  try {
+    const { ref, get } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const snap = await get(ref(database, 'room_themes'));
+    if (!snap.exists()) return;
+    const data = snap.val();
+    if (!data || typeof data !== 'object') return;
+    const entries: Array<[string, any]> = Array.isArray(data)
+      ? data.filter(Boolean).map((v: any) => [String(v?.id ?? ''), v])
+      : Object.entries(data);
+    const byId = new Map<string, any>(entries.filter(([id]) => !!id));
+    const merged: RoomTheme[] = ROOM_THEMES.map((base) =>
+      byId.has(base.id) ? mergeTheme(base, byId.get(base.id)) : base,
+    );
+    for (const [id, raw] of byId) {
+      if (!ROOM_THEMES.some((th) => th.id === id)) {
+        const added = sanitizeNewTheme(id, raw);
+        if (added) merged.push(added);
+      }
+    }
+    serverThemes = merged;
+  } catch {
+    // Fallback to hardcoded — non-critical
+  }
+}

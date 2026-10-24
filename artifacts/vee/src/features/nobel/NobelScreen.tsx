@@ -42,13 +42,22 @@ const ROMAN = ['I', 'II', 'III'];
 // Vee's VPS: https://vee-club.duckdns.org/nobel-art/<file> (C:\nobel-art\).
 const NOBEL_ART_BASE = 'https://vee-club.duckdns.org/nobel-art';
 const artUri = (f: string) => ({ uri: `${NOBEL_ART_BASE}/${f}` });
-// Per-rank badge art — jsDelivr (vee-admin-dashboard repo, public/nobel/).
-const NOBEL_BADGE_BASE = 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel';
-// 2026-10-21 (boss): ?v=2 cache-bust — the art files at these URLs were
-// replaced server-side (original designs restored), but phones kept showing
-// the previous images from the image cache. The version query forces a
-// fresh fetch. Bump the number on every future art swap.
-const badgeUri = (f: string) => ({ uri: `${NOBEL_BADGE_BASE}/${f}?v=2` });
+// Rank tab icons — EVERY rank shows its OWN badge design (2026-10-20;
+// previously only king/sking/ssking had entries and the other 7 ranks all
+// fell back to one shared generic crest).
+// 2026-10-24 (Sumon): SERVER-DRIVEN — the icon now comes from the Nobel
+// rewards catalog (RTDB `nobel_rewards` override → hardcoded fallback),
+// so changing a rank's badge design on the server updates these tabs too.
+// (Was a separate hardcoded jsDelivr map that bypassed the catalog.)
+const RANK_CROWN_FALLBACK = artUri('priv-badge.png');
+function rankCrownSource(rankKey: string): any {
+  const url = rewardsForRankKey(rankKey)?.badge?.designUrl;
+  return url ? { uri: url } : RANK_CROWN_FALLBACK;
+}
+// Baron header badge — Baron's own badge design, from the same catalog.
+function rankBadgeBaronSource(): any {
+  return rankCrownSource('baron');
+}
 
 const PRIV_ART: Record<string, any> = {
   nameplate: artUri('priv-nameplate.png'),
@@ -61,26 +70,6 @@ const PRIV_ART: Record<string, any> = {
   micRipple: artUri('priv-ripple.png'),
   homepageSkin: artUri('priv-skin.png'),
 };
-
-// Rank tab icons — EVERY rank shows its OWN badge design (2026-10-20;
-// previously only king/sking/ssking had entries and the other 7 ranks all
-// fell back to one shared generic crest).
-const RANK_CROWN: Record<string, any> = {
-  knight: badgeUri('noble-badge-knight.png'),
-  baron: badgeUri('noble-badge-baron.png'),
-  viscount: badgeUri('noble-badge-viscount.png'),
-  count: badgeUri('noble-badge-count.png'),
-  marquis: badgeUri('noble-badge-marquis.png'),
-  duke: badgeUri('noble-badge-duke.png'),
-  royalDuke: badgeUri('noble-badge-royalduke.png'),
-  king: badgeUri('noble-badge-king.png'),
-  sking: badgeUri('noble-badge-sking.png'),
-  ssking: badgeUri('noble-badge-ssking.png'),
-};
-const RANK_CROWN_FALLBACK = artUri('priv-badge.png');
-// Baron header badge — Baron's own badge design (jsDelivr). The old VPS
-// rank-badge-baron.png (an IMO screenshot crop) is retired.
-const RANK_BADGE_BARON = badgeUri('noble-badge-baron.png');
 
 const IMO_TEAL = '#1FB5A6';
 const IMO_ORANGE = '#FF9800';
@@ -248,10 +237,10 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     // The header shows Baron's own wide badge slot; other ranks use the pill.
     if (rank.key === 'baron') {
       return (
-        <Image source={RANK_BADGE_BARON} style={{ width: 150, height: 52 }} resizeMode="contain" />
+        <Image source={rankBadgeBaronSource()} style={{ width: 150, height: 52 }} resizeMode="contain" />
       );
     }
-    const crown = RANK_CROWN[rank.key] || RANK_CROWN_FALLBACK;
+    const crown = rankCrownSource(rank.key);
     return (
       <View style={{
         flexDirection: 'row', alignItems: 'center',
@@ -352,7 +341,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
             >
               {NOBLE_RANKS.map((r, idx) => {
                 const activeTab = idx === selectedRankIdx;
-                const crown = RANK_CROWN[r.key] || RANK_CROWN_FALLBACK;
+                const crown = rankCrownSource(r.key);
                 return (
                   <Pressable
                     key={r.key}

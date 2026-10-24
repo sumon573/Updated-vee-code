@@ -104,6 +104,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loadServerNobleRewards().catch(() => {});
     }).catch(() => {});
 
+    // 2026-10-24 (Sumon): Load the other server-driven content at startup —
+    // SVIP tiers/privileges (`svip_config`) and room themes (`room_themes`).
+    // Same contract: non-blocking, hardcoded fallback if unreachable.
+    import('@/src/features/svip/svipConfig').then(({ loadServerSvipConfig }) => {
+      loadServerSvipConfig().catch(() => {});
+    }).catch(() => {});
+    import('@/src/features/voice-room/constants/theme').then(({ loadServerRoomThemes }) => {
+      loadServerRoomThemes().catch(() => {});
+    }).catch(() => {});
+
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
     // (offline start, corrupted token, etc.) force-unblock the loading screen
     // after AUTH_LOADING_TIMEOUT_MS so the app never stays permanently stuck.

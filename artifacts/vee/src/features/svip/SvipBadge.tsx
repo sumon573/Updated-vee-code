@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { subscribeSvip, isSvipActive, SvipState } from './svipService';
-import { SVIP_TIERS } from './svipConfig';
+import { getSvipTiers } from './svipConfig';
 
 type Props = {
   uid: string;
@@ -38,7 +38,7 @@ export function useSvip(uid: string | null | undefined): SvipState | null {
 export default function SvipBadge({ uid, size = 12 }: Props) {
   const svip = useSvip(uid);
   if (!svip) return null;
-  const tier = SVIP_TIERS.find((t) => t.tier === svip.tier) || SVIP_TIERS[0];
+  const tier = getSvipTiers().find((t) => t.tier === svip.tier) || getSvipTiers()[0];
   return (
     <View
       style={{

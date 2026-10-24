@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
-import { C, ROOM_THEMES } from '../constants/theme';
+import { C, getActiveThemes } from '../constants/theme';
 import { storeRoomPin } from '../services/firebaseRoomService';
 import type { RoomAnnouncement } from '../services/roomAnnouncementService';
 
@@ -269,7 +269,7 @@ export function SettingsModal({
               }}>
                 <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: accent }} />
                 <Text style={{ color: C.sub, fontSize: 11, fontWeight: '700' }}>
-                  {ROOM_THEMES.find((th: { id: string; name: string; accent: string }) => th.id === activeThemeId)?.name ?? '💙 Light'}
+                  {getActiveThemes().find((th) => th.id === activeThemeId)?.name ?? '💙 Light'}
                 </Text>
               </View>
               <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={16}
@@ -278,7 +278,7 @@ export function SettingsModal({
 
             {showThemes && canChangeTheme && (
               <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {ROOM_THEMES.map(theme => {
+                {getActiveThemes().map(theme => {
                   const isActive = activeThemeId === theme.id;
                   return (
                     <Pressable key={theme.id}

@@ -24,7 +24,7 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   subscribeSvip, joinSvipWaitlist, isOnSvipWaitlist,
   SvipState, hasSvipPrivilege } from '@/src/features/svip/svipService';
-import { SVIP_TIERS, SVIP_PRIVILEGES } from '@/src/features/svip/svipConfig';
+import { getSvipTiers, getSvipPrivileges } from '@/src/features/svip/svipConfig';
 import {
   subscribeSvipPoints, getSvipPointsHistory, formatPointsExpiry,
   SvipPointsState, SvipPointsHistoryEntry,
@@ -83,7 +83,7 @@ export default function SvipScreen() {
   };
 
   const active = svip && svip.expiry > Date.now();
-  const activeTier = active ? SVIP_TIERS.find((t) => t.tier === svip!.tier) : null;
+  const activeTier = active ? getSvipTiers().find((t) => t.tier === svip!.tier) : null;
 
   if (loading) {
     return (
@@ -177,7 +177,7 @@ export default function SvipScreen() {
               paddingHorizontal: 20, marginBottom: 10 }}>
               Membership tiers
             </Text>
-            {SVIP_TIERS.map((tier) => {
+            {getSvipTiers().map((tier) => {
               const isMine = activeTier?.tier === tier.tier;
               return (
                 <View key={tier.tier} style={{
@@ -215,7 +215,7 @@ export default function SvipScreen() {
               paddingHorizontal: 20, marginTop: 10, marginBottom: 10 }}>
               SVIP privileges
             </Text>
-            {SVIP_PRIVILEGES.map((priv) => {
+            {getSvipPrivileges().map((priv) => {
               const unlocked = hasSvipPrivilege(svip, priv.key);
               const reachable = activeTier != null && activeTier.tier >= priv.minTier;
               const locked = !unlocked;
@@ -233,7 +233,7 @@ export default function SvipScreen() {
                     </Text>
                     <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
                       {locked
-                        ? `Requires ${SVIP_TIERS.find((t) => t.tier === priv.minTier)?.name || 'higher tier'}`
+                        ? `Requires ${getSvipTiers().find((t) => t.tier === priv.minTier)?.name || 'higher tier'}`
                         : reachable && !priv.enforced
                           ? 'Coming soon — activates here when it ships.'
                           : 'Active'}

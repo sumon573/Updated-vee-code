@@ -26,7 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   isBatteryExempt, requestBatteryExemption,
 } from '@/src/services/voiceForegroundService';
-import { C, ROOM_META, ROOM_THEMES } from '../constants/theme';
+import { C, ROOM_META, getActiveThemes } from '../constants/theme';
 import { markVoiceStage } from '../utils/voiceCrashBreadcrumb';
 import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, roleToLevel } from '../types/room';
 import { getWeekStart } from '../utils/format';
@@ -523,17 +523,17 @@ export default function VoiceRoomScreen() {
   
   const [roomDescription, setRoomDescription] = useState('');
   const accentColor = useMemo(
-    () => ROOM_THEMES.find((th: { id: string; accent: string }) => th.id === activeThemeId)?.accent ?? C.primary,
+    () => getActiveThemes().find((th: { id: string; accent: string }) => th.id === activeThemeId)?.accent ?? C.primary,
     [activeThemeId],
   );
   
   const themeBg = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.bg ?? C.bg,
+    () => getActiveThemes().find((th) => th.id === activeThemeId)?.bg ?? C.bg,
     [activeThemeId],
   );
   
   const themeSurface = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.surface ?? C.card,
+    () => getActiveThemes().find((th) => th.id === activeThemeId)?.surface ?? C.card,
     [activeThemeId],
   );
 
@@ -541,12 +541,12 @@ export default function VoiceRoomScreen() {
   // themed background (room title, seat names, bottom-bar labels) — light
   // on the one black theme, dark on every light theme.
   const themeOnBg = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.onBg ?? C.text,
+    () => getActiveThemes().find((th) => th.id === activeThemeId)?.onBg ?? C.text,
     [activeThemeId],
   );
 
   const themeOnBgSub = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.onBgSub ?? C.sub,
+    () => getActiveThemes().find((th) => th.id === activeThemeId)?.onBgSub ?? C.sub,
     [activeThemeId],
   );
 
@@ -554,7 +554,7 @@ export default function VoiceRoomScreen() {
   // AnimatedThemeBackground (background layer only, zIndex 0); seats, DPs,
   // chat, buttons and texts all render on top and are never covered.
   const themeScene = useMemo(
-    () => ROOM_THEMES.find((th) => th.id === activeThemeId)?.scene,
+    () => getActiveThemes().find((th) => th.id === activeThemeId)?.scene,
     [activeThemeId],
   );
 
@@ -1073,7 +1073,7 @@ export default function VoiceRoomScreen() {
       // to IMO Light. (Supersedes the 2026-10-20 force-light, which
       // existed only because every other theme was near-black.)
       if (info.themeId && info.themeId !== activeThemeIdRef.current) {
-        const known = ROOM_THEMES.some((th) => th.id === info.themeId);
+        const known = getActiveThemes().some((th) => th.id === info.themeId);
         const next = known ? info.themeId : 'imo-light';
         activeThemeIdRef.current = next;
         setActiveThemeId(next);
@@ -3221,6 +3221,8 @@ export default function VoiceRoomScreen() {
         setActiveMember={setActiveMember}
         exitModalOpen={exitModalOpen}
         setExitModalOpen={setExitModalOpen}
+        taskCenterOpen={taskCenterOpen}
+        setTaskCenterOpen={setTaskCenterOpen}
         pinGate={pinGate}
         pinInput={pinInput}
         setPinInput={setPinInput}

@@ -226,10 +226,56 @@ export function rewardsForRank(rankIndex: number): RankRewards | null {
  * fallbackIcon, etc. App fetches once at startup, caches in memory.
  * If server is unreachable, falls back to the hardcoded catalog above.
  * After this, Sumon can add/change rank rewards via Firebase — no build needed.
+ *
+ * 2026-10-24 (Sumon): FULL server-driven setup. The complete catalog is
+ * published to RTDB `nobel_rewards` (all 10 ranks). Exact shape:
+ *   nobel_rewards/{rankKey} = {
+ *     rankName?, rankColor?,
+ *     nameplate: RewardDesign, badge: RewardDesign|null,
+ *     frame: RewardDesign|null, ripple: RewardDesign|null,
+ *     entryEffect: RewardDesign|null,
+ *   }
+ *   RewardDesign = { designUrl?, fallbackIcon, config?, mistColor? }
+ * Merge is PER-FIELD (see mergeRewardDesign): any field the server omits
+ * falls back to the hardcoded slot, and `config` merges key-by-key — so a
+ * server update that only swaps a designUrl can NEVER drop the fit config
+ * (frame seatScale/seatDy) that makes the art sit exactly in its slot.
+ * Setting a slot to explicit null removes that reward for the rank.
  * ───────────────────────────────────────────────────────────── */
 
 let serverCatalog: RankRewards[] | null = null;
 let serverLoadAttempted = false;
+
+/**
+ * Merge one reward slot: server fields win, omitted fields fall back to the
+ * hardcoded slot; `config` merges key-by-key so partial server updates keep
+ * the fit config. Explicit null clears the slot; undefined keeps the base.
+ */
+export function mergeRewardDesign(
+  base: RewardDesign | null,
+  override: unknown,
+): RewardDesign | null {
+  if (override === undefined) return base;
+  if (override === null) return null;
+  if (typeof override !== 'object') return base;
+  const o = override as Partial<RewardDesign>;
+  if (!base) {
+    // New design where the hardcoded catalog has none (e.g. adding a
+    // designUrl to a slot that only had a fallback icon, or a whole new
+    // slot) — the server object stands on its own but must carry a
+    // fallbackIcon per the catalog rule; default it if absent.
+    const standalone = { ...(o as RewardDesign) };
+    if (!standalone.fallbackIcon) standalone.fallbackIcon = '🎖️';
+    return standalone;
+  }
+  const merged: RewardDesign = { ...base, ...o };
+  const baseCfg = (base.config ?? {}) as Record<string, unknown>;
+  const overCfg = (o.config ?? {}) as Record<string, unknown>;
+  const cfg = { ...baseCfg, ...overCfg };
+  if (Object.keys(cfg).length > 0) merged.config = cfg;
+  else delete merged.config;
+  return merged;
+}
 
 /** Get the active catalog: server (if loaded) else hardcoded fallback. */
 export function getActiveCatalog(): RankRewards[] {
@@ -274,11 +320,11 @@ export async function loadServerNobleRewards(): Promise<void> {
           rankKey: base.rankKey,
           rankName: override.rankName || base.rankName,
           rankColor: override.rankColor || base.rankColor,
-          nameplate: override.nameplate || base.nameplate,
-          badge: override.badge !== undefined ? override.badge : base.badge,
-          frame: override.frame !== undefined ? override.frame : base.frame,
-          ripple: override.ripple !== undefined ? override.ripple : base.ripple,
-          entryEffect: override.entryEffect !== undefined ? override.entryEffect : base.entryEffect,
+          nameplate: mergeRewardDesign(base.nameplate, override.nameplate) ?? base.nameplate,
+          badge: mergeRewardDesign(base.badge, override.badge),
+          frame: mergeRewardDesign(base.frame, override.frame),
+          ripple: mergeRewardDesign(base.ripple, override.ripple),
+          entryEffect: mergeRewardDesign(base.entryEffect, override.entryEffect),
         });
       } else {
         catalog.push(base);

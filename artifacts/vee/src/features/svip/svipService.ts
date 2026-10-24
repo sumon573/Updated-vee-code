@@ -12,7 +12,7 @@
  * "Become SVIP" CTA writes here (real functionality, no fake purchase).
  */
 import { getErrorCause } from '@/src/utils/errorDisplay';
-import { SVIP_PRIVILEGES } from '@/src/features/svip/svipConfig';
+import { getSvipPrivileges } from '@/src/features/svip/svipConfig';
 
 export interface SvipState {
   tier: number;
@@ -103,7 +103,7 @@ export async function joinSvipWaitlist(uid: string): Promise<void> {
 /** True when an SVIP privilege is genuinely active: tier reached, privilege has a real code path, membership not expired. */
 export function hasSvipPrivilege(s: SvipState | null, key: string): boolean {
   if (!isSvipActive(s)) return false;
-  const p = SVIP_PRIVILEGES.find((d) => d.key === key);
+  const p = getSvipPrivileges().find((d) => d.key === key);
   return !!p && p.enforced && s!.tier >= p.minTier;
 }
 
