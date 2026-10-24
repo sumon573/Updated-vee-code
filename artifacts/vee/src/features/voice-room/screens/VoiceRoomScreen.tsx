@@ -3483,7 +3483,6 @@ export default function VoiceRoomScreen() {
         roomId={roomId}
         myUid={myUid}
         myName={myName}
-        mySeatIdx={mySeatIdx}
         seats={seats}
         isOwnerOrAdmin={isOwnerOrAdmin}
       />

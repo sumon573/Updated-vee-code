@@ -27,14 +27,13 @@ import type { Participant } from '../types/room';
  * this modal (or the room's challenge alert). One PK per room at a time.
  */
 export function PkModal({
-  visible, onClose, roomId, myUid, myName, mySeatIdx, seats, isOwnerOrAdmin,
+  visible, onClose, roomId, myUid, myName, seats, isOwnerOrAdmin,
 }: {
   visible: boolean;
   onClose: () => void;
   roomId: string;
   myUid: string;
   myName: string;
-  mySeatIdx: number;
   seats: Array<Participant | null>;
   isOwnerOrAdmin: boolean;
 }) {
@@ -71,8 +70,9 @@ export function PkModal({
   );
   const iAmChallenger = pk?.challenger.uid === myUid;
   const iAmOpponent = pk?.opponent.uid === myUid;
-  const iAmBattler = iAmChallenger || iAmOpponent;
-  const canClear = iAmBattler || isOwnerOrAdmin;
+  // Clearing a PK is control — owner/admin only (decline/cancel stay with
+  // the opponent/challenger, which is participation, not control).
+  const canClear = isOwnerOrAdmin;
   const challengeExpired =
     pk?.status === 'challenge' && Date.now() > pk.challengedAt + PK_CHALLENGE_TIMEOUT_MS;
 
@@ -134,12 +134,12 @@ export function PkModal({
             </Pressable>
           </View>
 
-          {/* ── No PK: start ── */}
+          {/* ── No PK: start (owner/admin only — boss rule) ── */}
           {!pk && (
             <>
-              {mySeatIdx < 0 ? (
+              {!isOwnerOrAdmin ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
-                  Take a seat to start a PK battle.
+                  Only the room owner/admin can start a PK.
                 </Text>
               ) : opponents.length === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
