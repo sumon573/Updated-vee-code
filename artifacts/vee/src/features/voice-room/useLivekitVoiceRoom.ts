@@ -1303,7 +1303,23 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // minimized room A and then opened room B, reusing A's LiveKit room
     // would leak A's audio into B's screen. Tear the stale engine down and
     // fall through to a fresh join for B instead.
+    // 2026-10-24 (boss: mic never opens after reopen): a restored engine
+    // whose connection already died (network/session/battery while
+    // minimized) must NEVER be trusted — restoring it shows the seat as
+    // unmuted while the mic stays dead and the buttons do nothing, and no
+    // token is ever fetched because restore never joins. Only a
+    // 'connected' engine may be restored; anything else falls through to
+    // the normal init below, which destroys the dead engine and joins
+    // fresh (exactly what a fresh install does).
+    let canRestore = false;
     if (_persistedRoom && _persistedRoom.roomId === roomID) {
+      try {
+        canRestore = _persistedRoom.engine.getLocalState().connection === 'connected';
+      } catch {
+        canRestore = false;
+      }
+    }
+    if (canRestore && _persistedRoom) {
       const persisted = _persistedRoom;
       _persistedRoom = null;
       _isMinimized = false;
