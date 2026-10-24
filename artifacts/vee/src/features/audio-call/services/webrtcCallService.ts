@@ -193,6 +193,9 @@ export class WebRTCCallSession {
   private connectedNotified = false;
   private started = false;
   private ended = false;
+  /** True while this call owns the native audio session (see
+   *  startCallAudioSession) — stopped exactly once in hangup(). */
+  private audioSessionStarted = false;
   private signalingNodeRemoved = false;
   private muted = false;
 
@@ -254,6 +257,14 @@ export class WebRTCCallSession {
     // 2026-10-15 (Sumon): BACKGROUND AUDIO — foreground service keeps the
     // call's mic + audio alive when the app is backgrounded (like IMO).
     startVoiceForegroundService('Call in progress');
+
+    // 2026-10-24 (Sumon): BLUETOOTH + proper call audio routing. Until now
+    // calls never started a native audio session, so Android stayed out of
+    // communication mode — Bluetooth headsets (SCO mic/earpiece) never
+    // engaged and audio followed the raw OS media route. Start the LiveKit
+    // audio session (communication preset, Bluetooth first) BEFORE the
+    // peer connection and mic capture so talk + listen route correctly.
+    await this.startCallAudioSession();
 
     try {
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -471,15 +482,70 @@ export class WebRTCCallSession {
   }
 
   /**
-   * Speakerphone routing.
-   *
-   * LIMITATION: react-native-webrtc exposes no JS API for audio-route
-   * switching without the `react-native-incall-manager` native module.
-   * The toggle updates UI state; audio follows the OS default route.
-   * Silent — no user-facing warning (was showing a debug alert).
+   * Native call audio session (2026-10-24, Sumon — Bluetooth must work
+   * beautifully in calls). Configures + starts the LiveKit audio session
+   * with the communication preset and a Bluetooth-first output preference
+   * (earpiece before speaker for private calls). Shares the same native
+   * audio device module as the underlying WebRTC stack, so the P2P call's
+   * mic + speaker follow it: Bluetooth headset → SCO talk/listen; wired
+   * headset → headset; otherwise earpiece. Best-effort — any failure
+   * leaves the OS default route untouched.
    */
-  setSpeakerphone(_on: boolean): void {
-    // Intentionally silent: audio follows OS default route.
+  private async startCallAudioSession(): Promise<void> {
+    try {
+      if (isExpoGo()) return;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const rnSdk = require('@livekit/react-native') as typeof import('@livekit/react-native');
+      await rnSdk.AudioSession.configureAudio({
+        android: {
+          preferredOutputList: ['bluetooth', 'headset', 'earpiece', 'speaker'],
+          audioTypeOptions: rnSdk.AndroidAudioTypePresets.communication,
+        },
+        ios: { defaultOutput: 'earpiece' },
+      });
+      await rnSdk.AudioSession.startAudioSession();
+      this.audioSessionStarted = true;
+    } catch {
+      /* non-critical — OS default route still applies */
+    }
+  }
+
+  private async stopCallAudioSession(): Promise<void> {
+    if (!this.audioSessionStarted) return;
+    this.audioSessionStarted = false;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const rnSdk = require('@livekit/react-native') as typeof import('@livekit/react-native');
+      await rnSdk.AudioSession.stopAudioSession();
+    } catch {
+      /* non-critical */
+    }
+  }
+
+  /**
+   * Speakerphone routing (2026-10-24: now REAL — previously a no-op).
+   * Routes through the native audio session started for the call:
+   * speaker ON → speaker output; speaker OFF → Bluetooth if connected,
+   * else wired headset, else earpiece — turning the speaker off must
+   * never yank audio away from a Bluetooth headset.
+   */
+  setSpeakerphone(on: boolean): void {
+    void (async () => {
+      try {
+        if (isExpoGo() || !this.audioSessionStarted) return;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const rnSdk = require('@livekit/react-native') as typeof import('@livekit/react-native');
+        const outputs = await rnSdk.AudioSession.getAudioOutputs();
+        const find = (needle: string) =>
+          outputs.find((o) => o.toLowerCase().includes(needle));
+        const pick = on
+          ? find('speaker')
+          : (find('bluetooth') ?? find('headset') ?? find('earpiece'));
+        if (pick) await rnSdk.AudioSession.selectAudioOutput(pick);
+      } catch {
+        /* non-critical — route stays as-is */
+      }
+    })();
   }
 
   /**
@@ -494,6 +560,8 @@ export class WebRTCCallSession {
     this.clearRecoveryTimer();
     // 2026-10-15 (Sumon): call over — drop the foreground service.
     stopVoiceForegroundService();
+    // 2026-10-24: release the native audio session started for this call.
+    void this.stopCallAudioSession();
 
     // Remove RTDB listeners first so our own node removal can't retrigger them.
     this.unsubscribers.forEach((off) => {

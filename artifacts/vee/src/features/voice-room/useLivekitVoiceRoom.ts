@@ -804,6 +804,21 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       markVoiceStage('token_ok', roomId);
 
       // 2. Audio session + connect. The URL comes ONLY from the server response.
+      // 2026-10-24 (Sumon): BLUETOOTH — pin the routing explicitly before
+      // the session starts: communication preset (Android communication
+      // mode → Bluetooth SCO talk/listen engages) and a Bluetooth-first
+      // output preference, speaker before earpiece (rooms are speaker-first).
+      try {
+        await rnSdk.AudioSession.configureAudio({
+          android: {
+            preferredOutputList: ['bluetooth', 'headset', 'speaker', 'earpiece'],
+            audioTypeOptions: rnSdk.AndroidAudioTypePresets.communication,
+          },
+          ios: { defaultOutput: 'speaker' },
+        });
+      } catch {
+        // non-critical — SDK defaults are the same communication preset
+      }
       await rnSdk.AudioSession.startAudioSession();
       if (this.joinAborted(myGeneration)) {
         try {
@@ -1016,10 +1031,14 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       const AudioSession = this.rnSdk?.AudioSession;
       if (AudioSession) {
         const outputs = await AudioSession.getAudioOutputs();
-        const want = enabled ? 'speaker' : 'earpiece';
-        const pick =
-          outputs.find((o) => o.toLowerCase().includes(want)) ??
-          (enabled ? outputs[0] : undefined);
+        const find = (needle: string) =>
+          outputs.find((o) => o.toLowerCase().includes(needle));
+        // 2026-10-24 (Sumon): turning the speaker OFF must route to a
+        // connected Bluetooth headset first — never yank audio to the
+        // earpiece while Bluetooth is in use.
+        const pick = enabled
+          ? (find('speaker') ?? outputs[0])
+          : (find('bluetooth') ?? find('headset') ?? find('earpiece'));
         if (pick) {
           await AudioSession.selectAudioOutput(pick);
         }
