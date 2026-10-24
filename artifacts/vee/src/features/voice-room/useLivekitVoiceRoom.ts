@@ -257,10 +257,34 @@ let tokenCache: {
 
 const TOKEN_CACHE_TTL_MS = 45000;
 
+// 2026-10-24 (boss: no token fetch after reopen): getIdToken() below had
+// NO timeout — if the Auth SDK stalls there, the join hangs silently
+// forever (no fetch, no 'failed', no retry). Bound it: 10 s, then one
+// forced-refresh attempt; a persistent stall still surfaces as 'failed'
+// so the auto-retry + foreground recovery keep trying instead of hanging.
+async function getIdTokenBounded(fbUser: {
+  getIdToken: (forceRefresh?: boolean) => Promise<string>;
+}): Promise<string> {
+  const attempt = (forceRefresh: boolean, ms: number): Promise<string> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('ID token request timed out')), ms);
+    });
+    return Promise.race([fbUser.getIdToken(forceRefresh), timeout]).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+    });
+  };
+  try {
+    return await attempt(false, 10000);
+  } catch {
+    return await attempt(true, 10000);
+  }
+}
+
 async function fetchLivekitTokenOnce(roomId: string, userName: string): Promise<LivekitTokenData> {
   const fbUser = auth.currentUser;
   if (!fbUser) throw new Error('Not signed in');
-  const idToken = await fbUser.getIdToken();
+  const idToken = await getIdTokenBounded(fbUser);
   const tokenCtrl = new AbortController();
   const tokenTimeout = setTimeout(() => tokenCtrl.abort(), 20000);
   let res: Response;
