@@ -114,6 +114,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loadServerRoomThemes().catch(() => {});
     }).catch(() => {});
 
+    // 2026-10-24 (boss: NO MORE BUILDS): the last build-bound content —
+    // handshake design colours, noble rank thresholds, short-ID prices —
+    // now loads from the server at startup. Same contract: non-blocking,
+    // hardcoded fallback if unreachable or malformed.
+    import('@/src/features/voice-room/components/handshakeDesigns').then(({ loadServerHandshakeDesigns }) => {
+      loadServerHandshakeDesigns().catch(() => {});
+    }).catch(() => {});
+    import('@/src/services/nobleService').then(({ loadServerNobleRanks }) => {
+      loadServerNobleRanks().catch(() => {});
+    }).catch(() => {});
+    import('@/src/features/store/shortIdCatalog').then(({ loadServerShortIdPricing }) => {
+      loadServerShortIdPricing().catch(() => {});
+    }).catch(() => {});
+
     // BUG 12/17 fix: Safety timeout — if Firebase never fires onAuthStateChanged
     // (offline start, corrupted token, etc.) force-unblock the loading screen
     // after AUTH_LOADING_TIMEOUT_MS so the app never stays permanently stuck.

@@ -98,8 +98,53 @@ export const NOBLE_RANKS: NobleRank[] = [
     privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin', 'seatPriority'] },
 ];
 
+let nobleRanksLoadAttempted = false;
 /**
- * 2026-10-15 (Sumon): per-rank visual identity — EVERY noble rank gets its
+ * 2026-10-24 (boss: no more builds) — rank thresholds/colors/privileges
+ * are server-editable via RTDB `noble_config/ranks` (array or numeric-keyed
+ * object, same shape as NOBLE_RANKS). SAFETY: the server list must carry
+ * the SAME rank keys in the SAME order — rank indices are stored in user
+ * state, so adding/reordering ranks would corrupt them. A mismatched or
+ * malformed payload is rejected wholesale and the hardcoded table stays.
+ * Valid entries overwrite the table IN PLACE, so every existing reader
+ * sees the server values with zero call-site changes.
+ */
+export async function loadServerNobleRanks(): Promise<void> {
+  if (nobleRanksLoadAttempted) return;
+  nobleRanksLoadAttempted = true;
+  try {
+    const { ref, get } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const snap = await get(ref(database, 'noble_config/ranks'));
+    if (!snap.exists()) return;
+    const data = snap.val();
+    const arr: any[] = Array.isArray(data)
+      ? data
+      : (data && typeof data === 'object'
+        ? Object.keys(data).sort((a, b) => Number(a) - Number(b)).map((k) => (data as any)[k])
+        : []);
+    if (arr.length !== NOBLE_RANKS.length) return;
+    for (let i = 0; i < arr.length; i++) {
+      const raw = arr[i];
+      if (!raw || raw.key !== NOBLE_RANKS[i].key) return;
+      if (typeof raw.minXP !== 'number' || typeof raw.maxXP !== 'number' || raw.minXP < 0 || raw.maxXP < raw.minXP) return;
+      if (typeof raw.color !== 'string' || !raw.color) return;
+      if (typeof raw.name !== 'string' || !raw.name) return;
+      if (!Array.isArray(raw.privileges)) return;
+    }
+    for (let i = 0; i < arr.length; i++) {
+      NOBLE_RANKS[i].minXP = arr[i].minXP;
+      NOBLE_RANKS[i].maxXP = arr[i].maxXP;
+      NOBLE_RANKS[i].color = arr[i].color;
+      NOBLE_RANKS[i].name = arr[i].name;
+      NOBLE_RANKS[i].privileges = arr[i].privileges.filter((p: any) => typeof p === 'string') as NobleRank['privileges'];
+    }
+  } catch {
+    // Fallback to hardcoded — non-critical
+  }
+}
+
+/** 2026-10-15 (Sumon): per-rank visual identity — EVERY noble rank gets its
  * OWN entry effect + speaking ripple. Derived from the rank color.
  */
 export interface NobleVisualTheme {

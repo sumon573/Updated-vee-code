@@ -99,7 +99,44 @@ export function basicTierForLevel(level: number): { colors: [string, string]; sp
   return { colors: ['#22d3ee', '#0ea5e9'], sparkle: 0 };
 }
 
+/** 2026-10-24 (boss: no more builds) — server-driven handshake designs.
+ * RTDB `handshake_designs/{designKey}` = { colors: [c1, c2], sparkle: 0..3 }.
+ * A server entry wins for its key (new designs need no build; existing
+ * designs can be recoloured from the server). Anything missing or invalid
+ * falls back to the hardcoded table below — never a crash, never blank. */
+let serverDesigns: Record<string, { colors: [string, string]; sparkle: number }> = {};
+let handshakeLoadAttempted = false;
+
+export async function loadServerHandshakeDesigns(): Promise<void> {
+  if (handshakeLoadAttempted) return;
+  handshakeLoadAttempted = true;
+  try {
+    const { ref, get } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const snap = await get(ref(database, 'handshake_designs'));
+    if (!snap.exists()) return;
+    const data = snap.val();
+    if (!data || typeof data !== 'object') return;
+    const next: Record<string, { colors: [string, string]; sparkle: number }> = {};
+    for (const [key, raw] of Object.entries(data as Record<string, any>)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const colors = (raw as any).colors;
+      const sparkle = (raw as any).sparkle;
+      if (!Array.isArray(colors) || typeof colors[0] !== 'string' || typeof colors[1] !== 'string') continue;
+      if (typeof sparkle !== 'number' || sparkle < 0 || sparkle > 3) continue;
+      next[key] = { colors: [colors[0], colors[1]], sparkle: Math.floor(sparkle) };
+    }
+    if (Object.keys(next).length > 0) serverDesigns = next;
+  } catch {
+    // Fallback to hardcoded — non-critical
+  }
+}
+
 export function resolveDesign(designKey: string | null | undefined, intimacyLevel: number): HandshakeDesign {
+  if (designKey && serverDesigns[designKey]) {
+    const base = HANDSHAKE_DESIGNS[designKey] ?? HANDSHAKE_DESIGNS[BASIC_DESIGN_KEY];
+    return { ...base, colors: serverDesigns[designKey].colors, sparkle: serverDesigns[designKey].sparkle };
+  }
   if (designKey && designKey !== BASIC_DESIGN_KEY && HANDSHAKE_DESIGNS[designKey]) {
     return HANDSHAKE_DESIGNS[designKey];
   }

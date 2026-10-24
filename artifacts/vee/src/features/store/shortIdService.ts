@@ -13,6 +13,7 @@
 import { ref, get, set } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
 import { getApiBase } from '@/src/utils/platform';
+import { getShortIdCatalogPrice, isServerPricedShortId } from './shortIdCatalog';
 
 export type ShortIdKind = 'users' | 'rooms';
 
@@ -24,7 +25,9 @@ const SHORT_ID_PRICES: Record<string, number> = {
   '1000': 5000, '2000': 5000, '3000': 5000, '5000': 5000, '8000': 5000,
 };
 export function getShortIdPrice(shortId: string): number {
-  return SHORT_ID_PRICES[shortId] ?? 1000;
+  // 2026-10-24 (boss: no more builds): display price follows the server
+  // (short_id_pricing via shortIdCatalog); the static table is fallback.
+  return getShortIdCatalogPrice(shortId);
 }
 
 // 2026-10-19 CRASH-RISK fix (random Short-ID overcharge): the random-ID card
@@ -38,15 +41,17 @@ const PREMIUM_SHORT_IDS = new Set(Object.keys(SHORT_ID_PRICES));
 
 /** Draw a random 4-digit ID that is NOT in any priced tier. */
 function drawNonPremiumRandomId(): string {
+  // 2026-10-24: server-priced IDs are premium too (never in random draws).
+  const isPremium = (id: string) => PREMIUM_SHORT_IDS.has(id) || isServerPricedShortId(id);
   // Only ~0.15% of 4-digit IDs are tier-priced; bounded retry never spins.
   for (let i = 0; i < 100; i++) {
     const id = String(Math.floor(1000 + Math.random() * 9000));
-    if (!PREMIUM_SHORT_IDS.has(id)) return id;
+    if (!isPremium(id)) return id;
   }
   // Fallback (effectively unreachable): first non-premium ID in sequence.
   for (let n = 1000; n <= 9999; n++) {
     const id = String(n);
-    if (!PREMIUM_SHORT_IDS.has(id)) return id;
+    if (!isPremium(id)) return id;
   }
   return '1001'; // keeps tsc happy; unreachable
 }

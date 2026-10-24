@@ -39,6 +39,45 @@ export const SHORT_ID_CATALOG: ShortIdItem[] = [
 
 export const RANDOM_SHORT_ID_PRICE = 1000;
 
+/** 2026-10-24 (boss: no more builds) — server-driven short-ID display prices.
+ * RTDB `short_id_pricing/{id}` = diamonds. The Store display follows the
+ * server; the hardcoded catalog above is the fallback. (Purchase charging
+ * itself is already server-side via the purchase-short-id API.) */
+let serverPrices: Record<string, number> = {};
+let shortIdPricingLoadAttempted = false;
+
+export async function loadServerShortIdPricing(): Promise<void> {
+  if (shortIdPricingLoadAttempted) return;
+  shortIdPricingLoadAttempted = true;
+  try {
+    const { ref, get } = await import('firebase/database');
+    const { database } = await import('@/src/config/firebase');
+    const snap = await get(ref(database, 'short_id_pricing'));
+    if (!snap.exists()) return;
+    const data = snap.val();
+    if (!data || typeof data !== 'object') return;
+    const next: Record<string, number> = {};
+    for (const [id, price] of Object.entries(data as Record<string, any>)) {
+      if (typeof price === 'number' && price > 0 && Number.isFinite(price)) next[id] = Math.floor(price);
+    }
+    if (Object.keys(next).length > 0) serverPrices = next;
+  } catch {
+    // Fallback to hardcoded — non-critical
+  }
+}
+
+/** Display price for a catalog ID: server price wins, else catalog, else random flat. */
+export function getShortIdCatalogPrice(id: string): number {
+  if (serverPrices[id] !== undefined) return serverPrices[id];
+  const base = SHORT_ID_CATALOG.find((s) => s.id === id);
+  return base?.price ?? RANDOM_SHORT_ID_PRICE;
+}
+
+/** True when the server prices this ID (random draws must exclude it too). */
+export function isServerPricedShortId(id: string): boolean {
+  return serverPrices[id] !== undefined;
+}
+
 export const TIER_COLORS: Record<ShortIdTier, string> = {
   SSS: '#FFD700',  // gold
   SS: '#C0C0C0',   // silver

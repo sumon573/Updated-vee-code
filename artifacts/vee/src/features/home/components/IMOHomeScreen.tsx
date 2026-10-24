@@ -38,6 +38,7 @@ import { useStories } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { getUser } from '@/src/services/userService';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
+import { UniversalContentRenderer } from '@/src/components/UniversalContentRenderer';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
 import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu';
 import IMOTabBar, { type HomeTab } from '@/src/features/home/components/IMOTabBar';
@@ -357,6 +358,9 @@ export default function IMOHomeScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      {/* 2026-10-24 (boss: no more builds): server-driven content surface.
+          Renders nothing until RTDB `app_content` carries a 'home' item. */}
+      <UniversalContentRenderer location="home" uid={user?.uid} />
       {activeTab === 'chats' && (
         <View style={{ flex: 1 }}>
           {/* IMO search bar — rounded #f4f5f5, magnifier + "Search" hint */}

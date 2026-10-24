@@ -48,7 +48,7 @@ import {
 } from '@/src/features/voice-room/services/intimacyService';
 import { HANDSHAKE_DESIGNS } from '@/src/features/voice-room/components/handshakeDesigns';
 import {
-  SHORT_ID_CATALOG, RANDOM_SHORT_ID_PRICE,
+  SHORT_ID_CATALOG, RANDOM_SHORT_ID_PRICE, getShortIdCatalogPrice,
   type ShortIdItem,
 } from './shortIdCatalog';
 import {
@@ -884,8 +884,8 @@ export function ImoStoreScreen() {
             />
             {SHORT_ID_CATALOG.map((s) => (
               <ShortIdCard
-                key={s.id} id={s.id} label={s.label} price={s.price}
-                onPress={() => setPreview({ kind: 'shortId', item: s })}
+                key={s.id} id={s.id} label={s.label} price={getShortIdCatalogPrice(s.id)}
+                onPress={() => setPreview({ kind: 'shortId', item: { ...s, price: getShortIdCatalogPrice(s.id) } })}
               />
             ))}
           </ScrollView>

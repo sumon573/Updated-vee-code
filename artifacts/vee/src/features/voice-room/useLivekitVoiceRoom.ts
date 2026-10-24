@@ -1160,10 +1160,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           // 2026-10-23 (boss): SILENT AUTO-RECOVERY. An unexpected
           // disconnect (voice-server restart, network collapse) used to
           // surface a red error banner and wait for a manual Retry tap.
-          // Now the hook rejoins by itself with backoff (1s→30s, up to
-          // 6 attempts ≈ a minute of silent recovery) and the error is
-          // only surfaced if every attempt fails. Big apps never make
-          // the user fix the connection by hand.
+          // Now the hook rejoins by itself with backoff (1s→30s).
+          // 2026-10-24 (boss: permanent fix): retries are UNBOUNDED —
+          // recovery never stops while the user stays in the room.
+          // Big apps never make the user fix the connection by hand.
           if (s.connection === 'connected') {
             autoRetryAttemptsRef.current = 0;
             if (autoRetryTimerRef.current) {
@@ -1172,19 +1172,21 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
             }
             setError(s.error);
           } else if (s.connection === 'failed' && !isCleaningUpRef.current) {
-            if (autoRetryAttemptsRef.current < 6) {
-              setError(null); // hidden while auto-recovery runs
-              if (!autoRetryTimerRef.current) {
-                const delays = [1000, 2000, 4000, 8000, 15000, 30000];
-                const delay = delays[Math.min(autoRetryAttemptsRef.current, delays.length - 1)];
-                autoRetryTimerRef.current = setTimeout(() => {
-                  autoRetryTimerRef.current = null;
-                  autoRetryAttemptsRef.current += 1;
-                  retryConnectionRef.current();
-                }, delay);
-              }
-            } else {
-              setError(s.error); // recovery exhausted — manual Retry
+            // 2026-10-24 (boss: PERMANENT fix): recovery NEVER gives up
+            // while the user stays in the room. The old 6-attempt cap left
+            // a dead manual-Retry state after ~1 min of outage — server
+            // restarts and dead network paths routinely last longer.
+            // Backoff caps at 30s and retries forever; the error stays
+            // hidden while recovery runs, exactly as before.
+            setError(null);
+            if (!autoRetryTimerRef.current) {
+              const delays = [1000, 2000, 4000, 8000, 15000, 30000];
+              const delay = delays[Math.min(autoRetryAttemptsRef.current, delays.length - 1)];
+              autoRetryTimerRef.current = setTimeout(() => {
+                autoRetryTimerRef.current = null;
+                autoRetryAttemptsRef.current += 1;
+                retryConnectionRef.current();
+              }, delay);
             }
           } else {
             setError(s.error);
