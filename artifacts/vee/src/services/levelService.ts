@@ -11,15 +11,21 @@
 import { ref, get, set, runTransaction, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
-// ── Level curve (very slow; Gold much slower) ──
-// Bronze (total 1-16):  xp = 200 * (n-1)^2          → Lv16 = 45,000 XP
-// Silver (total 17-32): xp = 500 * (n-17)^2 + 45k   → Lv32 = 157,500 XP
-// Gold (total 33-48):   xp = 2000 * (n-33)^2 + 157.5k → Lv48 = 607,500 XP
-// Max: xp >= 607,500
+// ── Level curve ──
+// 2026-10-24 (Sumon): "আরো অনেক ধীর করো — খুব সহজেই যেনো লেবেল up না হয়"
+// Coefficients raised ~5-6x over the 2026-10-16 curve (Gold slowed most,
+// as before). Reaching Max is now a long-term achievement.
+// Bronze (total 1-16):  xp = 1000 * (n-1)^2           → Lv16 = 225,000 XP
+// Silver (total 17-32): xp = 3000 * (n-17)^2 + 225k  → Lv32 = 900,000 XP
+// Gold (total 33-48):   xp = 12000 * (n-33)^2 + 900k → Lv48 = 3,600,000 XP
+// Max: xp >= 3,600,000
 
-const BRONZE_MAX_XP = 200 * 15 * 15; // 45,000
-const SILVER_MAX_XP = 500 * 15 * 15 + BRONZE_MAX_XP; // 157,500
-const GOLD_MAX_XP = 2000 * 15 * 15 + SILVER_MAX_XP; // 607,500
+const BRONZE_C = 1000;
+const SILVER_C = 3000;
+const GOLD_C = 12000;
+const BRONZE_MAX_XP = BRONZE_C * 15 * 15; // 225,000
+const SILVER_MAX_XP = SILVER_C * 15 * 15 + BRONZE_MAX_XP; // 900,000
+const GOLD_MAX_XP = GOLD_C * 15 * 15 + SILVER_MAX_XP; // 3,600,000
 
 export type LevelTier = 'bronze' | 'silver' | 'gold' | 'max';
 
@@ -38,14 +44,14 @@ export function getLevelFromXP(xp: number): UserLevel {
   } else if (xp >= SILVER_MAX_XP) {
     // Gold: total 33-48
     const goldXp = xp - SILVER_MAX_XP;
-    totalLevel = 33 + Math.floor(Math.sqrt(goldXp / 2000));
+    totalLevel = 33 + Math.floor(Math.sqrt(goldXp / GOLD_C));
   } else if (xp >= BRONZE_MAX_XP) {
     // Silver: total 17-32
     const silverXp = xp - BRONZE_MAX_XP;
-    totalLevel = 17 + Math.floor(Math.sqrt(silverXp / 500));
+    totalLevel = 17 + Math.floor(Math.sqrt(silverXp / SILVER_C));
   } else {
     // Bronze: total 1-16
-    totalLevel = 1 + Math.floor(Math.sqrt(xp / 200));
+    totalLevel = 1 + Math.floor(Math.sqrt(xp / BRONZE_C));
   }
   totalLevel = Math.max(1, Math.min(49, totalLevel));
 
@@ -76,9 +82,9 @@ export function migrateOldLevel(oldLevel: number): UserLevel {
   // Calculate XP that would give this level (reverse engineer)
   let xp: number;
   if (total >= 49) xp = GOLD_MAX_XP;
-  else if (total >= 33) xp = SILVER_MAX_XP + 2000 * (total - 33) * (total - 33);
-  else if (total >= 17) xp = BRONZE_MAX_XP + 500 * (total - 17) * (total - 17);
-  else xp = 200 * (total - 1) * (total - 1);
+  else if (total >= 33) xp = SILVER_MAX_XP + GOLD_C * (total - 33) * (total - 33);
+  else if (total >= 17) xp = BRONZE_MAX_XP + SILVER_C * (total - 17) * (total - 17);
+  else xp = BRONZE_C * (total - 1) * (total - 1);
   return getLevelFromXP(xp);
 }
 

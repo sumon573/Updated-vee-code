@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
+import { subscribeLevel, getLevelFromXP } from '@/src/services/levelService';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
@@ -261,7 +262,7 @@ function LevelBadge({ level, width = 100 }: { level: number; width?: number }) {
           </>
         )}
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF', zIndex: 1 }} numberOfLines={1}>
-          {tier === 'max' ? 'Max' : `${style.label} Lv ${levelInTier}`}
+          {tier === 'max' ? 'Lv Max' : `${style.label} Lv ${levelInTier}`}
         </Text>
       </LinearGradient>
     </View>
@@ -451,6 +452,10 @@ export default function ProfileScreen({
   // 2026-10-12 (Sumon): diamonds sent — primary XP driver for the slow,
   // premium level system (1 XP per diamond sent as gift).
   const [diamondsSent, setDiamondsSent] = useState(0);
+  // 2026-10-24 (Sumon): level XP accumulated server-side by gift sends
+  // (levelService.recordLevelXP) — the profile level now comes from the
+  // ONE permanent level system, not a local estimate.
+  const [levelXp, setLevelXp] = useState(0);
   const [nobleState, setNobleState] = useState<NobleState | null>(null);
   // PIN gate for private rooms (enforced from EVERYWHERE)
   const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
@@ -491,6 +496,12 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) return;
     return subscribeFollowCounts(displayUid, setFollowCounts);
+  }, [displayUid]);
+
+  // 2026-10-24 (Sumon): subscribe to the permanent server level XP.
+  useEffect(() => {
+    if (!displayUid) { setLevelXp(0); return; }
+    return subscribeLevel(displayUid, (l) => setLevelXp(l.xp));
   }, [displayUid]);
 
   // 2026-10-12 (Sumon): subscribe to diamonds sent (gift_sent transactions)
@@ -856,19 +867,14 @@ export default function ProfileScreen({
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
-  // ─── Premium Level System (2026-10-12, Sumon concept) ───
-  // VERY SLOW progression (Sumon 2026-10-12: "একদম স্লো").
-  // XP: 1 per diamond sent as gift, 100 per room owned, 2 per gift received.
-  // Level curve (quadratic — each level needs progressively more):
-  //   cumulative XP for level N = 50 * (N-1)^2  (Lv.30 ≈ 42,050 XP, Lv.60 ≈ 174,050, Lv.100 = 490,050)
-  // Tiers: 1-30 Bronze, 31-60 Silver, 61-99 Gold, 100 Max.
-  const calculateLevel = (): number => {
-    const xp = diamondsSent + (rooms.length * 100) + (totalGifts * 2);
-    // Invert: N = sqrt(xp / 50), floor, min 1, max 100. 10x slower than before.
-    const level = Math.floor(Math.sqrt(xp / 50)) + 1;
-    return Math.min(100, Math.max(1, level));
-  };
-  const userLevel = calculateLevel();
+  // ─── Permanent Level System (levelService) ───
+  // 2026-10-24 (Sumon): the old local estimate (sqrt(xp/50), Max at ~115k
+  // XP) made Max far too easy — his test profile hit "Max" quickly. The
+  // profile now reads the ONE permanent system: server-accumulated level
+  // XP from gift sends, with the lifetime diamondsSent stat as a floor so
+  // sends from before the XP wiring still count. Curve (levelService):
+  // Bronze 16 = 225k XP · Silver 16 = 900k · Gold 16 / Max = 3,600,000.
+  const userLevel = getLevelFromXP(Math.max(levelXp, diamondsSent)).totalLevel;
 
   // NOTE 7 (2026-10-11): demo badges removed — grantedBadges comes from the
   // Firebase subscription above (official/event grants only).
