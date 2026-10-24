@@ -10,7 +10,9 @@ import {
   removePk,
   pkScoreOf,
   formatPkScore,
+  formatPkDuration,
   PK_CHALLENGE_TIMEOUT_MS,
+  PK_DURATION_OPTIONS_MIN,
   type RoomPk,
 } from '../services/roomPkService';
 import type { Participant } from '../types/room';
@@ -18,28 +20,32 @@ import type { Participant } from '../types/room';
 /* ─────────────────────────── 1v1 PK Modal ─────────────────────────── */
 
 /**
- * PkModal — 1v1 PK (2026-10-25, boss concept).
+ * PkModal — 1v1 PK (2026-10-25, boss concept + refinements).
  * Two users battle; the audience sends diamonds (gifts) and the diamond
- * value is the score. Higher score wins when the 5-minute timer ends.
+ * value is the score. Higher score wins when the timer ends.
  * Scoring is done by the VPS scorer bot (giftFeed watcher) — this modal
- * only shows the battle and drives challenge/accept/decline.
- * Start: a seated user picks a seated opponent. The opponent accepts via
- * this modal (or the room's challenge alert). One PK per room at a time.
+ * only shows the battle and drives challenge/accept/decline/cancel.
+ * BOSS RULES: start = host (owner/admin) ONLY, and BOTH battlers must be
+ * seated; the host picks the battle length (3/5/10 min) at start and can
+ * cancel mid-battle (host-only — a battler can never cancel to dodge a
+ * loss). One PK per room at a time.
  */
 export function PkModal({
-  visible, onClose, roomId, myUid, myName, seats, isOwnerOrAdmin,
+  visible, onClose, roomId, myUid, myName, mySeatIdx, seats, isOwnerOrAdmin,
 }: {
   visible: boolean;
   onClose: () => void;
   roomId: string;
   myUid: string;
   myName: string;
+  mySeatIdx: number;
   seats: Array<Participant | null>;
   isOwnerOrAdmin: boolean;
 }) {
   const [pk, setPk] = useState<RoomPk | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
+  const [durationMin, setDurationMin] = useState(5);
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -134,12 +140,16 @@ export function PkModal({
             </Pressable>
           </View>
 
-          {/* ── No PK: start (owner/admin only — boss rule) ── */}
+          {/* ── No PK: start (host only + both battlers seated — boss rules) ── */}
           {!pk && (
             <>
               {!isOwnerOrAdmin ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
-                  Only the room owner/admin can start a PK.
+                  Only the room host (owner/admin) can start a PK.
+                </Text>
+              ) : mySeatIdx < 0 ? (
+                <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
+                  Take a seat to start a PK battle — both battlers must be seated.
                 </Text>
               ) : opponents.length === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
@@ -147,6 +157,25 @@ export function PkModal({
                 </Text>
               ) : (
                 <>
+                  <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginBottom: 8 }}>
+                    Battle length
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                    {PK_DURATION_OPTIONS_MIN.map((m) => (
+                      <Pressable
+                        key={m}
+                        onPress={() => setDurationMin(m)}
+                        style={{
+                          flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                          backgroundColor: durationMin === m ? C.red : C.card,
+                          borderWidth: 1, borderColor: durationMin === m ? C.red : C.borderFaint,
+                        }}>
+                        <Text style={{ color: durationMin === m ? '#FFF' : C.sub, fontWeight: '800' }}>
+                          {m} min
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginBottom: 4 }}>
                     Challenge someone to a battle
                   </Text>
@@ -156,7 +185,7 @@ export function PkModal({
                       disabled={busy}
                       onPress={() =>
                         act(
-                          () => challengeToPk(roomId, { uid: myUid, name: myName }, { uid: s.id, name: s.name }),
+                          () => challengeToPk(roomId, { uid: myUid, name: myName }, { uid: s.id, name: s.name }, durationMin * 60000),
                           'Could not send the challenge (a PK may already be running).',
                         )
                       }
@@ -183,7 +212,7 @@ export function PkModal({
               <Text style={{ color: C.muted, fontSize: 13, marginTop: 6, textAlign: 'center' }}>
                 {challengeExpired
                   ? 'This challenge expired.'
-                  : '5-minute battle — diamonds decide the winner.'}
+                  : `${formatPkDuration(pk)} battle — diamonds decide the winner.`}
               </Text>
               {iAmOpponent && !challengeExpired && (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 18, width: '100%' }}>
@@ -279,6 +308,31 @@ export function PkModal({
                   Send Gift
                 </Text>
               </Pressable>
+              {/* Host-only mid-battle cancel (boss rule): ends the battle
+                  with no winner. A battler can never cancel (no dodging). */}
+              {isOwnerOrAdmin && (
+                <Pressable
+                  onPress={() =>
+                    Alert.alert(
+                      'Cancel PK?',
+                      'The battle ends now with no winner and the scores are discarded.',
+                      [
+                        { text: 'Keep battle', style: 'cancel' },
+                        {
+                          text: 'Cancel PK',
+                          style: 'destructive',
+                          onPress: () => act(() => removePk(roomId), 'Could not cancel.'),
+                        },
+                      ],
+                    )
+                  }
+                  disabled={busy}
+                  style={{ marginTop: 10, backgroundColor: C.card, borderRadius: 14,
+                    paddingVertical: 12, alignItems: 'center',
+                    borderWidth: 1, borderColor: C.borderFaint }}>
+                  <Text style={{ color: C.sub, fontWeight: '800' }}>Cancel PK</Text>
+                </Pressable>
+              )}
             </>
           )}
 

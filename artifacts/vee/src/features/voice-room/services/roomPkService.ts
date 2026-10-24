@@ -18,10 +18,14 @@
  * Challenge expires after 60s, ended nodes are cleaned up by the scorer.
  */
 
-import { ref, update, remove, onValue } from 'firebase/database';
+import { ref, update, remove, onValue, get } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
 
 export const PK_DURATION_MS = 5 * 60 * 1000;
+/** Host-pickable battle lengths (minutes) — the host sets it at start. */
+export const PK_DURATION_OPTIONS_MIN = [3, 5, 10];
+export const PK_DURATION_MIN_MS = 60 * 1000;
+export const PK_DURATION_MAX_MS = 10 * 60 * 1000;
 export const PK_CHALLENGE_TIMEOUT_MS = 60 * 1000;
 
 export interface PkUser {
@@ -41,6 +45,8 @@ export interface RoomPk {
   challengedAt: number;
   startedAt: number;
   endsAt: number;
+  /** Host-chosen battle length (ms); 0 = legacy node (treated as 5 min). */
+  durationMs: number;
   scores: PkScores | null;
   winnerUid: string | null;
   draw: boolean;
@@ -70,6 +76,7 @@ export function subscribeRoomPk(roomId: string, cb: (pk: RoomPk | null) => void)
       challengedAt: typeof v.challengedAt === 'number' ? v.challengedAt : 0,
       startedAt: typeof v.startedAt === 'number' ? v.startedAt : 0,
       endsAt: typeof v.endsAt === 'number' ? v.endsAt : 0,
+      durationMs: typeof v.durationMs === 'number' ? v.durationMs : 0,
       scores: (v.scores as PkScores) || null,
       winnerUid: typeof v.winnerUid === 'string' ? v.winnerUid : null,
       draw: v.draw === true,
@@ -77,29 +84,39 @@ export function subscribeRoomPk(roomId: string, cb: (pk: RoomPk | null) => void)
   });
 }
 
-/** Send a PK challenge (fails if a PK already exists — rules backstop). */
+/** Send a PK challenge (fails if a PK already exists — rules backstop).
+ * durationMs is the host-chosen battle length (clamped 1–10 min). */
 export async function challengeToPk(
   roomId: string,
   challenger: PkUser,
   opponent: PkUser,
+  durationMs: number,
 ): Promise<void> {
   const now = Date.now();
+  const dur = Math.min(PK_DURATION_MAX_MS, Math.max(PK_DURATION_MIN_MS, durationMs || PK_DURATION_MS));
   await update(pkRef(roomId), {
     status: 'challenge',
     challenger,
     opponent,
     createdAt: now,
     challengedAt: now,
+    durationMs: dur,
   });
 }
 
-/** Opponent accepts: the battle starts (5-minute timer). */
+/** Opponent accepts: the battle starts for the host-chosen duration. */
 export async function acceptPk(roomId: string): Promise<void> {
   const now = Date.now();
+  const snap = await get(pkRef(roomId));
+  const stored = snap.val()?.durationMs as number | undefined;
+  const dur = Math.min(
+    PK_DURATION_MAX_MS,
+    Math.max(PK_DURATION_MIN_MS, typeof stored === 'number' && stored > 0 ? stored : PK_DURATION_MS),
+  );
   await update(pkRef(roomId), {
     status: 'active',
     startedAt: now,
-    endsAt: now + PK_DURATION_MS,
+    endsAt: now + dur,
   });
 }
 
@@ -122,6 +139,12 @@ export function formatPkScore(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1).replace(/\.0$/, '')}m`;
   if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
   return String(n);
+}
+
+/** Battle length label, e.g. 5 min (legacy nodes read as 5 min). */
+export function formatPkDuration(pk: RoomPk | null): string {
+  const ms = pk && pk.durationMs > 0 ? pk.durationMs : PK_DURATION_MS;
+  return `${Math.round(ms / 60000)} min`;
 }
 
 export function currentUid(): string {

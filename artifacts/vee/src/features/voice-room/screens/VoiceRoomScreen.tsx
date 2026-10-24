@@ -47,6 +47,7 @@ import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { FloatingMusicIcon } from '../components/FloatingMusicIcon';
 import { PkModal } from '../components/PkModal';
+import { PkBanner } from '../components/PkBanner';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
@@ -983,7 +984,7 @@ export default function VoiceRoomScreen() {
     pkAlertShownRef.current = key;
     Alert.alert(
       'PK Challenge',
-      `${pk.challenger.name} challenged you to a 1vs1 PK battle!`,
+      `${pk.challenger.name} challenged you to a ${Math.round(((pk.durationMs > 0 ? pk.durationMs : 300000) / 60000))}-minute 1vs1 PK battle!`,
       [
         { text: 'Decline', style: 'cancel', onPress: () => removePk(roomId).catch(() => {}) },
         { text: 'Accept', onPress: () => { setPkOpen(true); acceptPk(roomId).catch(() => {}); } },
@@ -3036,6 +3037,11 @@ export default function VoiceRoomScreen() {
               </View>
             </ScalePress>
           )}
+          {/* 2026-10-25 (boss): realtime PK banner — the whole room watches
+              the battle live, imo-style. Tap opens the PK modal. */}
+          {pk?.status === 'active' && (
+            <PkBanner pk={pk} onPress={() => setPkOpen(true)} />
+          )}
           {/* 2026-10-25 (boss): now-playing strip — mirrors the announcement
               strip above the message list. Tap opens the music modal. */}
           {music?.current && (music.state === 'playing' || music.state === 'paused') && (
@@ -3483,6 +3489,7 @@ export default function VoiceRoomScreen() {
         roomId={roomId}
         myUid={myUid}
         myName={myName}
+        mySeatIdx={mySeatIdx}
         seats={seats}
         isOwnerOrAdmin={isOwnerOrAdmin}
       />
