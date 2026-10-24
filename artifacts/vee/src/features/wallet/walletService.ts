@@ -839,6 +839,29 @@ async function confirmServerGiftLanded(
   return null;
 }
 
+/* 2026-10-24 (Sumon): self-gift is ADMIN-ONLY. Regular users can no longer
+ * send gifts to their own account; admins (boss's test accounts) still can,
+ * for testing. Identified by users/{uid}/adminRole or /role in RTDB —
+ * the same markers the admin system uses. Cached per app session. */
+let selfSendAllowedCache: Promise<boolean> | null = null;
+function canSelfSend(uid: string): Promise<boolean> {
+  if (!selfSendAllowedCache) {
+    selfSendAllowedCache = (async () => {
+      try {
+        const [a, b] = await Promise.all([
+          get(ref(database, `users/${uid}/adminRole`)).catch(() => null),
+          get(ref(database, `users/${uid}/role`)).catch(() => null),
+        ]);
+        const role = String(a?.val() ?? b?.val() ?? '');
+        return role === 'admin' || role === 'superAdmin';
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return selfSendAllowedCache;
+}
+
 export async function sendGift({
   toUid,
   giftId,
@@ -848,9 +871,16 @@ export async function sendGift({
   price,
   roomId,
 }: SendGiftArgs): Promise<SendGiftResult> {
-  // Self-gifting is ALLOWED (per product requirement): the server debits and
-  // credits the same account (net-zero), so the gift animation and history
-  // still work for testing/showcase.
+  // 2026-10-24 (Sumon): self-gift guard — enforced here so EVERY send path
+  // (VPS server + Firebase fallback) is covered. The API server enforces
+  // the same rule independently. Admins are exempt (testing).
+  const senderUid = auth.currentUser?.uid;
+  if (senderUid && toUid === senderUid) {
+    const allowed = await canSelfSend(senderUid);
+    if (!allowed) {
+      throw new GiftError('You cannot send gifts to your own account');
+    }
+  }
   const key = idempotencyKey ?? Crypto.randomUUID();
 
   // Shared post-success bookkeeping for the server path (noble XP, level
