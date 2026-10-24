@@ -184,16 +184,13 @@ export default function VoiceRoomScreen() {
     markVoiceStage('screen_mount', roomId);
   }, []);
 
-  // 2026-10-21 (boss: room entry slow + gift play delayed): warm the two
-  // network-bound caches the moment the screen mounts, in parallel with
-  // everything else — (1) the LiveKit token, so voice connect doesn't wait
-  // on the VPS round trip after the PIN gate passes; (2) the gift catalog,
-  // whose load also prefetches every gift's animation into the image cache
-  // so a sent gift plays instantly.
+  // 2026-10-21 (boss: room entry slow + gift play delayed): warm the
+  // LiveKit token the moment the screen mounts, in parallel with
+  // everything else, so voice connect doesn't wait on the VPS round trip
+  // after the PIN gate passes.
   useEffect(() => {
     if (!roomId || !myUid || myUid === 'anonymous') return;
     prefetchLivekitToken(roomId, voiceUserName);
-    fetchGiftCatalog().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid]);
 
@@ -287,6 +284,19 @@ export default function VoiceRoomScreen() {
     roomID: voiceReady ? roomId : '',
     userID: voiceBan ? 'anonymous' : myUid,
     userName: voiceUserName });
+
+  // 2026-10-24 (boss: room entry must be SUPER FAST): the gift catalog
+  // load also prefetches EVERY gift's animation into the image cache —
+  // dozens of animated WebPs competing with the voice connect for
+  // network/CPU on entry. Defer it until voice is actually joined; the
+  // gift picker fetches the catalog itself on open, so nothing breaks
+  // if join is slow or never happens.
+  const giftCatalogWarmedRef = useRef(false);
+  useEffect(() => {
+    if (!voiceJoined || giftCatalogWarmedRef.current) return;
+    giftCatalogWarmedRef.current = true;
+    fetchGiftCatalog().catch(() => {});
+  }, [voiceJoined]);
 
   
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
