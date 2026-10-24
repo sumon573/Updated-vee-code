@@ -58,6 +58,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
 import { getUser, type VeeUser } from '@/src/services/userService';
+import { requestAllLoginPermissions } from '@/src/services/loginPermissions';
 import { ThemeProvider } from '@/src/context/ThemeContext';
 import { LanguageProvider, useLanguage } from '@/src/context/LanguageContext';
 // Side-effect import: initialises i18next with all four language resources.
@@ -273,6 +274,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     })();
     return () => { cancelled = true; };
+  }, [user, authLoading]);
+
+  // 2026-10-24 (boss: ALL permissions right after login, immediately):
+  // fire-and-forget — never blocks routing or rendering. The module runs
+  // once per device (AsyncStorage-gated) and skips already-granted ones,
+  // so existing users are asked once on their next launch after this
+  // update, and new users on their first login.
+  useEffect(() => {
+    if (!user || authLoading) return;
+    requestAllLoginPermissions().catch(() => {});
   }, [user, authLoading]);
 
   useEffect(() => {
