@@ -44,6 +44,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nextProvider } from 'react-i18next';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ForcedUpdateGate } from '@/src/components/ForcedUpdateGate';
 import { ErrorFallback, ErrorFallbackProps } from '@/components/ErrorFallback';
 import { withTimeout } from '@/src/utils/withTimeout';
 import {
@@ -1246,11 +1247,16 @@ export default function RootLayout() {
                 <QueryClientProvider client={queryClient}>
                   <GestureHandlerRootView style={{ flex: 1 }}>
                     <AuthGuard>
-                      <RootLayoutNav />
-                      {/* 2026-10-13 (Sumon): Honor/Frame grant celebration */}
-                      <HonorCelebration />
-                      {/* 2026-10-15 (Sumon): Noble rank-up mist celebration */}
-                      <NobleLevelUpCelebration />
+                      {/* 2026-10-24 (boss law): no app use without updating —
+                          the gate replaces the whole app with the Update
+                          screen whenever the feed has a newer bundle. */}
+                      <ForcedUpdateGate>
+                        <RootLayoutNav />
+                        {/* 2026-10-13 (Sumon): Honor/Frame grant celebration */}
+                        <HonorCelebration />
+                        {/* 2026-10-15 (Sumon): Noble rank-up mist celebration */}
+                        <NobleLevelUpCelebration />
+                      </ForcedUpdateGate>
                     </AuthGuard>
                   </GestureHandlerRootView>
                 </QueryClientProvider>
