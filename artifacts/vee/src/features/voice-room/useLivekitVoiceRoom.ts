@@ -36,6 +36,7 @@ import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/s
 import { NoiseGate, extractMediaSourceLevel } from '@/src/services/noiseGate';
 import { setVoiceRoomAudioActive } from '@/src/services/audioOwner';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
+import { getMusicVolumeSync } from '@/src/features/voice-room/services/musicVolumeService';
 import { useTranslation } from 'react-i18next';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
@@ -102,6 +103,8 @@ export type LivekitRoomReturn = {
   muteRemoteUser: (userID: string) => void;
   playUserStream: (userID: string) => void;
   stopUserStream: (userID: string) => void;
+  /** Room-music bot volume, local to this phone (2026-10-25). */
+  setMusicVolume: (volume: number) => void;
   /**
    * Re-run join() after a failure (token/connect error surfaced via `error`).
    * Tears the engine down first so a half-connected room can't block the
@@ -683,7 +686,16 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         } catch { /* non-critical: mute apply is best-effort */ }
       })
       .on(RoomEvent.TrackUnpublished, () => this.scheduleParticipantsRefresh())
-      .on(RoomEvent.TrackSubscribed, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.TrackSubscribed, (_track, _pub, participant) => {
+        this.scheduleParticipantsRefresh();
+        // 2026-10-25 (room music): the bot (re)publishes on resume — re-apply
+        // the listener's saved music volume to the fresh participant object.
+        try {
+          if ((participant as unknown as { identity?: string } | undefined)?.identity === 'vee-music') {
+            this.setMusicVolume();
+          }
+        } catch { /* non-critical */ }
+      })
       .on(RoomEvent.TrackUnsubscribed, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.TrackMuted, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.TrackUnmuted, () => this.scheduleParticipantsRefresh())
@@ -738,6 +750,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       }
     } catch {
       // non-critical — mute intent is recorded in state regardless
+    }
+  }
+
+  /**
+   * Room-music volume, LOCAL to this phone (2026-10-25). Applies to the
+   * music bot participant ('vee-music', mic source) only — never to
+   * voices, never room-wide. No argument = the saved volume (used when
+   * the bot (re)joins, so pause/resume keeps the user's level).
+   */
+  setMusicVolume(volume?: number): void {
+    const lk = this.lk;
+    const room = this.room;
+    if (!lk || !room) return;
+    try {
+      const v = volume ?? getMusicVolumeSync();
+      room.remoteParticipants.forEach((p) => {
+        if (p.identity === 'vee-music') {
+          p.setVolume(v, lk.Track.Source.Microphone);
+        }
+      });
+    } catch {
+      // non-critical — volume is best-effort, music keeps playing
     }
   }
 
@@ -1616,6 +1650,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     });
   }, []);
 
+  const setMusicVolume = useCallback((volume: number) => {
+    engineRef.current?.setMusicVolume(volume);
+  }, []);
+
   return {
     joined,
     muted,
@@ -1634,5 +1672,6 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     muteRemoteUser,
     playUserStream,
     stopUserStream,
+    setMusicVolume,
   };
 }

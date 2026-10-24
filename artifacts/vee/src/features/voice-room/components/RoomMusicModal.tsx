@@ -12,6 +12,10 @@ import {
   uploadMusicFile,
   type RoomMusic,
 } from '../services/roomMusicService';
+import {
+  getMusicVolumeSync,
+  setMusicVolume as persistMusicVolume,
+} from '../services/musicVolumeService';
 
 /* ─────────────────────────── Room Music Modal ─────────────────────────── */
 
@@ -22,19 +26,22 @@ import {
  * Members: read-only (now playing + queue) — they hear it via LiveKit.
  */
 export function RoomMusicModal({
-  visible, onClose, roomId, canControl, myName,
+  visible, onClose, roomId, canControl, myName, onVolumeChange,
 }: {
   visible: boolean;
   onClose: () => void;
   roomId: string;
   canControl: boolean;
   myName: string;
+  /** Engine apply for the local music volume (0–1). */
+  onVolumeChange: (v: number) => void;
 }) {
   const [music, setMusic] = useState<RoomMusic | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [volume, setVolumeState] = useState(getMusicVolumeSync());
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -43,6 +50,7 @@ export function RoomMusicModal({
 
   useEffect(() => {
     if (!visible) setPickerOpen(false);
+    else setVolumeState(getMusicVolumeSync());
   }, [visible]);
 
   const loadAudio = useCallback(async () => {
@@ -96,6 +104,15 @@ export function RoomMusicModal({
     setMusicState(roomId, state).catch(() => {
       Alert.alert('Error', 'Could not change playback.');
     });
+  };
+
+  /** Local volume (this phone only): persist + apply to the bot track. */
+  const setVol = (v: number) => {
+    const clamped = Math.min(1, Math.max(0, Math.round(v * 10) / 10));
+    setVolumeState(clamped);
+    persistMusicVolume(clamped).catch(() => {});
+    onVolumeChange(clamped);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const displayTitle = (title: string) => title.replace(/\.[^.]+$/, '');
@@ -234,6 +251,45 @@ export function RoomMusicModal({
                   </View>
                 )}
               </View>
+
+              {/* Music volume — LOCAL to this phone (everyone, not gated). */}
+              {!!current && (
+                <View style={{ marginTop: 16 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700' }}>
+                      Music volume
+                    </Text>
+                    <Text style={{ color: C.sub, fontSize: 13, fontWeight: '800' }}>
+                      {Math.round(volume * 100)}%
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                    <Pressable onPress={() => setVol(volume - 0.1)}
+                      style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 1, borderColor: C.borderFaint }}>
+                      <Feather name="minus" size={16} color={C.text} />
+                    </Pressable>
+                    <View style={{ flex: 1, flexDirection: 'row', gap: 3 }}>
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <Pressable key={i} onPress={() => setVol((i + 1) / 10)}
+                          style={{ flex: 1, height: 10, borderRadius: 5,
+                            backgroundColor: i < Math.round(volume * 10) ? '#7C3AED' : C.borderFaint }}
+                        />
+                      ))}
+                    </View>
+                    <Pressable onPress={() => setVol(volume + 0.1)}
+                      style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 1, borderColor: C.borderFaint }}>
+                      <Feather name="plus" size={16} color={C.text} />
+                    </Pressable>
+                  </View>
+                  <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>
+                    Volume is only for your phone — it never changes others'.
+                  </Text>
+                </View>
+              )}
 
               {/* Queue */}
               <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 20, marginBottom: 4 }}>

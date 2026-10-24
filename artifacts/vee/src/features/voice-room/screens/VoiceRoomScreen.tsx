@@ -45,6 +45,7 @@ import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { RoomMusicModal } from '../components/RoomMusicModal';
+import { FloatingMusicIcon } from '../components/FloatingMusicIcon';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
@@ -285,6 +286,7 @@ export default function VoiceRoomScreen() {
     muteRemoteUser,
     playUserStream,
     stopUserStream,
+    setMusicVolume,
     wasRestored } = useLivekitVoiceRoom({
     roomID: voiceReady ? roomId : '',
     userID: voiceBan ? 'anonymous' : myUid,
@@ -3435,7 +3437,15 @@ export default function VoiceRoomScreen() {
         roomId={roomId}
         canControl={isOwnerOrAdmin}
         myName={myName}
+        onVolumeChange={setMusicVolume}
       />
+      {/* 2026-10-25 (boss): draggable floating music icon while music plays. */}
+      {music?.current && (music.state === 'playing' || music.state === 'paused') && (
+        <FloatingMusicIcon
+          paused={music.state === 'paused'}
+          onPress={() => setMusicOpen(true)}
+        />
+      )}
       <RoomRankModal
         visible={rankOpen}
         roomId={roomId}
