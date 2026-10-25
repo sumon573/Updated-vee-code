@@ -143,6 +143,14 @@ export function RoomMusicModal({
     return subscribeMusicLibrary(uid, setLibrary);
   }, [visible, uid]);
 
+  // Own-songs-only (2026-10-25, boss): a user sees and plays ONLY the
+  // songs THEY added. The room queue persists after the adder leaves, so
+  // a later host used to see + play the previous host's songs. Every
+  // queue list and every selection below filters to the viewer's own
+  // additions. Now-playing + pause / resume / stop stay room-wide
+  // (transport, not selection).
+  const myQueue = (music?.queue ?? []).filter((t) => t.addedBy === uid);
+
   const loadAudio = useCallback(async (force = false) => {
     // Cached after the first load: reopening the picker is instant and
     // adding songs never triggers a library refetch. Refresh forces reload.
@@ -456,6 +464,10 @@ export function RoomMusicModal({
    */
   const playTrack = (queueId: string) => {
     if (!canControl) return;
+    // Own-songs-only: never start another user's queued song, even via
+    // a stale tap (rows are filtered, so this is a guard, not the UI).
+    const track = musicRef.current?.queue.find((t) => t.queueId === queueId);
+    if (!track || track.addedBy !== uid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (confirmTimerRef.current) {
       clearTimeout(confirmTimerRef.current);
@@ -494,6 +506,33 @@ export function RoomMusicModal({
         if (seq !== confirmSeqRef.current || !mountedRef.current) return;
         Alert.alert('Error', 'Could not play this song. Check connection and try again.');
       });
+  };
+
+  /**
+   * Own-songs-only Next (2026-10-25, boss): Next must never start
+   * another user's queued song. Play MY first queued song directly
+   * (tap-to-play mechanism, same confirm); with no own song queued
+   * this is a no-op — the Next buttons hide in that case.
+   */
+  const nextMine = () => {
+    const first = (musicRef.current?.queue ?? []).find((t) => t.addedBy === uid);
+    if (!first) return;
+    playTrack(first.queueId);
+  };
+
+  /**
+   * Own-songs-only Play from idle/stopped: restart MY stopped song, else
+   * play MY first queued song; never another user's song.
+   */
+  const playMine = () => {
+    const now = musicRef.current;
+    const cur = now?.current ?? null;
+    if (cur && cur.addedBy === uid) {
+      control('playing');
+      return;
+    }
+    const first = (now?.queue ?? []).find((t) => t.addedBy === uid);
+    if (first) playTrack(first.queueId);
   };
 
   const displayTitle = (title: string) => title.replace(/\.[^.]+$/, '');
@@ -672,12 +711,14 @@ export function RoomMusicModal({
                         <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Resume</Text>
                       </Pressable>
                     )}
-                    <Pressable onPress={() => control('next')}
-                      style={{ flex: 1, backgroundColor: C.card, borderRadius: 12,
-                        paddingVertical: 11, alignItems: 'center',
-                        borderWidth: 1, borderColor: C.borderFaint }}>
-                      <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>Next</Text>
-                    </Pressable>
+                    {myQueue.length > 0 && (
+                      <Pressable onPress={nextMine}
+                        style={{ flex: 1, backgroundColor: C.card, borderRadius: 12,
+                          paddingVertical: 11, alignItems: 'center',
+                          borderWidth: 1, borderColor: C.borderFaint }}>
+                        <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>Next</Text>
+                      </Pressable>
+                    )}
                     <Pressable onPress={() => control('stopped')}
                       style={{ flex: 1, backgroundColor: C.card, borderRadius: 12,
                         paddingVertical: 11, alignItems: 'center',
@@ -690,15 +731,15 @@ export function RoomMusicModal({
                     queue orphaned with no way to start it. Play restarts
                     the stopped song from the beginning, or the queue head
                     when nothing is current. */}
-                {canControl && (state === 'idle' || state === 'stopped') && (current || (music?.queue.length ?? 0) > 0) && (
+                {canControl && (state === 'idle' || state === 'stopped') && ((current && current.addedBy === uid) || myQueue.length > 0) && (
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                    <Pressable onPress={() => control('playing')}
+                    <Pressable onPress={playMine}
                       style={{ flex: 1, backgroundColor: '#7C3AED', borderRadius: 12,
                         paddingVertical: 11, alignItems: 'center' }}>
                       <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Play</Text>
                     </Pressable>
-                    {(music?.queue.length ?? 0) > 0 && (
-                      <Pressable onPress={() => control('next')}
+                    {myQueue.length > 0 && (
+                      <Pressable onPress={nextMine}
                         style={{ flex: 1, backgroundColor: C.card, borderRadius: 12,
                           paddingVertical: 11, alignItems: 'center',
                           borderWidth: 1, borderColor: C.borderFaint }}>
@@ -752,19 +793,19 @@ export function RoomMusicModal({
                   directly via playQueueId; the × remove stays a sibling so
                   the two Pressables never nest. */}
               <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 20, marginBottom: 4 }}>
-                Up next ({music?.queue.length ?? 0})
+                Up next ({myQueue.length})
               </Text>
-              {canControl && (music?.queue.length ?? 0) > 0 && (
+              {canControl && myQueue.length > 0 && (
                 <Text style={{ color: '#7C3AED', fontSize: 12, marginBottom: 4 }}>
                   Tap any song to play it directly.
                 </Text>
               )}
-              {(music?.queue.length ?? 0) === 0 ? (
+              {myQueue.length === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 13, paddingVertical: 8 }}>
-                  Queue is empty.
+                  {(music?.queue.length ?? 0) === 0 ? 'Queue is empty.' : 'No songs of yours in the queue yet.'}
                 </Text>
               ) : (
-                music!.queue.map((t) => (
+                myQueue.map((t) => (
                   <View key={t.queueId} style={{ flexDirection: 'row', alignItems: 'center',
                     paddingVertical: 11, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
                     <Pressable onPress={() => playTrack(t.queueId)} disabled={!canControl}

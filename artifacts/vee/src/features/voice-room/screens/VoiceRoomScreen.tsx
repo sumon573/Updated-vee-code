@@ -67,7 +67,7 @@ import {
   subscribeAnnouncement, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
 import {
-  subscribeRoomMusic, setMusicState, type RoomMusic,
+  subscribeRoomMusic, setMusicState, setPlayQueueId, type RoomMusic,
 } from '../services/roomMusicService';
 import {
   getMusicVolumeSync, setMusicVolume as persistMusicVolume,
@@ -1070,6 +1070,54 @@ export default function VoiceRoomScreen() {
       .catch(() => {
         if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
         Alert.alert('Error', 'Could not change playback. Check connection and try again.');
+      });
+  };
+  // Own-songs-only (2026-10-25, boss): the bar's Next must never start
+  // another user's queued song — same rule as the Playlist page.
+  const myMusicQueue = (music?.queue ?? []).filter((t) => t.addedBy === myUid);
+  /** Bar Next: play MY first queued song via playQueueId, with the same
+   * bot-activity confirm as barControl. Hidden when I have no own song
+   * queued, so a no-op here is only a stale-closure guard. */
+  const barNextMine = () => {
+    const first = (barMusicRef.current?.queue ?? []).find((t) => t.addedBy === myUid);
+    if (!first) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (barConfirmTimerRef.current) {
+      clearTimeout(barConfirmTimerRef.current);
+      barConfirmTimerRef.current = null;
+    }
+    const seq = ++barConfirmSeqRef.current;
+    const before = barMusicRef.current;
+    const beforeCurrentId = before?.current?.queueId ?? null;
+    let retried = false;
+    const isTapConfirmed = (): boolean => {
+      const now = barMusicRef.current;
+      if (!now) return false;
+      if (now.current?.queueId === first.queueId) return true;
+      const stillQueued = (now.queue ?? []).some((t) => t.queueId === first.queueId);
+      if (!stillQueued && (now.current?.queueId ?? null) !== beforeCurrentId) return true;
+      return false;
+    };
+    const check = () => {
+      barConfirmTimerRef.current = null;
+      if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+      if (isTapConfirmed()) return;
+      if (!retried) {
+        retried = true;
+        setPlayQueueId(roomId, first.queueId).catch(() => {});
+        barConfirmTimerRef.current = setTimeout(check, 8000);
+        return;
+      }
+      Alert.alert('Error', 'Could not play this song. Check connection and try again.');
+    };
+    setPlayQueueId(roomId, first.queueId)
+      .then(() => {
+        if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+        barConfirmTimerRef.current = setTimeout(check, 8000);
+      })
+      .catch(() => {
+        if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+        Alert.alert('Error', 'Could not play this song. Check connection and try again.');
       });
   };
   // 2026-10-25 (boss): 1v1 PK — challenge prompt for the opponent.
@@ -3206,9 +3254,11 @@ export default function VoiceRoomScreen() {
                     <Pressable onPress={() => barControl(music.state === 'playing' ? 'paused' : 'playing')} style={{ padding: 6 }}>
                       <Feather name={music.state === 'playing' ? 'pause' : 'play'} size={24} color={C.text} />
                     </Pressable>
-                    <Pressable onPress={() => barControl('next')} style={{ padding: 6 }}>
-                      <Feather name="skip-forward" size={24} color={C.text} />
-                    </Pressable>
+                    {myMusicQueue.length > 0 && (
+                      <Pressable onPress={barNextMine} style={{ padding: 6 }}>
+                        <Feather name="skip-forward" size={24} color={C.text} />
+                      </Pressable>
+                    )}
                   </>
                 )}
                 <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }} style={{ padding: 6 }}>
