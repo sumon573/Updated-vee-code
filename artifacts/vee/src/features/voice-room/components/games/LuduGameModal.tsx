@@ -8,10 +8,14 @@
  *      the boss has not defined what Magic does, so no dead control exists.
  *   2. Lobby (game status 'lobby'): "LUDO" header + tagline, player slots
  *      (2P = host + 1 empty "+", 4P = host + 3 empty "+"), Start GREYED
- *      OUT until every slot is filled, Match posts a join invite to the
- *      room chat (members join via the Games lobby — room chat has no
- *      tap-to-join action). Members self-join via players/$uid (live rules
- *      already allow it); host Start snapshots seats + inits the board.
+ *      OUT until every slot is filled. NO Match/chat invite (boss
+ *      2026-10-25: he never asked for it): seated room members join by
+ *      TAPPING an empty "+" slot (slots fill in join order, so a "+"
+ *      tap always takes the next empty slot); the host's own "+" taps
+ *      do nothing — he is already slot 1. Members self-join via
+ *      players/$uid (live rules already allow it); host Start snapshots
+ *      seats + inits the board. NO duplicate lobbies: creating while
+ *      the host already has a live lobby reopens that lobby instead.
  *   3. Board (status 'active'): 15x15 board, real dice (pre-rolled value
  *      committed by transaction — the animation never invents a result),
  *      tap a highlighted token to move, captures, extra turns, win ends
@@ -32,7 +36,7 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import {
   createGame, endGame, subscribeGame, joinLuduGame, startLuduGame,
-  rollLuduDice, moveLuduToken, passLuduTurn,
+  rollLuduDice, moveLuduToken, passLuduTurn, findMyLiveLuduGame,
   type RoomGame,
 } from '../../services/roomGameService';
 import {
@@ -161,6 +165,17 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     if (creating) return;
     setCreating(true);
     try {
+      // 2026-10-25 (boss: no duplicate lobbies): if I already host a
+      // live Ludu lobby in this room, reopen it instead of creating
+      // another one (the LIVE NOW list showed 4 identical SHAKIB rows).
+      if (myUid) {
+        const existing = await findMyLiveLuduGame(roomId, myUid);
+        if (existing) {
+          setInternalId(existing);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          return;
+        }
+      }
       const id = await createGame(roomId, hostUid, hostName, {
         type: 'ludu', title: t('voiceRoom.games.luduTitle'), mode, hostPhotoURL: myPhotoURL ?? null,
       });
@@ -199,23 +214,14 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     }
   };
 
-  const match = async () => {
-    if (!game) return;
-    try {
-      await sendRoomChatMsg(roomId, systemMsg(t('voiceRoom.games.luduMatchMsg'))).catch(() => {});
-      Alert.alert(t('voiceRoom.games.luduTitle'), t('voiceRoom.games.luduMatchPosted'));
-    } catch (e) {
-      Alert.alert(t('voiceRoom.games.error'), getErrorCause(e));
-    }
-  };
-
-  // 2026-10-25 (boss: "+" slot tap did nothing): an empty slot is an
-  // invitation, not decoration — tapping it posts the same Match invite
-  // to room chat so a room member can open Ludu and Join. (Start stays
-  // greyed until every slot is filled — that part is by spec.)
+  // 2026-10-25 (boss correction): an empty "+" slot IS the join
+  // action — a seated room member taps it to take the next empty slot.
+  // (The earlier "+" → Match chat invite was never asked for and is
+  // removed with the Match button below.) The host is already slot 1,
+  // so his own "+" taps stay inert — that is correct, not a bug.
   const handlePlusSlot = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void match();
+    void join();
   };
 
   const end = async () => {
@@ -586,17 +592,25 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                           </Text>
                         </View>
                       ) : (
-                        <Pressable
-                          onPress={handlePlusSlot}
-                          hitSlop={8}
-                          style={{
+                        // Empty slot: tappable JOIN target for anyone not
+                        // already in the game (host is seated → inert View).
+                        (() => {
+                          const canJoin = !!myUid && !isSeated && !lobbyFull && game.status === 'lobby';
+                          const slotStyle = {
                             width: 52, height: 52, borderRadius: 26,
-                            borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed',
-                            alignItems: 'center', justifyContent: 'center',
-                          }}
-                        >
-                          <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
-                        </Pressable>
+                            borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed' as const,
+                            alignItems: 'center' as const, justifyContent: 'center' as const,
+                          };
+                          return canJoin ? (
+                            <Pressable onPress={handlePlusSlot} hitSlop={8} style={slotStyle}>
+                              <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
+                            </Pressable>
+                          ) : (
+                            <View style={slotStyle}>
+                              <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
+                            </View>
+                          );
+                        })()
                       )}
                       <Text style={{ fontSize: 11, color: '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
                         {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
@@ -607,31 +621,18 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               </View>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                 {isHost && (
-                  <>
-                    <Pressable
-                      onPress={startLobby}
-                      disabled={!lobbyFull || starting}
-                      style={{
-                        flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center',
-                        backgroundColor: lobbyFull && !starting ? '#22C55E' : '#F2F2F7',
-                      }}
-                    >
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: lobbyFull && !starting ? '#FFF' : '#8E8E93' }}>
-                        {t('voiceRoom.games.luduStart')}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={match}
-                      style={{
-                        flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center',
-                        backgroundColor: '#E3F2FD',
-                      }}
-                    >
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: '#007AFF' }}>
-                        {t('voiceRoom.games.luduMatch')}
-                      </Text>
-                    </Pressable>
-                  </>
+                  <Pressable
+                    onPress={startLobby}
+                    disabled={!lobbyFull || starting}
+                    style={{
+                      flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center',
+                      backgroundColor: lobbyFull && !starting ? '#22C55E' : '#F2F2F7',
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: lobbyFull && !starting ? '#FFF' : '#8E8E93' }}>
+                      {t('voiceRoom.games.luduStart')}
+                    </Text>
+                  </Pressable>
                 )}
                 {!isHost && myUid && !isSeated && !lobbyFull && (
                   <Pressable

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View, Platform, Image, PanResponder, Dimensions } from 'react-native';
+import { Animated, Pressable, View, Platform, Image, PanResponder, Dimensions } from 'react-native';
 import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,7 +53,7 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   // bar. The bubble stays where dropped (no snap-back) and the position
   // is saved to the minimized-room store so the modal instance agrees.
   const BUBBLE_W = 72;
-  const BUBBLE_H = 120;
+  const BUBBLE_H = 90;
   const defaultPos = () => {
     const { width: W, height: H } = Dimensions.get('window');
     const s = getMinimizedRoom();
@@ -312,8 +312,9 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   const micColor = micMuted ? C.micOff : C.micOn;
 
   // imo-style bubble (2026-10-25): round room DP, draggable anywhere,
-  // 4-bar voice ripple below, room-name pill. Tap DP or name = return to
-  // the room; mic badge toggles mic; X badge exits the room entirely.
+  // 4-bar voice ripple below. Tap DP = return to the room; mic badge
+  // toggles mic; X badge exits the room entirely. NO room-name pill
+  // (boss 2026-10-25: name must not show on the bubble).
   return (
     <Animated.View
       {...panResponder.panHandlers}
@@ -326,9 +327,13 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
         zIndex: 999,
       }}
     >
-      {/* Room DP — tap = return to room */}
-      <Pressable onPress={handleReturn}>
-        <View
+      {/* Room DP — tap = return to room. Badges are SIBLINGS of the DP
+          Pressable, NOT nested inside it (2026-10-25: nested Pressables
+          swallowed the mic/X taps, so mute/unmute did nothing from the
+          bubble — the tap fell through to Return instead). */}
+      <View style={{ width: 60, height: 60, overflow: 'visible' }}>
+        <Pressable
+          onPress={handleReturn}
           style={{
             width: 60,
             height: 60,
@@ -338,7 +343,7 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
             borderColor: C.border,
             alignItems: 'center',
             justifyContent: 'center',
-            overflow: 'visible',
+            overflow: 'hidden',
             shadowColor: C.glow,
             shadowOpacity: 0.45,
             shadowRadius: 18,
@@ -355,48 +360,48 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
           ) : (
             <Feather name="mic" size={22} color={C.muted} />
           )}
-          {/* Mic badge — tap toggles mic without returning */}
-          <Pressable
-            onPress={handleMicToggle}
-            hitSlop={8}
-            style={{
-              position: 'absolute',
-              right: -2,
-              bottom: -2,
-              width: 22,
-              height: 22,
-              borderRadius: 11,
-              backgroundColor: C.bg,
-              borderWidth: 1.5,
-              borderColor: C.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Feather name={micMuted ? 'mic-off' : 'mic'} size={11} color={micColor} />
-          </Pressable>
-          {/* Close badge — fully exits the minimized room */}
-          <Pressable
-            onPress={handleClose}
-            hitSlop={8}
-            style={{
-              position: 'absolute',
-              right: -2,
-              top: -2,
-              width: 22,
-              height: 22,
-              borderRadius: 11,
-              backgroundColor: C.bg,
-              borderWidth: 1.5,
-              borderColor: C.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Feather name="x" size={11} color={C.muted} />
-          </Pressable>
-        </View>
-      </Pressable>
+        </Pressable>
+        {/* Mic badge — tap toggles mic without returning */}
+        <Pressable
+          onPress={handleMicToggle}
+          hitSlop={8}
+          style={{
+            position: 'absolute',
+            right: -2,
+            bottom: -2,
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: C.bg,
+            borderWidth: 1.5,
+            borderColor: C.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Feather name={micMuted ? 'mic-off' : 'mic'} size={11} color={micColor} />
+        </Pressable>
+        {/* Close badge — fully exits the minimized room */}
+        <Pressable
+          onPress={handleClose}
+          hitSlop={8}
+          style={{
+            position: 'absolute',
+            right: -2,
+            top: -2,
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: C.bg,
+            borderWidth: 1.5,
+            borderColor: C.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Feather name="x" size={11} color={C.muted} />
+        </Pressable>
+      </View>
 
       {/* Voice ripple — 4 bars looping up/down (voice-is-live vibe) */}
       <View
@@ -416,28 +421,6 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
         ))}
       </View>
 
-      {/* Room name pill — tap = return to room */}
-      <Pressable onPress={handleReturn}>
-        <View
-          style={{
-            marginTop: 4,
-            maxWidth: 110,
-            backgroundColor: 'rgba(15,10,30,0.85)',
-            borderRadius: 10,
-            borderWidth: 1,
-            borderColor: C.border,
-            paddingHorizontal: 8,
-            paddingVertical: 2,
-          }}
-        >
-          <Text
-            style={{ color: C.text, fontSize: 11, fontWeight: '800', textAlign: 'center' }}
-            numberOfLines={1}
-          >
-            {room.name}
-          </Text>
-        </View>
-      </Pressable>
     </Animated.View>
   );
 }

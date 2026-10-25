@@ -167,6 +167,27 @@ export function subscribeGame(roomId: string, gameId: string, cb: (game: RoomGam
   });
 }
 
+/**
+ * Newest live Ludu lobby/active game hosted by uid in this room, or
+ * null. 2026-10-25 (boss: no duplicate lobbies) — creating while the
+ * host already has a live lobby reopens it instead of adding another
+ * LIVE NOW row.
+ */
+export async function findMyLiveLuduGame(roomId: string, hostUid: string): Promise<string | null> {
+  const snap = await get(gamesRef(roomId));
+  if (!snap.exists()) return null;
+  let bestId: string | null = null;
+  let bestTs = -1;
+  snap.forEach((c) => {
+    const g = c.val() as RoomGame;
+    if (g.type === 'ludu' && g.hostUid === hostUid && (g.status === 'lobby' || g.status === 'active')) {
+      const ts = g.createdAt ?? 0;
+      if (ts > bestTs) { bestTs = ts; bestId = c.key!; }
+    }
+  });
+  return bestId;
+}
+
 /** Host ends a game (optionally declaring a winner). */
 export async function endGame(roomId: string, gameId: string, winnerUid: string | null = null, winnerName: string | null = null): Promise<void> {
   await update(ref(database, `rooms/${roomId}/games/${gameId}`), {
