@@ -67,6 +67,17 @@ export function RoomMusicModal({
   // adding songs must not refetch the whole library again.
   const assetsLoadedRef = useRef(false);
   const [volume, setVolumeState] = useState(getMusicVolumeSync());
+  // Playback-control confirmation: an RTDB set() resolves on LOCAL commit
+  // even while offline and pends silently when disconnected — so a tap
+  // can look accepted while the bot never sees it (the 2026-10-25
+  // post-pause dead-button failure: no error, no bot action). The
+  // modal's own roomMusic subscription is the witness: musicRef always
+  // holds the latest subscribed value, and control() checks bot-side
+  // activity against it (see isControlConfirmed below).
+  const musicRef = useRef<RoomMusic | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmSeqRef = useRef(0);
+  const mountedRef = useRef(true);
 
   // Picker rows: library first (newest first), then phone songs that are
   // NOT already in the library (they are already in "My songs" above).
@@ -87,6 +98,30 @@ export function RoomMusicModal({
     if (!visible || !roomId) return;
     return subscribeRoomMusic(roomId, setMusic);
   }, [visible, roomId]);
+
+  useEffect(() => {
+    musicRef.current = music;
+  }, [music]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (confirmTimerRef.current) {
+        clearTimeout(confirmTimerRef.current);
+        confirmTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // A pending confirmation must never alert after the user has moved
+  // on — closing the modal cancels it outright.
+  useEffect(() => {
+    if (!visible && confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) setPickerOpen(false);
@@ -310,11 +345,89 @@ export function RoomMusicModal({
     }
   };
 
-  const control = (state: 'playing' | 'paused' | 'next' | 'stopped') => {
+  /**
+   * Did the BOT act on a control tap? The client itself writes the
+   * state, so the subscribed state alone proves nothing for 'playing'
+   * (the write lands locally even offline) — only bot-written current
+   * changes count there. For 'paused'/'stopped' the subscribed state
+   * reflecting the tap is the signal (the bot converts 'stopped' to
+   * 'idle', so both count).
+   */
+  const isControlConfirmed = (
+    target: 'playing' | 'paused' | 'next' | 'stopped',
+    before: RoomMusic | null,
+  ): boolean => {
+    const now = musicRef.current;
+    if (!now) return false;
+    if (target === 'playing') {
+      // Resume / Play: a bot start writes a fresh current (new
+      // startedAt, or a new queueId when the queue head starts). A
+      // ticking positionSec while state is playing is also bot work.
+      // Nothing to play (no current, bot dropped to idle) also counts
+      // as acted — the bot answered, there was just no song.
+      const b = before?.current ?? null;
+      const c = now.current;
+      if (!c) return !b && now.state === 'idle';
+      if (!b) return true;
+      if (c.queueId !== b.queueId) return true;
+      if (c.startedAt !== b.startedAt) return true;
+      if (now.state === 'playing' && c.positionSec !== b.positionSec) return true;
+      return false;
+    }
+    if (target === 'next') {
+      // Next: the bot removes the queue head and starts the next song
+      // (current queueId changes), or clears current and drops to idle
+      // when the queue is empty.
+      const b = before?.current ?? null;
+      const c = now.current;
+      if ((c?.queueId ?? null) !== (b?.queueId ?? null)) return true;
+      if (!c && b && now.state === 'idle') return true;
+      return false;
+    }
+    if (target === 'paused') return now.state === 'paused';
+    return now.state === 'stopped' || now.state === 'idle';
+  };
+
+  /**
+   * Drive playback with confirmation. The write itself cannot fail
+   * visibly (local commit resolves while offline), so after writing we
+   * watch the subscription for bot activity: unconfirmed after ~8s,
+   * the write is retried ONCE, and if still unconfirmed the user gets
+   * a visible error instead of a dead button. A newer tap supersedes
+   * any pending confirmation, and closing/unmounting cancels it — so
+   * no alert ever fires for a tap the user has already moved past.
+   * The fast path is unchanged: a bot that acts quickly shows nothing.
+   */
+  const control = (target: 'playing' | 'paused' | 'next' | 'stopped') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setMusicState(roomId, state).catch(() => {
-      Alert.alert('Error', 'Could not change playback.');
-    });
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+    const seq = ++confirmSeqRef.current;
+    const before = musicRef.current;
+    let retried = false;
+    const check = () => {
+      confirmTimerRef.current = null;
+      if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+      if (isControlConfirmed(target, before)) return;
+      if (!retried) {
+        retried = true;
+        setMusicState(roomId, target).catch(() => {});
+        confirmTimerRef.current = setTimeout(check, 8000);
+        return;
+      }
+      Alert.alert('Error', 'Could not change playback. Check connection and try again.');
+    };
+    setMusicState(roomId, target)
+      .then(() => {
+        if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+        confirmTimerRef.current = setTimeout(check, 8000);
+      })
+      .catch(() => {
+        if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+        Alert.alert('Error', 'Could not change playback. Check connection and try again.');
+      });
   };
 
   /** Local volume (this phone only): persist + apply to the bot track. */
