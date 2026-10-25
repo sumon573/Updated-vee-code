@@ -1350,8 +1350,15 @@ export default function VoiceRoomScreen() {
     return subscribeSeatRequests(roomId, setPendingRequests);
   }, [roomId]);
 
+  // 2026-10-25 (boss: mic drops + re-enables on minimize→return): the
+  // seat-sync stop below must NOT fire on a merely not-yet-loaded seats
+  // snapshot. Set false when the subscription (re)starts, true on the
+  // first snapshot of any kind (even a sig-identical one).
+  const seatsLoadedRef = useRef(false);
   useEffect(() => {
+    seatsLoadedRef.current = false;
     return subscribeSeats(roomId, (fbSeats) => {
+      seatsLoadedRef.current = true;
       const mapped = fbSeats.map(seat =>
         seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
       );
@@ -1607,7 +1614,16 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = -1;
-      if (isPublishing) {
+      // 2026-10-25 (boss: mic drops + re-enables on minimize→return):
+      // on return the voice restore sets isPublishing=true SYNCHRONOUSLY
+      // at mount, before the seats snapshot arrives — so mySeatIdx is
+      // transiently -1 and this branch used to stopPublishing(), then the
+      // publish effect re-started it once seats loaded: the exact drop +
+      // re-enable he felt, on EVERY return. Only stop when seatlessness
+      // is CONFIRMED (a seats snapshot has arrived and he still has no
+      // seat — e.g. kicked while minimized). A merely not-yet-loaded
+      // snapshot must never touch the mic.
+      if (seatsLoadedRef.current && isPublishing) {
         stopPublishing();
       }
       return;
