@@ -176,7 +176,6 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onClose={() => p.setSettingsOpen(false)}
         isOwnerOrAdmin={p.isOwnerOrAdmin}
         canEdit={p.myRole === 'host'}
-        canChangeTheme={p.isOwnerOrAdmin}
         topic={p.roomTopic}
         setTopic={(newTopic) => {
           p.setRoomTopic(newTopic);
@@ -191,18 +190,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
             Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
           });
         }}
-        activeThemeId={p.activeThemeId}
-        onThemeChange={(newThemeId) => {
-          // Optimistic local update + Firebase sync so ALL users see the change.
-          p.activeThemeIdRef.current = newThemeId;
-          p.setActiveThemeId(newThemeId);
-          updateRoomSettings(p.roomId, { themeId: newThemeId }).catch(() => {
-            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
-          });
-        }}
         onOpenHistory={() => { p.setSettingsOpen(false); p.setOpHistOpen(true); }}
-        announcement={p.announcement}
-        onOpenAnnouncement={() => { p.setSettingsOpen(false); p.setAnnouncementOpen(true); }}
         accent={p.accentColor}
         roomIsPublic={p.roomIsPublic}
         roomIsLocked={p.roomIsLocked}

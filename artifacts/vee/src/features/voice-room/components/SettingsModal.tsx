@@ -5,9 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
-import { C, getActiveThemes } from '../constants/theme';
+import { C } from '../constants/theme';
 import { storeRoomPin } from '../services/firebaseRoomService';
-import type { RoomAnnouncement } from '../services/roomAnnouncementService';
 
 /* ─────────────────────────── Settings Modal ─────────────────────────── */
 
@@ -20,11 +19,10 @@ import type { RoomAnnouncement } from '../services/roomAnnouncementService';
  * "Mute New Joiners" toggle has been removed as per product decision.
  */
 export function SettingsModal({
-  visible, onClose, isOwnerOrAdmin, canEdit, canChangeTheme,
+  visible, onClose, isOwnerOrAdmin, canEdit,
   topic, setTopic,
   description, setDescription,
-  activeThemeId, onThemeChange,
-  onOpenHistory, announcement, onOpenAnnouncement, accent,
+  onOpenHistory, accent,
   roomIsPublic, roomIsLocked,
   onSaveSettings, roomId,
 }: {
@@ -36,23 +34,10 @@ export function SettingsModal({
    * full moderation powers; they can still VIEW settings + operation history.
    */
   canEdit: boolean;
-  /**
-   * 2026-10-22 (boss): THEME is the exception — the rules now carry a
-   * scoped write for rooms/$roomId/info/themeId (owner || registry admin
-   * || platform), so admins CAN change the room theme. Gate only the
-   * theme section on this; everything else stays canEdit (owner).
-   */
-  canChangeTheme: boolean;
   topic: string; setTopic: (t: string) => void;
   /** Room description — editable alongside topic (2026-10-11). */
   description: string; setDescription: (d: string) => void;
-  activeThemeId: string; onThemeChange: (id: string) => void;
   onOpenHistory: () => void; accent: string;
-  /** 2026-10-23 (boss): announcement entry lives here now (moved out of
-   *  the room header). Shows the current announcement as the row's
-   *  subtitle; tapping opens the announcement panel (post/edit/clear). */
-  announcement: RoomAnnouncement | null;
-  onOpenAnnouncement: () => void;
   /** Current persisted value of isPublic from Firebase room info. */
   roomIsPublic: boolean;
   /** Current persisted value of isLocked from Firebase room info. */
@@ -67,7 +52,6 @@ export function SettingsModal({
   const [localDescription, setLocalDescription] = useState(description);
   const [isPublic,   setIsPublic]   = useState(roomIsPublic);
   const [lockRoom,   setLockRoom]   = useState(roomIsLocked);
-  const [showThemes, setShowThemes] = useState(false);
   /** New 4-digit PIN input (private rooms only). Empty = don't change. */
   const [newPin, setNewPin] = useState('');
   const [pinSaving, setPinSaving] = useState(false);
@@ -240,89 +224,6 @@ export function SettingsModal({
               </View>
             </View>
           )}
-
-          {/* Room Themes */}
-          <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint, paddingTop: 16, marginTop: 4 }}>
-            <Pressable
-              onPress={() => {
-                if (!canChangeTheme) {
-                  Alert.alert(t('voiceRoom.settings.permissionDenied'), t('voiceRoom.settings.permissionDeniedMsg'));
-                  return;
-                }
-                setShowThemes((v: boolean) => !v);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                  {t('voiceRoom.settings.themeLabel')}
-                </Text>
-                <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                  {canChangeTheme ? t('voiceRoom.settings.themeTapHint') : t('voiceRoom.settings.themeAdminOnly')}
-                </Text>
-              </View>
-              <View style={{
-                backgroundColor: accent + '33', borderRadius: 20,
-                paddingHorizontal: 10, paddingVertical: 4,
-                flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 8,
-              }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: accent }} />
-                <Text style={{ color: C.sub, fontSize: 11, fontWeight: '700' }}>
-                  {getActiveThemes().find((th) => th.id === activeThemeId)?.name ?? '💙 Light'}
-                </Text>
-              </View>
-              <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={16}
-                color={canChangeTheme ? C.sub : C.muted} />
-            </Pressable>
-
-            {showThemes && canChangeTheme && (
-              <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {getActiveThemes().map(theme => {
-                  const isActive = activeThemeId === theme.id;
-                  return (
-                    <Pressable key={theme.id}
-                      onPress={() => { onThemeChange(theme.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 7,
-                        backgroundColor: isActive ? theme.accent + '33' : C.card,
-                        borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
-                        borderWidth: 1.5, borderColor: isActive ? theme.accent : C.borderFaint,
-                      }}>
-                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent }} />
-                      <Text style={{ color: isActive ? theme.accent : C.sub, fontSize: 12,
-                        fontWeight: isActive ? '800' : '600' }}>{theme.name}</Text>
-                      {isActive && <Feather name="check" size={10} color={theme.accent} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* Announcement — 2026-10-23 (boss): moved here from the room
-              header. Post/edit/clear happens in the announcement panel. */}
-          <Pressable
-            onPress={() => { onOpenAnnouncement(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-            style={{ flexDirection: 'row', alignItems: 'center',
-              marginTop: 20, backgroundColor: 'rgba(255,193,7,0.08)',
-              borderRadius: 16, padding: 16,
-              borderWidth: 1, borderColor: 'rgba(255,193,7,0.35)' }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12,
-              backgroundColor: 'rgba(255,193,7,0.18)',
-              alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Feather name="volume-2" size={18} color="#B45309" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                {t('voiceRoom.announcement.title')}
-              </Text>
-              <Text numberOfLines={1} style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                {announcement ? announcement.content : t('voiceRoom.announcement.post')}
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={18} color={C.muted} />
-          </Pressable>
 
           {/* Operation History */}
           {isOwnerOrAdmin && (
