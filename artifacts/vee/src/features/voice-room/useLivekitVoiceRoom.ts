@@ -1531,9 +1531,24 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     } else {
       // ── Normal init (async IIFE so we can await the stale teardown) ──────
       (async () => {
+        // 2026-10-25 (boss: minimize→return STILL fresh-joins + mic drops
+        // on the latest bundle): the identity is NOT ready on the first
+        // run — the screen passes roomID '' until room-info/PIN resolves
+        // (voiceReady flips true later). The old order destroyed the
+        // persisted room FIRST and only then returned on empty roomID,
+        // so every return killed the minimized engine before the real
+        // roomID arrived, and the re-run could only fresh-join (mic drop
+        // + fresh entry for everyone). NEVER touch the persisted room
+        // while the identity is unresolved — the effect re-runs when the
+        // real roomID arrives and the restore branch above reuses it.
+        // (Same for userID 'anonymous': AuthContext starts with null.)
+        if (!roomID || userID === 'anonymous') return;
+
         if (_persistedRoom) {
-          // Stale persisted room for a different room — destroy it so its
-          // audio can't leak into this room, then join fresh below.
+          // Stale persisted room for a DIFFERENT room (roomID is real
+          // here, and restore already failed the same-room check above)
+          // — destroy it so its audio can't leak into this room, then
+          // join fresh below.
           // CRITICAL: await the teardown. The old fire-and-forget
           // `leave().catch()` raced the new engine's native WebRTC/audio init
           // (room.disconnect + AudioSession.stop vs start + Room.connect),
@@ -1552,12 +1567,6 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
         // Skip entirely in Expo Go — native WebRTC modules not available
         if (isExpoGo()) return;
-
-        // Don't burn a mic-permission prompt (or a doomed token fetch) when
-        // the identity isn't real yet — AuthContext starts with user: null
-        // and VoiceRoomScreen passes userID 'anonymous' / empty roomID.
-        // The effect re-runs when the real userID/roomID arrive.
-        if (!roomID || userID === 'anonymous') return;
 
         // Crash breadcrumb: the screen now begins the native voice init
         // sequence (SDK load → token → audio session).
