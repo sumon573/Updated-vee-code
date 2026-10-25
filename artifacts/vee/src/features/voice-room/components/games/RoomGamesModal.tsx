@@ -25,6 +25,7 @@ const GAME_META: { type: GameType; icon: string; color: string }[] = [
   { type: 'vote', icon: 'bar-chart-2', color: '#05b5fa' },
   { type: 'turntable', icon: 'disc', color: '#F59E0B' },
   { type: 'luckybag', icon: 'gift', color: '#FF3B30' },
+  { type: 'ludu', icon: 'grid', color: '#22C55E' },
 ];
 
 export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, onCreateGame, onOpenRank, onOpenProps }: {
@@ -46,11 +47,13 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
     vote: t('voiceRoom.games.type_vote'),
     turntable: t('voiceRoom.games.type_turntable'),
     luckybag: t('voiceRoom.games.type_luckybag'),
+    ludu: t('voiceRoom.games.type_ludu'),
   };
   const TYPE_DESCS: Record<GameType, string> = {
     vote: t('voiceRoom.games.desc_vote'),
     turntable: t('voiceRoom.games.desc_turntable'),
     luckybag: t('voiceRoom.games.desc_luckybag'),
+    ludu: t('voiceRoom.games.desc_ludu'),
   };
 
   useEffect(() => {
@@ -58,8 +61,10 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
     return subscribeGames(roomId, setGames);
   }, [visible, roomId]);
 
-  const live = games.filter((g) => g.status === 'active');
-  const past = games.filter((g) => g.status !== 'active');
+  // Ludu lobbies (status 'lobby') must show as joinable too — only ludu
+  // ever creates lobby-state games, so other types are unaffected.
+  const live = games.filter((g) => g.status === 'active' || g.status === 'lobby');
+  const past = games.filter((g) => g.status === 'ended');
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

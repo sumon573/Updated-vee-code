@@ -78,6 +78,7 @@ import {
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
+import { LuduGameModal } from '../components/games/LuduGameModal';
 import type { RoomGame, GameType } from '../services/roomGameService';
 import { ExitModal } from '../components/ExitModal';
 import EntryBanner from '../components/EntryBanner';
@@ -3739,6 +3740,20 @@ export default function VoiceRoomScreen() {
           myName={myName}
           myPhotoURL={myPhotoURL ?? null}
           isHost={isOwnerOrAdmin}
+          onClose={() => setGameNav(null)}
+        />
+      )}
+      {gameNav?.kind === 'ludu' && (
+        <LuduGameModal
+          visible
+          roomId={roomId}
+          hostUid={ownerId || myUid}
+          hostName={myName}
+          myUid={myUid}
+          myName={myName}
+          myPhotoURL={myPhotoURL ?? null}
+          isHost={isOwnerOrAdmin}
+          gameId={gameNav.gameId}
           onClose={() => setGameNav(null)}
         />
       )}
