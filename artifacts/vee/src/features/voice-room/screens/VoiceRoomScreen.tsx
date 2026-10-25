@@ -3797,7 +3797,7 @@ export default function VoiceRoomScreen() {
         <LuduGameModal
           visible
           roomId={roomId}
-          hostUid={ownerId || myUid}
+          hostUid={myUid}
           hostName={myName}
           myUid={myUid}
           myName={myName}
