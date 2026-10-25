@@ -49,6 +49,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Modal, Pressable, ScrollView, Alert, Dimensions, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Polygon, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import {
@@ -363,13 +364,15 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     });
     return m;
   }, []);
+  // 2026-10-25 (boss, imo-style board): saturated home quadrants, columns
+  // and start cells — no more pastel alpha washes.
   const cellBg = (r: number, c: number): string => {
-    if (r < 6 && c < 6) return LUDU_COLORS.red + '30';
-    if (r < 6 && c > 8) return LUDU_COLORS.green + '30';
-    if (r > 8 && c < 6) return LUDU_COLORS.blue + '30';
-    if (r > 8 && c > 8) return LUDU_COLORS.yellow + '30';
-    if (homeColor.has(r * 15 + c)) return LUDU_COLORS[homeColor.get(r * 15 + c)!] + '55';
-    if (startColor.has(r * 15 + c)) return LUDU_COLORS[startColor.get(r * 15 + c)!] + 'AA';
+    if (r < 6 && c < 6) return LUDU_COLORS.red;
+    if (r < 6 && c > 8) return LUDU_COLORS.green;
+    if (r > 8 && c < 6) return LUDU_COLORS.blue;
+    if (r > 8 && c > 8) return LUDU_COLORS.yellow;
+    if (homeColor.has(r * 15 + c)) return LUDU_COLORS[homeColor.get(r * 15 + c)!];
+    if (startColor.has(r * 15 + c)) return LUDU_COLORS[startColor.get(r * 15 + c)!];
     if (r >= 6 && r <= 8 && c >= 6 && c <= 8) return '#F2F2F7';
     return '#FFFFFF';
   };
@@ -414,8 +417,8 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
           })}
         </View>
 
-        {/* Board */}
-        <View style={{ width: boardSize, height: boardSize, alignSelf: 'center', backgroundColor: '#FFF', borderWidth: 2, borderColor: '#111', borderRadius: 6, overflow: 'hidden' }}>
+        {/* Board — imo-style amber frame */}
+        <View style={{ width: boardSize, height: boardSize, alignSelf: 'center', backgroundColor: '#FFF', borderWidth: 4, borderColor: '#F59E0B', borderRadius: 12, overflow: 'hidden' }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', width: boardSize, height: boardSize }}>
             {Array.from({ length: 225 }).map((_, i) => {
               const r = Math.floor(i / 15);
@@ -444,21 +447,26 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               borderRadius: 8, borderWidth: 1, borderColor: '#E5E5EA',
             }} />
           ))}
-          {/* Center */}
+          {/* Center — imo-style four triangles, each facing its home column
+              (top=green, right=yellow, bottom=blue, left=red) */}
           <View style={{
             position: 'absolute', left: cell * 6, top: cell * 6,
-            width: cell * 3, height: cell * 3, backgroundColor: '#FFF',
-            borderWidth: 1, borderColor: '#E5E5EA',
-            alignItems: 'center', justifyContent: 'center',
+            width: cell * 3, height: cell * 3,
           }}>
-            <Text style={{ fontSize: cell * 0.9, color: '#8E8E93' }}>★</Text>
+            <Svg width={cell * 3} height={cell * 3} viewBox="0 0 30 30">
+              <Polygon points="0,0 30,0 15,15" fill={LUDU_COLORS.green} />
+              <Polygon points="30,0 30,30 15,15" fill={LUDU_COLORS.yellow} />
+              <Polygon points="30,30 0,30 15,15" fill={LUDU_COLORS.blue} />
+              <Polygon points="0,30 0,0 15,15" fill={LUDU_COLORS.red} />
+            </Svg>
           </View>
-          {/* Tokens */}
+          {/* Tokens — imo-style crown pawns: colored base disc + gold crown.
+              Stack count rides as a small badge so the crown stays clean. */}
           {Array.from(byCell.entries()).map(([key, toks]) => toks.map((tok, stackIdx) => {
             const [r, c] = key.split(',').map(Number);
             const movable = amTurn && !!ludu.diceRolled && !!myUid && tok.uid === myUid
               && myMovable.includes(tok.tokenIdx);
-            const size = cell * 0.82;
+            const size = cell * 0.92;
             return (
               <Pressable
                 key={`${tok.uid}-${tok.tokenIdx}`}
@@ -466,25 +474,79 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 onPress={() => moveToken(tok.tokenIdx)}
                 style={{
                   position: 'absolute',
-                  left: c * cell + cell * 0.09 + stackIdx * 2.5,
-                  top: r * cell + cell * 0.09 + stackIdx * 2.5,
+                  left: c * cell + cell * 0.04 + stackIdx * 2.5,
+                  top: r * cell + cell * 0.04 + stackIdx * 2.5,
+                  width: size, height: size,
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <View style={{
                   width: size, height: size, borderRadius: size / 2,
                   backgroundColor: LUDU_COLORS[tok.color],
                   borderWidth: movable ? 3 : 2,
                   borderColor: movable ? '#FFD43B' : '#FFF',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#000', shadowOpacity: movable ? 0.3 : 0.1, shadowRadius: 3,
-                }}
-              >
+                }}>
+                  <Svg width={size * 0.58} height={size * 0.58} viewBox="0 0 24 24">
+                    <Path d="M2 8 L5 12 L8 6 L12 13 L16 6 L19 12 L22 8 L22 17 L2 17 Z" fill="#FFD43B" stroke="#B8860B" strokeWidth={0.8} />
+                  </Svg>
+                </View>
                 {toks.length > 1 && stackIdx === toks.length - 1 && (
-                  <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>×{toks.length}</Text>
+                  <View style={{
+                    position: 'absolute', top: -3, right: -3,
+                    backgroundColor: '#111', borderRadius: 8, paddingHorizontal: 4, paddingVertical: 1,
+                  }}>
+                    <Text style={{ color: '#FFF', fontSize: 8, fontWeight: '900' }}>×{toks.length}</Text>
+                  </View>
                 )}
               </Pressable>
             );
           }))}
+          {/* Corner player photos, imo-style — each playing player's photo
+              pinned inside their home corner; the turn player's dice sits
+              beside their photo (tap it to roll, same as Roll Dice below). */}
+          {ludu.seats.map((uid) => {
+            const color = ludu.colors[ludu.seats.indexOf(uid)];
+            const corner = color === 'red' ? { top: 4, left: 4 }
+              : color === 'green' ? { top: 4, right: 4 }
+              : color === 'blue' ? { bottom: 4, left: 4 }
+              : { bottom: 4, right: 4 };
+            const isActive = ludu.turnUid === uid;
+            const isMe = uid === myUid;
+            const photo = playerPhoto(uid);
+            const diceOnLeft = color === 'green' || color === 'yellow';
+            return (
+              <View key={`corner-${uid}`} style={{ position: 'absolute', ...corner, alignItems: 'center', zIndex: 3 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {isActive && diceOnLeft && (
+                    <Pressable disabled={!isMe || !amTurn || !!ludu.diceRolled || rolling} onPress={roll}>
+                      <DiceFace value={diceToShow} size={34} />
+                    </Pressable>
+                  )}
+                  {photo ? (
+                    <Image source={{ uri: photo }} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#FFF' }} />
+                  ) : (
+                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: LUDU_COLORS[color], borderWidth: 2, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '800' }}>{(playerName(uid) || '?').slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  {isActive && !diceOnLeft && (
+                    <Pressable disabled={!isMe || !amTurn || !!ludu.diceRolled || rolling} onPress={roll}>
+                      <DiceFace value={diceToShow} size={34} />
+                    </Pressable>
+                  )}
+                </View>
+                <View style={{ marginTop: 2, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999, paddingHorizontal: 6, paddingVertical: 1, maxWidth: 72 }}>
+                  <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 9, fontWeight: '700' }}>{playerName(uid) || uid.slice(0, 6)}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
 
-        {/* Dice + turn */}
+        {/* Turn + Roll (the dice itself lives beside the turn player's
+            corner photo on the board, imo-style) */}
         <View style={{ alignItems: 'center', marginTop: 14 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: '#000', marginBottom: 8 }}>
             {amTurn
@@ -493,7 +555,6 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 ? t('voiceRoom.games.luduTurn', { name: playerName(ludu.turnUid) })
                 : t('voiceRoom.games.luduWaitingPlayers')}
           </Text>
-          <DiceFace value={diceToShow} size={56} />
           {amTurn && !ludu.diceRolled && (
             <Pressable
               onPress={roll}
