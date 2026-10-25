@@ -209,6 +209,15 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     }
   };
 
+  // 2026-10-25 (boss: "+" slot tap did nothing): an empty slot is an
+  // invitation, not decoration — tapping it posts the same Match invite
+  // to room chat so a room member can open Ludu and Join. (Start stays
+  // greyed until every slot is filled — that part is by spec.)
+  const handlePlusSlot = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void match();
+  };
+
   const end = async () => {
     if (!game) return;
     await endGame(roomId, game.id).catch(() => {});
@@ -577,13 +586,17 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                           </Text>
                         </View>
                       ) : (
-                        <View style={{
-                          width: 52, height: 52, borderRadius: 26,
-                          borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
+                        <Pressable
+                          onPress={handlePlusSlot}
+                          hitSlop={8}
+                          style={{
+                            width: 52, height: 52, borderRadius: 26,
+                            borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed',
+                            alignItems: 'center', justifyContent: 'center',
+                          }}
+                        >
                           <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
-                        </View>
+                        </Pressable>
                       )}
                       <Text style={{ fontSize: 11, color: '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
                         {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
