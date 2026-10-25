@@ -292,6 +292,68 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     [myBets],
   );
 
+  // BET CHIP (boss 01:34 + timing 01:37): the user's own paid amount per
+  // target, shown ON the tile itself. Subscribed baseline = paid bets
+  // only (debited/confirmed, same definition as myPaidTotal — pending
+  // intents and rejected/refunded bets never count).
+  const myBetByTarget = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const b of Object.values(myBets)) {
+      if (b.status !== 'confirmed' && b.status !== 'debited') continue;
+      if (b.kind === 'food' && b.food) m[`food:${b.food}`] = (m[`food:${b.food}`] ?? 0) + b.amount;
+      else if (b.kind === 'side' && b.side) m[`side:${b.side}`] = (m[`side:${b.side}`] ?? 0) + b.amount;
+    }
+    return m;
+  }, [myBets]);
+
+  // Optimistic entries: added the instant the user taps (same frame, no
+  // network wait), then reconciled silently when the subscription's paid
+  // total grows past the baseline recorded at tap time. A failed write
+  // rolls back immediately; an entry unconfirmed after 15s expires, so a
+  // phantom amount can never stick. FIFO matching by amount: a rare
+  // reject-then-confirm sequence on the same target can over-count by
+  // one chip for at most the 15s window (see report).
+  type OptEntry = { id: number; amount: number };
+  const [optByTarget, setOptByTarget] = useState<Record<string, { baseline: number; entries: OptEntry[] }>>({});
+  const optIdRef = useRef(0);
+  // A new round starts with no bets of its own — stale entries must
+  // never inflate it.
+  useEffect(() => {
+    setOptByTarget({});
+  }, [roundN]);
+  // Reconcile optimistic entries against the subscribed paid totals.
+  useEffect(() => {
+    setOptByTarget((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        const q = next[key];
+        if (q.entries.length === 0) continue;
+        let explained = (myBetByTarget[key] ?? 0) - q.baseline;
+        if (explained <= 0) continue;
+        const entries = [...q.entries];
+        while (entries.length > 0 && entries[0].amount <= explained) {
+          explained -= entries[0].amount;
+          entries.shift();
+          changed = true;
+        }
+        next[key] = { baseline: q.baseline, entries };
+      }
+      if (!changed) return prev;
+      return next;
+    });
+  }, [myBetByTarget]);
+  // Displayed chip amount = subscribed paid total + still-pending
+  // optimistic taps (so tap → confirm is seamless, never a flicker).
+  const displayBetByTarget = useMemo(() => {
+    const m = { ...myBetByTarget };
+    for (const [key, q] of Object.entries(optByTarget)) {
+      const pending = q.entries.reduce((s, e) => s + e.amount, 0);
+      if (pending > 0) m[key] = (m[key] ?? 0) + pending;
+    }
+    return m;
+  }, [myBetByTarget, optByTarget]);
+
   const todayStr = deliciousToday(now);
 
   const history = useMemo(() => {
@@ -455,10 +517,33 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
       return;
     }
     setPlacing(true);
+    // BET CHIP optimistic add (boss 01:37: tap → chip updates in the
+    // same frame, no network wait). The entry reconciles when the
+    // subscription confirms the bet, rolls back at once on write
+    // failure, and expires after 15s if never confirmed.
+    const targetKey = kind === 'side' ? `side:${target}` : `food:${target}`;
+    optIdRef.current += 1;
+    const optId = optIdRef.current;
+    const dropOptEntry = () => {
+      setOptByTarget((prev) => {
+        const q = prev[targetKey];
+        if (!q) return prev;
+        const entries = q.entries.filter((e) => e.id !== optId);
+        if (entries.length === q.entries.length) return prev;
+        return { ...prev, [targetKey]: { baseline: q.baseline, entries } };
+      });
+    };
+    setOptByTarget((prev) => {
+      const q = prev[targetKey];
+      const baseline = q && q.entries.length > 0 ? q.baseline : (myBetByTarget[targetKey] ?? 0);
+      return { ...prev, [targetKey]: { baseline, entries: [...(q?.entries ?? []), { id: optId, amount: selectedAmount }] } };
+    });
+    setTimeout(dropOptEntry, 15000);
     try {
       await placeDeliciousBet(round.n, myUid, kind, target, selectedAmount);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     } catch (e) {
+      dropOptEntry();
       Alert.alert('Bet failed', e instanceof Error ? e.message : 'Could not place the bet. Please try again.');
     } finally {
       setPlacing(false);
@@ -505,6 +590,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     const r = tileRect(foodId);
     const isWinner = phase === 'result' && round?.winningFood === foodId;
     const isSpinning = spinHighlight === foodId;
+    const myFoodBet = displayBetByTarget[`food:${foodId}`] ?? 0;
     // UNMISSABLE SPIN HIGHLIGHT: during spinning phases the active tile
     // pops (thick white-gold border + glow + scale) while every other
     // tile dims to 0.45 — the old thin 3px gold border on the amber tile
@@ -567,6 +653,29 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             </View>
           </View>
         )}
+        {/* BET CHIP (boss 01:34): the user's OWN total bet on this tile,
+            ON the tile itself — visible during betting AND during the
+            spin, so he always sees his money on his own boxes. Middle
+            band (top 44% of the tile): clear of the spin badge above
+            (top 4) and the "Win N Times" label below (bottom 5%) on the
+            boss phone; shows whenever the paid + optimistic total > 0,
+            in every phase (betting, settling, overrun, count, result).
+            During a spin, non-active tiles dim to 0.45, so their chips
+            dim with them but stay readable; the active tile's chip is
+            full-bright. NOT the removed You overlay — a clean
+            diamond + amount pill, nothing else. */}
+        {myFoodBet > 0 && (
+          <View style={{ position: 'absolute', top: TILE_H * 0.44, left: 0, right: 0, alignItems: 'center' }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B',
+              borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
+            }}>
+              <DiamondIcon size={11} />
+              <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 12, fontWeight: '800', marginLeft: 3 }}>{formatNum(myFoodBet)}</Text>
+            </View>
+          </View>
+        )}
       </Pressable>
     );
   }
@@ -575,6 +684,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     const side = effSideMap[sideId];
     const isWinner = phase === 'result' && round?.winningSide === sideId;
     const dimmed = phase === 'result' && round?.winningSide !== sideId;
+    const mySideBet = displayBetByTarget[`side:${sideId}`] ?? 0;
     return (
       <Pressable
         onPress={() => onBetTarget('side', sideId)}
@@ -586,6 +696,22 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
           backgroundColor: '#F59E0B',
         }}>
           <Image source={side.image} style={{ width: 64, height: 64 }} resizeMode="cover" />
+          {/* BET CHIP (boss 01:34): the user's OWN total bet on this
+              side, ON the side circle itself — bottom edge, inside the
+              circle, so it never touches the name / multiplier lines
+              below. Visible in every phase while the total > 0. */}
+          {mySideBet > 0 && (
+            <View style={{ position: 'absolute', bottom: 2, left: 0, right: 0, alignItems: 'center' }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center',
+                backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B',
+                borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
+              }}>
+                <DiamondIcon size={11} />
+                <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 12, fontWeight: '800', marginLeft: 3 }}>{formatNum(mySideBet)}</Text>
+              </View>
+            </View>
+          )}
         </View>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 2 }}>{side.name}</Text>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 12, fontWeight: '800' }}>{side.multiplier}×</Text>
