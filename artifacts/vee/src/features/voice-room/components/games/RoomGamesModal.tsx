@@ -22,10 +22,11 @@ import { useTranslation } from 'react-i18next';
 import { subscribeGames, type RoomGame, type GameType } from '../../services/roomGameService';
 
 const GAME_META: { type: GameType; icon: string; color: string }[] = [
-  { type: 'vote', icon: 'bar-chart-2', color: '#05b5fa' },
-  { type: 'turntable', icon: 'disc', color: '#F59E0B' },
-  { type: 'luckybag', icon: 'gift', color: '#FF3B30' },
-  { type: 'ludu', icon: 'grid', color: '#22C55E' },
+  // 2026-10-25 (boss: hub emptied for now — "এখানে এগুলো একটা থাকবে
+  // না, আমি যেটা বলবো ঠিক সেটা অ্যাড করবে"): the offered-games list is
+  // EMPTY on his order. Games are added back ONLY on his word, one by
+  // one, by re-adding their entry here. The game types themselves stay
+  // in code/RTDB — only this hub listing is empty.
 ];
 
 export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, onCreateGame, onOpenRank, onOpenProps }: {
@@ -66,6 +67,13 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
   const live = games.filter((g) => g.status === 'active' || g.status === 'lobby');
   const past = games.filter((g) => g.status === 'ended');
 
+  // 2026-10-25 (boss: "আপাতত সব ফাঁকা করে ফেলো"): while the hub is
+  // emptied, live + recent game entries are hidden from THIS modal only
+  // (display-only — instances stay in RTDB, the room-visible Ludu lobby
+  // strip still shows lobbies, panel flows untouched). Flip back to true
+  // when he re-opens the hub with his dictated games.
+  const HUB_ENTRIES_VISIBLE = false;
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
@@ -85,7 +93,7 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          {live.length > 0 && (
+          {HUB_ENTRIES_VISIBLE && live.length > 0 && (
             <View style={{ marginBottom: 16 }}>
               <Text style={{ fontSize: 13, fontWeight: '800', color: '#22C55E', marginBottom: 8 }}>
                 {t('voiceRoom.games.liveNow')}
@@ -113,6 +121,8 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
             </View>
           )}
 
+          {GAME_META.length > 0 && (
+            <>
           <Text style={{ fontSize: 13, fontWeight: '800', color: '#8E8E93', marginBottom: 8 }}>
             {isHost ? t('voiceRoom.games.startNew') : t('voiceRoom.games.allGames')}
           </Text>
@@ -137,8 +147,10 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
               {isHost && <Feather name="chevron-right" size={20} color="#C7C7CC" />}
             </Pressable>
           ))}
+            </>
+          )}
 
-          {past.length > 0 && (
+          {HUB_ENTRIES_VISIBLE && past.length > 0 && (
             <View style={{ marginTop: 8 }}>
               <Text style={{ fontSize: 13, fontWeight: '800', color: '#8E8E93', marginBottom: 8 }}>
                 {t('voiceRoom.games.recent')}
@@ -162,7 +174,7 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
             </View>
           )}
 
-          {!isHost && live.length === 0 && (
+          {HUB_ENTRIES_VISIBLE && !isHost && live.length === 0 && (
             <Text style={{ textAlign: 'center', color: '#8E8E93', fontSize: 13, marginTop: 12 }}>
               {t('voiceRoom.games.hostOnly')}
             </Text>
