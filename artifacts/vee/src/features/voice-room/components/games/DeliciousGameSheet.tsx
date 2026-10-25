@@ -36,7 +36,14 @@
  * POLISH 2026-10-25: rules come from delicious/config (missing field =
  * today's value, never a crash); history button beside the X opens
  * today's real rounds; round numbers + Today's prize reset daily
- * (bot-side, Dhaka day); panel geometry fits exactly (NON_WHEEL_H 288).
+ * (bot-side, Dhaka day); panel geometry fits exactly (NON_WHEEL_H 296,
+ * exact-fit panel, no clipping).
+ * FIXES 2026-10-25: You badges removed; "coming" text removed
+ * everywhere; strip lags the pop-up; tiles enlarged; history =
+ * viewer's own played rounds; pop-up = viewer spent/won big +
+ * top-3 avatar row; whole sheet premium pass (no demo look).
+ * FREEZE FIX: betting overrun shows '…' + closed hint (never a frozen
+ * 0s); pop-up auto-closes at window end; strip joins then.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -59,6 +66,7 @@ import {
   DELICIOUS_FOODS,
   DELICIOUS_SIDES,
   deliciousToday,
+  getMyDeliciousBetsOnce,
   getMyDeliciousPayoutOnce,
   mergeDeliciousConfig,
   placeDeliciousBet,
@@ -69,6 +77,7 @@ import {
   subscribeMyDeliciousPayout,
   subscribeMyTodayPrize,
   type DeliciousBet,
+  type DeliciousBiggestWinner,
   type DeliciousConfigRaw,
   type DeliciousFood,
   type DeliciousFoodId,
@@ -82,26 +91,61 @@ const { width: SW, height: SH } = Dimensions.get('window');
 // Panel height: tall enough for the wheel, short enough that the room
 // still shows dimmed above it (like the imo screenshot).
 const PANEL_H = Math.min(SH * 0.78, 640);
-const NON_WHEEL_H = 288;
-const WHEEL_H = Math.max(280, PANEL_H - NON_WHEEL_H);
-const TILE_H = WHEEL_H * 0.18;
-const TILE_W = Math.max(48, TILE_H / 1.12);
+// FIXES 2026-10-25: exact-fit panel (no bottom clipping on any screen)
+// + bigger tiles (width decoupled from height so the wheel looks full).
+const NON_WHEEL_H = 296;
+const WHEEL_H = PANEL_H - NON_WHEEL_H;
+const WHEEL_W = SW - 24;
+const TILE_H = WHEEL_H * 0.19;
+const TILE_W = Math.max(48, Math.min(WHEEL_W * 0.26, TILE_H * 1.5));
 const CIRCLE = TILE_W * 1.55;
 
 type TilePos = { top: number; left?: DimensionValue; right?: DimensionValue; centered?: boolean };
 const TILE_POS: Record<DeliciousFoodId, TilePos> = {
   hotdog: { top: 0, centered: true },
-  tomato: { top: WHEEL_H * 0.205, left: '4%' },
-  skewers: { top: WHEEL_H * 0.205, right: '4%' },
-  cabbage: { top: WHEEL_H * 0.41, left: 0 },
-  ham: { top: WHEEL_H * 0.41, right: 0 },
-  corn: { top: WHEEL_H * 0.615, left: '4%' },
-  steak: { top: WHEEL_H * 0.615, right: '4%' },
+  tomato: { top: WHEEL_H * 0.20, left: 0 },
+  skewers: { top: WHEEL_H * 0.20, right: 0 },
+  cabbage: { top: WHEEL_H * 0.40, left: 0 },
+  ham: { top: WHEEL_H * 0.40, right: 0 },
+  corn: { top: WHEEL_H * 0.60, left: 0 },
+  steak: { top: WHEEL_H * 0.60, right: 0 },
   carrot: { top: WHEEL_H * 0.80, centered: true },
 };
 
 function formatNum(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+const RANK_COLORS = ['#FFD43B', '#C0C0C0', '#CD7F32'];
+
+/** Top-3 winner avatar (FIX 9b, imo-type row): avatar circle with a
+    rank badge, name + diamond win below. Missing/failed avatar ->
+    plain initial circle — never a broken image, never a fake name. */
+function WinnerAvatar({ winner, rank }: { winner: DeliciousBiggestWinner; rank: number }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const color = RANK_COLORS[rank - 1] ?? '#FFD43B';
+  const initial = (winner.name || '?').trim().charAt(0).toUpperCase() || '?';
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <View style={{ width: 56, height: 56 }}>
+        <View style={{ width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: color, overflow: 'hidden', backgroundColor: '#3D0A0A', alignItems: 'center', justifyContent: 'center' }}>
+          {winner.avatar && !imgFailed ? (
+            <Image source={{ uri: winner.avatar }} style={{ width: 56, height: 56 }} resizeMode="cover" onError={() => setImgFailed(true)} />
+          ) : (
+            <Text style={{ color: '#FFF', fontSize: 24, fontWeight: '800' }}>{initial}</Text>
+          )}
+        </View>
+        <View style={{ position: 'absolute', top: -4, right: -4, width: 20, height: 20, borderRadius: 10, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#1F2937', fontSize: 11, fontWeight: '800' }}>{rank}</Text>
+        </View>
+      </View>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 13, fontWeight: '700', marginTop: 6, textAlign: 'center', width: '100%' }}>{winner.name}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+        <DiamondIcon size={12} />
+        <Text style={{ color: '#FFD43B', fontSize: 13, fontWeight: '800', marginLeft: 3 }}>{formatNum(winner.amount)}</Text>
+      </View>
+    </View>
+  );
 }
 
 export function DeliciousGameSheet({ visible, myUid, onClose }: {
@@ -123,6 +167,10 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [showHistory, setShowHistory] = useState(false);
   const [historyWins, setHistoryWins] = useState<Record<number, number | null>>({});
   const [historyLoading, setHistoryLoading] = useState(false);
+  // FIX 8: history shows ONLY rounds the viewer played (viewer-relative,
+  // all users — keys off myUid, never a hardcoded user).
+  const [playedRounds, setPlayedRounds] = useState<{ n: number; food: DeliciousFoodId; side: DeliciousSideId }[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
   const roundRef = useRef<DeliciousRound | null>(null);
   roundRef.current = round;
 
@@ -193,28 +241,10 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     if (!config.chips.includes(selectedAmount)) setSelectedAmount(config.chips[0]);
   }, [config, selectedAmount]);
 
-  const myFoodTotals = useMemo(() => {
-    const totals = new Map<DeliciousFoodId, number>();
-    Object.values(myBets).forEach((b) => {
-      if (b.kind === 'food' && b.food && b.status !== 'rejected') {
-        totals.set(b.food, (totals.get(b.food) ?? 0) + b.amount);
-      }
-    });
-    return totals;
-  }, [myBets]);
-
-  const mySideTotals = useMemo(() => {
-    const totals = new Map<DeliciousSideId, number>();
-    Object.values(myBets).forEach((b) => {
-      if (b.kind === 'side' && b.side && b.status !== 'rejected') {
-        totals.set(b.side, (totals.get(b.side) ?? 0) + b.amount);
-      }
-    });
-    return totals;
-  }, [myBets]);
-
-  const myTotalStaked = useMemo(
-    () => Object.values(myBets).filter((b) => b.status !== 'rejected').reduce((s, b) => s + b.amount, 0),
+  // FIX 9a: the viewer's real SPEND = only bets actually paid for
+  // (confirmed or debited). Rejected / never-debited intents are not spend.
+  const myPaidTotal = useMemo(
+    () => Object.values(myBets).filter((b) => b.status === 'confirmed' || b.status === 'debited').reduce((s, b) => s + b.amount, 0),
     [myBets],
   );
 
@@ -239,41 +269,79 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
 
   const phase = round?.phase ?? null;
   const bettingOpen = phase === 'betting';
+  // FREEZE FIX: once the betting clock hits zero the sheet must never
+  // sit on a frozen "0s" with a "tap to bet" hint. Past endsAt, betting
+  // is treated as closed (centre "…", closed hint, no new bets) until
+  // the bot's count phase starts — typically under a second.
+  const bettingOverrun = phase === 'betting' && round != null && now >= round.endsAt;
+  const bettingActive = bettingOpen && !bettingOverrun;
   const secondsLeft = round ? Math.max(0, Math.ceil((round.endsAt - now) / 1000)) : 0;
   const countDigit = phase === 'count' ? Math.min(3, Math.max(1, secondsLeft)) : null;
-  const showResult = phase === 'result' && round && dismissedRound !== round.n;
+  // The pop-up lives only inside its result window: once endsAt passes
+  // it closes on its own (and the result joins the strip, below), so a
+  // stalled bot can never leave a stale pop-up on screen.
+  const resultWindowOver = phase === 'result' && round != null && now >= round.endsAt;
+  const showResult = phase === 'result' && round && dismissedRound !== round.n && !resultWindowOver;
   const result = round ? results[String(round.n)] : undefined;
   const biggestWinners = result?.biggest ?? [];
 
-  const viewerLine = useMemo(() => {
-    if (!round || phase !== 'result') return null;
-    if (myTotalStaked === 0) return "You didn't play this round.";
-    if (myPayout != null && myPayout > 0) return `This round's winnings: ${formatNum(myPayout)}`;
-    return 'No win this round.';
-  }, [round, phase, myTotalStaked, myPayout]);
+  // FIX 9a: pop-up viewer block. Participated = paid at least one bet.
+  // Spent = sum of paid bets; won = credited payout (0 when none).
+  // Old code showed only "This round's winnings" (= the payout, and
+  // only when > 0) and never the spend — that ambiguity is gone.
+  const viewerParticipated = myPaidTotal > 0;
+  const viewerWon = myPayout ?? 0;
 
-  // History view: one-time reads of the viewer's own per-round payouts.
-  // Real data only — a failed read shows a dash, never a fake row.
+  // FIX 3: the bottom Result strip must NOT show round N before round
+  // N's result pop-up has been displayed. The strip includes round N
+  // only once its pop-up was dismissed, or once a newer round started
+  // (so its pop-up window is over). The History view is NOT filtered
+  // this way (fix 8 filters it by played rounds instead).
+  const stripHistory = useMemo(() => {
+    return history.filter((h) => h.n !== roundN || (phase === 'result' && (dismissedRound === roundN || resultWindowOver)));
+  }, [history, roundN, phase, dismissedRound, resultWindowOver]);
+
+  // History view (FIX 8): one-time reads of the viewer's OWN bets +
+  // payouts. Only rounds the viewer actually played (a confirmed or
+  // debited bet) are listed — never-played rounds never appear, for ANY
+  // viewer (the filter keys off myUid, the viewing user, never a
+  // hardcoded id). Played-but-0-win rounds show "—". Real data only.
   async function openHistory() {
     setShowHistory(true);
-    if (!myUid) return;
+    setHistoryReady(false);
+    if (!myUid) {
+      setPlayedRounds([]);
+      setHistoryWins({});
+      setHistoryReady(true);
+      return;
+    }
     setHistoryLoading(true);
     try {
-      const entries = await Promise.all(
-        todayRounds.map(async (h) => [h.n, await getMyDeliciousPayoutOnce(h.n, myUid)] as const),
+      const betEntries = await Promise.all(
+        todayRounds.map(async (h) => [h.n, await getMyDeliciousBetsOnce(h.n, myUid)] as const),
+      );
+      const played = todayRounds.filter((h) => {
+        const bets = betEntries.find(([n]) => n === h.n)?.[1];
+        return !!bets && Object.values(bets).some((b) => b.status === 'confirmed' || b.status === 'debited');
+      });
+      const winEntries = await Promise.all(
+        played.map(async (h) => [h.n, await getMyDeliciousPayoutOnce(h.n, myUid)] as const),
       );
       const m: Record<number, number | null> = {};
-      for (const [n, amt] of entries) m[n] = amt;
+      for (const [n, amt] of winEntries) m[n] = amt;
+      setPlayedRounds(played);
       setHistoryWins(m);
     } catch (_) {
-      setHistoryWins(Object.fromEntries(todayRounds.map((h) => [h.n, null])));
+      setPlayedRounds([]);
+      setHistoryWins({});
     } finally {
       setHistoryLoading(false);
+      setHistoryReady(true);
     }
   }
 
   async function onBetTarget(kind: 'food' | 'side', target: DeliciousFoodId | DeliciousSideId) {
-    if (!round || !bettingOpen || placing) return;
+    if (!round || !bettingOpen || bettingOverrun || placing) return;
     if (balance < selectedAmount) {
       Alert.alert('Not enough diamonds', 'Your diamond balance is lower than the selected bet amount.');
       return;
@@ -292,7 +360,6 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   function renderFoodTile(foodId: DeliciousFoodId) {
     const food = effFoodMap[foodId];
     const pos = TILE_POS[foodId];
-    const you = myFoodTotals.get(foodId) ?? 0;
     const isWinner = phase === 'result' && round?.winningFood === foodId;
     const dimmed = phase === 'result' && round?.winningFood !== foodId;
     const tileStyle: ViewStyle = {
@@ -320,20 +387,12 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', paddingVertical: 2, alignItems: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>Win {food.multiplier}</Text>
         </View>
-        {you > 0 && (
-          <View style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center' }}>
-            <View style={{ backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1 }}>
-              <Text style={{ color: '#FFD43B', fontSize: 11, fontWeight: '800' }}>You: {formatNum(you)}</Text>
-            </View>
-          </View>
-        )}
       </Pressable>
     );
   }
 
   function renderSide(sideId: DeliciousSideId, align: 'left' | 'right') {
     const side = effSideMap[sideId];
-    const you = mySideTotals.get(sideId) ?? 0;
     const isWinner = phase === 'result' && round?.winningSide === sideId;
     const dimmed = phase === 'result' && round?.winningSide !== sideId;
     return (
@@ -348,15 +407,8 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         }}>
           <Image source={side.image} style={{ width: 64, height: 64 }} resizeMode="cover" />
         </View>
-        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 2 }}>{side.name}</Text>
-        <Text style={{ color: '#FFD43B', fontSize: 12, fontWeight: '800' }}>{side.multiplier}×</Text>
-        {you > 0 && (
-          <View style={{ position: 'absolute', top: 2, left: 0, right: 0, alignItems: 'center' }}>
-            <View style={{ backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1 }}>
-              <Text style={{ color: '#FFD43B', fontSize: 11, fontWeight: '800' }}>You: {formatNum(you)}</Text>
-            </View>
-          </View>
-        )}
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 2 }}>{side.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 12, fontWeight: '800' }}>{side.multiplier}×</Text>
       </Pressable>
     );
   }
@@ -414,7 +466,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
               <View style={{ alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, width: CIRCLE - 16 }}>
                 <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>Round {round.n}</Text>
                 <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>
-                  {phase === 'betting' ? `${secondsLeft}s` : phase === 'count' ? '…' : phase === 'result' ? 'Result' : '…'}
+                  {phase === 'betting' ? (bettingOverrun ? '…' : `${secondsLeft}s`) : phase === 'count' ? '…' : phase === 'result' ? 'Result' : '…'}
                 </Text>
               </View>
             ) : (
@@ -423,16 +475,13 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
               </Text>
             )}
           </View>
-          {/* 3-2-1 count overlay (winner NOT revealed during the count). */}
+          {/* 3-2-1 count overlay: clean digits ONLY (FIX 2 — the
+              "coming" text is removed everywhere; the winner is NOT
+              revealed during the count). The settling phase shows no
+              overlay at all now — just the centre circle. */}
           {countDigit != null && (
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: '#FFF', fontSize: 72, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 8 }}> {countDigit} </Text>
-              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '800' }}>The result is coming</Text>
-            </View>
-          )}
-          {phase === 'settling' && (
-            <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '800' }}>The result is coming</Text>
             </View>
           )}
         </View>
@@ -446,7 +495,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         <View style={{ flexDirection: 'row', alignItems: 'center', height: 36 }}>
           <Text style={{ color: '#FFD9D9', fontSize: 12, fontWeight: '800', marginRight: 8 }}>Result</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {history.map((h) => (
+            {stripHistory.map((h) => (
               <Image
                 key={h.n}
                 source={effFoodMap[h.food].image}
@@ -457,7 +506,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         </View>
 
         {/* Sides + Regular pill. */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', height: 100, marginTop: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', height: 108, marginTop: 2 }}>
           {renderSide('salad', 'left')}
           <View style={{ backgroundColor: '#FF6B4A', borderRadius: 999, paddingHorizontal: 22, paddingVertical: 8, marginTop: 14 }}>
             <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '800' }}>Regular</Text>
@@ -485,10 +534,10 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             );
           })}
         </View>
-        <Text style={{ color: '#FFD9D9', fontSize: 12, textAlign: 'center', marginTop: 4, height: 16 }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD9D9', fontSize: 12, textAlign: 'center', marginTop: 4, height: 16 }}>
           {!round
             ? 'Starting game…'
-            : bettingOpen
+            : bettingActive
               ? 'Tap an amount, then a food or side to bet'
               : 'Betting closed — wait for the next round'}
         </Text>
@@ -512,9 +561,11 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             )}
           </View>
           <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginTop: 4 }}>
-            {todayRounds.length === 0 ? (
-              <Text style={{ color: '#FFD9D9', fontSize: 14, textAlign: 'center', marginTop: 32 }}>No rounds yet today</Text>
-            ) : todayRounds.map((h) => {
+            {!historyReady ? (
+              <Text style={{ color: '#FFD9D9', fontSize: 14, textAlign: 'center', marginTop: 32 }}>Loading…</Text>
+            ) : playedRounds.length === 0 ? (
+              <Text style={{ color: '#FFD9D9', fontSize: 14, textAlign: 'center', marginTop: 32 }}>No played rounds yet today</Text>
+            ) : playedRounds.map((h) => {
               const win = historyWins[h.n];
               return (
                 <View key={h.n} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#ffffff22' }}>
@@ -539,64 +590,84 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         </View>
       )}
 
-      {/* CENTRED result pop-up (true screen centre, not a bottom sheet). */}
+      {/* CENTRED result pop-up (true screen centre, not a bottom sheet).
+          FIX 9 (imo-type structure, Vee art + styling only): big
+          winning-food image with glow overlapping the card top, title,
+          viewer spent/won BIG (or "didn't participate"), food + side
+          lines, then the top-3 biggest winners as avatar circles with
+          rank badges. No-winner branch kept. */}
       {showResult && round && (
         <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{
-            width: SW * 0.84, backgroundColor: '#7A1010', borderRadius: 20, padding: 20,
-            borderWidth: 2, borderColor: '#FFD43B', alignItems: 'center',
-          }}>
-            <Pressable
-              onPress={() => setDismissedRound(round.n)}
-              hitSlop={12}
-              style={{ position: 'absolute', top: 10, right: 12 }}
-            >
-              <Feather name="x" size={22} color="#FFF" />
-            </Pressable>
-            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center' }}>
-              Result of Round {round.n}
-            </Text>
+          <View style={{ alignItems: 'center' }}>
             {round.winningFood && (
-              <View style={{ width: 120, height: 120, borderRadius: 16, overflow: 'hidden', marginTop: 14, backgroundColor: '#F59E0B' }}>
-                <Image source={effFoodMap[round.winningFood].image} style={{ width: 120, height: 120 }} resizeMode="cover" />
+              <View style={{ width: 210, height: 210, alignItems: 'center', justifyContent: 'center', marginBottom: -105, zIndex: 2 }}>
+                <View style={{ position: 'absolute', left: 0, top: 0, width: 210, height: 210, borderRadius: 105, backgroundColor: '#FFD43B11' }} />
+                <View style={{ position: 'absolute', left: 15, top: 15, width: 180, height: 180, borderRadius: 90, backgroundColor: '#FFD43B22' }} />
+                <View style={{ width: 140, height: 140, borderRadius: 24, overflow: 'hidden', backgroundColor: '#F59E0B', borderWidth: 2, borderColor: '#FFD43B' }}>
+                  <Image source={effFoodMap[round.winningFood].image} style={{ width: 140, height: 140 }} resizeMode="cover" />
+                </View>
               </View>
             )}
-            {round.winningFood && (
-              <Text style={{ color: '#FFD43B', fontSize: 17, fontWeight: '800', marginTop: 10 }}>
-                {effFoodMap[round.winningFood].name} — Win {effFoodMap[round.winningFood].multiplier} Times
+            <View style={{
+              width: SW * 0.84, backgroundColor: '#7A1010', borderRadius: 20,
+              padding: 20, paddingTop: round.winningFood ? 84 : 20,
+              borderWidth: 2, borderColor: '#FFD43B', alignItems: 'center', zIndex: 1,
+              elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8,
+            }}>
+              <Pressable
+                onPress={() => setDismissedRound(round.n)}
+                hitSlop={12}
+                style={{ position: 'absolute', top: 10, right: 12 }}
+              >
+                <Feather name="x" size={22} color="#FFF" />
+              </Pressable>
+              <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '800', textAlign: 'center' }}>
+                Result of Round {round.n}
               </Text>
-            )}
-            {round.winningSide && (
-              <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginTop: 4 }}>
-                Side: {effSideMap[round.winningSide].name}
-              </Text>
-            )}
-            {viewerLine && (
-              <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '800', marginTop: 10, textAlign: 'center' }}>
-                {viewerLine}
-              </Text>
-            )}
-            {result && biggestWinners.length > 0 && (
-              <View style={{ width: '100%', marginTop: 14 }}>
-                <Text style={{ color: '#FFD9D9', fontSize: 13, fontWeight: '800', marginBottom: 6 }}>
-                  This round's biggest winner
-                </Text>
-                {biggestWinners.map((w, i) => (
-                  <View key={`${w.uid}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 3 }}>
-                    <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', flex: 1 }} numberOfLines={1}>
-                      {i + 1}. {w.name}
-                    </Text>
-                    <DiamondIcon size={13} />
-                    <Text style={{ color: '#FFD43B', fontSize: 14, fontWeight: '800', marginLeft: 4 }}>
-                      {formatNum(w.amount)}
-                    </Text>
+              {viewerParticipated ? (
+                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontSize: 19, fontWeight: '800' }}>You spent </Text>
+                    <DiamondIcon size={18} />
+                    <Text style={{ color: '#FFF', fontSize: 19, fontWeight: '800' }}> {formatNum(myPaidTotal)}</Text>
                   </View>
-                ))}
-              </View>
-            )}
-            {result && biggestWinners.length === 0 && (
-              <Text style={{ color: '#FFD9D9', fontSize: 13, marginTop: 12 }}>No bets this round</Text>
-            )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                    <Text style={{ color: '#FFD43B', fontSize: 24, fontWeight: '800' }}>You won </Text>
+                    <DiamondIcon size={22} />
+                    <Text style={{ color: '#FFD43B', fontSize: 24, fontWeight: '800' }}> {formatNum(viewerWon)}</Text>
+                  </View>
+                </View>
+              ) : (
+                <Text style={{ color: '#FFD9D9', fontSize: 15, fontWeight: '700', marginTop: 10, textAlign: 'center' }}>
+                  You didn't participate in this round
+                </Text>
+              )}
+              {round.winningFood && (
+                <Text style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800', marginTop: 10, textAlign: 'center' }}>
+                  {effFoodMap[round.winningFood].name} — Win {effFoodMap[round.winningFood].multiplier} Times
+                </Text>
+              )}
+              {round.winningSide && (
+                <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginTop: 4 }}>
+                  Side: {effSideMap[round.winningSide].name}
+                </Text>
+              )}
+              {result && biggestWinners.length > 0 && (
+                <View style={{ width: '100%', marginTop: 14, alignItems: 'center' }}>
+                  <Text style={{ color: '#FFD9D9', fontSize: 13, fontWeight: '800', marginBottom: 10 }}>
+                    This round's biggest winner
+                  </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'center', width: '100%' }}>
+                    {biggestWinners.slice(0, 3).map((w, i) => (
+                      <WinnerAvatar key={`${w.uid}-${i}`} winner={w} rank={i + 1} />
+                    ))}
+                  </View>
+                </View>
+              )}
+              {result && biggestWinners.length === 0 && (
+                <Text style={{ color: '#FFD9D9', fontSize: 13, marginTop: 12 }}>No bets this round</Text>
+              )}
+            </View>
           </View>
         </View>
       )}

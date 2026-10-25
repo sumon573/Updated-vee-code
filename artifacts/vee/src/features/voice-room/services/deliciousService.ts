@@ -14,8 +14,11 @@
  * RULES (confirmed, see ~/workspace/delicious-app/ANALYSIS.md):
  *   • Bet order: AMOUNT FIRST, then target (food tile or side icon).
  *   • Chips: 5 / 50 / 100 / 1000 diamonds (boss's screenshot values).
- *   • Round cycle (bot-driven): 30s betting → 3s "The result is coming"
- *     count → 5s centred result pop-up → next round automatically.
+ *   • Round cycle (bot-driven): 30s betting → 3s count → 5s centred
+ *     result pop-up → next round automatically. The bot debits each
+ *     bet on arrival (exactly once, receipt-guarded) and credits
+ *     winnings only at settle; bets are kept until the midnight
+ *     rollover so the History view can show the viewer's own rounds.
  *   • Payout = Σ over winning bets of (bet × shown multiplier).
  *     Food multipliers are integers; side payouts are floored to whole
  *     diamonds (side multipliers are fractional: salad 1.25×, pizza 4.37×).
@@ -118,7 +121,10 @@ export interface DeliciousBet {
   food?: DeliciousFoodId;
   side?: DeliciousSideId;
   amount: number;
-  status: 'pending' | 'confirmed' | 'rejected';
+  // Bot-driven lifecycle: pending (intent) -> debited (charged on
+  // arrival) -> confirmed (settled) | rejected | refunded (charged
+  // but never settled — refunded at next round start).
+  status: 'pending' | 'debited' | 'confirmed' | 'rejected' | 'refunded';
   reason?: string;
   createdAt: number;
 }
@@ -127,6 +133,10 @@ export interface DeliciousBiggestWinner {
   uid: string;
   name: string;
   amount: number;
+  // Bot-written from users/{uid}/photoURL (fallbacks avatar/dp).
+  // Absent for pre-fix rounds and avatar-less users — the pop-up
+  // renders a plain initial circle then, never a broken image.
+  avatar?: string | null;
 }
 
 export interface DeliciousResult {
@@ -271,6 +281,17 @@ export async function getMyDeliciousPayoutOnce(
 ): Promise<number | null> {
   const snap = await get(ref(database, `${base()}/payouts/${roundN}/${uid}`));
   return snap.exists() ? (snap.val() as number) : null;
+}
+
+/** One-time read of the viewer's bets for one round (history filter:
+    only rounds with a confirmed/debited bet are "played"). Owner-only
+    read, same rule as the live bets subscription. */
+export async function getMyDeliciousBetsOnce(
+  roundN: number,
+  uid: string,
+): Promise<Record<string, DeliciousBet> | null> {
+  const snap = await get(ref(database, `${base()}/bets/${roundN}/${uid}`));
+  return snap.exists() ? (snap.val() as Record<string, DeliciousBet>) : null;
 }
 
 /**
