@@ -10,18 +10,21 @@ import { C } from '../constants/theme';
  * Opens from the three-dot button next to the room settings gear.
  * Room Game: the shipped games (Vote, Turntable, Luckybag) — tapping one
  * opens the game lobby, where hosts create and members join live games.
- * Room Settings: Music (everyone; read-only for members) + Announcement,
- * Theme and Operation History (owner/admin only, same gating as today).
+ * Room Settings: Music (HOST-SEAT ONLY, boss 2026-10-25: only the host
+ * or whoever sits in seat 1 sees it — members and other admins see no
+ * music entry at all) + Announcement, Theme and Operation History
+ * (owner/admin only, same gating as today).
  * No placeholder entries: a game that is not shipped yet (bomb, couple,
  * treasure) gets NO button here until it is built.
  */
 export function RoomCustomizePanel({
-  visible, onClose, isOwnerOrAdmin, nowPlayingTitle,
+  visible, onClose, isOwnerOrAdmin, isHostSeat, nowPlayingTitle,
   onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenSettings, onOpenHistory, onOpenPk,
 }: {
   visible: boolean;
   onClose: () => void;
   isOwnerOrAdmin: boolean;
+  isHostSeat: boolean;
   nowPlayingTitle: string | null;
   onOpenMusic: () => void;
   onOpenGames: () => void;
@@ -50,7 +53,7 @@ export function RoomCustomizePanel({
       key: 'music', label: 'Music', icon: 'music',
       sub: nowPlayingTitle ? `Playing: ${nowPlayingTitle}` : 'Play music for the whole room',
       bg: 'rgba(139,92,246,0.15)', fg: '#7C3AED',
-      onPress: () => tap(onOpenMusic), show: true,
+      onPress: () => tap(onOpenMusic), show: isHostSeat,
     },
     {
       key: 'announcement', label: 'Announcement', icon: 'volume-2',

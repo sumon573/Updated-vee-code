@@ -1770,6 +1770,11 @@ export default function VoiceRoomScreen() {
   }, [seats, audience, myUid, ownerId, roomAdminUids]);
 
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
+  // 2026-10-25 (boss): music visibility is HOST-SEAT ONLY — only the
+  // host (room owner) or whoever sits in seat 1 (the Host seat) sees any
+  // music entry (panel row, now-playing strip, floating icon). Members
+  // and admins elsewhere see nothing music-related at all.
+  const isHostSeat = myRole === 'host' || mySeatIdx === 0;
 
   // 2026-10-22 (boss): one-time battery-exemption ask. Aggressive OEM power
   // managers kill backgrounded apps even with a foreground service — the
@@ -3044,7 +3049,7 @@ export default function VoiceRoomScreen() {
           )}
           {/* 2026-10-25 (boss): now-playing strip — mirrors the announcement
               strip above the message list. Tap opens the music modal. */}
-          {music?.current && (music.state === 'playing' || music.state === 'paused') && (
+          {music?.current && (music.state === 'playing' || music.state === 'paused') && isHostSeat && (
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -3460,6 +3465,7 @@ export default function VoiceRoomScreen() {
         visible={customizeOpen}
         onClose={() => setCustomizeOpen(false)}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        isHostSeat={isHostSeat}
         nowPlayingTitle={music?.current ? music.current.title.replace(/\.[^.]+$/, '') : null}
         onOpenMusic={() => { setCustomizeOpen(false); setMusicOpen(true); }}
         onOpenGames={() => { setCustomizeOpen(false); setGamesOpen(true); }}
@@ -3477,7 +3483,7 @@ export default function VoiceRoomScreen() {
         onVolumeChange={setMusicVolume}
       />
       {/* 2026-10-25 (boss): draggable floating music icon while music plays. */}
-      {music?.current && (music.state === 'playing' || music.state === 'paused') && (
+      {music?.current && (music.state === 'playing' || music.state === 'paused') && isHostSeat && (
         <FloatingMusicIcon
           paused={music.state === 'paused'}
           onPress={() => setMusicOpen(true)}
