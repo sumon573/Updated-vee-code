@@ -23,11 +23,10 @@ import { subscribeGames, type RoomGame, type GameType } from '../../services/roo
 
 // 2026-10-25 (boss 19:21, his own icons): ONLY these two games are
 // visible in the hub for now — "Next এ পরে আবার অ্যাড করবো" (more come
-// in a later round on his word). Display-only entries with his exact
-// icons (cropped from his screenshot): NO GameType, NO engine, NO
-// modal behind them yet, so they render as display rows (no chevron,
-// no press action) — never a fake playable button. Gameplay comes only
-// when he shows it (like the Ludu walkthrough). To add a future game on
+// in a later round on his word). Delicious is PLAYABLE since 2026-10-25
+// (real global game, sheet over the room, via onOpenDelicious); Fisher
+// is still a display-only row (no chevron, no press) until he shows its
+// gameplay — never a fake playable button. To add a future game on
 // his word: append its { id, name, image } here. (The old playable
 // catalog — vote/turntable/luckybag/ludu — was emptied on his 19:14
 // order and stays out until he dictates otherwise.)
@@ -36,11 +35,13 @@ const GAME_DISPLAY: { id: string; name: string; image: any }[] = [
   { id: 'fisher', name: 'Fisher', image: require('../../../../../assets/images/games-fisher.png') },
 ];
 
-export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, onCreateGame, onOpenRank, onOpenProps }: {
+export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, onCreateGame, onOpenRank, onOpenProps, onOpenDelicious }: {
   visible: boolean;
   roomId: string;
   isHost: boolean;
   onClose: () => void;
+  /** open the global Delicious game sheet (2026-10-25, real game) */
+  onOpenDelicious?: () => void;
   /** open an existing game */
   onOpenGame: (game: RoomGame) => void;
   /** start creating a new game of this type */
@@ -133,22 +134,35 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
           <Text style={{ fontSize: 13, fontWeight: '800', color: '#8E8E93', marginBottom: 8 }}>
             {t('voiceRoom.games.allGames')}
           </Text>
-          {GAME_DISPLAY.map((g) => (
-            <View
-              key={g.id}
-              style={{
-                flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7',
-                borderRadius: 14, padding: 14, marginBottom: 8,
-              }}
-            >
-              <View style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', marginRight: 12 }}>
-                <Image source={g.image} style={{ width: 44, height: 44 }} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#000' }}>{g.name}</Text>
-              </View>
-            </View>
-          ))}
+          {GAME_DISPLAY.map((g) => {
+            const playable = g.id === 'delicious' && !!onOpenDelicious;
+            const rowStyle = {
+              flexDirection: 'row' as const, alignItems: 'center' as const, backgroundColor: '#F2F2F7',
+              borderRadius: 14, padding: 14, marginBottom: 8,
+            };
+            const inner = (
+              <>
+                <View style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', marginRight: 12 }}>
+                  <Image source={g.image} style={{ width: 44, height: 44 }} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#000' }}>{g.name}</Text>
+                </View>
+                {playable && <Feather name="chevron-right" size={22} color="#8E8E93" />}
+              </>
+            );
+            return playable ? (
+              <Pressable
+                key={g.id}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onOpenDelicious!(); }}
+                style={rowStyle}
+              >
+                {inner}
+              </Pressable>
+            ) : (
+              <View key={g.id} style={rowStyle}>{inner}</View>
+            );
+          })}
             </>
           )}
 

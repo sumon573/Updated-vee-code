@@ -80,6 +80,7 @@ import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
 import { LuduGameModal } from '../components/games/LuduGameModal';
+import { DeliciousGameSheet } from '../components/games/DeliciousGameSheet';
 import type { RoomGame, GameType } from '../services/roomGameService';
 import { subscribeGames } from '../services/roomGameService';
 import { ExitModal } from '../components/ExitModal';
@@ -960,6 +961,7 @@ export default function VoiceRoomScreen() {
   // 2026-10-19 (IMO port): waiting queue + games + ranking + props
   const [seatQueueOpen,   setSeatQueueOpen]   = useState(false);
   const [gamesOpen,       setGamesOpen]       = useState(false);
+  const [deliciousOpen,   setDeliciousOpen]   = useState(false);
   const [rankOpen,        setRankOpen]        = useState(false);
   const [propsOpen,       setPropsOpen]       = useState(false);
   // 2026-10-19 (IMO gap fill): announcement + intimacy + backpack
@@ -3745,6 +3747,14 @@ export default function VoiceRoomScreen() {
         onCreateGame={(kind: GameType) => { setGamesOpen(false); setGameNav({ kind, gameId: null }); }}
         onOpenRank={() => { setGamesOpen(false); setRankOpen(true); }}
         onOpenProps={() => { setGamesOpen(false); setPropsOpen(true); }}
+        onOpenDelicious={() => { setGamesOpen(false); setDeliciousOpen(true); }}
+      />
+      {/* 2026-10-25: global Delicious game sheet over the room (real
+          diamonds, bot-settled). NOT a roomGameService game — no GameType. */}
+      <DeliciousGameSheet
+        visible={deliciousOpen}
+        myUid={myUid}
+        onClose={() => setDeliciousOpen(false)}
       />
       {/* 2026-10-25 (boss): imo-style customize panel + room music modal. */}
       <RoomCustomizePanel
