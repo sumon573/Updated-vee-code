@@ -16,7 +16,16 @@
  * Salad bottom-left, Pizza bottom-right (BOTH BETTABLE — 21:14
  * correction; side result is an independent server-side weighted draw);
  * "Today's prize" (the viewer's real total winnings today, boss-confirmed);
- * Regular pill ONLY (no Advanced anywhere); bet chips 5/50/100/1000.
+ * NO Regular pill anywhere (boss 2026-10-26 02:06: removed — the gap
+ * between Salad and Pizza stays clean); bet chips 5/50/100/1000/5000
+ * (5k added boss 2026-10-26 02:08, from delicious/config, fallback matches).
+ * BOTTOM REWORK 2026-10-26 (boss package 02:06-02:19): Top-10 Live
+ * strip between the sides row and the chips (small 62px cards: rank +
+ * DP + name + today's win, horizontal scroll, live from todayPrize);
+ * max 6 distinct boxes per round per user (7th distinct target blocked);
+ * Hot badge on the round's most-bet food, only in betting's last 10s
+ * (crowd signal from delicious/totals — NEVER the drawn winner);
+ * streak-bonus line in the result pop-up (delicious/bonuses).
  *
  * ALL STRINGS ARE HARDCODED ENGLISH (boss order: everything in the app
  * is English). No i18n keys are used for this game.
@@ -80,18 +89,23 @@ import {
   DELICIOUS_FOODS,
   DELICIOUS_SIDES,
   deliciousToday,
+  getDeliciousUserProfileOnce,
   getMyDeliciousBetsOnce,
   getMyDeliciousPayoutOnce,
   mergeDeliciousConfig,
   placeDeliciousBet,
   subscribeDeliciousConfig,
   subscribeDeliciousResults,
+  subscribeDeliciousTotals,
+  subscribeDeliciousTodayPrizeAll,
   subscribeDeliciousRound,
   subscribeMyDeliciousBets,
+  subscribeMyDeliciousBonus,
   subscribeMyDeliciousPayout,
   subscribeMyTodayPrize,
   type DeliciousBet,
   type DeliciousBiggestWinner,
+  type DeliciousBonus,
   type DeliciousConfigRaw,
   type DeliciousFood,
   type DeliciousFoodId,
@@ -99,15 +113,21 @@ import {
   type DeliciousRound,
   type DeliciousSide,
   type DeliciousSideId,
+  type DeliciousTotals,
 } from '../../services/deliciousService';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 // Panel height: tall enough for the wheel, short enough that the room
 // still shows dimmed above it (like the imo screenshot).
-const PANEL_H = Math.min(SH * 0.78, 640);
+const PANEL_H = Math.min(SH * 0.84, 700);
 // FIXES 2026-10-25: exact-fit panel (no bottom clipping on any screen)
 // + bigger tiles (width decoupled from height so the wheel looks full).
-const NON_WHEEL_H = 296;
+// BOTTOM REWORK 2026-10-26: +102 for the Top-10 Live strip block
+// (18 header + 2 + 80 scroll row incl. 7 top padding for the rank
+// badges that overlap the card tops + 2 margins) between the sides
+// row and the chips. The panel grows a little (0.78->0.84, cap 640->700)
+// so the wheel keeps nearly its old size; the room still shows above.
+const NON_WHEEL_H = 398;
 const WHEEL_H = PANEL_H - NON_WHEEL_H;
 const WHEEL_W = SW - 24;
 // PREVIEW GEOMETRY (from the preview source file, not the screenshot):
@@ -154,6 +174,18 @@ function formatNum(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/** Chips-row label ONLY (boss 2026-10-26 02:24, Round 147 screenshot):
+    1000 -> "1k", 5000 -> "5k"; 5/50/100 stay exactly as they are, so
+    the row has space and looks nice. Display format ONLY — the bet
+    amount stays the numeric chip value (selection, balance check and
+    the placed bet all use the number). Non-round thousands fall back
+    to the plain number, never a misleading label. Tile bet chips keep
+    their comma format (formatNum) — this touches the chips row only. */
+function formatChipLabel(chip: number): string {
+  if (chip >= 1000 && chip % 1000 === 0) return `${chip / 1000}k`;
+  return `${chip}`;
+}
+
 const RANK_COLORS = ['#FFD43B', '#C0C0C0', '#CD7F32'];
 
 /** Top-3 winner avatar (FIX 9b, imo-type row): avatar circle with a
@@ -186,6 +218,50 @@ function WinnerAvatar({ winner, rank }: { winner: DeliciousBiggestWinner; rank: 
   );
 }
 
+const TOP10_RANK_STYLE: Record<number, { bg: string; fg: string; border: string }> = {
+  1: { bg: '#FFD43B', fg: '#1F2937', border: '#FFD43B' },
+  2: { bg: '#E5E7EB', fg: '#1F2937', border: '#E5E7EB' },
+  3: { bg: '#D08A4E', fg: '#FFF', border: '#D08A4E' },
+};
+
+/** Top-10 Live strip card (boss 2026-10-26 02:06, compacted 02:17):
+    62px wide, 32px DP, 10px name + win — small enough that the strip
+    stays slim, still readable. Rank badge on top (1 gold, 2 silver,
+    3 bronze, 4-10 plain dark). Photo from the strip profile cache;
+    missing/failed photo -> plain initial circle — never a broken
+    image, never a fake name. */
+function Top10Card({ rank, name, photo, total }: {
+  rank: number;
+  name: string | null;
+  photo: string | null;
+  total: number;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const rs = TOP10_RANK_STYLE[rank] ?? { bg: '#3D0A0A', fg: '#FFF', border: '#FFFFFF33' };
+  const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
+  return (
+    <View style={{ width: 62, alignItems: 'center', paddingHorizontal: 2, paddingTop: 7, paddingBottom: 5, marginRight: 8, backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B55', borderRadius: 12 }}>
+      <View style={{ position: 'absolute', top: -6, left: 0, right: 0, alignItems: 'center' }}>
+        <View style={{ backgroundColor: rs.bg, borderWidth: 1, borderColor: rs.border, borderRadius: 999, paddingHorizontal: 5, paddingVertical: 1 }}>
+          <Text style={{ color: rs.fg, fontSize: 9, fontWeight: '800' }}>{rank}</Text>
+        </View>
+      </View>
+      <View style={{ width: 32, height: 32, borderRadius: 16, overflow: 'hidden', backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center' }}>
+        {photo && !imgFailed ? (
+          <Image source={{ uri: photo }} style={{ width: 32, height: 32 }} resizeMode="cover" onError={() => setImgFailed(true)} />
+        ) : (
+          <Text style={{ color: '#3D0A0A', fontSize: 15, fontWeight: '900' }}>{initial}</Text>
+        )}
+      </View>
+      <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 10, fontWeight: '700', marginTop: 2, width: '100%', textAlign: 'center' }}>{name ?? '—'}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 1 }}>
+        <DiamondIcon size={10} />
+        <Text numberOfLines={1} style={{ color: '#FFD43B', fontSize: 10, fontWeight: '800', marginLeft: 2 }}>{formatNum(total)}</Text>
+      </View>
+    </View>
+  );
+}
+
 export function DeliciousGameSheet({ visible, myUid, onClose }: {
   visible: boolean;
   myUid: string;
@@ -196,6 +272,13 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [myBets, setMyBets] = useState<Record<string, DeliciousBet>>({});
   const [myPayout, setMyPayout] = useState<number | null>(null);
   const [todayPrize, setTodayPrize] = useState<number>(0);
+  // BOTTOM REWORK 2026-10-26: everyone's todayPrize (strip), the
+  // bot's per-food totals (Hot), the viewer's streak bonus (pop-up),
+  // and the strip's per-uid profile cache (name + photo, fetched once).
+  const [todayPrizeAll, setTodayPrizeAll] = useState<Record<string, { total: number; day: string }>>({});
+  const [totals, setTotals] = useState<DeliciousTotals | null>(null);
+  const [myBonus, setMyBonus] = useState<DeliciousBonus | null>(null);
+  const [profiles, setProfiles] = useState<Record<string, { name: string | null; photo: string | null }>>({});
   const [balance, setBalance] = useState<number>(0);
   const [selectedAmount, setSelectedAmount] = useState<number>(5);
   const [now, setNow] = useState<number>(Date.now());
@@ -211,6 +294,8 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [historyReady, setHistoryReady] = useState(false);
   const roundRef = useRef<DeliciousRound | null>(null);
   roundRef.current = round;
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
   // SPIN CLOCK state: spinTick drives the roulette highlight + the
   // spinner rotation; spinTickRef mirrors it for the count-start
   // capture effect; countStartRef freezes the count landing schedule.
@@ -261,6 +346,22 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     return () => { u1(); u2(); };
   }, [visible, myUid]);
 
+  // BOTTOM REWORK 2026-10-26: strip totals + Hot totals (global,
+  // visible-gated like the rest).
+  useEffect(() => {
+    if (!visible) return;
+    const u1 = subscribeDeliciousTodayPrizeAll(setTodayPrizeAll);
+    const u2 = subscribeDeliciousTotals(setTotals);
+    return () => { u1(); u2(); };
+  }, [visible]);
+
+  // Streak bonus for the CURRENT round (re-subscribe on round change).
+  useEffect(() => {
+    if (!visible || roundN == null || !myUid) return;
+    const u = subscribeMyDeliciousBonus(roundN, myUid, setMyBonus);
+    return () => { u(); };
+  }, [visible, roundN, myUid]);
+
 
   // Reset the dismissed pop-up when a new round starts.
   useEffect(() => {
@@ -306,22 +407,44 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     return m;
   }, [myBets]);
 
+  // Rejected totals per target (same shape) — needed so a bot-rejected
+  // tap stops inflating the chip the moment the rejection lands.
+  // There is no expiry: entries live until the round changes, so a
+  // burst tap charged late at settle can never drop the chip mid-round.
+  const myRejectedByTarget = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const b of Object.values(myBets)) {
+      if (b.status !== 'rejected') continue;
+      if (b.kind === 'food' && b.food) m[`food:${b.food}`] = (m[`food:${b.food}`] ?? 0) + b.amount;
+      else if (b.kind === 'side' && b.side) m[`side:${b.side}`] = (m[`side:${b.side}`] ?? 0) + b.amount;
+    }
+    return m;
+  }, [myBets]);
+
   // Optimistic entries: added the instant the user taps (same frame, no
-  // network wait), then reconciled silently when the subscription's paid
-  // total grows past the baseline recorded at tap time. A failed write
-  // rolls back immediately; an entry unconfirmed after 15s expires, so a
-  // phantom amount can never stick. FIFO matching by amount: a rare
-  // reject-then-confirm sequence on the same target can over-count by
-  // one chip for at most the 15s window (see report).
+  // network wait). The displayed chip is DERIVED (see displayBetByTarget):
+  // paid + still-unresolved taps, where resolved = paid growth +
+  // rejected growth since the first unresolved tap. Deriving during
+  // render (never effect-synced state) means a confirm can never paint
+  // one frame of paid + optimistic double, and a reject-then-confirm
+  // sequence on the same target can never over-count: the rejected
+  // tap's amount cancels against rejected growth the moment the
+  // rejection lands. A failed write rolls back immediately; entries
+  // live until the round changes (no mid-round expiry), so a burst tap
+  // charged late at settle can never drop the chip mid-round.
   type OptEntry = { id: number; amount: number };
-  const [optByTarget, setOptByTarget] = useState<Record<string, { baseline: number; entries: OptEntry[] }>>({});
+  const [optByTarget, setOptByTarget] = useState<Record<string, { baseline: number; rejectedBaseline: number; entries: OptEntry[] }>>({});
   const optIdRef = useRef(0);
   // A new round starts with no bets of its own — stale entries must
   // never inflate it.
   useEffect(() => {
     setOptByTarget({});
   }, [roundN]);
-  // Reconcile optimistic entries against the subscribed paid totals.
+  // Prune only: once a target's taps are fully resolved (derived
+  // pending == 0), drop its entries and re-base on current totals, so a
+  // later tap never inherits a stale baseline. Display correctness
+  // never depends on this effect (displayBetByTarget derives it), so
+  // pruning can never paint a flicker frame.
   useEffect(() => {
     setOptByTarget((prev) => {
       let changed = false;
@@ -329,30 +452,79 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
       for (const key of Object.keys(next)) {
         const q = next[key];
         if (q.entries.length === 0) continue;
-        let explained = (myBetByTarget[key] ?? 0) - q.baseline;
-        if (explained <= 0) continue;
-        const entries = [...q.entries];
-        while (entries.length > 0 && entries[0].amount <= explained) {
-          explained -= entries[0].amount;
-          entries.shift();
+        const paidGrowth = Math.max(0, (myBetByTarget[key] ?? 0) - q.baseline);
+        const rejGrowth = Math.max(0, (myRejectedByTarget[key] ?? 0) - (q.rejectedBaseline ?? 0));
+        const pending = Math.max(0, q.entries.reduce((s, e) => s + e.amount, 0) - paidGrowth - rejGrowth);
+        if (pending === 0) {
+          next[key] = { baseline: myBetByTarget[key] ?? 0, rejectedBaseline: myRejectedByTarget[key] ?? 0, entries: [] };
           changed = true;
         }
-        next[key] = { baseline: q.baseline, entries };
       }
       if (!changed) return prev;
       return next;
     });
-  }, [myBetByTarget]);
-  // Displayed chip amount = subscribed paid total + still-pending
-  // optimistic taps (so tap → confirm is seamless, never a flicker).
+  }, [myBetByTarget, myRejectedByTarget]);
+  // Displayed chip amount, DERIVED during render (never effect-synced):
+  // subscribed paid total + still-unresolved taps, where unresolved =
+  // total optimistic taps − paid growth − rejected growth since the
+  // first unresolved tap (floored at 0). A confirm paints exactly the
+  // paid total on the first frame (no double frame); a rejection
+  // cancels its tap the moment it lands (no 15s over-count); a
+  // reject-then-confirm pair on the same target nets to the paid total.
   const displayBetByTarget = useMemo(() => {
     const m = { ...myBetByTarget };
     for (const [key, q] of Object.entries(optByTarget)) {
-      const pending = q.entries.reduce((s, e) => s + e.amount, 0);
+      const paidGrowth = Math.max(0, (myBetByTarget[key] ?? 0) - q.baseline);
+      const rejGrowth = Math.max(0, (myRejectedByTarget[key] ?? 0) - (q.rejectedBaseline ?? 0));
+      const pending = Math.max(0, q.entries.reduce((s, e) => s + e.amount, 0) - paidGrowth - rejGrowth);
       if (pending > 0) m[key] = (m[key] ?? 0) + pending;
     }
     return m;
-  }, [myBetByTarget, optByTarget]);
+  }, [myBetByTarget, myRejectedByTarget, optByTarget]);
+
+  // TOP-10 LIVE STRIP (boss 2026-10-26 02:06): everyone's todayPrize,
+  // total > 0 only, sorted desc, top 10. Updates live as todayPrize
+  // changes; shown in EVERY phase. Only 9 users have totals today —
+  // the 10th card fills naturally when someone wins.
+  const top10 = useMemo(() => {
+    return Object.entries(todayPrizeAll)
+      .map(([uid, e]) => ({ uid, total: typeof e?.total === 'number' ? e.total : 0 }))
+      .filter((e) => Number.isFinite(e.total) && e.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  }, [todayPrizeAll]);
+  // Strip profiles: one-time fetch per uid, cached for the sheet's
+  // lifetime (names/photos change rarely; totals change live via the
+  // subscription above). Keyed on the uid SET, so a totals-only update
+  // never refetches. A failed fetch simply leaves the uid uncached
+  // (initial circle) until the set changes — never a crash, never a
+  // fake name.
+  const top10UidsKey = top10.map((t) => t.uid).join(',');
+  useEffect(() => {
+    if (!visible || top10.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const missing = top10.filter((t) => !(t.uid in profilesRef.current));
+      if (missing.length === 0) return;
+      const fetched = await Promise.all(
+        missing.map(async (t) => {
+          try {
+            return [t.uid, await getDeliciousUserProfileOnce(t.uid)] as const;
+          } catch (_) {
+            return [t.uid, { name: null, photo: null }] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setProfiles((prev) => {
+        const next = { ...prev };
+        for (const [uid, p] of fetched) next[uid] = p;
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, top10UidsKey]);
 
   const todayStr = deliciousToday(now);
 
@@ -428,6 +600,32 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   // Seconds since betting closed (betting end is in the past during
   // overrun + settling, so this counts UP for the whole wait).
   const overrunElapsed = round ? Math.max(0, Math.floor((now - round.endsAt) / 1000)) : 0;
+  // HOT BADGE (boss 2026-10-26 02:12 + timing 02:15): the food with the
+  // HIGHEST total confirmed bets in delicious/totals for THIS round —
+  // a crowd signal so users can roughly guess, NEVER the drawn winner
+  // (round.winningFood / results are deliberately never read here).
+  // Gated hard: betting phase only (bettingActive excludes overrun),
+  // totals.n must match the current round, and the badge appears ONLY
+  // once <= 10s of betting remain (20s elapsed of the 30s window).
+  // Missing/mismatched/zero totals = NO badge, never a crash, never a
+  // guessed badge. Ties keep the first food in DELICIOUS_FOODS order.
+  const hotFoodId: DeliciousFoodId | null = useMemo(() => {
+    if (!bettingActive || !round || !totals) return null;
+    if (totals.n !== round.n) return null;
+    if (round.endsAt - now > 10 * 1000) return null;
+    const foods = totals.foods;
+    if (!foods || typeof foods !== 'object') return null;
+    let best: DeliciousFoodId | null = null;
+    let bestTotal = 0;
+    for (const f of DELICIOUS_FOODS) {
+      const t = foods[f.id];
+      if (typeof t === 'number' && Number.isFinite(t) && t > bestTotal) {
+        bestTotal = t;
+        best = f.id;
+      }
+    }
+    return best;
+  }, [bettingActive, round, totals, now]);
   // Roulette highlight: continuous cycling during settling/overrun;
   // during count it decelerates (ease-out) and lands on the winner.
   // During betting/result there is no spin highlight (betting tiles
@@ -512,7 +710,27 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
 
   async function onBetTarget(kind: 'food' | 'side', target: DeliciousFoodId | DeliciousSideId) {
     if (!round || !bettingOpen || bettingOverrun || placing) return;
-    if (balance < selectedAmount) {
+    // MAX-6-BOXES RULE (boss 2026-10-26 02:06): at most 6 DISTINCT
+    // boxes per round (8 foods + 2 sides). Distinct targets among the
+    // user's paid bets PLUS optimistic pending taps (so rapid taps
+    // can't slip a 7th box past the subscription). Betting MORE on an
+    // already-bet box is always allowed. A 7th DISTINCT target is
+    // blocked with a clear message — no bet placed, no chip added.
+    const targetKey = kind === 'side' ? `side:${target}` : `food:${target}`;
+    const distinctBetBoxes = Object.values(displayBetByTarget).filter((v) => v > 0).length;
+    if ((displayBetByTarget[targetKey] ?? 0) <= 0 && distinctBetBoxes >= 6) {
+      Alert.alert('6টির বেশি বক্সে bet করা যাবে না');
+      return;
+    }
+    // BALANCE GUARD (boss 2026-10-26 03:21: rapid taps must never drop the
+    // chip): the wallet subscription lags bot debits, so `balance` alone
+    // still covers taps the bot has not charged yet. Subtract every
+    // still-unresolved optimistic tap (display − paid per target, same
+    // derivation as the chip) before comparing — an over-balance rapid
+    // tap is blocked BEFORE any entry exists, so its chip never appears
+    // and therefore never has to come back down.
+    const pendingTotal = Object.keys(displayBetByTarget).reduce((s, k) => s + Math.max(0, (displayBetByTarget[k] ?? 0) - (myBetByTarget[k] ?? 0)), 0);
+    if (balance - pendingTotal < selectedAmount) {
       Alert.alert('Not enough diamonds', 'Your diamond balance is lower than the selected bet amount.');
       return;
     }
@@ -520,8 +738,13 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     // BET CHIP optimistic add (boss 01:37: tap → chip updates in the
     // same frame, no network wait). The entry reconciles when the
     // subscription confirms the bet, rolls back at once on write
-    // failure, and expires after 15s if never confirmed.
-    const targetKey = kind === 'side' ? `side:${target}` : `food:${target}`;
+    // failure, and lives until the round changes — there is NO
+    // mid-round expiry (boss 2026-10-26 03:21: rapid taps must never
+    // drop the chip): a burst tap charged late at settle (up to ~38s
+    // after the tap) used to hit the old 15s expiry and drop the chip
+    // mid-round, then jump back up at settle. Entries clear on round
+    // change (optByTarget resets on roundN), so no phantom can stick
+    // past its round either.
     optIdRef.current += 1;
     const optId = optIdRef.current;
     const dropOptEntry = () => {
@@ -530,15 +753,15 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         if (!q) return prev;
         const entries = q.entries.filter((e) => e.id !== optId);
         if (entries.length === q.entries.length) return prev;
-        return { ...prev, [targetKey]: { baseline: q.baseline, entries } };
+        return { ...prev, [targetKey]: { baseline: q.baseline, rejectedBaseline: q.rejectedBaseline ?? 0, entries } };
       });
     };
     setOptByTarget((prev) => {
       const q = prev[targetKey];
       const baseline = q && q.entries.length > 0 ? q.baseline : (myBetByTarget[targetKey] ?? 0);
-      return { ...prev, [targetKey]: { baseline, entries: [...(q?.entries ?? []), { id: optId, amount: selectedAmount }] } };
+      const rejectedBaseline = q && q.entries.length > 0 ? (q.rejectedBaseline ?? 0) : (myRejectedByTarget[targetKey] ?? 0);
+      return { ...prev, [targetKey]: { baseline, rejectedBaseline, entries: [...(q?.entries ?? []), { id: optId, amount: selectedAmount }] } };
     });
-    setTimeout(dropOptEntry, 15000);
     try {
       await placeDeliciousBet(round.n, myUid, kind, target, selectedAmount);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -680,6 +903,33 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     );
   }
 
+  // HOT BADGE render: a SIBLING of the tiles, not inside one — tiles
+  // have overflow hidden, so a badge above a tile would clip. Rendered
+  // in the wheel container (which is overflow visible; the panel still
+  // bounds everything). pointerEvents="none" so it can never block the
+  // tile's bet tap. Positioned above the hot tile's rect; the top is
+  // deliberately NOT clamped to 0 — for a top-row tile the badge sits
+  // in the header row's empty centre, clear of the X/History/balance
+  // controls. zIndex 3 keeps it above tiles (spin uses 2).
+  function renderHotBadge() {
+    if (!hotFoodId) return null;
+    const r = tileRect(hotFoodId);
+    const BADGE_W = 48;
+    const left = Math.min(Math.max(r.cx - BADGE_W / 2, 0), WHEEL_W - BADGE_W);
+    return (
+      <View
+        key="hot-badge"
+        pointerEvents="none"
+        style={{ position: 'absolute', left, top: r.top - 24, width: BADGE_W, alignItems: 'center', zIndex: 3 }}
+      >
+        <View style={{ backgroundColor: '#FF6B35', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 }}>
+          <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '900' }}>Hot</Text>
+        </View>
+        <View style={{ width: 8, height: 8, backgroundColor: '#FF6B35', transform: [{ rotate: '45deg' }], marginTop: -4 }} />
+      </View>
+    );
+  }
+
   function renderSide(sideId: DeliciousSideId, align: 'left' | 'right') {
     const side = effSideMap[sideId];
     const isWinner = phase === 'result' && round?.winningSide === sideId;
@@ -757,10 +1007,12 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
           </View>
         </View>
 
-        {/* Wheel: spokes (behind) + tiles + centre circle (hub). */}
-        <View style={{ height: WHEEL_H, marginTop: 2 }}>
+        {/* Wheel: spokes (behind) + tiles + Hot badge + centre circle (hub).
+            overflow visible so the Hot badge can sit above a top-row tile. */}
+        <View style={{ height: WHEEL_H, marginTop: 2, overflow: 'visible' }}>
           {DELICIOUS_FOODS.map((f) => renderSpoke(f.id))}
           {DELICIOUS_FOODS.map((f) => renderFoodTile(f.id))}
+          {renderHotBadge()}
           {/* Centre circle: pizza + Round + countdown (preview hub:
               33% of wheel width at 50%/46% of the wheel box). The
               second line is NEVER a static '…': betting shows the
@@ -833,17 +1085,45 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
           </ScrollView>
         </View>
 
-        {/* Sides + Regular pill. */}
+        {/* Sides — Regular pill REMOVED (boss 2026-10-26 02:06).
+            Salad left, Pizza right, clean gap in the middle. */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', height: 108, marginTop: 2 }}>
           {renderSide('salad', 'left')}
-          <View style={{ backgroundColor: '#FF6B4A', borderRadius: 999, paddingHorizontal: 22, paddingVertical: 8, marginTop: 14 }}>
-            <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '800' }}>Regular</Text>
-          </View>
           {renderSide('pizza', 'right')}
         </View>
 
+        {/* TOP-10 LIVE STRIP (boss 2026-10-26 02:06, compacted 02:17):
+            small cards, horizontal scroll, live from todayPrize. Shown
+            in EVERY phase. Empty (no winners yet) = one honest line,
+            never a placeholder card. */}
+        <View style={{ marginTop: 2, marginBottom: 2 }}>
+          <Text style={{ color: '#FFD43B', fontSize: 13, fontWeight: '800', height: 18 }}>Top 10 Live</Text>
+          {top10.length === 0 ? (
+            <View style={{ height: 80, justifyContent: 'center' }}>
+              <Text style={{ color: '#FFD9D9', fontSize: 12 }}>No winners yet today</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ height: 80 }}
+              contentContainerStyle={{ paddingTop: 7 }}
+            >
+              {top10.map((t, i) => (
+                <Top10Card
+                  key={t.uid}
+                  rank={i + 1}
+                  name={profiles[t.uid]?.name ?? null}
+                  photo={profiles[t.uid]?.photo ?? null}
+                  total={t.total}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
         {/* Bet chips: amount first, then a food/side. */}
-        <View style={{ flexDirection: 'row', gap: 8, height: 44 }}>
+        <View style={{ flexDirection: 'row', gap: 6, height: 44 }}>
           {config.chips.map((chip) => {
             const selected = selectedAmount === chip;
             return (
@@ -857,7 +1137,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 }}
               >
                 <DiamondIcon size={14} />
-                <Text style={{ fontSize: 17, fontWeight: '800', color: '#1F2937', marginLeft: 4 }}>{chip}</Text>
+                <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 17, fontWeight: '800', color: '#1F2937', marginLeft: 4 }}>{formatChipLabel(chip)}</Text>
               </Pressable>
             );
           })}
@@ -970,6 +1250,16 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                     <DiamondIcon size={22} />
                     <Text style={{ color: '#FFD43B', fontSize: 24, fontWeight: '800' }}> {formatNum(viewerWon)}</Text>
                   </View>
+                  {/* STREAK BONUS (boss 2026-10-26 01:24, bot v7 live):
+                      the Pass 3.5 bonus credited for this round, if
+                      any. Missing = no line, never a crash. */}
+                  {myBonus != null && myBonus.amount > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                      <Text style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800' }}>Streak bonus +</Text>
+                      <DiamondIcon size={16} />
+                      <Text style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800' }}> {formatNum(myBonus.amount)}</Text>
+                    </View>
+                  )}
                 </View>
               ) : (
                 <Text style={{ color: '#FFD9D9', fontSize: 15, fontWeight: '700', marginTop: 10, textAlign: 'center' }}>

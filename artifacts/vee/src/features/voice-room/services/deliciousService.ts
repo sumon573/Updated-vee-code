@@ -13,7 +13,9 @@
  *
  * RULES (confirmed, see ~/workspace/delicious-app/ANALYSIS.md):
  *   • Bet order: AMOUNT FIRST, then target (food tile or side icon).
- *   • Chips: 5 / 50 / 100 / 1000 diamonds (boss's screenshot values).
+ *   • Chips: 5 / 50 / 100 / 1000 / 5000 diamonds (boss order
+ *     2026-10-26 02:08: 5k chip added; server config wins, fallback
+ *     below matches it).
  *   • Round cycle (bot-driven): 30s betting → 3s count → 5s centred
  *     result pop-up → next round automatically. The bot debits each
  *     bet on arrival (exactly once, receipt-guarded) and credits
@@ -99,7 +101,7 @@ export const DELICIOUS_SIDES: DeliciousSide[] = [
   { id: 'pizza', name: 'Pizza', multiplier: 4.37, image: require('../../../../assets/images/delicious/pizza.png') },
 ];
 
-export const DELICIOUS_CHIPS = [5, 50, 100, 1000];
+export const DELICIOUS_CHIPS = [5, 50, 100, 1000, 5000];
 
 export const DELICIOUS_FOOD_MAP: Record<DeliciousFoodId, DeliciousFood> =
   Object.fromEntries(DELICIOUS_FOODS.map((f) => [f.id, f])) as Record<DeliciousFoodId, DeliciousFood>;
@@ -173,7 +175,7 @@ export const DELICIOUS_DEFAULT_CONFIG: DeliciousConfig = {
   bettingSeconds: 30,
   countSeconds: 3,
   resultSeconds: 5,
-  chips: [5, 50, 100, 1000],
+  chips: [5, 50, 100, 1000, 5000],
   foods: { tomato: 5, hotdog: 10, skewers: 15, cabbage: 5, ham: 25, corn: 5, carrot: 5, steak: 45 },
   sides: { salad: { multiplier: 1.25, weight: 0.75 }, pizza: { multiplier: 4.37, weight: 0.25 } },
 };
@@ -263,6 +265,75 @@ export function subscribeMyTodayPrize(
   return onValue(ref(database, `${base()}/todayPrize/${uid}`), (snap) => {
     cb(snap.exists() ? (snap.val() as { total: number; day: string }) : null);
   });
+}
+
+/** EVERYONE's Today's prize accumulators (Top-10 Live strip). Read is
+    public authed (live rules) — the strip displays all winners by
+    design; writes stay bot-only. Missing node = empty map, never a crash. */
+export function subscribeDeliciousTodayPrizeAll(
+  cb: (entries: Record<string, { total: number; day: string }>) => void,
+): () => void {
+  return onValue(ref(database, `${base()}/todayPrize`), (snap) => {
+    cb(snap.exists() ? (snap.val() as Record<string, { total: number; day: string }>) : {});
+  });
+}
+
+/** Per-food confirmed bet totals for one round (Hot badge source).
+    Bot-written aggregate: { n, foods: { tomato, hotdog, skewers,
+    cabbage, ham, corn, carrot, steak: total } }. Public authed read
+    (live rules). Missing/mismatched = null, never a crash — and the
+    sheet then shows NO Hot badge (never a guessed one). */
+export interface DeliciousTotals {
+  n: number;
+  foods: Record<string, number>;
+}
+
+export function subscribeDeliciousTotals(
+  cb: (totals: DeliciousTotals | null) => void,
+): () => void {
+  return onValue(ref(database, `${base()}/totals`), (snap) => {
+    cb(snap.exists() ? (snap.val() as DeliciousTotals) : null);
+  });
+}
+
+/** The viewer's streak bonus for one round (bot-written Pass 3.5
+    credit): { amount, streak }. Owner-only read (live rules).
+    Missing = null (no bonus that round) — the pop-up then shows no
+    bonus line, never a crash. */
+export interface DeliciousBonus {
+  amount: number;
+  streak: number;
+}
+
+export function subscribeMyDeliciousBonus(
+  roundN: number,
+  uid: string,
+  cb: (bonus: DeliciousBonus | null) => void,
+): () => void {
+  return onValue(ref(database, `${base()}/bonuses/${roundN}/${uid}`), (snap) => {
+    cb(snap.exists() ? (snap.val() as DeliciousBonus) : null);
+  });
+}
+
+/** One-time read of a user's strip profile: display name + photo.
+    Photo chain photoURL -> avatar -> dp (same chain as the result
+    pop-up's avatar rule). Any missing field = null — the caller shows
+    an initial circle, never a broken image or a fake name. */
+export async function getDeliciousUserProfileOnce(
+  uid: string,
+): Promise<{ name: string | null; photo: string | null }> {
+  const [nameSnap, photoSnap, avatarSnap, dpSnap] = await Promise.all([
+    get(ref(database, `users/${uid}/name`)),
+    get(ref(database, `users/${uid}/photoURL`)),
+    get(ref(database, `users/${uid}/avatar`)),
+    get(ref(database, `users/${uid}/dp`)),
+  ]);
+  const str = (s: { exists: () => boolean; val: () => unknown }): string | null => {
+    if (!s.exists()) return null;
+    const v = s.val();
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  };
+  return { name: str(nameSnap), photo: str(photoSnap) ?? str(avatarSnap) ?? str(dpSnap) };
 }
 
 /** Live game rules (server-written config; null until published). */

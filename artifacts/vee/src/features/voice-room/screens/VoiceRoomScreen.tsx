@@ -1620,7 +1620,12 @@ export default function VoiceRoomScreen() {
     const hostMuted = mySeat.hostMuted === true;
     if (prevHostMutedRef.current === hostMuted) return;
     prevHostMutedRef.current = hostMuted;
-    setMicMuted(hostMuted ? true : (mySeat.muted ?? true));
+    // 2026-10-26 (boss: return from background/minimize auto-mutes): a seat row
+    // without an explicit `muted` field carries NO mic intent — never mute on it.
+    // Only explicit true/false moves the mic; undefined holds current state.
+    // Host-mute still always wins on explicit true.
+    if (hostMuted) setMicMuted(true);
+    else if (mySeat.muted !== undefined) setMicMuted(mySeat.muted);
   }, [seats, mySeatIdx, isPublishing]);
   useEffect(() => {
     if (mySeatIdx < 0) {
@@ -1652,6 +1657,10 @@ export default function VoiceRoomScreen() {
       return;
     }
     if (prevFbMutedRef.current === fbMuted) return; // no change
+    // 2026-10-26 (boss: return auto-mutes): undefined carries no intent — hold
+    // the mic and keep prev at the last explicit value, so a later explicit
+    // value still fires. Never let an undefined snapshot mute or unmute.
+    if (fbMuted === undefined) return;
     prevFbMutedRef.current = fbMuted;
     // Host-mute wins: never let the self-mute sync unmute a host-muted mic.
     if (mySeat.hostMuted === true) return;
@@ -1898,7 +1907,15 @@ export default function VoiceRoomScreen() {
           const cur = seatSnap?.val() as { userId?: string } | null;
           if (!cur || cur.userId === myUid) {
             const seatData = buildSeatData();
-            seatData.muted = mutedRef.current;
+            // 2026-10-26 (boss: return from background/minimize auto-mutes):
+            // presence re-register must never overwrite mic intent with a
+            // transient value — on foreground reconnect mutedRef can still hold
+            // the fresh-join default (true) while the seat row already knows the
+            // user was unmuted, and the sync effects would then enforce that
+            // false mute. A row that is mine keeps its own explicit muted; only
+            // an empty seat falls back to mutedRef.
+            const curMuted = (cur as { muted?: boolean } | null)?.muted;
+            seatData.muted = curMuted !== undefined ? curMuted : mutedRef.current;
             const seatRef = ref(database, `rooms/${roomId}/seats/${seatIdx}`);
             await set(seatRef, { ...seatData, seatTs: serverTimestamp() }).catch(() => {});
             // 2026-10-23 (boss: একটা আইডি দুই জায়গায়): this direct write
@@ -3882,7 +3899,7 @@ export default function VoiceRoomScreen() {
           isHost={isOwnerOrAdmin}
           mySeatIdx={mySeatIdx}
           gameId={gameNav.gameId}
-          micMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? true) : true}
+          micMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? muted) : true}
           onToggleMic={toggleMic}
           onClose={() => setGameNav(null)}
         />
