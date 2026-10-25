@@ -82,11 +82,16 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_e, gs) => Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4,
       onPanResponderGrant: () => {
+        // Stop any in-flight release spring so it never fights the drag.
+        pan.stopAnimation();
         dragStart.current = { ...posRef.current };
       },
       onPanResponderMove: (_e, gs) => {
-        const nx = dragStart.current.x + gs.dx;
-        const ny = dragStart.current.y + gs.dy;
+        // Clamp DURING the move too (not only on release) so the bubble
+        // can never sit at an extreme coordinate mid-drag.
+        const { width: W, height: H } = Dimensions.get('window');
+        const nx = Math.min(Math.max(dragStart.current.x + gs.dx, 8), W - BUBBLE_W);
+        const ny = Math.min(Math.max(dragStart.current.y + gs.dy, insets.top + 8), H - BUBBLE_H);
         posRef.current = { x: nx, y: ny };
         pan.setValue({ x: nx, y: ny });
       },
@@ -96,11 +101,15 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   ).current;
 
   // Entrance: pop in (scale spring) when a room becomes minimized.
+  // NOTE (2026-10-25 white-screen-on-drag fix): this MUST stay on the
+  // JS driver — the bubble's pan is JS-driven, and mixing a native-driven
+  // scale into the same transform is a known glitch/crash source the
+  // moment a drag writes the transform.
   const enterScale = useRef(new Animated.Value(0.6)).current;
   useEffect(() => {
     if (!room) return;
     enterScale.setValue(0.6);
-    Animated.spring(enterScale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 6 }).start();
+    Animated.spring(enterScale, { toValue: 1, useNativeDriver: false, speed: 14, bounciness: 6 }).start();
   }, [room?.id]);
 
   // Voice ripple: 4 bars looping up/down — the "voice is live" vibe
