@@ -47,6 +47,7 @@ import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { RoomMusicModal } from '../components/RoomMusicModal';
 import { PkModal } from '../components/PkModal';
 import { PkBanner } from '../components/PkBanner';
+import { LuduLobbyStrip } from '../components/LuduLobbyStrip';
 import { SeatActionSheet } from '../components/SeatActionSheet';
 import { InviteToSeatModal } from '../components/InviteToSeatModal';
 import { InviteModal } from '../components/InviteModal';
@@ -80,6 +81,7 @@ import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
 import { LuduGameModal } from '../components/games/LuduGameModal';
 import type { RoomGame, GameType } from '../services/roomGameService';
+import { subscribeGames } from '../services/roomGameService';
 import { ExitModal } from '../components/ExitModal';
 import EntryBanner from '../components/EntryBanner';
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
@@ -1130,6 +1132,21 @@ export default function VoiceRoomScreen() {
       return;
     }
     return subscribeRoomPk(roomId, setPk);
+  }, [roomId]);
+  // 2026-10-25 (boss, full Ludu concept): a live Ludu lobby is visible
+  // to EVERY room occupant — the strip below renders from this live
+  // subscription, so the lobby appears the moment the host creates it
+  // and disappears the moment it starts or ends.
+  const [luduLobby, setLuduLobby] = useState<RoomGame | null>(null);
+  useEffect(() => {
+    if (!roomId) {
+      setLuduLobby(null);
+      return;
+    }
+    return subscribeGames(roomId, (games) => {
+      const lobby = games.find((g) => g.type === 'ludu' && g.status === 'lobby');
+      setLuduLobby(lobby ?? null);
+    });
   }, [roomId]);
   useEffect(() => {
     if (!pk || pk.status !== 'challenge' || pk.opponent.uid !== myUid || pkOpen) return;
@@ -3212,6 +3229,16 @@ export default function VoiceRoomScreen() {
               onPress={() => setPkOpen(true)}
               challengerPhotoURL={seats.find((s) => s?.id === pk.challenger.uid)?.photoURL}
               opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
+            />
+          )}
+          {/* 2026-10-25 (boss, full Ludu concept): the live lobby strip —
+              every room occupant sees an open lobby right here, no
+              panel/modal hunt. Tap opens the lobby page (join from "+"
+              inside for seated users). */}
+          {luduLobby && (
+            <LuduLobbyStrip
+              game={luduLobby}
+              onPress={() => setGameNav({ kind: 'ludu', gameId: luduLobby.id })}
             />
           )}
           {/* 2026-10-25 (boss): imo-style white player bar — replaces the
