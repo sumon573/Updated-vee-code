@@ -220,8 +220,16 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     }
   };
 
+  // 2026-10-25 audit (boss: "হোস্ট... অন্য কেউ না"): game control belongs
+  // to the GAME CREATOR only — not to every room admin. isHost (room
+  // owner/admin) keeps only the CREATE right (picker, no game yet);
+  // once a game exists, Start/Match/Cancel/End all require
+  // game.hostUid === myUid. A non-creator admin falls through to the
+  // regular-user branches (Join as a player, watch, nothing else).
+  const isGameHost = game ? game.hostUid === myUid : isHost;
+
   const startLobby = async () => {
-    if (!game || !isHost || starting) return;
+    if (!game || !isGameHost || starting) return;
     const seats = seatOrder.slice(0, modeCount);
     if (seats.length < modeCount) return; // button is greyed out until full
     setStarting(true);
@@ -251,7 +259,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   // stays visible like imo's (an earlier one-send-then-hide design was
   // NOT imo-exact and hid Match after the first tap — removed).
   const match = async () => {
-    if (!game || !isHost) return;
+    if (!game || !isGameHost) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await sendRoomChatMsg(roomId, systemMsg(t('voiceRoom.games.luduMatchInvite'))).catch(() => {});
   };
@@ -515,7 +523,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               ))}
             </View>
           )}
-          {isHost && (
+          {isGameHost && (
             <Pressable onPress={end} style={{ marginTop: 12, paddingVertical: 8 }}>
               <Text style={{ fontSize: 13, fontWeight: '700', color: '#FF3B30' }}>{t('voiceRoom.games.endGame')}</Text>
             </Pressable>
@@ -619,7 +627,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               {t('voiceRoom.games.luduTitle')}
             </Text>
           )}
-          {isPurpleSheet && game?.status === 'lobby' && isHost && (
+          {isPurpleSheet && game?.status === 'lobby' && isGameHost && (
             <Pressable onPress={end} hitSlop={12} style={{ marginRight: 16 }}>
               <Text style={{ color: '#FF6B6B', fontSize: 15, fontWeight: '800' }}>
                 {t('voiceRoom.games.luduCancel')}
@@ -637,7 +645,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               2P/4P cards + big Start. NO Magic row: its function was
               never defined (asked, awaiting his answer) — no dead
               toggles. Match lives in the LOBBY, not the picker. */}
-          {!game && !internalId && isHost && (
+          {!game && !internalId && isGameHost && (
             <View>
               <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 4 }}>
                 <Text style={{ fontSize: 46, fontWeight: '900', color: '#EF4444' }}>L</Text>
@@ -697,7 +705,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
             </View>
           )}
 
-          {!game && !internalId && !isHost && (
+          {!game && !internalId && !isGameHost && (
             <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', fontSize: 14, padding: 24 }}>
               {t('voiceRoom.games.waitingHost')}
             </Text>
@@ -717,7 +725,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               </Text>
               {renderSeatsRow(true)}
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-                {isHost && (
+                {isGameHost && (
                   <Pressable
                     onPress={startLobby}
                     disabled={!lobbyFull || starting}
@@ -731,7 +739,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     </Text>
                   </Pressable>
                 )}
-                {isHost && !lobbyFull && (
+                {isGameHost && !lobbyFull && (
                   <Pressable
                     onPress={match}
                     style={{ flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#F97316' }}
@@ -739,7 +747,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF' }}>Match</Text>
                   </Pressable>
                 )}
-                {!isHost && myUid && mySeatIdx >= 0 && !isSeated && !lobbyFull && (
+                {!isGameHost && myUid && mySeatIdx >= 0 && !isSeated && !lobbyFull && (
                   <Pressable
                     onPress={join}
                     style={{ flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#22C55E' }}
@@ -747,12 +755,12 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF' }}>{t('voiceRoom.games.luduJoin')}</Text>
                   </Pressable>
                 )}
-                {!isHost && myUid && !isSeated && lobbyFull && (
+                {!isGameHost && myUid && !isSeated && lobbyFull && (
                   <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.8)', paddingVertical: 13 }}>
                     {t('voiceRoom.games.luduLobbyFull')}
                   </Text>
                 )}
-                {!isHost && isSeated && (
+                {!isGameHost && isSeated && (
                   <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.8)', paddingVertical: 13 }}>
                     {t('voiceRoom.games.luduWaitingStart')}
                   </Text>
