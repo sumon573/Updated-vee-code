@@ -3639,9 +3639,16 @@ export default function VoiceRoomScreen() {
         onOpenMusic={() => { setCustomizeOpen(false); setMusicOpen(true); }}
         onOpenGames={() => { setCustomizeOpen(false); setGamesOpen(true); }}
         onOpenAnnouncement={() => { setCustomizeOpen(false); setAnnouncementOpen(true); }}
-        onOpenSettings={() => { setCustomizeOpen(false); setSettingsOpen(true); }}
-        onOpenHistory={() => { setCustomizeOpen(false); setOpHistOpen(true); }}
         onOpenPk={() => { setCustomizeOpen(false); setPkOpen(true); }}
+        activeThemeId={activeThemeId}
+        onThemeChange={(newThemeId) => {
+          // Optimistic local update + Firebase sync so ALL users see the change.
+          activeThemeIdRef.current = newThemeId;
+          setActiveThemeId(newThemeId);
+          updateRoomSettings(roomId, { themeId: newThemeId }).catch(() => {
+            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
+          });
+        }}
       />
       <RoomMusicModal
         visible={musicOpen}

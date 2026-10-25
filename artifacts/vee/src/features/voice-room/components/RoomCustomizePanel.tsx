@@ -1,25 +1,34 @@
+import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { C } from '../constants/theme';
+import { C, getActiveThemes } from '../constants/theme';
 
 /* ─────────────────────── Room Customize Panel ─────────────────────── */
 
 /**
  * RoomCustomizePanel — imo-style customize sheet (2026-10-25, boss).
  * Opens from the three-dot button next to the room settings gear.
- * Room Game: the shipped games (Vote, Turntable, Luckybag) — tapping one
- * opens the game lobby, where hosts create and members join live games.
+ * Room Mode: 1vs1 PK + Vote (boss 2026-10-25: Vote moved here out of
+ * Room Game). Room Game: games only (Turntable for now — boss 2026-10-25
+ * removed Luckybag; Ludu is NOT shipped yet so it gets no button until
+ * it is built). Tapping a game opens the game lobby, where hosts create
+ * and members join live games.
  * Room Settings: Music (HOST-SEAT ONLY, boss 2026-10-25: only the host
  * or whoever sits in seat 1 sees it — members and other admins see no
- * music entry at all) + Announcement, Theme and Operation History
- * (owner/admin only, same gating as today).
+ * music entry at all) + Announcement (owner/admin). Theme lives ONLY
+ * here (boss 2026-10-25: removed from Settings) as an expandable chip
+ * list — the panel Theme row used to open Settings, which no longer
+ * carries a theme picker, so the picker moved into this panel.
+ * Operation History lives ONLY in Settings (boss 2026-10-25: removed
+ * from this panel).
  * No placeholder entries: a game that is not shipped yet (bomb, couple,
- * treasure) gets NO button here until it is built.
+ * treasure, ludu) gets NO button here until it is built.
  */
 export function RoomCustomizePanel({
   visible, onClose, isOwnerOrAdmin, isHostSeat, nowPlayingTitle,
-  onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenSettings, onOpenHistory, onOpenPk,
+  onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenPk,
+  activeThemeId, onThemeChange,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -29,24 +38,26 @@ export function RoomCustomizePanel({
   onOpenMusic: () => void;
   onOpenGames: () => void;
   onOpenAnnouncement: () => void;
-  onOpenSettings: () => void;
-  onOpenHistory: () => void;
   onOpenPk: () => void;
+  activeThemeId: string;
+  onThemeChange: (id: string) => void;
 }) {
+  const [showThemes, setShowThemes] = useState(false);
   const tap = (fn: () => void) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     fn();
   };
 
+  // 2026-10-25 (boss): Vote moved to Room Mode; Luckybag removed.
+  // Turntable stays for now — boss to confirm whether Room Game ends up
+  // Ludu-only or Turntable + Ludu (Ludu itself is not built yet).
   const games = [
-    { key: 'vote', label: 'Vote', icon: 'bar-chart-2' as const, bg: 'rgba(5,181,250,0.15)', fg: '#05B5FA' },
     { key: 'turntable', label: 'Turntable', icon: 'refresh-cw' as const, bg: 'rgba(245,158,11,0.15)', fg: '#D97706' },
-    { key: 'luckybag', label: 'Luckybag', icon: 'gift' as const, bg: 'rgba(236,72,153,0.15)', fg: '#DB2777' },
   ];
 
   const settingsRows: Array<{
     key: string; label: string; sub: string;
-    icon: 'music' | 'volume-2' | 'droplet' | 'clock';
+    icon: 'music' | 'volume-2';
     bg: string; fg: string; onPress: () => void; show: boolean;
   }> = [
     {
@@ -60,18 +71,6 @@ export function RoomCustomizePanel({
       sub: 'Post or edit announcement',
       bg: 'rgba(255,193,7,0.18)', fg: '#B45309',
       onPress: () => tap(onOpenAnnouncement), show: isOwnerOrAdmin,
-    },
-    {
-      key: 'theme', label: 'Theme', icon: 'droplet',
-      sub: 'Change room theme',
-      bg: 'rgba(6,182,212,0.15)', fg: '#0891B2',
-      onPress: () => tap(onOpenSettings), show: isOwnerOrAdmin,
-    },
-    {
-      key: 'history', label: 'Operation History', icon: 'clock',
-      sub: 'Room operations log',
-      bg: 'rgba(239,68,68,0.15)', fg: C.red,
-      onPress: () => tap(onOpenHistory), show: isOwnerOrAdmin,
     },
   ];
 
@@ -109,6 +108,19 @@ export function RoomCustomizePanel({
               <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
                 textAlign: 'center' }}>
                 1vs1 PK
+              </Text>
+            </Pressable>
+            {/* 2026-10-25 (boss): Vote moved here from Room Game. */}
+            <Pressable onPress={() => tap(onOpenGames)}
+              style={{ alignItems: 'center', width: 72 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 30,
+                backgroundColor: 'rgba(5,181,250,0.15)', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: 'rgba(5,181,250,0.25)' }}>
+                <Feather name="bar-chart-2" size={26} color="#05B5FA" />
+              </View>
+              <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
+                textAlign: 'center' }}>
+                Vote
               </Text>
             </Pressable>
           </ScrollView>
@@ -159,6 +171,51 @@ export function RoomCustomizePanel({
               <Feather name="chevron-right" size={18} color={C.muted} />
             </Pressable>
           ))}
+
+          {/* Theme — lives ONLY here (boss 2026-10-25, removed from
+              Settings). Tap expands the theme chips inline. */}
+          {isOwnerOrAdmin && (
+            <View style={{ borderTopWidth: 1, borderTopColor: C.borderFaint }}>
+              <Pressable
+                onPress={() => tap(() => setShowThemes((v) => !v))}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 12,
+                  backgroundColor: 'rgba(6,182,212,0.15)',
+                  alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <Feather name="droplet" size={18} color="#0891B2" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>Theme</Text>
+                  <Text numberOfLines={1} style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                    {getActiveThemes().find((th) => th.id === activeThemeId)?.name ?? '💙 Light'}
+                  </Text>
+                </View>
+                <Feather name={showThemes ? 'chevron-up' : 'chevron-down'} size={18} color={C.muted} />
+              </Pressable>
+              {showThemes && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 8 }}>
+                  {getActiveThemes().map((theme) => {
+                    const isActive = activeThemeId === theme.id;
+                    return (
+                      <Pressable key={theme.id}
+                        onPress={() => tap(() => { onThemeChange(theme.id); setShowThemes(false); })}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 7,
+                          backgroundColor: isActive ? theme.accent + '33' : C.card,
+                          borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+                          borderWidth: 1.5, borderColor: isActive ? theme.accent : C.borderFaint,
+                        }}>
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.accent }} />
+                        <Text style={{ color: isActive ? theme.accent : C.sub, fontSize: 12,
+                          fontWeight: isActive ? '800' : '600' }}>{theme.name}</Text>
+                        {isActive && <Feather name="check" size={10} color={theme.accent} />}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
 
           <Pressable onPress={onClose}
             style={{ marginTop: 16, backgroundColor: C.card, borderRadius: 14,
