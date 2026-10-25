@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, Modal } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Modal, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { C } from '../constants/theme';
@@ -16,6 +16,7 @@ import {
   type RoomPk,
 } from '../services/roomPkService';
 import type { Participant } from '../types/room';
+import { PkScoreBar } from './PkScoreBar';
 
 /* ─────────────────────────── 1v1 PK Modal ─────────────────────────── */
 
@@ -96,21 +97,32 @@ export function PkModal({
         ? pk!.challenger.name
         : pk!.opponent.name;
 
-  const avatar = (name: string, color: string, size: number) => (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: color || '#7C3AED',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      <Text style={{ color: '#FFF', fontSize: size * 0.38, fontWeight: '800' }}>
-        {(name || '?').slice(0, 1).toUpperCase()}
-      </Text>
-    </View>
-  );
+  const avatar = (name: string, color: string, size: number, photoURL?: string | null) => {
+    if (photoURL) {
+      return (
+        <Image
+          source={{ uri: photoURL }}
+          style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: '#FFF' }}
+          resizeMode="cover"
+        />
+      );
+    }
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color || '#7C3AED',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <Text style={{ color: '#FFF', fontSize: size * 0.38, fontWeight: '800' }}>
+          {(name || '?').slice(0, 1).toUpperCase()}
+        </Text>
+      </View>
+    );
+  };
 
   const seatOf = (uid: string) => seats.find((s) => s?.id === uid) ?? null;
 
@@ -191,7 +203,7 @@ export function PkModal({
                       }
                       style={{ flexDirection: 'row', alignItems: 'center',
                         paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
-                      {avatar(s.name, s.color, 40)}
+                      {avatar(s.name, s.color, 40, s.photoURL)}
                       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', flex: 1, marginLeft: 12 }}>
                         {s.name}
                       </Text>
@@ -266,7 +278,7 @@ export function PkModal({
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  {avatar(pk.challenger.name, seatOf(pk.challenger.uid)?.color ?? '#7C3AED', 56)}
+                  {avatar(pk.challenger.name, seatOf(pk.challenger.uid)?.color ?? '#7C3AED', 56, seatOf(pk.challenger.uid)?.photoURL)}
                   <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
                     {pk.challenger.name}
                   </Text>
@@ -281,7 +293,7 @@ export function PkModal({
                   </Text>
                 </View>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  {avatar(pk.opponent.name, seatOf(pk.opponent.uid)?.color ?? '#05B5FA', 56)}
+                  {avatar(pk.opponent.name, seatOf(pk.opponent.uid)?.color ?? '#05B5FA', 56, seatOf(pk.opponent.uid)?.photoURL)}
                   <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
                     {pk.opponent.name}
                   </Text>
@@ -290,9 +302,8 @@ export function PkModal({
                   </Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden', marginTop: 12 }}>
-                <View style={{ flex: challengerScore, backgroundColor: '#7C3AED' }} />
-                <View style={{ flex: opponentScore, backgroundColor: '#05B5FA' }} />
+              <View style={{ marginTop: 12 }}>
+                <PkScoreBar challengerScore={challengerScore} opponentScore={opponentScore} height={10} />
               </View>
               <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', textAlign: 'center', marginTop: 10 }}>
                 {leader ? `${leader} is leading` : 'Tie — every diamond counts'}

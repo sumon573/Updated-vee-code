@@ -3205,7 +3205,12 @@ export default function VoiceRoomScreen() {
           {/* 2026-10-25 (boss): realtime PK banner — the whole room watches
               the battle live, imo-style. Tap opens the PK modal. */}
           {pk?.status === 'active' && (
-            <PkBanner pk={pk} onPress={() => setPkOpen(true)} />
+            <PkBanner
+              pk={pk}
+              onPress={() => setPkOpen(true)}
+              challengerPhotoURL={seats.find((s) => s?.id === pk.challenger.uid)?.photoURL}
+              opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
+            />
           )}
           {/* 2026-10-25 (boss): imo-style white player bar — replaces the
               old now-playing strip + floating icon. Tap the bar (or the
