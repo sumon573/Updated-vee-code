@@ -549,6 +549,24 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         <View style={{ position: 'absolute', bottom: TILE_H * 0.05, left: -TILE_W * 0.06, right: -TILE_W * 0.06, alignItems: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 13, fontWeight: '800', textShadowColor: '#B34A00', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>Win {food.multiplier} Times</Text>
         </View>
+        {/* SPIN BADGE: during a spin the active tile carries its own
+            multiplier ON the tile itself (e.g. "45x") — the eye never
+            has to guess which box the spin is on or what it pays.
+            Gated on isSpinning (spinHighlight non-null), so it can
+            never appear during betting/result; it follows spinHighlight
+            automatically as the spin advances, and holds on the winner
+            during count landing. Top edge, so it never covers the food
+            art or the "Win N Times" label below. */}
+        {isSpinning && (
+          <View style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center' }}>
+            <View style={{
+              backgroundColor: '#3D0A0A', borderWidth: 1.5, borderColor: '#FFD43B',
+              borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3,
+            }}>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800' }}>{food.multiplier}x</Text>
+            </View>
+          </View>
+        )}
       </Pressable>
     );
   }
