@@ -42,11 +42,26 @@
  * everywhere; strip lags the pop-up; tiles enlarged; history =
  * viewer's own played rounds; pop-up = viewer spent/won big +
  * top-3 avatar row; whole sheet premium pass (no demo look).
- * FREEZE FIX: betting overrun shows '…' + closed hint (never a frozen
- * 0s); pop-up auto-closes at window end; strip joins then.
+ * FREEZE FIX: betting overrun shows a spinner + live elapsed timer
+ * (never a frozen 0s, never a static '…'); pop-up auto-closes at
+ * window end; strip joins then.
+ * SPIN + TIMER 2026-10-26 (boss: no dead waits, no stalls): every
+ * waiting state has MOTION + A NUMBER — settling/overrun shows a
+ * spinning ring + seconds counting UP since betting closed, the
+ * wheel tiles cycle a gold highlight roulette-style, and the 3s
+ * count decelerates the highlight to LAND on the known winner.
+ * PREVIEW GEOMETRY 2026-10-26 (boss: tiles exactly like the preview
+ * source): tile centres + hub centre + spoke style follow the
+ * preview file (hub 33% of wheel width at 50%/46%; tiles 21.5% of
+ * wheel width, 1/1.06 aspect; spokes #FF5A3C at 0.4 opacity;
+ * labels "Win N Times"), clamped into the wheel box so small
+ * screens never clip and tiles never overlap (geometry script
+ * proves it). Preview-page chrome (DEMO banner/balance, yellow
+ * header, "preview-তে bet নেই" notes) is NEVER copied here.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   Modal,
@@ -56,7 +71,6 @@ import {
   Dimensions,
   Image,
   type ViewStyle,
-  type DimensionValue,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -96,21 +110,45 @@ const PANEL_H = Math.min(SH * 0.78, 640);
 const NON_WHEEL_H = 296;
 const WHEEL_H = PANEL_H - NON_WHEEL_H;
 const WHEEL_W = SW - 24;
-const TILE_H = WHEEL_H * 0.19;
-const TILE_W = Math.max(48, Math.min(WHEEL_W * 0.26, TILE_H * 1.5));
-const CIRCLE = TILE_W * 1.55;
-
-type TilePos = { top: number; left?: DimensionValue; right?: DimensionValue; centered?: boolean };
-const TILE_POS: Record<DeliciousFoodId, TilePos> = {
-  hotdog: { top: 0, centered: true },
-  tomato: { top: WHEEL_H * 0.20, left: 0 },
-  skewers: { top: WHEEL_H * 0.20, right: 0 },
-  cabbage: { top: WHEEL_H * 0.40, left: 0 },
-  ham: { top: WHEEL_H * 0.40, right: 0 },
-  corn: { top: WHEEL_H * 0.60, left: 0 },
-  steak: { top: WHEEL_H * 0.60, right: 0 },
-  carrot: { top: WHEEL_H * 0.80, centered: true },
+// PREVIEW GEOMETRY (from the preview source file, not the screenshot):
+// tile width 21.5% of wheel width, aspect 1/1.06; hub 33% of wheel
+// width centred at (50%, 46%) of the wheel box; tile centres at the
+// preview's ring fractions. The live wheel box is often much wider
+// than tall (unlike the preview's near-square wheel), so both sizes
+// are ALSO capped by the box height: tile height ≤ 25% of wheel
+// height (row pitch is 27.04% — this keeps same-column tiles apart)
+// and hub diameter capped so the top/bottom tiles clear the hub.
+// On phone-sized boxes the preview values bind exactly; on short
+// screens the caps bind instead (tiles/hub shrink, never overlap).
+// Centres are clamped into the wheel box so the top/bottom tiles
+// never poke into the header on small screens (the geometry script
+// proves no overlap after clamping, at every tested size).
+const TILE_W = Math.min(WHEEL_W * 0.215, (WHEEL_H * 0.25) / 1.06);
+const TILE_H = TILE_W * 1.06;
+// Hub cap uses the CLAMPED hotdog geometry (its ideal top is negative
+// on short boxes, so it sits at top 0 and its bottom edge is TILE_H
+// below the wheel top; the hub must clear that edge by 4px).
+const CIRCLE = Math.max(40, Math.min(WHEEL_W * 0.33, 2 * (0.46 * WHEEL_H - TILE_H - 4)));
+const HUB_FRAC = { x: 0.50, y: 0.46 };
+const TILE_CENTER_FRAC: Record<DeliciousFoodId, { x: number; y: number }> = {
+  hotdog: { x: 0.50, y: 0.0936 },
+  tomato: { x: 0.26, y: 0.1872 },
+  skewers: { x: 0.74, y: 0.1872 },
+  cabbage: { x: 0.145, y: 0.4576 },
+  ham: { x: 0.855, y: 0.4576 },
+  corn: { x: 0.26, y: 0.728 },
+  steak: { x: 0.74, y: 0.728 },
+  carrot: { x: 0.50, y: 0.8216 },
 };
+// Clockwise ring order from the top (for the roulette highlight).
+const RING_ORDER: DeliciousFoodId[] = ['hotdog', 'skewers', 'ham', 'steak', 'carrot', 'corn', 'cabbage', 'tomato'];
+
+function tileRect(foodId: DeliciousFoodId): { left: number; top: number; cx: number; cy: number } {
+  const f = TILE_CENTER_FRAC[foodId];
+  const left = Math.min(Math.max(f.x * WHEEL_W - TILE_W / 2, 0), WHEEL_W - TILE_W);
+  const top = Math.min(Math.max(f.y * WHEEL_H - TILE_H / 2, 0), WHEEL_H - TILE_H);
+  return { left, top, cx: left + TILE_W / 2, cy: top + TILE_H / 2 };
+}
 
 function formatNum(n: number): string {
   return n.toLocaleString('en-US');
@@ -173,6 +211,12 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [historyReady, setHistoryReady] = useState(false);
   const roundRef = useRef<DeliciousRound | null>(null);
   roundRef.current = round;
+  // SPIN CLOCK state: spinTick drives the roulette highlight + the
+  // spinner rotation; spinTickRef mirrors it for the count-start
+  // capture effect; countStartRef freezes the count landing schedule.
+  const [spinTick, setSpinTick] = useState(0);
+  const spinTickRef = useRef(0);
+  const countStartRef = useRef<{ n: number; startNow: number; startIdx: number } | null>(null);
 
   // Live clock for countdowns (500ms tick).
   useEffect(() => {
@@ -271,8 +315,8 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const bettingOpen = phase === 'betting';
   // FREEZE FIX: once the betting clock hits zero the sheet must never
   // sit on a frozen "0s" with a "tap to bet" hint. Past endsAt, betting
-  // is treated as closed (centre "…", closed hint, no new bets) until
-  // the bot's count phase starts — typically under a second.
+  // is treated as closed (spinner + elapsed timer, closed hint, no new
+  // bets) until the bot's count phase starts — typically under a second.
   const bettingOverrun = phase === 'betting' && round != null && now >= round.endsAt;
   const bettingActive = bettingOpen && !bettingOverrun;
   const secondsLeft = round ? Math.max(0, Math.ceil((round.endsAt - now) / 1000)) : 0;
@@ -284,6 +328,70 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const showResult = phase === 'result' && round && dismissedRound !== round.n && !resultWindowOver;
   const result = round ? results[String(round.n)] : undefined;
   const biggestWinners = result?.biggest ?? [];
+
+  // SPIN + TIMER (boss: never a dead wait, never a stall look).
+  // spinning = every phase where the user waits: settling, betting
+  // overrun, count, and pre-round. While spinning, a 130ms clock
+  // drives the roulette highlight, the spinner rotation, and the
+  // elapsed counter (on top of the 500ms clock) — motion is always
+  // visible, and no transition is ever delayed by this code: phase
+  // changes still come from the realtime subscriptions alone.
+  const spinning = phase === 'settling' || bettingOverrun || phase === 'count' || round == null;
+  useEffect(() => {
+    if (!visible || !spinning) return;
+    const t = setInterval(() => {
+      spinTickRef.current += 1;
+      setSpinTick(spinTickRef.current);
+      setNow(Date.now());
+    }, 130);
+    return () => clearInterval(t);
+  }, [visible, spinning]);
+
+  // COUNT LANDING: freeze the spin index + start time the moment the
+  // count phase begins, so the deceleration below lands on the
+  // already-known winner exactly at the count window's end.
+  useEffect(() => {
+    if (phase === 'count' && roundN != null) {
+      if (!countStartRef.current || countStartRef.current.n !== roundN) {
+        countStartRef.current = { n: roundN, startNow: Date.now(), startIdx: spinTickRef.current % 8 };
+      }
+    } else if (phase !== 'count') {
+      countStartRef.current = null;
+    }
+  }, [phase, roundN]);
+
+  // Winner known during count (results are written before the count
+  // phase) — read it from the round or the results map, never guess.
+  const winnerFood = round?.winningFood ?? (roundN != null ? results[String(roundN)]?.winningFood : undefined);
+  // Seconds since betting closed (betting end is in the past during
+  // overrun + settling, so this counts UP for the whole wait).
+  const overrunElapsed = round ? Math.max(0, Math.floor((now - round.endsAt) / 1000)) : 0;
+  // Roulette highlight: continuous cycling during settling/overrun;
+  // during count it decelerates (ease-out) and lands on the winner.
+  // During betting/result there is no spin highlight (betting tiles
+  // stay clean; result uses the winner gold border instead).
+  let spinHighlight: DeliciousFoodId | null = null;
+  if (phase === 'settling' || bettingOverrun) {
+    spinHighlight = RING_ORDER[spinTick % 8];
+  } else if (phase === 'count' && winnerFood) {
+    const cs = countStartRef.current;
+    const winnerIdx = RING_ORDER.indexOf(winnerFood);
+    if (cs && cs.n === roundN && winnerIdx >= 0) {
+      const T = Math.max(500, (config.countSeconds ?? 3) * 1000);
+      const progress = Math.min(1, Math.max(0, (Date.now() - cs.startNow) / T));
+      let totalSteps = 12;
+      while ((cs.startIdx + totalSteps) % 8 !== winnerIdx) totalSteps++;
+      const eased = 1 - Math.pow(1 - progress, 2.5);
+      // Land on the winner for the final ~8% of the count window
+      // (holds there until the pop-up) — this guarantees the landing
+      // regardless of 130ms tick alignment; before that the eased
+      // curve decelerates the steps.
+      const step = progress >= 0.92 ? totalSteps : Math.floor(eased * totalSteps);
+      spinHighlight = RING_ORDER[(cs.startIdx + step) % 8];
+    } else {
+      spinHighlight = RING_ORDER[spinTick % 8];
+    }
+  }
 
   // FIX 9a: pop-up viewer block. Participated = paid at least one bet.
   // Spent = sum of paid bets; won = credited payout (0 when none).
@@ -357,26 +465,60 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     }
   }
 
+  // PREVIEW SPOKES: thin lines from the hub centre to each tile
+  // centre, preview style (#FF5A3C at 0.4 opacity). Rendered BEFORE
+  // the tiles and the hub, so both cover the spoke ends and only the
+  // hub-edge-to-tile-edge segment shows — exactly like the preview.
+  function renderSpoke(foodId: DeliciousFoodId) {
+    const r = tileRect(foodId);
+    const cx = HUB_FRAC.x * WHEEL_W;
+    const cy = HUB_FRAC.y * WHEEL_H;
+    const dx = r.cx - cx;
+    const dy = r.cy - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= 0) return null;
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const ex = cx + ux * (CIRCLE / 2 + 2);
+    const ey = cy + uy * (CIRCLE / 2 + 2);
+    const len = Math.hypot(r.cx - ex, r.cy - ey);
+    const angle = (Math.atan2(r.cy - ey, r.cx - ex) * 180) / Math.PI;
+    return (
+      <View
+        key={`spoke-${foodId}`}
+        style={{
+          position: 'absolute',
+          left: (r.cx + ex) / 2 - len / 2,
+          top: (r.cy + ey) / 2 - 1,
+          width: len,
+          height: 2,
+          backgroundColor: '#FF5A3C',
+          opacity: 0.4,
+          transform: [{ rotate: `${angle}deg` }],
+        }}
+      />
+    );
+  }
+
   function renderFoodTile(foodId: DeliciousFoodId) {
     const food = effFoodMap[foodId];
-    const pos = TILE_POS[foodId];
+    const r = tileRect(foodId);
     const isWinner = phase === 'result' && round?.winningFood === foodId;
     const dimmed = phase === 'result' && round?.winningFood !== foodId;
+    const isSpinning = spinHighlight === foodId;
     const tileStyle: ViewStyle = {
       position: 'absolute',
-      top: pos.top,
+      left: r.left,
+      top: r.top,
       width: TILE_W,
       height: TILE_H,
-      borderRadius: 12,
+      borderRadius: TILE_W * 0.18,
       overflow: 'hidden',
       backgroundColor: '#F59E0B',
       opacity: dimmed ? 0.45 : 1,
-      borderWidth: isWinner ? 3 : 0,
-      borderColor: isWinner ? '#FFD43B' : 'transparent',
+      borderWidth: isWinner || isSpinning ? 3 : 0,
+      borderColor: isWinner || isSpinning ? '#FFD43B' : 'transparent',
     };
-    if (pos.centered) { tileStyle.left = '50%'; tileStyle.marginLeft = -TILE_W / 2; }
-    else if (pos.left !== undefined) tileStyle.left = pos.left;
-    else if (pos.right !== undefined) tileStyle.right = pos.right;
     return (
       <Pressable
         key={foodId}
@@ -384,8 +526,11 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         style={tileStyle}
       >
         <Image source={food.image} style={{ width: TILE_W, height: TILE_H }} resizeMode="cover" />
-        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', paddingVertical: 2, alignItems: 'center' }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>Win {food.multiplier}</Text>
+        {/* PREVIEW LABEL: "Win N Times" over the image (preview style:
+            bottom 5%, full-bleed overhang, white bold with warm shadow,
+            no dark bar) — replaces the old "Win N" bar. */}
+        <View style={{ position: 'absolute', bottom: TILE_H * 0.05, left: -TILE_W * 0.06, right: -TILE_W * 0.06, alignItems: 'center' }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 13, fontWeight: '800', textShadowColor: '#B34A00', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>Win {food.multiplier} Times</Text>
         </View>
       </Pressable>
     );
@@ -451,13 +596,19 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
           </View>
         </View>
 
-        {/* Wheel. */}
+        {/* Wheel: spokes (behind) + tiles + centre circle (hub). */}
         <View style={{ height: WHEEL_H, marginTop: 2 }}>
+          {DELICIOUS_FOODS.map((f) => renderSpoke(f.id))}
           {DELICIOUS_FOODS.map((f) => renderFoodTile(f.id))}
-          {/* Centre circle: pizza + Round + countdown. */}
+          {/* Centre circle: pizza + Round + countdown (preview hub:
+              33% of wheel width at 50%/46% of the wheel box). The
+              second line is NEVER a static '…': betting shows the
+              countdown, overrun/settling show a spinning ring + live
+              elapsed seconds counting UP, count shows the digit,
+              result shows "Result". */}
           <View style={{
-            position: 'absolute', left: '50%', top: '50%',
-            width: CIRCLE, height: CIRCLE, marginLeft: -CIRCLE / 2, marginTop: -CIRCLE / 2,
+            position: 'absolute', left: HUB_FRAC.x * WHEEL_W - CIRCLE / 2, top: HUB_FRAC.y * WHEEL_H - CIRCLE / 2,
+            width: CIRCLE, height: CIRCLE,
             borderRadius: CIRCLE / 2, overflow: 'hidden', borderWidth: 3, borderColor: '#FFD43B',
             backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center',
           }}>
@@ -465,20 +616,36 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             {round ? (
               <View style={{ alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, width: CIRCLE - 16 }}>
                 <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>Round {round.n}</Text>
-                <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>
-                  {phase === 'betting' ? (bettingOverrun ? '…' : `${secondsLeft}s`) : phase === 'count' ? '…' : phase === 'result' ? 'Result' : '…'}
-                </Text>
+                {bettingActive ? (
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>{secondsLeft}s</Text>
+                ) : phase === 'settling' || bettingOverrun ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#FFD43B', transform: [{ rotate: `${(spinTick * 27) % 360}deg` }] }} />
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginLeft: 6 }}>+{overrunElapsed}s</Text>
+                  </View>
+                ) : phase === 'count' ? (
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>{countDigit}</Text>
+                ) : phase === 'result' ? (
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>Result</Text>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#FFD43B', transform: [{ rotate: `${(spinTick * 27) % 360}deg` }] }} />
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginLeft: 6 }}>+{overrunElapsed}s</Text>
+                  </View>
+                )}
               </View>
             ) : (
-              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 14, fontWeight: '800', backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, maxWidth: CIRCLE - 12 }}>
-                Starting game…
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, maxWidth: CIRCLE - 12 }}>
+                <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#FFD43B', transform: [{ rotate: `${(spinTick * 27) % 360}deg` }] }} />
+                <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginLeft: 6 }}>Starting game</Text>
+              </View>
             )}
           </View>
           {/* 3-2-1 count overlay: clean digits ONLY (FIX 2 — the
-              "coming" text is removed everywhere; the winner is NOT
-              revealed during the count). The settling phase shows no
-              overlay at all now — just the centre circle. */}
+              "coming" text is removed everywhere). During the count
+              the tile highlight decelerates and lands on the winner
+              (see spinHighlight); the settling phase shows the
+              spinner + elapsed timer in the centre instead. */}
           {countDigit != null && (
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: '#FFF', fontSize: 72, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 8 }}> {countDigit} </Text>
@@ -536,7 +703,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         </View>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD9D9', fontSize: 12, textAlign: 'center', marginTop: 4, height: 16 }}>
           {!round
-            ? 'Starting game…'
+            ? 'Starting game'
             : bettingActive
               ? 'Tap an amount, then a food or side to bet'
               : 'Betting closed — wait for the next round'}
@@ -557,12 +724,18 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800', marginLeft: 10 }}>Today's History</Text>
             <View style={{ flex: 1 }} />
             {historyLoading && (
-              <Text style={{ color: '#FFD9D9', fontSize: 12 }}>Loading…</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ActivityIndicator size="small" color="#FFD9D9" />
+                <Text style={{ color: '#FFD9D9', fontSize: 12, marginLeft: 6 }}>Loading</Text>
+              </View>
             )}
           </View>
           <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginTop: 4 }}>
             {!historyReady ? (
-              <Text style={{ color: '#FFD9D9', fontSize: 14, textAlign: 'center', marginTop: 32 }}>Loading…</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 32 }}>
+                <ActivityIndicator size="small" color="#FFD9D9" />
+                <Text style={{ color: '#FFD9D9', fontSize: 14, marginLeft: 8 }}>Loading</Text>
+              </View>
             ) : playedRounds.length === 0 ? (
               <Text style={{ color: '#FFD9D9', fontSize: 14, textAlign: 'center', marginTop: 32 }}>No played rounds yet today</Text>
             ) : playedRounds.map((h) => {
@@ -574,7 +747,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                   <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', marginLeft: 8, flex: 1 }} numberOfLines={1}>{effFoodMap[h.food].name}</Text>
                   <Text style={{ color: '#FFD9D9', fontSize: 13, marginRight: 10 }}>{effSideMap[h.side].name}</Text>
                   {win === undefined ? (
-                    <Text style={{ color: '#FFD9D9', fontSize: 13 }}>…</Text>
+                    <ActivityIndicator size="small" color="#FFD9D9" />
                   ) : win != null && win > 0 ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <DiamondIcon size={13} />
