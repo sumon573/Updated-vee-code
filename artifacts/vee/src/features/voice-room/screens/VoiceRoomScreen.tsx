@@ -3203,8 +3203,10 @@ export default function VoiceRoomScreen() {
             </ScalePress>
           )}
           {/* 2026-10-25 (boss): realtime PK banner — the whole room watches
-              the battle live, imo-style. Tap opens the PK modal. */}
-          {pk?.status === 'active' && (
+              the battle live, imo-style. Tap opens the PK modal. Shown
+              for active battles AND pending challenges (challenge strip),
+              so the room never shows nothing while a PK is forming. */}
+          {pk && (pk.status === 'active' || pk.status === 'challenge') && (
             <PkBanner
               pk={pk}
               onPress={() => setPkOpen(true)}
@@ -3808,6 +3810,7 @@ export default function VoiceRoomScreen() {
           myName={myName}
           myPhotoURL={myPhotoURL ?? null}
           isHost={isOwnerOrAdmin}
+          mySeatIdx={mySeatIdx}
           gameId={gameNav.gameId}
           onClose={() => setGameNav(null)}
         />

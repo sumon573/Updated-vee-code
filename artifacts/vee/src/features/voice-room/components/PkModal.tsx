@@ -26,10 +26,12 @@ import { PkScoreBar } from './PkScoreBar';
  * value is the score. Higher score wins when the timer ends.
  * Scoring is done by the VPS scorer bot (giftFeed watcher) — this modal
  * only shows the battle and drives challenge/accept/decline/cancel.
- * BOSS RULES: start = host (owner/admin) ONLY, and BOTH battlers must be
- * seated; the host picks the battle length (3/5/10 min) at start and can
- * cancel mid-battle (host-only — a battler can never cancel to dodge a
- * loss). One PK per room at a time.
+ * BOSS RULES (peer PK, 2026-10-25): ANY seated user can challenge ANY
+ * other seated user (NOT host-only — the old host-only gate was removed
+ * when the boss reported only the host could PK); BOTH battlers must be
+ * seated; the challenger picks the battle length (3/5/10 min) at start
+ * and the room host (owner/admin) can cancel mid-battle (a battler can
+ * never cancel to dodge a loss). One PK per room at a time.
  */
 export function PkModal({
   visible, onClose, roomId, myUid, myName, mySeatIdx, seats, isOwnerOrAdmin,
@@ -152,14 +154,10 @@ export function PkModal({
             </Pressable>
           </View>
 
-          {/* ── No PK: start (host only + both battlers seated — boss rules) ── */}
+          {/* ── No PK: start (any seated user + both battlers seated — boss rules) ── */}
           {!pk && (
             <>
-              {!isOwnerOrAdmin ? (
-                <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
-                  Only the room host (owner/admin) can start a PK.
-                </Text>
-              ) : mySeatIdx < 0 ? (
+              {mySeatIdx < 0 ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
                   Take a seat to start a PK battle — both battlers must be seated.
                 </Text>

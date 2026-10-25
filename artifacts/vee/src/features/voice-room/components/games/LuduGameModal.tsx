@@ -21,6 +21,13 @@
  *      active views — slide left/right to see all seats; empty "+"
  *      taps join (lobby only); an active game is watch-only for
  *      non-players (games start full, so no mid-game join).
+ *   4. Picker panel (boss 2026-10-25, imo picker screenshot): big
+ *      colorful LUDO logo + 2P/4P cards + big Start (creates the
+ *      lobby). Join is VOICE-SEAT-gated (boss: "জয়েন করতে পারে যারা
+ *      সিটে থাকবে") — a room visitor without a voice seat sees the
+ *      lobby but cannot take a slot. NO Magic row (function undefined
+ *      — asked, awaiting his answer); NO Match button (he rejected
+ *      the Match chat message).
  *   3. Board (status 'active'): 15x15 board, real dice (pre-rolled value
  *      committed by transaction — the animation never invents a result),
  *      tap a highlighted token to move, captures, extra turns, win ends
@@ -85,7 +92,7 @@ function DiceFace({ value, size }: { value: number | null; size: number }) {
   );
 }
 
-export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myName, myPhotoURL, isHost, gameId, onClose }: {
+export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myName, myPhotoURL, mySeatIdx, isHost, gameId, onClose }: {
   visible: boolean;
   roomId: string;
   hostUid: string;
@@ -93,6 +100,8 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   myUid: string | null;
   myName: string;
   myPhotoURL?: string | null;
+  /** voice-seat index of the viewer (-1 = not seated); join requires a seat (boss 2026-10-25) */
+  mySeatIdx: number;
   isHost: boolean;
   /** existing game id, or null to show the host mode picker */
   gameId: string | null;
@@ -478,9 +487,15 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 : t('voiceRoom.games.luduNoMove')}
             </Text>
           )}
-          {ludu.log.length > 0 && (
+          {/* RTDB drops empty arrays on write, so a freshly started game
+              reads back with NO log key — `ludu.log` is undefined on the
+              first board render and `ludu.log.length` crashed the app
+              (boss 2026-10-25: Start → "Cannot read property 'length' of
+              undefined"). Default to [] here; the service already guards
+              its own log reads the same way. */}
+          {(ludu.log ?? []).length > 0 && (
             <View style={{ marginTop: 12, alignSelf: 'stretch', backgroundColor: '#F2F2F7', borderRadius: 12, padding: 10 }}>
-              {ludu.log.slice(-4).map((entry, i) => (
+              {(ludu.log ?? []).slice(-4).map((entry, i) => (
                 <Text key={i} style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>• {entry}</Text>
               ))}
             </View>
@@ -535,7 +550,11 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               )
             ) : (
               (() => {
-                const canJoin = joinable && !!myUid && !isSeated && !lobbyFull && game?.status === 'lobby';
+                // 2026-10-25 (boss: "জয়েন করতে পারে যারা সিটে থাকবে"):
+                // joining a lobby slot requires a VOICE seat — a room
+                // visitor without a seat sees the slots but cannot take
+                // one (same as the host's own inert "+").
+                const canJoin = joinable && !!myUid && mySeatIdx >= 0 && !isSeated && !lobbyFull && game?.status === 'lobby';
                 const slotStyle = {
                   width: 52, height: 52, borderRadius: 26,
                   borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed' as const,
@@ -579,10 +598,20 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          {/* ── MODE PICKER (host creating) ── */}
+          {/* ── MODE PICKER (host creating) — imo-style panel (boss 2026-10-25):
+              big colorful LUDO logo + 2P/4P cards + big Start. NO Magic
+              row: its function was never defined (asked, awaiting his
+              answer) — no dead toggles. NO Match button: he rejected
+              the Match chat message. */}
           {!game && !internalId && isHost && (
             <View>
-              <Text style={{ fontSize: 14, color: '#8E8E93', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 4 }}>
+                <Text style={{ fontSize: 46, fontWeight: '900', color: '#EF4444' }}>L</Text>
+                <Text style={{ fontSize: 46, fontWeight: '900', color: '#F59E0B' }}>U</Text>
+                <Text style={{ fontSize: 46, fontWeight: '900', color: '#22C55E' }}>D</Text>
+                <Text style={{ fontSize: 46, fontWeight: '900', color: '#7C3AED' }}>O</Text>
+              </View>
+              <Text style={{ fontSize: 14, color: '#8E8E93', marginBottom: 20, textAlign: 'center' }}>
                 {t('voiceRoom.games.luduTagline')}
               </Text>
               <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -596,7 +625,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                       key={opt.m}
                       onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMode(opt.m); }}
                       style={{
-                        flex: 1, borderRadius: 16, paddingVertical: 18, paddingHorizontal: 12,
+                        flex: 1, borderRadius: 16, paddingVertical: 22, paddingHorizontal: 12,
                         alignItems: 'center',
                         backgroundColor: selected ? '#22C55E14' : '#F2F2F7',
                         borderWidth: selected ? 2 : 1,
@@ -606,14 +635,14 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                       <View style={{ flexDirection: 'row', gap: 4, marginBottom: 8 }}>
                         {(opt.m === 2 ? LUDU_COLOR_ORDER_2 : LUDU_COLOR_ORDER_4).map((color, i) => (
                           <View key={i} style={{
-                            width: 26, height: 26, borderRadius: 13,
+                            width: 30, height: 30, borderRadius: 15,
                             backgroundColor: LUDU_COLORS[color],
                             borderWidth: 2, borderColor: '#FFF',
                             marginLeft: i > 0 ? -8 : 0,
                           }} />
                         ))}
                       </View>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: '#000' }}>{opt.label}</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#000' }}>{opt.label}</Text>
                       <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>{opt.sub}</Text>
                     </Pressable>
                   );
@@ -623,11 +652,11 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 onPress={create}
                 disabled={creating}
                 style={{
-                  marginTop: 20, borderRadius: 999, paddingVertical: 14, alignItems: 'center',
+                  marginTop: 24, borderRadius: 999, paddingVertical: 16, alignItems: 'center',
                   backgroundColor: creating ? '#F2F2F7' : '#22C55E',
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: '800', color: creating ? '#8E8E93' : '#FFF' }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: creating ? '#8E8E93' : '#FFF' }}>
                   {t('voiceRoom.games.luduStart')}
                 </Text>
               </Pressable>
@@ -662,7 +691,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     </Text>
                   </Pressable>
                 )}
-                {!isHost && myUid && !isSeated && !lobbyFull && (
+                {!isHost && myUid && mySeatIdx >= 0 && !isSeated && !lobbyFull && (
                   <Pressable
                     onPress={join}
                     style={{ flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#22C55E' }}

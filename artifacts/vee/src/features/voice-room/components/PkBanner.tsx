@@ -17,6 +17,9 @@ import { PkScoreBar } from './PkScoreBar';
  * score bar (PkScoreBar — grows/shrinks live as diamonds land). Tap
  * opens the PK modal (details + gift + host cancel). Rendered for ALL
  * users, not just the battlers — the whole room watches live.
+ * 2026-10-25 (boss: "room এ কিছুই দেখায় না"): the strip ALSO renders
+ * for a PENDING challenge (names + "Waiting for …", no bar/countdown),
+ * so the room sees the battle forming — not only the opponent's alert.
  */
 export function PkBanner({
   pk,
@@ -38,6 +41,7 @@ export function PkBanner({
 
   const challengerScore = pkScoreOf(pk, pk.challenger.uid);
   const opponentScore = pkScoreOf(pk, pk.opponent.uid);
+  const isChallenge = pk.status === 'challenge';
   const remainingMs = Math.max(0, pk.endsAt - now);
   const remainingText = `${Math.floor(remainingMs / 60000)}:${String(
     Math.floor((remainingMs % 60000) / 1000),
@@ -84,7 +88,13 @@ export function PkBanner({
         }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Text style={{ color: C.red, fontSize: 17, fontWeight: '900', fontStyle: 'italic' }}>PK</Text>
-          <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>{remainingText}</Text>
+          {isChallenge ? (
+            <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>
+              Waiting for {pk.opponent.name}…
+            </Text>
+          ) : (
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>{remainingText}</Text>
+          )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -107,9 +117,11 @@ export function PkBanner({
             {avatar(pk.opponent.name, '#05B5FA', opponentPhotoURL)}
           </View>
         </View>
-        <View style={{ marginTop: 8 }}>
-          <PkScoreBar challengerScore={challengerScore} opponentScore={opponentScore} height={10} />
-        </View>
+        {!isChallenge && (
+          <View style={{ marginTop: 8 }}>
+            <PkScoreBar challengerScore={challengerScore} opponentScore={opponentScore} height={10} />
+          </View>
+        )}
       </View>
     </Pressable>
   );
