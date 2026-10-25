@@ -24,14 +24,15 @@
  *   4. Seat-gated join (boss 2026-10-25: "জয়েন করতে পারে যারা সিটে
  *      থাকবে") — a room visitor without a voice seat sees the lobby
  *      but cannot take a slot.
- *   5. Full-page picker + lobby (boss 2026-10-25, imo screenshots):
- *      panel Ludu opens the picker page DIRECTLY (no Games modal step);
- *      picker + lobby render as a FULL purple page over the room
- *      (LUDO logo + 2P/4P cards + big orange Start → mode lobby with
- *      slots + greyed Start + Match). Match = ONE room-chat invite per
- *      session (stated interpretation — no matchmaking pool exists).
- *      NO Magic row: its function is still undefined (asked, awaiting
- *      his answer) — no dead toggles. Board keeps the white sheet.
+ *   5. Picker + lobby as imo-style SHEETS over the room (boss 2026-10-25
+ *      "হুবহু": the 15:05 full-page experiment was NOT what he showed —
+ *      reverted 15:36): purple sheet, room dimmed behind, LUDO logo +
+ *      2P/4P cards + big orange Start → mode lobby with slots + greyed
+ *      Start + Match. Match stays visible like imo's (one invite per
+ *      tap). Host Cancel (lobby header, red text) ends the lobby for
+ *      everyone (endGame + "Ludo ended" + strip disappears). NO Magic
+ *      row: its function is still undefined (asked, awaiting his
+ *      answer) — no dead toggles. Board keeps the white sheet.
  *   3. Board (status 'active'): 15x15 board, real dice (pre-rolled value
  *      committed by transaction — the animation never invents a result),
  *      tap a highlighted token to move, captures, extra turns, win ends
@@ -118,7 +119,6 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   const [mode, setMode] = useState<2 | 4>(2);
   const [creating, setCreating] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [matchSent, setMatchSent] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [displayDice, setDisplayDice] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
@@ -132,7 +132,6 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     setLoaded(false);
     setRolling(false);
     setDisplayDice(null);
-    setMatchSent(false);
     passSeqRef.current = -1;
     return () => {
       if (rollTimer.current) clearInterval(rollTimer.current);
@@ -248,13 +247,11 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   };
 
   // 2026-10-25 (boss, imo lobby Match): the host invites the room to
-  // fill empty slots — ONE room-chat invite per modal session, then the
-  // button hides (its job is done). This is the stated interpretation
-  // of imo's Match for a voice room (no matchmaking pool exists); if
-  // the boss meant something else he will correct it.
+  // fill empty slots — one room-chat invite PER TAP, and the button
+  // stays visible like imo's (an earlier one-send-then-hide design was
+  // NOT imo-exact and hid Match after the first tap — removed).
   const match = async () => {
-    if (!game || !isHost || matchSent) return;
-    setMatchSent(true);
+    if (!game || !isHost) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await sendRoomChatMsg(roomId, systemMsg(t('voiceRoom.games.luduMatchInvite'))).catch(() => {});
   };
@@ -589,7 +586,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 );
               })()
             )}
-            <Text style={{ fontSize: 11, color: isFullPage ? 'rgba(255,255,255,0.85)' : '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
+            <Text style={{ fontSize: 11, color: isPurpleSheet ? 'rgba(255,255,255,0.85)' : '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
               {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
             </Text>
           </View>
@@ -601,40 +598,45 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   // 2026-10-25 (boss, imo screenshots): picker + lobby render as a FULL
   // purple page over the room (not a bottom sheet); the board keeps
   // the white sheet (its 15x15 layout needs it).
-  const isFullPage = !game || game.status === 'lobby';
+  const isPurpleSheet = !game || game.status === 'lobby';
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
-      <View style={isFullPage ? {
-        position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#6D28D9',
-        paddingBottom: 28,
+      <View style={isPurpleSheet ? {
+        position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#6D28D9',
+        borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', paddingBottom: 28,
       } : {
         position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', paddingBottom: 28,
       }}>
-        {!isFullPage && (
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
-        )}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: isFullPage ? 16 : 12, paddingBottom: 4 }}>
-          {isFullPage ? (
+        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+          {isPurpleSheet ? (
             <View style={{ flex: 1 }} />
           ) : (
             <Text style={{ fontSize: 20, fontWeight: '900', color: '#000', letterSpacing: 2, flex: 1 }}>
               {t('voiceRoom.games.luduTitle')}
             </Text>
           )}
+          {isPurpleSheet && game?.status === 'lobby' && isHost && (
+            <Pressable onPress={end} hitSlop={12} style={{ marginRight: 16 }}>
+              <Text style={{ color: '#FF6B6B', fontSize: 15, fontWeight: '800' }}>
+                {t('voiceRoom.games.luduCancel')}
+              </Text>
+            </Pressable>
+          )}
           <Pressable onPress={onClose} hitSlop={12}>
-            <Feather name="x" size={22} color={isFullPage ? '#FFFFFF' : '#8E8E93'} />
+            <Feather name="x" size={22} color={isPurpleSheet ? '#FFFFFF' : '#8E8E93'} />
           </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          {/* ── MODE PICKER (host creating) — imo-style panel (boss 2026-10-25):
-              big colorful LUDO logo + 2P/4P cards + big Start. NO Magic
-              row: its function was never defined (asked, awaiting his
-              answer) — no dead toggles. NO Match button: he rejected
-              the Match chat message. */}
+          {/* ── MODE PICKER (host creating) — imo-style sheet over the
+              room (boss 2026-10-25 "হুবহু"): big colorful LUDO logo +
+              2P/4P cards + big Start. NO Magic row: its function was
+              never defined (asked, awaiting his answer) — no dead
+              toggles. Match lives in the LOBBY, not the picker. */}
           {!game && !internalId && isHost && (
             <View>
               <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 4 }}>
@@ -729,7 +731,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     </Text>
                   </Pressable>
                 )}
-                {isHost && !lobbyFull && !matchSent && (
+                {isHost && !lobbyFull && (
                   <Pressable
                     onPress={match}
                     style={{ flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#F97316' }}
