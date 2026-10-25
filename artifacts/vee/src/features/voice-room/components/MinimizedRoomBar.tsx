@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View, Platform, Image } from 'react-native';
+import { Animated, Pressable, Text, View, Platform, Image, PanResponder, Dimensions } from 'react-native';
 import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { useTranslation } from 'react-i18next';
 import {
   getMinimizedRoom,
   setMinimizedRoom,
@@ -32,30 +31,97 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   // exited room screen after a cold-start auto-return (no back stack).
   const pathname = usePathname();
   const params = useGlobalSearchParams();
-  const slideAnim = useRef(new Animated.Value(100)).current;
   const insets = useSafeAreaInsets();
-  const { t } = useTranslation();
+
+  // Default: above the bottom nav. Hosts rendered inside a full-screen
+  // modal (the rooms list) have no tab bar beneath them, so they pass a
+  // small override — a bar mounted in the root layout is COVERED by an
+  // RN Modal, which is why a second instance lives inside that modal
+  // (2026-10-22, Sumon: minimize bar invisible on the My Rooms screen).
+  const bottomOffset = bottomOffsetOverride ??
+    (Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 0) + 80);
 
   useEffect(() => {
     const unsub = subscribeMinimizedRoom((r) => {
       setRoom(r);
-      if (r) {
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 14,
-          bounciness: 6,
-        }).start();
-      } else {
-        Animated.timing(slideAnim, {
-          toValue: 100,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      }
     });
     return unsub;
   }, []);
+
+  // 2026-10-25 (boss, imo-style minimize bubble): a free-draggable round
+  // room DP with a 4-bar voice ripple below it, replacing the old bottom
+  // bar. The bubble stays where dropped (no snap-back) and the position
+  // is saved to the minimized-room store so the modal instance agrees.
+  const BUBBLE_W = 72;
+  const BUBBLE_H = 120;
+  const defaultPos = () => {
+    const { width: W, height: H } = Dimensions.get('window');
+    const s = getMinimizedRoom();
+    return {
+      x: s?.bubbleX ?? (W - 16 - 64),
+      y: s?.bubbleY ?? (H - bottomOffset - BUBBLE_H),
+    };
+  };
+  const initialPosRef = useRef(defaultPos());
+  const pan = useRef(new Animated.ValueXY(initialPosRef.current)).current;
+  const posRef = useRef({ ...initialPosRef.current });
+  // Drag: taps pass through to the buttons (threshold), drags move the
+  // bubble; on release clamp on-screen + save to the store.
+  const dragStart = useRef({ x: 0, y: 0 });
+  const finishDrag = () => {
+    const { width: W, height: H } = Dimensions.get('window');
+    const cx = Math.min(Math.max(posRef.current.x, 8), W - BUBBLE_W);
+    const cy = Math.min(Math.max(posRef.current.y, insets.top + 8), H - BUBBLE_H);
+    posRef.current = { x: cx, y: cy };
+    Animated.spring(pan, { toValue: { x: cx, y: cy }, useNativeDriver: false }).start();
+    const r = getMinimizedRoom();
+    if (r) setMinimizedRoom({ ...r, bubbleX: cx, bubbleY: cy });
+  };
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, gs) => Math.abs(gs.dx) > 4 || Math.abs(gs.dy) > 4,
+      onPanResponderGrant: () => {
+        dragStart.current = { ...posRef.current };
+      },
+      onPanResponderMove: (_e, gs) => {
+        const nx = dragStart.current.x + gs.dx;
+        const ny = dragStart.current.y + gs.dy;
+        posRef.current = { x: nx, y: ny };
+        pan.setValue({ x: nx, y: ny });
+      },
+      onPanResponderRelease: finishDrag,
+      onPanResponderTerminate: finishDrag,
+    }),
+  ).current;
+
+  // Entrance: pop in (scale spring) when a room becomes minimized.
+  const enterScale = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    if (!room) return;
+    enterScale.setValue(0.6);
+    Animated.spring(enterScale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 6 }).start();
+  }, [room?.id]);
+
+  // Voice ripple: 4 bars looping up/down — the "voice is live" vibe
+  // (boss 2026-10-25, imo reference). Runs while minimized+connected.
+  const RIPPLE_MIN = [5, 7, 4, 6];
+  const RIPPLE_MAX = [16, 13, 15, 12];
+  const RIPPLE_DUR = [520, 680, 600, 760];
+  const ripples = useRef(RIPPLE_MIN.map((m) => new Animated.Value(m))).current;
+  useEffect(() => {
+    if (!room) return;
+    const anims = ripples.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(v, { toValue: RIPPLE_MAX[i], duration: RIPPLE_DUR[i], useNativeDriver: false }),
+          Animated.timing(v, { toValue: RIPPLE_MIN[i], duration: RIPPLE_DUR[i], useNativeDriver: false }),
+        ]),
+      ),
+    );
+    anims.forEach((a) => a.start());
+    return () => anims.forEach((a) => a.stop());
+  }, [room?.id]);
 
   // 2026-10-12: room-block while minimized — tear down the minimized
   // session. Without this a blocked-while-minimized user would keep the
@@ -191,14 +257,6 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
 
   if (!room) return null;
 
-  // Default: above the bottom nav. Hosts rendered inside a full-screen
-  // modal (the rooms list) have no tab bar beneath them, so they pass a
-  // small override — a bar mounted in the root layout is COVERED by an
-  // RN Modal, which is why a second instance lives inside that modal
-  // (2026-10-22, Sumon: minimize bar invisible on the My Rooms screen).
-  const bottomOffset = bottomOffsetOverride ??
-    (Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 0) + 80);
-
   const handleReturn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setMinimizedRoom(null);
@@ -244,100 +302,132 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   // Mic indicator color reflects the LIVE muted state (toggleable while minimized)
   const micColor = micMuted ? C.micOff : C.micOn;
 
+  // imo-style bubble (2026-10-25): round room DP, draggable anywhere,
+  // 4-bar voice ripple below, room-name pill. Tap DP or name = return to
+  // the room; mic badge toggles mic; X badge exits the room entirely.
   return (
     <Animated.View
+      {...panResponder.panHandlers}
       style={{
         position: 'absolute',
-        bottom: bottomOffset,
-        left: 16,
-        right: 16,
-        transform: [{ translateY: slideAnim }],
-        backgroundColor: C.bg,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        borderColor: C.border,
-        flexDirection: 'row',
+        left: 0,
+        top: 0,
+        transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale: enterScale }],
         alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        shadowColor: C.glow,
-        shadowOpacity: 0.45,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 14,
         zIndex: 999,
       }}
     >
-      {/* Room DP (2026-10-11 Issue #3): show the minimized room's profile
-          DP where the mute icon was — Sumon's order. */}
+      {/* Room DP — tap = return to room */}
+      <Pressable onPress={handleReturn}>
+        <View
+          style={{
+            width: 60,
+            height: 60,
+            borderRadius: 30,
+            backgroundColor: C.primary + '33',
+            borderWidth: 2,
+            borderColor: C.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'visible',
+            shadowColor: C.glow,
+            shadowOpacity: 0.45,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 14,
+          }}
+        >
+          {room.coverImageUrl ? (
+            <Image
+              source={{ uri: room.coverImageUrl }}
+              style={{ width: 56, height: 56, borderRadius: 28 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <Feather name="mic" size={22} color={C.muted} />
+          )}
+          {/* Mic badge — tap toggles mic without returning */}
+          <Pressable
+            onPress={handleMicToggle}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              right: -2,
+              bottom: -2,
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+              backgroundColor: C.bg,
+              borderWidth: 1.5,
+              borderColor: C.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Feather name={micMuted ? 'mic-off' : 'mic'} size={11} color={micColor} />
+          </Pressable>
+          {/* Close badge — fully exits the minimized room */}
+          <Pressable
+            onPress={handleClose}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              right: -2,
+              top: -2,
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+              backgroundColor: C.bg,
+              borderWidth: 1.5,
+              borderColor: C.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Feather name="x" size={11} color={C.muted} />
+          </Pressable>
+        </View>
+      </Pressable>
+
+      {/* Voice ripple — 4 bars looping up/down (voice-is-live vibe) */}
       <View
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          backgroundColor: C.primary + '33',
-          borderWidth: 1.5,
-          borderColor: C.border,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginRight: 10,
-          overflow: 'hidden',
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          gap: 3,
+          height: 16,
+          marginTop: 6,
         }}
       >
-        {room.coverImageUrl ? (
-          <Image
-            source={{ uri: room.coverImageUrl }}
-            style={{ width: 36, height: 36 }}
-            resizeMode="cover"
+        {ripples.map((a, i) => (
+          <Animated.View
+            key={i}
+            style={{ width: 3, height: a, borderRadius: 2, backgroundColor: C.glow }}
           />
-        ) : (
-          <Feather name="mic" size={16} color={C.muted} />
-        )}
+        ))}
       </View>
 
-      {/* Room info — name with mute/unmute status beside it (2026-10-11) */}
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      {/* Room name pill — tap = return to room */}
+      <Pressable onPress={handleReturn}>
+        <View
+          style={{
+            marginTop: 4,
+            maxWidth: 110,
+            backgroundColor: 'rgba(15,10,30,0.85)',
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: C.border,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+          }}
+        >
           <Text
-            style={{ color: C.text, fontSize: 13, fontWeight: '800', flexShrink: 1 }}
+            style={{ color: C.text, fontSize: 11, fontWeight: '800', textAlign: 'center' }}
             numberOfLines={1}
           >
             {room.name}
           </Text>
-          {/* Mute/unmute status — tap to toggle while minimized */}
-          <Pressable onPress={handleMicToggle} hitSlop={10}>
-            <Feather
-              name={micMuted ? 'mic-off' : 'mic'}
-              size={13}
-              color={micColor}
-            />
-          </Pressable>
         </View>
-        <Text
-          style={{ color: C.muted, fontSize: 11, marginTop: 1 }}
-          numberOfLines={1}
-        >
-          {room.topic}
-        </Text>
-      </View>
-
-      {/* Return button */}
-      <Pressable
-        onPress={handleReturn}
-        style={{
-          backgroundColor: C.primary,
-          borderRadius: 14,
-          paddingHorizontal: 14,
-          paddingVertical: 7,
-          marginRight: 8,
-        }}
-      >
-        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{t('voiceRoom.minimizedBar.return')}</Text>
-      </Pressable>
-
-      {/* Close — fully exits the minimized room */}
-      <Pressable onPress={handleClose} hitSlop={12}>
-        <Feather name="x" size={18} color={C.muted} />
       </Pressable>
     </Animated.View>
   );

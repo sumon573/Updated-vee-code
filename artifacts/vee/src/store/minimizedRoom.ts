@@ -19,6 +19,10 @@ export type MinimizedRoom = {
   role?: string;
   /** Room cover image URL — shown as the DP in the mini-player bar (2026-10-11). */
   coverImageUrl?: string;
+  /** Bubble position (imo-style draggable minimize, 2026-10-25) — kept
+   * where the user dropped it for this minimized session. */
+  bubbleX?: number;
+  bubbleY?: number;
 } | null;
 
 let _minimizedRoom: MinimizedRoom = null;
