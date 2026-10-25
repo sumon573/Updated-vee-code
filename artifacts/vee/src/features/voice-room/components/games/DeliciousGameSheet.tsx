@@ -504,8 +504,16 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     const food = effFoodMap[foodId];
     const r = tileRect(foodId);
     const isWinner = phase === 'result' && round?.winningFood === foodId;
-    const dimmed = phase === 'result' && round?.winningFood !== foodId;
     const isSpinning = spinHighlight === foodId;
+    // UNMISSABLE SPIN HIGHLIGHT: during spinning phases the active tile
+    // pops (thick white-gold border + glow + scale) while every other
+    // tile dims to 0.45 — the old thin 3px gold border on the amber tile
+    // was nearly invisible on a phone, so the roulette read as nothing
+    // happening. spinHighlight is null during betting/result, so this
+    // can never dim tiles outside a spin. Result winner rendering is
+    // unchanged (3px gold border, no scale, no dim change beyond today).
+    const spinDimmed = spinHighlight != null && !isSpinning;
+    const dimmed = (phase === 'result' && round?.winningFood !== foodId) || spinDimmed;
     const tileStyle: ViewStyle = {
       position: 'absolute',
       left: r.left,
@@ -516,8 +524,17 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
       overflow: 'hidden',
       backgroundColor: '#F59E0B',
       opacity: dimmed ? 0.45 : 1,
-      borderWidth: isWinner || isSpinning ? 3 : 0,
-      borderColor: isWinner || isSpinning ? '#FFD43B' : 'transparent',
+      borderWidth: isSpinning ? 5 : isWinner ? 3 : 0,
+      borderColor: isSpinning ? '#FFF3B0' : isWinner ? '#FFD43B' : 'transparent',
+      ...(isSpinning ? {
+        transform: [{ scale: 1.12 }],
+        zIndex: 2,
+        shadowColor: '#FFD43B',
+        shadowOpacity: 0.9,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 8,
+      } : null),
     };
     return (
       <Pressable
