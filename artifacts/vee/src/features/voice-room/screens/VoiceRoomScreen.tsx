@@ -3131,6 +3131,20 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
+        {/* 2026-10-25 (boss, imo-style): the PK banner sits at the TOP of the
+            room, above the seats — never buried under the seats/announcement
+            inside the comment box. Tap opens the PK modal. Shown for active
+            battles AND pending challenges. */}
+        {pk && (pk.status === 'active' || pk.status === 'challenge') && (
+          <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 6 }}>
+            <PkBanner
+              pk={pk}
+              onPress={() => setPkOpen(true)}
+              challengerPhotoURL={seats.find((s) => s?.id === pk.challenger.uid)?.photoURL}
+              opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
+            />
+          </View>
+        )}
         <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4, marginHorizontal: -6 }}>
         {/* Pair Halo layer — rendered BEHIND the seats (zIndex 1 < 2) so
             Nobel/store frames and seat names are never covered. Avatar
@@ -3218,18 +3232,6 @@ export default function VoiceRoomScreen() {
                 )}
               </View>
             </ScalePress>
-          )}
-          {/* 2026-10-25 (boss): realtime PK banner — the whole room watches
-              the battle live, imo-style. Tap opens the PK modal. Shown
-              for active battles AND pending challenges (challenge strip),
-              so the room never shows nothing while a PK is forming. */}
-          {pk && (pk.status === 'active' || pk.status === 'challenge') && (
-            <PkBanner
-              pk={pk}
-              onPress={() => setPkOpen(true)}
-              challengerPhotoURL={seats.find((s) => s?.id === pk.challenger.uid)?.photoURL}
-              opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
-            />
           )}
           {/* 2026-10-25 (boss, full Ludu concept): the live lobby strip —
               every room occupant sees an open lobby right here, no
