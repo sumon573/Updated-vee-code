@@ -75,20 +75,20 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const PANEL_H = Math.min(SH * 0.78, 640);
 const NON_WHEEL_H = 280;
 const WHEEL_H = Math.max(280, PANEL_H - NON_WHEEL_H);
-const TILE_W = Math.max(56, WHEEL_H / 4.6 / 1.12);
-const TILE_H = TILE_W * 1.12;
+const TILE_H = WHEEL_H * 0.18;
+const TILE_W = Math.max(48, TILE_H / 1.12);
 const CIRCLE = TILE_W * 1.55;
 
 type TilePos = { top: number; left?: DimensionValue; right?: DimensionValue; centered?: boolean };
 const TILE_POS: Record<DeliciousFoodId, TilePos> = {
   hotdog: { top: 0, centered: true },
-  tomato: { top: WHEEL_H * 0.17, left: '4%' },
-  skewers: { top: WHEEL_H * 0.17, right: '4%' },
-  cabbage: { top: WHEEL_H * 0.36, left: 0 },
-  ham: { top: WHEEL_H * 0.36, right: 0 },
-  corn: { top: WHEEL_H * 0.55, left: '4%' },
-  steak: { top: WHEEL_H * 0.55, right: '4%' },
-  carrot: { top: WHEEL_H * 0.78, centered: true },
+  tomato: { top: WHEEL_H * 0.205, left: '4%' },
+  skewers: { top: WHEEL_H * 0.205, right: '4%' },
+  cabbage: { top: WHEEL_H * 0.41, left: 0 },
+  ham: { top: WHEEL_H * 0.41, right: 0 },
+  corn: { top: WHEEL_H * 0.615, left: '4%' },
+  steak: { top: WHEEL_H * 0.615, right: '4%' },
+  carrot: { top: WHEEL_H * 0.80, centered: true },
 };
 
 function formatNum(n: number): string {
@@ -194,6 +194,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const countDigit = phase === 'count' ? Math.min(3, Math.max(1, secondsLeft)) : null;
   const showResult = phase === 'result' && round && dismissedRound !== round.n;
   const result = round ? results[String(round.n)] : undefined;
+  const biggestWinners = result?.biggest ?? [];
 
   const viewerLine = useMemo(() => {
     if (!round || phase !== 'result') return null;
@@ -248,7 +249,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
       >
         <Image source={food.image} style={{ width: TILE_W, height: TILE_H }} resizeMode="cover" />
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', paddingVertical: 2, alignItems: 'center' }}>
-          <Text style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>Win {food.multiplier} Times</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 11, fontWeight: '800' }}>Win {food.multiplier}</Text>
         </View>
         {you > 0 && (
           <View style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center' }}>
@@ -446,12 +447,12 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 {viewerLine}
               </Text>
             )}
-            {result && result.biggest.length > 0 && (
+            {result && biggestWinners.length > 0 && (
               <View style={{ width: '100%', marginTop: 14 }}>
                 <Text style={{ color: '#FFD9D9', fontSize: 13, fontWeight: '800', marginBottom: 6 }}>
                   This round's biggest winner
                 </Text>
-                {result.biggest.map((w, i) => (
+                {biggestWinners.map((w, i) => (
                   <View key={`${w.uid}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 3 }}>
                     <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '700', flex: 1 }} numberOfLines={1}>
                       {i + 1}. {w.name}
@@ -464,7 +465,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 ))}
               </View>
             )}
-            {result && result.biggest.length === 0 && (
+            {result && biggestWinners.length === 0 && (
               <Text style={{ color: '#FFD9D9', fontSize: 13, marginTop: 12 }}>No bets this round</Text>
             )}
           </View>
