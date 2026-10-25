@@ -16,6 +16,11 @@
  *      players/$uid (live rules already allow it); host Start snapshots
  *      seats + inits the board. NO duplicate lobbies: creating while
  *      the host already has a live lobby reopens that lobby instead.
+ *   3. Spectator row (boss 2026-10-25, imo in-play screenshot): ONE
+ *      horizontal scrollable seats line under the board in lobby AND
+ *      active views — slide left/right to see all seats; empty "+"
+ *      taps join (lobby only); an active game is watch-only for
+ *      non-players (games start full, so no mid-game join).
  *   3. Board (status 'active'): 15x15 board, real dice (pre-rolled value
  *      committed by transaction — the animation never invents a result),
  *      tap a highlighted token to move, captures, extra turns, win ends
@@ -30,7 +35,7 @@
  * owner/admin writes land and member turns fail with an honest alert.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, Alert, Dimensions } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, Alert, Dimensions, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -145,6 +150,9 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
 
   const playerName = (uid: string): string =>
     game?.players?.[uid]?.name ?? (uid === game?.hostUid ? game?.hostName ?? '' : '');
+
+  const playerPhoto = (uid: string): string | null =>
+    (game?.players?.[uid] as { photoURL?: string | null } | undefined)?.photoURL ?? null;
 
   // Auto-pass: rolled but no token can move → turn passes after a beat.
   useEffect(() => {
@@ -489,6 +497,70 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
 
   const lobbyFull = seatOrder.length >= modeCount;
 
+  // 2026-10-25 (boss: imo in-play screenshot): ONE horizontal scrollable
+  // seats line — slide left/right to see all seats, tap an empty "+" to
+  // join. Shared by the lobby (joinable) and the active board
+  // (watch-only: games start full, so no mid-game join).
+  const renderSeatsRow = (joinable: boolean) => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 14, paddingHorizontal: 4 }}
+      style={{ marginBottom: 8 }}
+    >
+      {Array.from({ length: modeCount }).map((_, i) => {
+        const uid = seatOrder[i];
+        const filled = !!uid;
+        const color = LUDU_COLORS[(modeCount === 2 ? LUDU_COLOR_ORDER_2 : LUDU_COLOR_ORDER_4)[i]];
+        const photo = filled ? playerPhoto(uid) : null;
+        return (
+          <View key={i} style={{ alignItems: 'center', width: 64 }}>
+            {filled ? (
+              photo ? (
+                <Image
+                  source={{ uri: photo }}
+                  style={{ width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: '#FFF' }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={{
+                  width: 52, height: 52, borderRadius: 26, backgroundColor: color,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 2, borderColor: '#FFF',
+                }}>
+                  <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '900' }}>
+                    {(playerName(uid) || '?').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )
+            ) : (
+              (() => {
+                const canJoin = joinable && !!myUid && !isSeated && !lobbyFull && game?.status === 'lobby';
+                const slotStyle = {
+                  width: 52, height: 52, borderRadius: 26,
+                  borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed' as const,
+                  alignItems: 'center' as const, justifyContent: 'center' as const,
+                };
+                return canJoin ? (
+                  <Pressable onPress={handlePlusSlot} hitSlop={8} style={slotStyle}>
+                    <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
+                  </Pressable>
+                ) : (
+                  <View style={slotStyle}>
+                    <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
+                  </View>
+                );
+              })()
+            )}
+            <Text style={{ fontSize: 11, color: '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
+              {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
+            </Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
@@ -574,51 +646,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               <Text style={{ fontSize: 14, color: '#8E8E93', marginBottom: 16 }}>
                 {t('voiceRoom.games.luduTagline')}
               </Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14, marginBottom: 8 }}>
-                {Array.from({ length: modeCount }).map((_, i) => {
-                  const uid = seatOrder[i];
-                  const filled = !!uid;
-                  const color = LUDU_COLORS[(modeCount === 2 ? LUDU_COLOR_ORDER_2 : LUDU_COLOR_ORDER_4)[i]];
-                  return (
-                    <View key={i} style={{ alignItems: 'center', width: 64 }}>
-                      {filled ? (
-                        <View style={{
-                          width: 52, height: 52, borderRadius: 26, backgroundColor: color,
-                          alignItems: 'center', justifyContent: 'center',
-                          borderWidth: 2, borderColor: '#FFF',
-                        }}>
-                          <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '900' }}>
-                            {(playerName(uid) || '?').charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                      ) : (
-                        // Empty slot: tappable JOIN target for anyone not
-                        // already in the game (host is seated → inert View).
-                        (() => {
-                          const canJoin = !!myUid && !isSeated && !lobbyFull && game.status === 'lobby';
-                          const slotStyle = {
-                            width: 52, height: 52, borderRadius: 26,
-                            borderWidth: 2, borderColor: '#C7C7CC', borderStyle: 'dashed' as const,
-                            alignItems: 'center' as const, justifyContent: 'center' as const,
-                          };
-                          return canJoin ? (
-                            <Pressable onPress={handlePlusSlot} hitSlop={8} style={slotStyle}>
-                              <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
-                            </Pressable>
-                          ) : (
-                            <View style={slotStyle}>
-                              <Text style={{ color: '#C7C7CC', fontSize: 24, fontWeight: '300' }}>+</Text>
-                            </View>
-                          );
-                        })()
-                      )}
-                      <Text style={{ fontSize: 11, color: '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
-                        {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+              {renderSeatsRow(true)}
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                 {isHost && (
                   <Pressable
@@ -658,7 +686,12 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
 
           {/* ── BOARD ── */}
           {game && game.status === 'active' && (
-            ludu ? renderBoard() : (
+            ludu ? (
+              <View>
+                {renderBoard()}
+                {renderSeatsRow(false)}
+              </View>
+            ) : (
               <Text style={{ textAlign: 'center', color: '#8E8E93', fontSize: 14, padding: 24 }}>
                 {t('voiceRoom.games.luduWaitingPlayers')}
               </Text>
