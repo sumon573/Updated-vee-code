@@ -14,8 +14,9 @@
  *
  * RTDB contract (unchanged from v1, client untouched):
  *   roomMusic/{roomId} = { queue: {pushId: {title,url,mediaId,addedBy,
- *     addedByName,addedAt}}, state: 'playing'|'paused'|'stopped'|'idle'|
- *     'next', current: {queueId,title,url,mediaId,positionSec,startedAt} }
+ *     addedByName,addedAt,durationSec?}}, state: 'playing'|'paused'|
+ *     'stopped'|'idle'|'next', current: {queueId,title,url,mediaId,
+ *     positionSec,startedAt,durationSec?}, playQueueId?: queueId }
  * Loop-proofing (lesson from the v1 PLAY-spam): a track already playing
  * is NEVER restarted by reconcile — resume happens only when the bot is
  * not already playing that queueId (fresh process, or after pause/stop).
@@ -28,6 +29,13 @@
  * after 25s (fails into START-FAIL -> advance), and a busy watchdog
  * releases a pass stuck longer than 60s (PASS-STUCK) so later taps can
  * run instead of piling onto `pending` forever.
+ * Tap-to-play (2026-10-25): the client writes roomMusic/{roomId}/
+ * playQueueId; reconcile consumes it FIRST (before every state branch):
+ * the queued song is removed from the queue, the field cleared, and the
+ * song started directly — consume-before-start, so a START-FAIL advances
+ * to the next song. A stale/missing id just clears and normal handling
+ * continues. Log file moved to bot-v2.log (bot.log is ACL-locked and
+ * has been blind since Oct 24).
  */
 const fs = require('fs');
 const http = require('http');
@@ -39,7 +47,7 @@ const SA = JSON.parse(fs.readFileSync('C:\\vee-api\\sa.json', 'utf8'));
 admin.initializeApp({ credential: admin.cert(SA), databaseURL: 'https://vee-chat-36720-default-rtdb.asia-southeast1.firebasedatabase.app' });
 const db = getDatabase();
 
-const LOGF = 'C:\\vee-music-bot\\bot.log';
+const LOGF = 'C:\\vee-music-bot\\bot-v2.log';
 function log(m) { const l = '[' + new Date().toISOString() + '] ' + m + '\n'; try { fs.appendFileSync(LOGF, l); } catch (e) {} }
 
 // LiveKit key/secret (never logged) — same parse as the other VPS tools.
@@ -96,7 +104,9 @@ async function startTrack(roomId, s, track) {
   // paused self-pause. The busy flag drops the intermediate value events,
   // so this ordering causes no flicker.
   await db.ref('roomMusic/' + roomId + '/state').set('playing');
-  await db.ref('roomMusic/' + roomId + '/current').set({ queueId: track.queueId, title: track.title, url: track.url, mediaId: track.mediaId, positionSec: pos, startedAt: Date.now() });
+  const curObj = { queueId: track.queueId, title: track.title, url: track.url, mediaId: track.mediaId, positionSec: pos, startedAt: Date.now() };
+  if (track.durationSec) curObj.durationSec = Math.floor(track.durationSec);
+  await db.ref('roomMusic/' + roomId + '/current').set(curObj);
   setCmd(roomId, s, 'play', track, pos);
   log('PLAY ' + roomId + ' ' + track.title);
 }
@@ -126,6 +136,24 @@ async function reconcile(roomId, v) {
   const state = v ? v.state : 'idle';
   const cur = v ? v.current : null;
   const q = v && v.queue ? sortQueue(Object.keys(v.queue).map((k) => Object.assign({ queueId: k }, v.queue[k]))) : [];
+  // Tap-to-play FIRST (2026-10-25): a client tap writes playQueueId.
+  // Consume before anything else so the tapped song plays directly even
+  // while another song plays or pauses: remove it from the queue, clear
+  // the field, reset local playback state (startTrack's top guard would
+  // otherwise refuse while a song plays), then start it. A stale or
+  // missing id just clears and normal handling continues below.
+  if (v && v.playQueueId) {
+    const tappedId = v.playQueueId;
+    const hit = q.find((t) => t.queueId === tappedId);
+    await db.ref('roomMusic/' + roomId + '/playQueueId').remove();
+    if (hit) {
+      await db.ref('roomMusic/' + roomId + '/queue/' + tappedId).remove();
+      s.playing = false; s.cur = null; s.startedAt = 0;
+      await startTrack(roomId, s, hit);
+    }
+    if (!hit) return; // stale tap consumed; fresh state arrives next pass
+    return;
+  }
   if (state === 'paused') {
     if (s.playing) { s.posOff = Math.floor(posOf(s)); s.playing = false; s.startedAt = 0; setCmd(roomId, s, 'pause', null, s.posOff); if (s.cur) await db.ref('roomMusic/' + roomId + '/current/positionSec').set(s.posOff); }
     return;

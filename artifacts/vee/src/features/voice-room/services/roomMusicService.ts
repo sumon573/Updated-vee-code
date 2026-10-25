@@ -9,10 +9,15 @@
  * so the bot is the only no-build path.
  *
  * RTDB contract — roomMusic/{roomId}:
- *   queue: { pushId: { title, url, mediaId, addedBy, addedByName, addedAt } }
+ *   queue: { pushId: { title, url, mediaId, addedBy, addedByName, addedAt,
+ *     durationSec? } }
  *   state: 'playing' | 'paused' | 'stopped' | 'idle'   (client writes)
- *   current: { queueId, title, url, mediaId, positionSec, startedAt }
+ *   current: { queueId, title, url, mediaId, positionSec, startedAt,
+ *     durationSec? }
  *     — BOT-ONLY (live rules deny client writes to `current`).
+ *   playQueueId: queueId (client writes; BOT consumes it FIRST in
+ *     reconcile — plays that queued song directly, then clears it.
+ *     Needs its own live-rules entry; see the deploy report.)
  * The bot reconciles (state, current, queue): 'playing' starts/resumes,
  * 'paused' stops at the saved position, 'next' advances, 'stopped' keeps
  * the song (positionSec reset to 0) so Play restarts it from the start.
@@ -39,6 +44,10 @@ export interface MusicTrack {
   addedBy: string;
   addedByName: string;
   addedAt: number;
+  /** Track length in seconds when known (library/phone duration). Old queue
+   * items lack it — the player bar then shows elapsed time only, never a
+   * guessed total. */
+  durationSec?: number | null;
 }
 
 export interface MusicCurrent extends MusicTrack {
@@ -86,16 +95,29 @@ export function subscribeRoomMusic(
 /** Append a track to the queue (owner/admin only, per live rules). */
 export async function addMusicTrack(
   roomId: string,
-  track: { title: string; url: string; mediaId: string },
+  track: { title: string; url: string; mediaId: string; durationSec?: number | null },
   addedByName: string,
 ): Promise<void> {
   const uid = auth.currentUser?.uid ?? 'anonymous';
-  await push(ref(database, `roomMusic/${roomId}/queue`), {
+  const payload: Record<string, unknown> = {
     ...track,
     addedBy: uid,
     addedByName,
     addedAt: Date.now(),
-  });
+  };
+  if (track.durationSec == null) delete payload.durationSec;
+  await push(ref(database, `roomMusic/${roomId}/queue`), payload);
+}
+
+/**
+ * Tap-to-play: ask the bot to play one queued song directly. The bot
+ * consumes this FIRST in reconcile (removes the song from the queue,
+ * clears the field, starts it) — so a stale/missing id just clears and
+ * normal handling continues. Client write is owner/admin-gated by the
+ * live rules (playQueueId entry required — see the deploy report).
+ */
+export async function setPlayQueueId(roomId: string, queueId: string): Promise<void> {
+  await set(ref(database, `roomMusic/${roomId}/playQueueId`), queueId);
 }
 
 /** Drive playback: 'playing' | 'paused' | 'next' | 'stopped'. */

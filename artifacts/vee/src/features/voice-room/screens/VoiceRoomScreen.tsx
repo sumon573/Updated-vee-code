@@ -45,7 +45,6 @@ import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { RoomMusicModal } from '../components/RoomMusicModal';
-import { FloatingMusicIcon } from '../components/FloatingMusicIcon';
 import { PkModal } from '../components/PkModal';
 import { PkBanner } from '../components/PkBanner';
 import { SeatActionSheet } from '../components/SeatActionSheet';
@@ -68,8 +67,11 @@ import {
   subscribeAnnouncement, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
 import {
-  subscribeRoomMusic, type RoomMusic,
+  subscribeRoomMusic, setMusicState, type RoomMusic,
 } from '../services/roomMusicService';
+import {
+  getMusicVolumeSync, setMusicVolume as persistMusicVolume,
+} from '../services/musicVolumeService';
 import {
   subscribeRoomPk, acceptPk, removePk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
 } from '../services/roomPkService';
@@ -965,6 +967,110 @@ export default function VoiceRoomScreen() {
     }
     return subscribeRoomMusic(roomId, setMusic);
   }, [roomId]);
+  // 2026-10-25 (boss): imo-style white player bar — replaces the old
+  // now-playing strip + floating icon (merged into this one bar). Shown
+  // only on the host seat while music plays/pauses. Progress is a
+  // DISPLAY indicator only (the bot has no seek): elapsed ticks locally
+  // from the last RTDB positionSec while playing, freezes on pause; the
+  // fill renders only when the track length is known (durationSec),
+  // never guessed. Bar play/pause/next reuse the modal's confirmation
+  // pattern (write → watch for bot activity → retry once → alert), so
+  // a dead tap can never look accepted. No prev button: no
+  // previous-track history exists, never a dead button.
+  const [barVolOpen, setBarVolOpen] = useState(false);
+  const [barVol, setBarVol] = useState(getMusicVolumeSync());
+  const [barPos, setBarPos] = useState(0);
+  const barBaseRef = useRef({ pos: 0, at: Date.now() });
+  const barMusicRef = useRef<RoomMusic | null>(null);
+  const barConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const barConfirmSeqRef = useRef(0);
+  const barMountedRef = useRef(true);
+  useEffect(() => {
+    barMountedRef.current = true;
+    return () => {
+      barMountedRef.current = false;
+      if (barConfirmTimerRef.current) clearTimeout(barConfirmTimerRef.current);
+    };
+  }, []);
+  useEffect(() => { barMusicRef.current = music; }, [music]);
+  useEffect(() => {
+    const p = music?.current?.positionSec ?? 0;
+    barBaseRef.current = { pos: p, at: Date.now() };
+    if (music?.state !== 'playing') setBarPos(p);
+  }, [music?.current?.positionSec, music?.state]);
+  useEffect(() => {
+    if (!music?.current || music.state !== 'playing') return;
+    const id = setInterval(() => {
+      setBarPos(barBaseRef.current.pos + (Date.now() - barBaseRef.current.at) / 1000);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [music?.current?.queueId, music?.state]);
+  const fmtBarTime = (sec: number) => {
+    const s = Math.max(0, Math.floor(sec || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  /** Local volume (this phone only): persist + apply to the bot track. */
+  const barSetVol = (v: number) => {
+    const clamped = Math.min(1, Math.max(0, Math.round(v * 10) / 10));
+    setBarVol(clamped);
+    persistMusicVolume(clamped).catch(() => {});
+    setMusicVolume(clamped);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  /** Bar play/pause/next with bot-activity confirmation (see above). */
+  const barControl = (target: 'playing' | 'paused' | 'next') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (barConfirmTimerRef.current) {
+      clearTimeout(barConfirmTimerRef.current);
+      barConfirmTimerRef.current = null;
+    }
+    const seq = ++barConfirmSeqRef.current;
+    const before = barMusicRef.current;
+    let retried = false;
+    const confirmed = (): boolean => {
+      const now = barMusicRef.current;
+      if (!now) return false;
+      if (target === 'playing') {
+        const b = before?.current ?? null;
+        const c = now.current;
+        if (!c) return !b && now.state === 'idle';
+        if (!b) return true;
+        if (c.queueId !== b.queueId) return true;
+        if (c.startedAt !== b.startedAt) return true;
+        if (now.state === 'playing' && c.positionSec !== b.positionSec) return true;
+        return false;
+      }
+      if (target === 'next') {
+        const b = before?.current ?? null;
+        const c = now.current;
+        if ((c?.queueId ?? null) !== (b?.queueId ?? null)) return true;
+        if (!c && b && now.state === 'idle') return true;
+        return false;
+      }
+      return now.state === 'paused';
+    };
+    const check = () => {
+      barConfirmTimerRef.current = null;
+      if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+      if (confirmed()) return;
+      if (!retried) {
+        retried = true;
+        setMusicState(roomId, target).catch(() => {});
+        barConfirmTimerRef.current = setTimeout(check, 8000);
+        return;
+      }
+      Alert.alert('Error', 'Could not change playback. Check connection and try again.');
+    };
+    setMusicState(roomId, target)
+      .then(() => {
+        if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+        barConfirmTimerRef.current = setTimeout(check, 8000);
+      })
+      .catch(() => {
+        if (seq !== barConfirmSeqRef.current || !barMountedRef.current) return;
+        Alert.alert('Error', 'Could not change playback. Check connection and try again.');
+      });
+  };
   // 2026-10-25 (boss): 1v1 PK — challenge prompt for the opponent.
   const [pkOpen, setPkOpen] = useState(false);
   const [pk, setPk] = useState<RoomPk | null>(null);
@@ -3052,25 +3158,83 @@ export default function VoiceRoomScreen() {
           {pk?.status === 'active' && (
             <PkBanner pk={pk} onPress={() => setPkOpen(true)} />
           )}
-          {/* 2026-10-25 (boss): now-playing strip — mirrors the announcement
-              strip above the message list. Tap opens the music modal. */}
+          {/* 2026-10-25 (boss): imo-style white player bar — replaces the
+              old now-playing strip + floating icon. Tap the bar (or the
+              playlist icon) opens the Music Playlist page. Progress is a
+              display indicator only — the bot has no seek, so it is a
+              plain View, never a scrubbable control. */}
           {music?.current && (music.state === 'playing' || music.state === 'paused') && isHostSeat && (
-            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                backgroundColor: 'rgba(139,92,246,0.16)',
-                borderBottomWidth: 1, borderBottomColor: 'rgba(139,92,246,0.45)',
-                paddingHorizontal: 10, paddingVertical: 6,
-              }}>
-                <Text style={{ fontSize: 13 }}>🎵</Text>
-                <Text numberOfLines={2} style={{ color: C.text, fontSize: 12.5, fontWeight: '700', flex: 1, lineHeight: 17 }}>
-                  {music.current.title.replace(/\.[^.]+$/, '')}
-                </Text>
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 10.5, fontWeight: '600', maxWidth: 90 }}>
-                  {music.state === 'playing' ? 'Playing' : 'Paused'}
-                </Text>
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderBottomWidth: 1, borderBottomColor: 'rgba(139,92,246,0.45)',
+              paddingHorizontal: 12, paddingVertical: 10,
+            }}>
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22,
+                    backgroundColor: 'rgba(139,92,246,0.15)',
+                    borderWidth: 2, borderColor: '#7C3AED',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18, color: '#7C3AED' }}>♪</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800' }}>
+                      {music.current.title.replace(/\.[^.]+$/, '')}
+                    </Text>
+                    <Text numberOfLines={1} style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                      {myName} is playing music
+                    </Text>
+                  </View>
+                  <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700' }}>
+                    {fmtBarTime(barPos)}{music.current.durationSec ? ` / ${fmtBarTime(music.current.durationSec)}` : ''}
+                  </Text>
+                </View>
+              </ScalePress>
+              {music.current.durationSec ? (
+                <View style={{ height: 5, backgroundColor: '#E5E5EA', borderRadius: 3, marginTop: 10 }}>
+                  <View style={{ height: '100%', borderRadius: 3, backgroundColor: '#7C3AED',
+                    width: `${Math.min(100, (barPos / music.current.durationSec) * 100)}%` }} />
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 4 }}>
+                <Pressable onPress={() => { setBarVol(getMusicVolumeSync()); setBarVolOpen(!barVolOpen); }} style={{ padding: 6 }}>
+                  <Feather name="volume-2" size={22} color={C.text} />
+                </Pressable>
+                {isOwnerOrAdmin && (
+                  <>
+                    <Pressable onPress={() => barControl(music.state === 'playing' ? 'paused' : 'playing')} style={{ padding: 6 }}>
+                      <Feather name={music.state === 'playing' ? 'pause' : 'play'} size={24} color={C.text} />
+                    </Pressable>
+                    <Pressable onPress={() => barControl('next')} style={{ padding: 6 }}>
+                      <Feather name="skip-forward" size={24} color={C.text} />
+                    </Pressable>
+                  </>
+                )}
+                <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }} style={{ padding: 6 }}>
+                  <Feather name="list" size={22} color={C.text} />
+                </Pressable>
               </View>
-            </ScalePress>
+              {barVolOpen && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                  <Pressable onPress={() => barSetVol(barVol - 0.1)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.borderFaint }}>
+                    <Feather name="minus" size={16} color={C.text} />
+                  </Pressable>
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 3 }}>
+                    {Array.from({ length: 10 }, (_, i) => (
+                      <Pressable key={i} onPress={() => barSetVol((i + 1) / 10)}
+                        style={{ flex: 1, height: 10, borderRadius: 5,
+                          backgroundColor: i < Math.round(barVol * 10) ? '#7C3AED' : C.borderFaint }} />
+                    ))}
+                  </View>
+                  <Pressable onPress={() => barSetVol(barVol + 0.1)} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.borderFaint }}>
+                    <Feather name="plus" size={16} color={C.text} />
+                  </Pressable>
+                  <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', width: 36, textAlign: 'right' }}>
+                    {Math.round(barVol * 100)}%
+                  </Text>
+                </View>
+              )}
+            </View>
           )}
           <FlatList<ChatMsg>
             ref={chatRef}
@@ -3487,13 +3651,7 @@ export default function VoiceRoomScreen() {
         myName={myName}
         onVolumeChange={setMusicVolume}
       />
-      {/* 2026-10-25 (boss): draggable floating music icon while music plays. */}
-      {music?.current && (music.state === 'playing' || music.state === 'paused') && isHostSeat && (
-        <FloatingMusicIcon
-          paused={music.state === 'paused'}
-          onPress={() => setMusicOpen(true)}
-        />
-      )}
+      {/* Player bar above replaces the old floating icon (2026-10-25). */}
       <PkModal
         visible={pkOpen}
         onClose={() => setPkOpen(false)}

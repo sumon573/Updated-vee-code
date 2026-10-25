@@ -8,6 +8,7 @@ import {
   subscribeRoomMusic,
   addMusicTrack,
   setMusicState,
+  setPlayQueueId,
   removeQueueTrack,
   uploadMusicFile,
   friendlyUploadError,
@@ -29,8 +30,11 @@ import { auth } from '@/src/config/firebase';
 /**
  * RoomMusicModal — room-wide music (2026-10-25, boss: everyone hears).
  * The VPS bot does the actual streaming; this modal is queue + controls.
- * Owner/admin: add from phone, play/pause/next/stop, remove queued tracks.
+ * Owner/admin: add from phone, play/pause/next/stop, remove queued tracks,
+ * tap any queued song to play it directly (playQueueId).
  * Members: read-only (now playing + queue) — they hear it via LiveKit.
+ * Restructured 2026-10-25 to the boss-approved imo-style white layout:
+ * "Music Playlist" page + "Add" view (My songs first, then From phone).
  * The picker offers "My songs" (the user's own library, shared by every
  * room — no re-upload) above "From phone".
  */
@@ -246,7 +250,7 @@ export function RoomMusicModal({
 
     // Phase 1: resolve every row to { title, url, mediaId }, 3 at a time.
     type Resolved =
-      | { row: PickerRow; title: string; url: string; mediaId: string }
+      | { row: PickerRow; title: string; url: string; mediaId: string; durationSec: number | null }
       | { row: PickerRow; error: string };
     const resolved: Resolved[] = new Array(list.length);
     let nextIdx = 0;
@@ -255,7 +259,7 @@ export function RoomMusicModal({
         const idx = nextIdx++;
         const row = list[idx];
         if (row.kind === 'lib') {
-          resolved[idx] = { row, title: row.entry.title, url: row.entry.url, mediaId: row.entry.mediaId };
+          resolved[idx] = { row, title: row.entry.title, url: row.entry.url, mediaId: row.entry.mediaId, durationSec: row.entry.duration ?? null };
           continue;
         }
         const asset = row.asset;
@@ -267,7 +271,7 @@ export function RoomMusicModal({
           if (uidNow) {
             const hit = await findLibraryEntryByAsset(uidNow, asset.id).catch(() => null);
             if (hit) {
-              resolved[idx] = { row, title: hit.title, url: hit.url, mediaId: hit.mediaId };
+              resolved[idx] = { row, title: hit.title, url: hit.url, mediaId: hit.mediaId, durationSec: hit.duration ?? null };
               continue;
             }
           }
@@ -282,7 +286,7 @@ export function RoomMusicModal({
               addedAt: Date.now(),
             }).catch(() => {});
           }
-          resolved[idx] = { row, title: filename, url, mediaId };
+          resolved[idx] = { row, title: filename, url, mediaId, durationSec: asset.duration ?? null };
         } catch (e) {
           resolved[idx] = { row, error: friendlyUploadError(e) };
         }
@@ -304,7 +308,7 @@ export function RoomMusicModal({
         continue;
       }
       try {
-        await addMusicTrack(roomId, { title: item.title, url: item.url, mediaId: item.mediaId }, myName);
+        await addMusicTrack(roomId, { title: item.title, url: item.url, mediaId: item.mediaId, durationSec: item.durationSec }, myName);
         added++;
         setAddStatus((prev) => ({ ...prev, [item.row.key]: 'done' }));
       } catch {
@@ -439,6 +443,59 @@ export function RoomMusicModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  /**
+   * Tap-to-play: play one queued song directly (2026-10-25, boss —
+   * no Next-stepping). Writes roomMusic/{roomId}/playQueueId; the bot
+   * consumes it first in reconcile. Confirmation reuses the control
+   * pattern: the write itself resolves on local commit even offline,
+   * so only bot-side activity counts — the tapped song becoming
+   * current, or the tapped id leaving the queue while current changed.
+   * Unconfirmed after ~8s, the write is retried ONCE, then the user
+   * gets a visible error instead of a dead tap. A newer tap supersedes
+   * any pending confirmation.
+   */
+  const playTrack = (queueId: string) => {
+    if (!canControl) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+    const seq = ++confirmSeqRef.current;
+    const before = musicRef.current;
+    const beforeCurrentId = before?.current?.queueId ?? null;
+    let retried = false;
+    const isTapConfirmed = (): boolean => {
+      const now = musicRef.current;
+      if (!now) return false;
+      if (now.current?.queueId === queueId) return true;
+      const stillQueued = (now.queue ?? []).some((t) => t.queueId === queueId);
+      if (!stillQueued && (now.current?.queueId ?? null) !== beforeCurrentId) return true;
+      return false;
+    };
+    const check = () => {
+      confirmTimerRef.current = null;
+      if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+      if (isTapConfirmed()) return;
+      if (!retried) {
+        retried = true;
+        setPlayQueueId(roomId, queueId).catch(() => {});
+        confirmTimerRef.current = setTimeout(check, 8000);
+        return;
+      }
+      Alert.alert('Error', 'Could not play this song. Check connection and try again.');
+    };
+    setPlayQueueId(roomId, queueId)
+      .then(() => {
+        if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+        confirmTimerRef.current = setTimeout(check, 8000);
+      })
+      .catch(() => {
+        if (seq !== confirmSeqRef.current || !mountedRef.current) return;
+        Alert.alert('Error', 'Could not play this song. Check connection and try again.');
+      });
+  };
+
   const displayTitle = (title: string) => title.replace(/\.[^.]+$/, '');
   const fmtDur = (sec: number) => {
     const s = Math.floor(sec || 0);
@@ -504,51 +561,55 @@ export function RoomMusicModal({
           alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: pickerOpen ? 100 : 20 }} showsVerticalScrollIndicator={false}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12,
-              backgroundColor: 'rgba(139,92,246,0.15)',
-              alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Feather name="music" size={18} color="#7C3AED" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: C.text, fontSize: 18, fontWeight: '900' }}>
-                {pickerOpen ? 'Choose from phone' : 'Room Music'}
-              </Text>
-              <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                {pickerOpen
-                  ? 'Everyone in the room will hear it'
-                  : canControl
-                    ? 'Phone music for the whole room'
-                    : 'Playing for the whole room'}
-              </Text>
-            </View>
             {pickerOpen ? (
-              <Pressable onPress={() => setPickerOpen(false)} style={{ padding: 6 }}>
-                <Feather name="arrow-left" size={22} color={C.sub} />
-              </Pressable>
+              <>
+                <Pressable onPress={() => setPickerOpen(false)} style={{ padding: 6, marginRight: 8 }}>
+                  <Feather name="arrow-left" size={24} color={C.sub} />
+                </Pressable>
+                <Text style={{ color: C.text, fontSize: 22, flex: 1 }}>
+                  Add
+                </Text>
+                <Pressable onPress={() => loadAudio(true)} disabled={assetsLoading || batchRunning} style={{ padding: 6 }}>
+                  <Feather name="refresh-cw" size={20} color="#7C3AED" />
+                </Pressable>
+              </>
             ) : (
-              <Pressable onPress={onClose} style={{ padding: 6 }}>
-                <Feather name="x" size={22} color={C.sub} />
-              </Pressable>
+              <>
+                <Text style={{ color: C.text, fontSize: 22, flex: 1 }}>
+                  Music Playlist
+                </Text>
+                {canControl && (
+                  <Pressable onPress={openPicker} style={{ padding: 6, marginRight: 8 }}>
+                    <Feather name="plus" size={28} color="#7C3AED" />
+                  </Pressable>
+                )}
+                <Pressable onPress={onClose} style={{ padding: 6 }}>
+                  <Feather name="x" size={22} color={C.sub} />
+                </Pressable>
+              </>
             )}
           </View>
 
           {pickerOpen ? (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <Text style={{ color: C.muted, fontSize: 12 }}>
-                  {assetsLoading ? 'Loading…' : `${rows.length} songs — tap to select`}
+              <Pressable onPress={toggleSelectAll} disabled={assetsLoading || batchRunning}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
+                <Text style={{ color: C.text, fontSize: 16 }}>
+                  {allSelected ? 'Clear selection' : 'Select all'}
                 </Text>
-                <View style={{ flexDirection: 'row', gap: 16 }}>
-                  <Pressable onPress={() => loadAudio(true)} disabled={assetsLoading || batchRunning}>
-                    <Text style={{ color: '#7C3AED', fontSize: 13, fontWeight: '800' }}>Refresh</Text>
-                  </Pressable>
-                  <Pressable onPress={toggleSelectAll} disabled={assetsLoading || batchRunning}>
-                    <Text style={{ color: '#7C3AED', fontSize: 13, fontWeight: '800' }}>
-                      {allSelected ? 'Clear' : 'Select all'}
-                    </Text>
-                  </Pressable>
+                <View style={{ width: 26, height: 26, borderRadius: 13,
+                  borderWidth: 2, borderColor: allSelected ? '#7C3AED' : C.borderFaint,
+                  backgroundColor: allSelected ? '#7C3AED' : 'transparent',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  {allSelected && <Feather name="check" size={15} color="#FFF" />}
                 </View>
-              </View>
+              </Pressable>
+              <Text style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>
+                {assetsLoading
+                  ? 'Loading…'
+                  : `${rows.length} songs — tap to select (Select all covers phone songs)`}
+              </Text>
               {assetsLoading ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
                   Loading audio…
@@ -592,7 +653,7 @@ export function RoomMusicModal({
                 </Text>
                 {!!current && (
                   <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
-                    Added by {current.addedByName}
+                    Added by {current.addedByName} · Playing for the whole room
                   </Text>
                 )}
                 {canControl && (playing || paused) && (
@@ -687,10 +748,17 @@ export function RoomMusicModal({
                 </View>
               )}
 
-              {/* Queue */}
+              {/* Queue — rows are tappable (canControl): tap plays the song
+                  directly via playQueueId; the × remove stays a sibling so
+                  the two Pressables never nest. */}
               <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 20, marginBottom: 4 }}>
                 Up next ({music?.queue.length ?? 0})
               </Text>
+              {canControl && (music?.queue.length ?? 0) > 0 && (
+                <Text style={{ color: '#7C3AED', fontSize: 12, marginBottom: 4 }}>
+                  Tap any song to play it directly.
+                </Text>
+              )}
               {(music?.queue.length ?? 0) === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 13, paddingVertical: 8 }}>
                   Queue is empty.
@@ -699,19 +767,25 @@ export function RoomMusicModal({
                 music!.queue.map((t) => (
                   <View key={t.queueId} style={{ flexDirection: 'row', alignItems: 'center',
                     paddingVertical: 11, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
-                    <Feather name="music" size={15} color={C.muted} style={{ marginRight: 10 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>
-                        {displayTitle(t.title)}
-                      </Text>
-                      <Text style={{ color: C.muted, fontSize: 12, marginTop: 1 }}>
-                        Added by {t.addedByName}
-                      </Text>
-                    </View>
+                    <Pressable onPress={() => playTrack(t.queueId)} disabled={!canControl}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                      <Feather name="music" size={15} color={C.muted} style={{ marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>
+                          {displayTitle(t.title)}
+                        </Text>
+                        <Text style={{ color: C.muted, fontSize: 12, marginTop: 1 }}>
+                          Added by {t.addedByName}
+                        </Text>
+                      </View>
+                      {canControl && (
+                        <Feather name="play" size={14} color="#7C3AED" style={{ marginLeft: 8 }} />
+                      )}
+                    </Pressable>
                     {canControl && (
                       <Pressable
                         onPress={() => removeQueueTrack(roomId, t.queueId).catch(() => {})}
-                        style={{ padding: 6 }}>
+                        style={{ padding: 6, marginLeft: 4 }}>
                         <Feather name="x" size={16} color={C.muted} />
                       </Pressable>
                     )}
@@ -720,13 +794,18 @@ export function RoomMusicModal({
               )}
 
               {canControl && (
-                <Pressable onPress={openPicker}
-                  style={{ marginTop: 16, backgroundColor: '#7C3AED', borderRadius: 14,
-                    paddingVertical: 14, alignItems: 'center' }}>
-                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>
-                    Add music from phone
+                <>
+                  <Pressable onPress={openPicker}
+                    style={{ marginTop: 16, backgroundColor: '#7C3AED', borderRadius: 14,
+                      paddingVertical: 14, alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>
+                      + Add
+                    </Text>
+                  </Pressable>
+                  <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', marginTop: 10 }}>
+                    Only mp3, wav, and m4a are supported for music playing.
                   </Text>
-                </Pressable>
+                </>
               )}
             </>
           )}
