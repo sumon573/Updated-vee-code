@@ -11,9 +11,10 @@ import { C, getActiveThemes } from '../constants/theme';
  * Opens from the three-dot button next to the room settings gear.
  * Room Mode: 1vs1 PK + Vote (boss 2026-10-25: Vote moved here out of
  * Room Game). Room Game: Ludu ONLY (boss 2026-10-25 11:32 — Turntable
- * and Luckybag both removed); the section hides itself until the Ludu
- * button ships with the built game. Tapping a game opens the game
- * lobby, where hosts create and members join live games.
+ * and Luckybag both removed); the Ludu button ships with the built
+ * game (ae11b639) and opens the games lobby, where the Ludu entry
+ * leads to the 2P/4P picker. Tapping a game opens the game lobby,
+ * where hosts create and members join live games.
  * Room Settings: Music (HOST-SEAT ONLY, boss 2026-10-25: only the host
  * or whoever sits in seat 1 sees it — members and other admins see no
  * music entry at all) + Announcement (owner/admin). Theme lives ONLY
@@ -48,13 +49,14 @@ export function RoomCustomizePanel({
     fn();
   };
 
-  // 2026-10-25 (boss 11:32): Room Game is Ludu-ONLY — Turntable removed
-  // too. Ludu itself is not built yet, so the section stays hidden
-  // (games.length === 0) until the Ludu button ships with the game —
-  // no placeholder button, no empty section header.
+  // 2026-10-25 (boss 11:32): Room Game is Ludu-ONLY. The Ludu button
+  // ships with the built game (commit ae11b639) — it opens the games
+  // lobby, where the Ludu entry leads to the 2P/4P picker.
   const games: Array<{
-    key: string; label: string; icon: 'refresh-cw'; bg: string; fg: string;
-  }> = [];
+    key: string; label: string; icon: 'grid'; bg: string; fg: string;
+  }> = [
+    { key: 'ludu', label: 'Ludu', icon: 'grid' as const, bg: 'rgba(34,197,94,0.15)', fg: '#16A34A' },
+  ];
 
   const settingsRows: Array<{
     key: string; label: string; sub: string;
@@ -126,8 +128,8 @@ export function RoomCustomizePanel({
             </Pressable>
           </ScrollView>
 
-          {/* Room Game — hidden while empty (Ludu-only per boss 11:32;
-              the Ludu button ships with the game, never before). */}
+          {/* Room Game — Ludu only (boss 11:32). Hidden automatically
+              while empty (games.length === 0). */}
           {games.length > 0 && (
             <>
               <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginBottom: 12 }}>
