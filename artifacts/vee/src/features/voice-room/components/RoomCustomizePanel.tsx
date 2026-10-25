@@ -28,7 +28,7 @@ import { C, getActiveThemes } from '../constants/theme';
  */
 export function RoomCustomizePanel({
   visible, onClose, isOwnerOrAdmin, isHostSeat, nowPlayingTitle,
-  onOpenMusic, onOpenGames, onOpenAnnouncement, onOpenPk,
+  onOpenMusic, onOpenGames, onOpenLudu, onOpenAnnouncement, onOpenPk,
   activeThemeId, onThemeChange,
 }: {
   visible: boolean;
@@ -38,6 +38,8 @@ export function RoomCustomizePanel({
   nowPlayingTitle: string | null;
   onOpenMusic: () => void;
   onOpenGames: () => void;
+  /** 2026-10-25 (boss): panel Ludu opens the Ludu picker page DIRECTLY (no Games modal step). */
+  onOpenLudu: () => void;
   onOpenAnnouncement: () => void;
   onOpenPk: () => void;
   activeThemeId: string;
@@ -138,7 +140,7 @@ export function RoomCustomizePanel({
               <ScrollView horizontal showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ gap: 20, paddingBottom: 4 }}>
                 {games.map((g) => (
-                  <Pressable key={g.key} onPress={() => tap(onOpenGames)}
+                  <Pressable key={g.key} onPress={() => tap(onOpenLudu)}
                     style={{ alignItems: 'center', width: 72 }}>
                     <View style={{ width: 60, height: 60, borderRadius: 30,
                       backgroundColor: g.bg, alignItems: 'center', justifyContent: 'center',

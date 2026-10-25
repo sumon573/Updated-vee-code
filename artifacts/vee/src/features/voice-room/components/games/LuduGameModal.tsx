@@ -21,13 +21,17 @@
  *      active views — slide left/right to see all seats; empty "+"
  *      taps join (lobby only); an active game is watch-only for
  *      non-players (games start full, so no mid-game join).
- *   4. Picker panel (boss 2026-10-25, imo picker screenshot): big
- *      colorful LUDO logo + 2P/4P cards + big Start (creates the
- *      lobby). Join is VOICE-SEAT-gated (boss: "জয়েন করতে পারে যারা
- *      সিটে থাকবে") — a room visitor without a voice seat sees the
- *      lobby but cannot take a slot. NO Magic row (function undefined
- *      — asked, awaiting his answer); NO Match button (he rejected
- *      the Match chat message).
+ *   4. Seat-gated join (boss 2026-10-25: "জয়েন করতে পারে যারা সিটে
+ *      থাকবে") — a room visitor without a voice seat sees the lobby
+ *      but cannot take a slot.
+ *   5. Full-page picker + lobby (boss 2026-10-25, imo screenshots):
+ *      panel Ludu opens the picker page DIRECTLY (no Games modal step);
+ *      picker + lobby render as a FULL purple page over the room
+ *      (LUDO logo + 2P/4P cards + big orange Start → mode lobby with
+ *      slots + greyed Start + Match). Match = ONE room-chat invite per
+ *      session (stated interpretation — no matchmaking pool exists).
+ *      NO Magic row: its function is still undefined (asked, awaiting
+ *      his answer) — no dead toggles. Board keeps the white sheet.
  *   3. Board (status 'active'): 15x15 board, real dice (pre-rolled value
  *      committed by transaction — the animation never invents a result),
  *      tap a highlighted token to move, captures, extra turns, win ends
@@ -114,6 +118,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   const [mode, setMode] = useState<2 | 4>(2);
   const [creating, setCreating] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [matchSent, setMatchSent] = useState(false);
   const [rolling, setRolling] = useState(false);
   const [displayDice, setDisplayDice] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
@@ -127,6 +132,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     setLoaded(false);
     setRolling(false);
     setDisplayDice(null);
+    setMatchSent(false);
     passSeqRef.current = -1;
     return () => {
       if (rollTimer.current) clearInterval(rollTimer.current);
@@ -239,6 +245,18 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   const handlePlusSlot = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     void join();
+  };
+
+  // 2026-10-25 (boss, imo lobby Match): the host invites the room to
+  // fill empty slots — ONE room-chat invite per modal session, then the
+  // button hides (its job is done). This is the stated interpretation
+  // of imo's Match for a voice room (no matchmaking pool exists); if
+  // the boss meant something else he will correct it.
+  const match = async () => {
+    if (!game || !isHost || matchSent) return;
+    setMatchSent(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await sendRoomChatMsg(roomId, systemMsg(t('voiceRoom.games.luduMatchInvite'))).catch(() => {});
   };
 
   const end = async () => {
@@ -571,7 +589,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 );
               })()
             )}
-            <Text style={{ fontSize: 11, color: '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
+            <Text style={{ fontSize: 11, color: isFullPage ? 'rgba(255,255,255,0.85)' : '#555', marginTop: 6, textAlign: 'center' }} numberOfLines={1}>
               {filled ? playerName(uid) : t('voiceRoom.games.luduWaitingPlayers')}
             </Text>
           </View>
@@ -580,20 +598,34 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
     </ScrollView>
   );
 
+  // 2026-10-25 (boss, imo screenshots): picker + lobby render as a FULL
+  // purple page over the room (not a bottom sheet); the board keeps
+  // the white sheet (its 15x15 layout needs it).
+  const isFullPage = !game || game.status === 'lobby';
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
-      <View style={{
+      <View style={isFullPage ? {
+        position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#6D28D9',
+        paddingBottom: 28,
+      } : {
         position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', paddingBottom: 28,
       }}>
-        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: '#000', letterSpacing: 2, flex: 1 }}>
-            {t('voiceRoom.games.luduTitle')}
-          </Text>
+        {!isFullPage && (
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
+        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: isFullPage ? 16 : 12, paddingBottom: 4 }}>
+          {isFullPage ? (
+            <View style={{ flex: 1 }} />
+          ) : (
+            <Text style={{ fontSize: 20, fontWeight: '900', color: '#000', letterSpacing: 2, flex: 1 }}>
+              {t('voiceRoom.games.luduTitle')}
+            </Text>
+          )}
           <Pressable onPress={onClose} hitSlop={12}>
-            <Feather name="x" size={22} color="#8E8E93" />
+            <Feather name="x" size={22} color={isFullPage ? '#FFFFFF' : '#8E8E93'} />
           </Pressable>
         </View>
 
@@ -609,9 +641,9 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 <Text style={{ fontSize: 46, fontWeight: '900', color: '#EF4444' }}>L</Text>
                 <Text style={{ fontSize: 46, fontWeight: '900', color: '#F59E0B' }}>U</Text>
                 <Text style={{ fontSize: 46, fontWeight: '900', color: '#22C55E' }}>D</Text>
-                <Text style={{ fontSize: 46, fontWeight: '900', color: '#7C3AED' }}>O</Text>
+                <Text style={{ fontSize: 46, fontWeight: '900', color: '#93C5FD' }}>O</Text>
               </View>
-              <Text style={{ fontSize: 14, color: '#8E8E93', marginBottom: 20, textAlign: 'center' }}>
+              <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', marginBottom: 20, textAlign: 'center' }}>
                 {t('voiceRoom.games.luduTagline')}
               </Text>
               <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -627,9 +659,9 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                       style={{
                         flex: 1, borderRadius: 16, paddingVertical: 22, paddingHorizontal: 12,
                         alignItems: 'center',
-                        backgroundColor: selected ? '#22C55E14' : '#F2F2F7',
+                        backgroundColor: selected ? 'rgba(255,255,255,0.20)' : 'rgba(0,0,0,0.25)',
                         borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? '#22C55E' : '#E5E5EA',
+                        borderColor: selected ? '#FFFFFF' : 'rgba(255,255,255,0.30)',
                       }}
                     >
                       <View style={{ flexDirection: 'row', gap: 4, marginBottom: 8 }}>
@@ -642,8 +674,8 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                           }} />
                         ))}
                       </View>
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#000' }}>{opt.label}</Text>
-                      <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>{opt.sub}</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#FFFFFF' }}>{opt.label}</Text>
+                      <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{opt.sub}</Text>
                     </Pressable>
                   );
                 })}
@@ -653,10 +685,10 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                 disabled={creating}
                 style={{
                   marginTop: 24, borderRadius: 999, paddingVertical: 16, alignItems: 'center',
-                  backgroundColor: creating ? '#F2F2F7' : '#22C55E',
+                  backgroundColor: creating ? 'rgba(255,255,255,0.35)' : '#F97316',
                 }}
               >
-                <Text style={{ fontSize: 17, fontWeight: '800', color: creating ? '#8E8E93' : '#FFF' }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: creating ? 'rgba(255,255,255,0.7)' : '#FFF' }}>
                   {t('voiceRoom.games.luduStart')}
                 </Text>
               </Pressable>
@@ -664,7 +696,7 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
           )}
 
           {!game && !internalId && !isHost && (
-            <Text style={{ textAlign: 'center', color: '#8E8E93', fontSize: 14, padding: 24 }}>
+            <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.75)', fontSize: 14, padding: 24 }}>
               {t('voiceRoom.games.waitingHost')}
             </Text>
           )}
@@ -672,7 +704,13 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
           {/* ── LOBBY (waiting for players) ── */}
           {game && game.status === 'lobby' && (
             <View>
-              <Text style={{ fontSize: 14, color: '#8E8E93', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 4 }}>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: '#EF4444' }}>L</Text>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: '#F59E0B' }}>U</Text>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: '#22C55E' }}>D</Text>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: '#93C5FD' }}>O</Text>
+              </View>
+              <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', marginBottom: 16, textAlign: 'center' }}>
                 {t('voiceRoom.games.luduTagline')}
               </Text>
               {renderSeatsRow(true)}
@@ -683,12 +721,20 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                     disabled={!lobbyFull || starting}
                     style={{
                       flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center',
-                      backgroundColor: lobbyFull && !starting ? '#22C55E' : '#F2F2F7',
+                      backgroundColor: lobbyFull && !starting ? '#22C55E' : 'rgba(255,255,255,0.35)',
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: lobbyFull && !starting ? '#FFF' : '#8E8E93' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: lobbyFull && !starting ? '#FFF' : 'rgba(255,255,255,0.8)' }}>
                       {t('voiceRoom.games.luduStart')}
                     </Text>
+                  </Pressable>
+                )}
+                {isHost && !lobbyFull && !matchSent && (
+                  <Pressable
+                    onPress={match}
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: 'center', backgroundColor: '#F97316' }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF' }}>Match</Text>
                   </Pressable>
                 )}
                 {!isHost && myUid && mySeatIdx >= 0 && !isSeated && !lobbyFull && (
@@ -700,12 +746,12 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
                   </Pressable>
                 )}
                 {!isHost && myUid && !isSeated && lobbyFull && (
-                  <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: '#8E8E93', paddingVertical: 13 }}>
+                  <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.8)', paddingVertical: 13 }}>
                     {t('voiceRoom.games.luduLobbyFull')}
                   </Text>
                 )}
                 {!isHost && isSeated && (
-                  <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: '#8E8E93', paddingVertical: 13 }}>
+                  <Text style={{ flex: 1, textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.8)', paddingVertical: 13 }}>
                     {t('voiceRoom.games.luduWaitingStart')}
                   </Text>
                 )}

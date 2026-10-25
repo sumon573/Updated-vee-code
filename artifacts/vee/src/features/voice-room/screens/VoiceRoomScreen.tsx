@@ -3696,6 +3696,7 @@ export default function VoiceRoomScreen() {
         nowPlayingTitle={music?.current ? music.current.title.replace(/\.[^.]+$/, '') : null}
         onOpenMusic={() => { setCustomizeOpen(false); setMusicOpen(true); }}
         onOpenGames={() => { setCustomizeOpen(false); setGamesOpen(true); }}
+        onOpenLudu={() => { setCustomizeOpen(false); setGameNav({ kind: 'ludu', gameId: null }); }}
         onOpenAnnouncement={() => { setCustomizeOpen(false); setAnnouncementOpen(true); }}
         onOpenPk={() => { setCustomizeOpen(false); setPkOpen(true); }}
         activeThemeId={activeThemeId}
