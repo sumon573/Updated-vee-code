@@ -11,12 +11,18 @@ import {
   removeQueueTrack,
   uploadMusicFile,
   friendlyUploadError,
+  subscribeMusicLibrary,
+  saveMusicLibraryEntry,
+  findLibraryEntryByAsset,
+  getRoomMusicOnce,
   type RoomMusic,
+  type MusicLibraryEntry,
 } from '../services/roomMusicService';
 import {
   getMusicVolumeSync,
   setMusicVolume as persistMusicVolume,
 } from '../services/musicVolumeService';
+import { auth } from '@/src/config/firebase';
 
 /* ─────────────────────────── Room Music Modal ─────────────────────────── */
 
@@ -25,7 +31,13 @@ import {
  * The VPS bot does the actual streaming; this modal is queue + controls.
  * Owner/admin: add from phone, play/pause/next/stop, remove queued tracks.
  * Members: read-only (now playing + queue) — they hear it via LiveKit.
+ * The picker offers "My songs" (the user's own library, shared by every
+ * room — no re-upload) above "From phone".
  */
+type PickerRow =
+  | { key: string; kind: 'lib'; entry: MusicLibraryEntry }
+  | { key: string; kind: 'phone'; asset: MediaLibrary.Asset };
+
 export function RoomMusicModal({
   visible, onClose, roomId, canControl, myName, onVolumeChange,
 }: {
@@ -41,16 +53,35 @@ export function RoomMusicModal({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
-  // Multi-select: picked songs (by asset id), per-song add status, batch run.
-  const [selected, setSelected] = useState<Record<string, MediaLibrary.Asset>>({});
+  // Multi-select: picked rows (library songs + phone songs), per-row add
+  // status, batch run. Row keys are 'lib:<libraryKey>' / 'ph:<assetId>'.
+  const [selected, setSelected] = useState<Record<string, PickerRow>>({});
   const [addStatus, setAddStatus] = useState<Record<string, 'uploading' | 'done' | 'failed'>>({});
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchIds, setBatchIds] = useState<string[]>([]);
   const [batchError, setBatchError] = useState<string | null>(null);
+  // The user's own song library (all rooms share it — songs added once
+  // stay available in every room without re-uploading).
+  const [library, setLibrary] = useState<MusicLibraryEntry[]>([]);
   // Phone library, loaded once per room session — reopening the picker or
   // adding songs must not refetch the whole library again.
   const assetsLoadedRef = useRef(false);
   const [volume, setVolumeState] = useState(getMusicVolumeSync());
+
+  // Picker rows: library first (newest first), then phone songs that are
+  // NOT already in the library (they are already in "My songs" above).
+  const libraryAssetIds = new Set(
+    library.map((e) => e.assetId).filter((x): x is string => !!x),
+  );
+  const libraryRows: PickerRow[] = library.map((entry) => ({
+    key: `lib:${entry.libraryKey}`,
+    kind: 'lib',
+    entry,
+  }));
+  const phoneRows: PickerRow[] = assets
+    .filter((a) => !libraryAssetIds.has(a.id))
+    .map((a) => ({ key: `ph:${a.id}`, kind: 'phone', asset: a }));
+  const rows: PickerRow[] = [...libraryRows, ...phoneRows];
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -61,6 +92,17 @@ export function RoomMusicModal({
     if (!visible) setPickerOpen(false);
     else setVolumeState(getMusicVolumeSync());
   }, [visible]);
+
+  // The library belongs to the user, not the room — subscribe whenever
+  // the modal is open so the picker can offer it in any room.
+  const uid = auth.currentUser?.uid ?? null;
+  useEffect(() => {
+    if (!visible || !uid) {
+      setLibrary([]);
+      return;
+    }
+    return subscribeMusicLibrary(uid, setLibrary);
+  }, [visible, uid]);
 
   const loadAudio = useCallback(async (force = false) => {
     // Cached after the first load: reopening the picker is instant and
@@ -97,47 +139,64 @@ export function RoomMusicModal({
     loadAudio();
   };
 
-  const toggleSelect = (a: MediaLibrary.Asset) => {
+  const toggleSelect = (row: PickerRow) => {
     if (batchRunning) return;
     setSelected((prev) => {
       const next = { ...prev };
-      if (next[a.id]) delete next[a.id];
-      else next[a.id] = a;
+      if (next[row.key]) delete next[row.key];
+      else next[row.key] = row;
       return next;
     });
   };
 
   const selectedCount = Object.keys(selected).length;
-  const allSelected = assets.length > 0 && selectedCount === assets.length;
+  // "Select all" covers phone rows only: the library can hold 200 songs
+  // and queueing all of them at once is never what "select all" means.
+  const phoneRowKeys = new Set(phoneRows.map((r) => r.key));
+  const allSelected = phoneRows.length > 0 && phoneRows.every((r) => selected[r.key]);
 
   const toggleSelectAll = () => {
     if (batchRunning) return;
     if (allSelected) {
-      setSelected({});
+      setSelected((prev) => {
+        const next: Record<string, PickerRow> = {};
+        Object.values(prev).forEach((r) => {
+          if (!phoneRowKeys.has(r.key)) next[r.key] = r;
+        });
+        return next;
+      });
       return;
     }
-    const next: Record<string, MediaLibrary.Asset> = {};
-    assets.forEach((a) => {
-      next[a.id] = a;
+    setSelected((prev) => {
+      const next = { ...prev };
+      phoneRows.forEach((r) => {
+        next[r.key] = r;
+      });
+      return next;
     });
-    setSelected(next);
   };
 
-  type UploadResult =
-    | { asset: MediaLibrary.Asset; mediaId: string; url: string }
-    | { asset: MediaLibrary.Asset; error: string };
-
   /**
-   * Add every selected song. Uploads run up to 3 at a time (fast), but the
-   * queue inserts stay sequential in picker order, so the room hears songs
-   * in the order picked. One failure never blocks the rest; failed songs
+   * Add every selected song. Library songs queue directly (no upload);
+   * phone songs reuse their library entry when one exists, otherwise
+   * upload once and save to the library so the next room never uploads
+   * them again. Resolves run up to 3 at a time (fast), but the queue
+   * inserts stay sequential in picker order, so the room hears songs in
+   * the order picked. One failure never blocks the rest; failed songs
    * stay selected for a one-tap retry and the picker stays open with the
    * per-song status visible. No raw engine error ever reaches the user.
    */
   const handleAddSelected = async () => {
-    const list = assets.filter((a) => selected[a.id]);
+    // Picker order first; a selected row that vanished from the visible
+    // list (library loaded mid-pick and filtered its phone twin) is kept
+    // at the end rather than silently dropped.
+    const visibleList = rows.filter((r) => selected[r.key]);
+    const hiddenSelected = Object.values(selected).filter(
+      (r) => !rows.some((x) => x.key === r.key),
+    );
+    const list = [...visibleList, ...hiddenSelected];
     if (list.length === 0 || batchRunning) return;
-    const ids = list.map((a) => a.id);
+    const ids = list.map((r) => r.key);
     setBatchRunning(true);
     setBatchError(null);
     setBatchIds(ids);
@@ -150,19 +209,47 @@ export function RoomMusicModal({
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Phase 1: uploads, 3 at a time.
-    const uploaded: UploadResult[] = new Array(list.length);
+    // Phase 1: resolve every row to { title, url, mediaId }, 3 at a time.
+    type Resolved =
+      | { row: PickerRow; title: string; url: string; mediaId: string }
+      | { row: PickerRow; error: string };
+    const resolved: Resolved[] = new Array(list.length);
     let nextIdx = 0;
     const workers = Array.from({ length: Math.min(3, list.length) }, async () => {
       while (nextIdx < list.length) {
         const idx = nextIdx++;
-        const asset = list[idx];
+        const row = list[idx];
+        if (row.kind === 'lib') {
+          resolved[idx] = { row, title: row.entry.title, url: row.entry.url, mediaId: row.entry.mediaId };
+          continue;
+        }
+        const asset = row.asset;
         const filename = asset.filename || `music-${Date.now()}.mp3`;
+        const uidNow = auth.currentUser?.uid ?? null;
         try {
+          // Same-device dedup: a phone song already in the library is
+          // never uploaded twice.
+          if (uidNow) {
+            const hit = await findLibraryEntryByAsset(uidNow, asset.id).catch(() => null);
+            if (hit) {
+              resolved[idx] = { row, title: hit.title, url: hit.url, mediaId: hit.mediaId };
+              continue;
+            }
+          }
           const { mediaId, url } = await uploadMusicFile({ uri: asset.uri, filename });
-          uploaded[idx] = { asset, mediaId, url };
+          if (uidNow) {
+            await saveMusicLibraryEntry(uidNow, {
+              mediaId,
+              url,
+              title: filename,
+              assetId: asset.id,
+              duration: asset.duration ?? null,
+              addedAt: Date.now(),
+            }).catch(() => {});
+          }
+          resolved[idx] = { row, title: filename, url, mediaId };
         } catch (e) {
-          uploaded[idx] = { asset, error: friendlyUploadError(e) };
+          resolved[idx] = { row, error: friendlyUploadError(e) };
         }
       }
     });
@@ -172,35 +259,41 @@ export function RoomMusicModal({
     let added = 0;
     let failed = 0;
     let firstError: string | null = null;
-    const failedIds = new Set<string>();
-    for (const item of uploaded) {
+    const failedKeys = new Set<string>();
+    for (const item of resolved) {
       if ('error' in item) {
         failed++;
-        failedIds.add(item.asset.id);
+        failedKeys.add(item.row.key);
         firstError = firstError ?? item.error;
-        setAddStatus((prev) => ({ ...prev, [item.asset.id]: 'failed' }));
+        setAddStatus((prev) => ({ ...prev, [item.row.key]: 'failed' }));
         continue;
       }
       try {
-        const filename = item.asset.filename || `music-${Date.now()}.mp3`;
-        await addMusicTrack(roomId, { title: filename, url: item.url, mediaId: item.mediaId }, myName);
+        await addMusicTrack(roomId, { title: item.title, url: item.url, mediaId: item.mediaId }, myName);
         added++;
-        setAddStatus((prev) => ({ ...prev, [item.asset.id]: 'done' }));
+        setAddStatus((prev) => ({ ...prev, [item.row.key]: 'done' }));
       } catch {
         failed++;
-        failedIds.add(item.asset.id);
+        failedKeys.add(item.row.key);
         firstError = firstError ?? 'Could not add this song to the queue. Please try again.';
-        setAddStatus((prev) => ({ ...prev, [item.asset.id]: 'failed' }));
+        setAddStatus((prev) => ({ ...prev, [item.row.key]: 'failed' }));
       }
     }
-    if (added > 0 && (!music || music.state === 'idle')) {
-      await setMusicState(roomId, 'playing').catch(() => {});
+    // Auto-play from a FRESH read, never the render closure: after a Stop
+    // the room can sit in 'stopped' until the bot converts it to 'idle',
+    // and the old `music.state === 'idle'` check missed exactly that
+    // window — leaving the song stuck in the queue with no Play button.
+    if (added > 0) {
+      const fresh = await getRoomMusicOnce(roomId).catch(() => null);
+      if (!fresh || fresh.state === 'idle' || fresh.state === 'stopped') {
+        await setMusicState(roomId, 'playing').catch(() => {});
+      }
     }
     // Clear what made it; keep failures selected for retry.
     setSelected((prev) => {
-      const next: Record<string, MediaLibrary.Asset> = {};
-      Object.values(prev).forEach((a) => {
-        if (failedIds.has(a.id)) next[a.id] = a;
+      const next: Record<string, PickerRow> = {};
+      Object.values(prev).forEach((r) => {
+        if (failedKeys.has(r.key)) next[r.key] = r;
       });
       return next;
     });
@@ -237,6 +330,50 @@ export function RoomMusicModal({
   const fmtDur = (sec: number) => {
     const s = Math.floor(sec || 0);
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  /** One picker row (library song or phone song) with its select box. */
+  const renderPickerRow = (row: PickerRow) => {
+    const isSel = !!selected[row.key];
+    const status = addStatus[row.key];
+    const title = row.kind === 'lib' ? row.entry.title : row.asset.filename || 'Unknown';
+    const sub =
+      status === 'uploading'
+        ? 'Uploading…'
+        : status === 'done'
+          ? 'Added ✓'
+          : status === 'failed'
+            ? 'Failed — stays selected for retry'
+            : row.kind === 'lib'
+              ? row.entry.duration
+                ? fmtDur(row.entry.duration)
+                : 'Saved song'
+              : fmtDur(row.asset.duration);
+    return (
+      <Pressable
+        key={row.key}
+        onPress={() => toggleSelect(row)}
+        disabled={batchRunning}
+        style={{ flexDirection: 'row', alignItems: 'center',
+          paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.borderFaint,
+          opacity: batchRunning && status !== 'uploading' ? 0.5 : 1 }}>
+        <Feather name="music" size={16} color="#7C3AED" style={{ marginRight: 10 }} />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>
+            {displayTitle(title)}
+          </Text>
+          <Text style={{ color: status === 'failed' ? '#EF4444' : C.muted, fontSize: 12, marginTop: 2 }}>
+            {sub}
+          </Text>
+        </View>
+        <View style={{ width: 24, height: 24, borderRadius: 12,
+          borderWidth: 2, borderColor: isSel ? '#7C3AED' : C.borderFaint,
+          backgroundColor: isSel ? '#7C3AED' : 'transparent',
+          alignItems: 'center', justifyContent: 'center' }}>
+          {isSel && <Feather name="check" size={14} color="#FFF" />}
+        </View>
+      </Pressable>
+    );
   };
 
   const current = music?.current ?? null;
@@ -286,7 +423,7 @@ export function RoomMusicModal({
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <Text style={{ color: C.muted, fontSize: 12 }}>
-                  {assetsLoading ? 'Loading…' : `${assets.length} songs — tap to select`}
+                  {assetsLoading ? 'Loading…' : `${rows.length} songs — tap to select`}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 16 }}>
                   <Pressable onPress={() => loadAudio(true)} disabled={assetsLoading || batchRunning}>
@@ -303,47 +440,29 @@ export function RoomMusicModal({
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
                   Loading audio…
                 </Text>
-              ) : assets.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
                   No audio files found on this phone.
                 </Text>
               ) : (
-                assets.map((a) => {
-                  const filename = a.filename || 'Unknown';
-                  const isSel = !!selected[a.id];
-                  const status = addStatus[a.id];
-                  return (
-                    <Pressable
-                      key={a.id}
-                      onPress={() => toggleSelect(a)}
-                      disabled={batchRunning}
-                      style={{ flexDirection: 'row', alignItems: 'center',
-                        paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.borderFaint,
-                        opacity: batchRunning && status !== 'uploading' ? 0.5 : 1 }}>
-                      <Feather name="music" size={16} color="#7C3AED" style={{ marginRight: 10 }} />
-                      <View style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>
-                          {displayTitle(filename)}
-                        </Text>
-                        <Text style={{ color: status === 'failed' ? '#EF4444' : C.muted, fontSize: 12, marginTop: 2 }}>
-                          {status === 'uploading'
-                            ? 'Uploading…'
-                            : status === 'done'
-                              ? 'Added ✓'
-                              : status === 'failed'
-                                ? 'Failed — stays selected for retry'
-                                : fmtDur(a.duration)}
-                        </Text>
-                      </View>
-                      <View style={{ width: 24, height: 24, borderRadius: 12,
-                        borderWidth: 2, borderColor: isSel ? '#7C3AED' : C.borderFaint,
-                        backgroundColor: isSel ? '#7C3AED' : 'transparent',
-                        alignItems: 'center', justifyContent: 'center' }}>
-                        {isSel && <Feather name="check" size={14} color="#FFF" />}
-                      </View>
-                    </Pressable>
-                  );
-                })
+                <>
+                  {libraryRows.length > 0 && (
+                    <>
+                      <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', marginTop: 8, marginBottom: 2 }}>
+                        My songs — in any room, no re-upload ({libraryRows.length})
+                      </Text>
+                      {libraryRows.map(renderPickerRow)}
+                    </>
+                  )}
+                  {phoneRows.length > 0 && (
+                    <>
+                      <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', marginTop: 8, marginBottom: 2 }}>
+                        From phone
+                      </Text>
+                      {phoneRows.map(renderPickerRow)}
+                    </>
+                  )}
+                </>
               )}
             </>
           ) : (
@@ -353,7 +472,7 @@ export function RoomMusicModal({
                 borderRadius: 16, padding: 16,
                 borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)' }}>
                 <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
-                  {playing ? 'NOW PLAYING' : paused ? 'PAUSED' : 'NOTHING PLAYING'}
+                  {playing ? 'NOW PLAYING' : paused ? 'PAUSED' : current ? 'STOPPED' : 'NOTHING PLAYING'}
                 </Text>
                 <Text numberOfLines={2} style={{ color: C.text, fontSize: 16, fontWeight: '800' }}>
                   {current ? displayTitle(current.title) : 'No music yet'}
@@ -391,6 +510,27 @@ export function RoomMusicModal({
                         borderWidth: 1, borderColor: C.borderFaint }}>
                       <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>Stop</Text>
                     </Pressable>
+                  </View>
+                )}
+                {/* After a Stop the song used to be unrecoverable and the
+                    queue orphaned with no way to start it. Play restarts
+                    the stopped song from the beginning, or the queue head
+                    when nothing is current. */}
+                {canControl && (state === 'idle' || state === 'stopped') && (current || (music?.queue.length ?? 0) > 0) && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+                    <Pressable onPress={() => control('playing')}
+                      style={{ flex: 1, backgroundColor: '#7C3AED', borderRadius: 12,
+                        paddingVertical: 11, alignItems: 'center' }}>
+                      <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 14 }}>Play</Text>
+                    </Pressable>
+                    {(music?.queue.length ?? 0) > 0 && (
+                      <Pressable onPress={() => control('next')}
+                        style={{ flex: 1, backgroundColor: C.card, borderRadius: 12,
+                          paddingVertical: 11, alignItems: 'center',
+                          borderWidth: 1, borderColor: C.borderFaint }}>
+                        <Text style={{ color: C.text, fontWeight: '800', fontSize: 14 }}>Next</Text>
+                      </Pressable>
+                    )}
                   </View>
                 )}
               </View>

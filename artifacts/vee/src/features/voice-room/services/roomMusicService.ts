@@ -14,11 +14,19 @@
  *   current: { queueId, title, url, mediaId, positionSec, startedAt }
  *     — BOT-ONLY (live rules deny client writes to `current`).
  * The bot reconciles (state, current, queue): 'playing' starts/resumes,
- * 'paused' stops at the saved position, 'next' advances, 'stopped' clears.
+ * 'paused' stops at the saved position, 'next' advances, 'stopped' keeps
+ * the song (positionSec reset to 0) so Play restarts it from the start.
  * Client writes are owner/admin-gated by the live rules; members read.
+ *
+ * Per-user library — users/{uid}/musicLibrary/{pushId}:
+ *   { mediaId, url, title, assetId, duration, addedAt }
+ * Written once per successful phone upload; any room can queue a library
+ * song without re-uploading. Owner-writable under the live users/$uid
+ * rule already (no rules change needed for function; see the report for
+ * the optional shape-validation patch). Capped at 200, oldest pruned.
  */
 
-import { ref, push, set, remove, onValue } from 'firebase/database';
+import { ref, push, set, remove, onValue, get, query, orderByChild, equalTo } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
 
 export type MusicState = 'playing' | 'paused' | 'stopped' | 'idle' | 'next';
@@ -98,6 +106,96 @@ export async function setMusicState(roomId: string, state: MusicState): Promise<
 /** Remove one queued track (owner/admin only). */
 export async function removeQueueTrack(roomId: string, queueId: string): Promise<void> {
   await remove(ref(database, `roomMusic/${roomId}/queue/${queueId}`));
+}
+
+/** One song in the user's own library (shared by every room). */
+export interface MusicLibraryEntry {
+  libraryKey: string;
+  mediaId: string;
+  url: string;
+  title: string;
+  assetId: string | null;
+  duration: number | null;
+  addedAt: number;
+}
+
+function libraryRef(uid: string) {
+  return ref(database, `users/${uid}/musicLibrary`);
+}
+
+/** The user's own song library, newest first (empty when signed out/none). */
+export function subscribeMusicLibrary(
+  uid: string,
+  cb: (entries: MusicLibraryEntry[]) => void,
+): () => void {
+  return onValue(libraryRef(uid), (snap) => {
+    if (!snap.exists()) {
+      cb([]);
+      return;
+    }
+    const v = snap.val() as Record<string, any>;
+    cb(
+      Object.keys(v)
+        .map((k) => ({ libraryKey: k, ...(v[k] as object) } as MusicLibraryEntry))
+        .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)),
+    );
+  });
+}
+
+const MUSIC_LIBRARY_CAP = 200;
+
+/**
+ * Save one uploaded song to the user's library. Prunes the oldest entries
+ * beyond the cap (rare: only when at the cap, and user-paced).
+ */
+export async function saveMusicLibraryEntry(
+  uid: string,
+  entry: Omit<MusicLibraryEntry, 'libraryKey'>,
+): Promise<void> {
+  const key = push(libraryRef(uid)).key;
+  if (!key) return;
+  await set(ref(database, `users/${uid}/musicLibrary/${key}`), entry);
+  const snap = await get(libraryRef(uid));
+  if (!snap.exists()) return;
+  const v = snap.val() as Record<string, any>;
+  const keys = Object.keys(v).sort((a, b) => (v[a].addedAt || 0) - (v[b].addedAt || 0));
+  if (keys.length > MUSIC_LIBRARY_CAP) {
+    const extra = keys.slice(0, keys.length - MUSIC_LIBRARY_CAP);
+    await Promise.all(extra.map((k) => remove(ref(database, `users/${uid}/musicLibrary/${k}`))));
+  }
+}
+
+/** Find a library entry for a phone asset (same-device dedup). Null when absent. */
+export async function findLibraryEntryByAsset(
+  uid: string,
+  assetId: string,
+): Promise<MusicLibraryEntry | null> {
+  const q = query(libraryRef(uid), orderByChild('assetId'), equalTo(assetId));
+  const snap = await get(q);
+  if (!snap.exists()) return null;
+  const v = snap.val() as Record<string, any>;
+  const keys = Object.keys(v).sort((a, b) => (v[b].addedAt || 0) - (v[a].addedAt || 0));
+  const k = keys[0];
+  return { libraryKey: k, ...(v[k] as object) } as MusicLibraryEntry;
+}
+
+/**
+ * Fresh one-shot read of a room's music node — for post-add autoplay
+ * decisions. Never trust a render closure for this: after a Stop the room
+ * can sit in 'stopped' until the bot converts it to 'idle', and a stale
+ * closure check misses exactly that window.
+ */
+export async function getRoomMusicOnce(
+  roomId: string,
+): Promise<{ state: MusicState; current: MusicCurrent | null; queueCount: number } | null> {
+  const snap = await get(musicRef(roomId));
+  if (!snap.exists()) return null;
+  const v = snap.val() as any;
+  return {
+    state: (v.state as MusicState) || 'idle',
+    current: (v.current as MusicCurrent) || null,
+    queueCount: v.queue ? Object.keys(v.queue).length : 0,
+  };
 }
 
 const MEDIA_BASE = 'https://vee-club.duckdns.org';
