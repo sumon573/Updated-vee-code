@@ -10,10 +10,10 @@ import { C, getActiveThemes } from '../constants/theme';
  * RoomCustomizePanel — imo-style customize sheet (2026-10-25, boss).
  * Opens from the three-dot button next to the room settings gear.
  * Room Mode: 1vs1 PK + Vote (boss 2026-10-25: Vote moved here out of
- * Room Game). Room Game: games only (Turntable for now — boss 2026-10-25
- * removed Luckybag; Ludu is NOT shipped yet so it gets no button until
- * it is built). Tapping a game opens the game lobby, where hosts create
- * and members join live games.
+ * Room Game). Room Game: Ludu ONLY (boss 2026-10-25 11:32 — Turntable
+ * and Luckybag both removed); the section hides itself until the Ludu
+ * button ships with the built game. Tapping a game opens the game
+ * lobby, where hosts create and members join live games.
  * Room Settings: Music (HOST-SEAT ONLY, boss 2026-10-25: only the host
  * or whoever sits in seat 1 sees it — members and other admins see no
  * music entry at all) + Announcement (owner/admin). Theme lives ONLY
@@ -48,12 +48,13 @@ export function RoomCustomizePanel({
     fn();
   };
 
-  // 2026-10-25 (boss): Vote moved to Room Mode; Luckybag removed.
-  // Turntable stays for now — boss to confirm whether Room Game ends up
-  // Ludu-only or Turntable + Ludu (Ludu itself is not built yet).
-  const games = [
-    { key: 'turntable', label: 'Turntable', icon: 'refresh-cw' as const, bg: 'rgba(245,158,11,0.15)', fg: '#D97706' },
-  ];
+  // 2026-10-25 (boss 11:32): Room Game is Ludu-ONLY — Turntable removed
+  // too. Ludu itself is not built yet, so the section stays hidden
+  // (games.length === 0) until the Ludu button ships with the game —
+  // no placeholder button, no empty section header.
+  const games: Array<{
+    key: string; label: string; icon: 'refresh-cw'; bg: string; fg: string;
+  }> = [];
 
   const settingsRows: Array<{
     key: string; label: string; sub: string;
@@ -125,27 +126,32 @@ export function RoomCustomizePanel({
             </Pressable>
           </ScrollView>
 
-          {/* Room Game */}
-          <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginBottom: 12 }}>
-            Room Game
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 20, paddingBottom: 4 }}>
-            {games.map((g) => (
-              <Pressable key={g.key} onPress={() => tap(onOpenGames)}
-                style={{ alignItems: 'center', width: 72 }}>
-                <View style={{ width: 60, height: 60, borderRadius: 30,
-                  backgroundColor: g.bg, alignItems: 'center', justifyContent: 'center',
-                  borderWidth: 1, borderColor: g.bg }}>
-                  <Feather name={g.icon} size={26} color={g.fg} />
-                </View>
-                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
-                  textAlign: 'center' }}>
-                  {g.label}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          {/* Room Game — hidden while empty (Ludu-only per boss 11:32;
+              the Ludu button ships with the game, never before). */}
+          {games.length > 0 && (
+            <>
+              <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginBottom: 12 }}>
+                Room Game
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 20, paddingBottom: 4 }}>
+                {games.map((g) => (
+                  <Pressable key={g.key} onPress={() => tap(onOpenGames)}
+                    style={{ alignItems: 'center', width: 72 }}>
+                    <View style={{ width: 60, height: 60, borderRadius: 30,
+                      backgroundColor: g.bg, alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 1, borderColor: g.bg }}>
+                      <Feather name={g.icon} size={26} color={g.fg} />
+                    </View>
+                    <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
+                      textAlign: 'center' }}>
+                      {g.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
           {/* Room Settings */}
           <Text style={{ color: C.sub, fontSize: 14, fontWeight: '800', marginTop: 24, marginBottom: 4 }}>
