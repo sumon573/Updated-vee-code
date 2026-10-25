@@ -1065,7 +1065,7 @@ export default function VoiceRoomScreen() {
         }
         return;
       }
-      setRoomName(info.name);
+      if (typeof info.name === 'string' && info.name) setRoomName(info.name);
       setRoomTopic(info.topic);
       setOwnerId(info.ownerId);
       pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0, isLocked: info.isLocked };
@@ -2755,7 +2755,7 @@ export default function VoiceRoomScreen() {
                   <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
                 ) : (
                   <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
-                    {roomName.charAt(0).toUpperCase()}
+                    {(roomName || '?').charAt(0).toUpperCase()}
                   </Text>
                 )}
               </View>

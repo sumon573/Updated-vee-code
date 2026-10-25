@@ -102,7 +102,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
     return () => clearTimeout(timer);
   }, []);
 
-  const initials = name.trim().charAt(0).toUpperCase() || '?';
+  const initials = (name || '?').trim().charAt(0).toUpperCase() || '?';
 
   // 2026-10-24 (Sumon): ENTRY ART branch — full animated banner art with
   // live DP + name composited into the art's own slots. Geometry is the

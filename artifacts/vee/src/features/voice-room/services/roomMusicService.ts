@@ -146,10 +146,28 @@ export async function uploadMusicFile(asset: {
         body,
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error ?? `Upload failed (${res.status})`);
+        const err = (await res.json().catch(() => ({}))) as { error?: unknown };
+        const msg =
+          typeof err?.error === 'string' && err.error
+            ? err.error
+            : `Upload failed (${res.status})`;
+        throw new Error(msg);
       }
-      return (await res.json()) as { mediaId: string; url: string };
+      // Never trust the shape: a 200 with no mediaId/url would otherwise
+      // queue an unplayable track (the bot downloads track.url).
+      const data = (await res.json().catch(() => null)) as {
+        mediaId?: unknown;
+        url?: unknown;
+      } | null;
+      if (
+        typeof data?.mediaId !== 'string' ||
+        !data.mediaId ||
+        typeof data?.url !== 'string' ||
+        !data.url
+      ) {
+        throw new Error('Upload failed: media server returned no media id or URL');
+      }
+      return { mediaId: data.mediaId, url: data.url };
     } catch (e) {
       lastErr = e instanceof Error ? e : new Error(String(e));
       if (attempt === 0) continue;
@@ -157,4 +175,31 @@ export async function uploadMusicFile(asset: {
     }
   }
   throw lastErr ?? new Error('Upload failed');
+}
+
+/**
+ * User-facing message for an upload failure. The media server can return raw
+ * engine errors (e.g. a Telegram `file_id` TypeError when an audio file is
+ * reclassified server-side) — those must never reach the user verbatim in an
+ * alert. The raw message is still logged for debugging.
+ */
+export function friendlyUploadError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e ?? '');
+  if (raw) console.warn('[music upload] failed:', raw);
+  if (/not signed in|not authenticated|401/i.test(raw)) {
+    return 'Please sign in again, then try adding the song.';
+  }
+  if (/network|failed to fetch|timeout|timed out|aborted/i.test(raw)) {
+    return 'No connection — check your network and try again.';
+  }
+  if (/too large|file size|413/i.test(raw)) {
+    return 'This song is too large to upload (50 MB limit).';
+  }
+  if (/50[0-9]|telegram|media server|bad response/i.test(raw)) {
+    return 'The media server had a problem — please try again.';
+  }
+  if (/cannot read properties|undefined|file_id|null|is not a function/i.test(raw)) {
+    return 'Could not upload this song. Please try again.';
+  }
+  return 'Could not upload this song. Please try again.';
 }
