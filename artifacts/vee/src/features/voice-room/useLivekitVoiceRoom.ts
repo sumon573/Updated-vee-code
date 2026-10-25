@@ -167,6 +167,34 @@ function stopPersistedWatchdog(): void {
   }
 }
 
+// ─── Session foreground-service hold (2026-10-25, boss: background
+// connection must NEVER drop) ─────────────────────────────────────────────
+// The engine starts the service on join and stops it on leave — so a
+// background leave→join recovery (mounted auto-retry, watchdog repair)
+// drops the service ref to zero mid-recovery. On Android 12+, a
+// backgrounded app CANNOT restart a foreground service (throws unless
+// battery-exempt), so the recovery silently leaves voice unprotected:
+// the next stall freezes JS/network under Doze and hearing dies until
+// the user foregrounds the app. The session hold keeps one ref for the
+// whole room session (join → true exit), so the service NEVER stops
+// mid-session and no background restart is ever needed. Idempotent:
+// multiple mounts (minimize/restore cycles) share one hold; it is
+// released only on true session end (normal unmount exit, persisted
+// destroy, different-room switch).
+let _sessionServiceHeld = false;
+
+function acquireSessionServiceHold(): void {
+  if (_sessionServiceHeld) return;
+  _sessionServiceHeld = true;
+  startVoiceForegroundService('Voice room active');
+}
+
+function releaseSessionServiceHold(): void {
+  if (!_sessionServiceHeld) return;
+  _sessionServiceHeld = false;
+  stopVoiceForegroundService();
+}
+
 function startPersistedWatchdog(): void {
   stopPersistedWatchdog();
   startVoiceForegroundService('Voice room active');
@@ -273,6 +301,7 @@ export function destroyPersistedVoiceRoomEngine(): void {
   _persistedRoom = null;
   _isMinimized = false;
   stopPersistedWatchdog();
+  releaseSessionServiceHold();
   engine.leave().catch(() => {
     // non-critical — teardown after navigation
   });
@@ -292,6 +321,7 @@ export async function destroyPersistedVoiceRoomEngineAsync(): Promise<void> {
   _persistedRoom = null;
   _isMinimized = false;
   stopPersistedWatchdog();
+  releaseSessionServiceHold();
   try {
     await engine.leave();
   } catch {
@@ -1465,6 +1495,9 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           // non-critical — teardown after unmount
         });
       }
+      // True session end (not a minimize persist — that path returns
+      // before performCleanup): the session hold is released here.
+      releaseSessionServiceHold();
     }
 
     // ── Restore from minimize (reuse persisted room) ──────────────────────
@@ -1500,6 +1533,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       _persistedRoom = null;
       _isMinimized = false;
       stopPersistedWatchdog();
+      // Session hold survives minimize (never released on persist), so
+      // this is a no-op on a normal return — but it covers the case
+      // where an earlier cleanup dropped it.
+      acquireSessionServiceHold();
 
       engineRef.current = persisted.engine;
       // Re-attach handlers with fresh closures on this component instance
@@ -1557,6 +1594,9 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           _persistedRoom = null;
           _isMinimized = false;
           stopPersistedWatchdog();
+          // Different room: the old session ends here — its hold is
+          // released; the new room acquires its own at its join below.
+          releaseSessionServiceHold();
           try {
             await stale.engine.leave();
           } catch {
@@ -1581,6 +1621,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
         if (!mountedRef.current) return;
 
+        // Session hold starts here (join intent) and lasts until true
+        // exit — background leave→join recoveries can never drop the
+        // foreground service to zero mid-session (see hold comment).
+        acquireSessionServiceHold();
         const engine = new LivekitVoiceRoomEngine();
         attachHandlers(engine);
         engineRef.current = engine;
