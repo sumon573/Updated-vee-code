@@ -688,8 +688,18 @@ export default function VoiceRoomScreen() {
 
   const hasShownSelfEntryRef = useRef(false);
   const hasSentEntryChatMsgRef = useRef(false);
+  // 2026-10-25 (boss: entry effect ONLY on first entry / fresh entry
+  // after exit — never on minimize/background return): captured at
+  // mount, before the focus effects clear the minimized record, so a
+  // return is recognized even though the record is gone by the time
+  // pinGate passes (same pattern as returningSeatIdx). isRestore covers
+  // the cold-start auto-return (no minimized record survives a restart).
+  const [isReturnFromMinimize] = useState(() => {
+    const prev = getMinimizedRoom();
+    return !!prev && prev.id === roomId;
+  });
   useEffect(() => {
-    if (!hasShownSelfEntryRef.current && myUid && myProfile && roomId && pinGate === 'passed') {
+    if (!hasShownSelfEntryRef.current && !isReturnFromMinimize && !isRestore && myUid && myProfile && roomId && pinGate === 'passed') {
       hasShownSelfEntryRef.current = true;
       const displayName = myName || 'User';
       (async () => {
@@ -715,7 +725,7 @@ export default function VoiceRoomScreen() {
           ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {});
       })();
     }
-  }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate]);
+  }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate, isReturnFromMinimize, isRestore]);
 
   const lastEntryTsRef = useRef(0);
   useEffect(() => {
@@ -1825,7 +1835,10 @@ export default function VoiceRoomScreen() {
       setCurrentRoom({ id: roomId, myUid, mySeatIdx: finalSeatIdx });
 
       const joinKey = `${roomId}:${myUid}`;
-      if (!isRestore && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
+      // 2026-10-25 (boss: no entry indicators on return): same gate as
+      // the self entry banner — a minimized return never re-sends the
+      // join line either (the 30-min slot gate below stays as backstop).
+      if (!isRestore && !isReturnFromMinimize && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
         // Single persisted gate (see claimJoinMsgSlot): one join line
         // per room per 30 minutes, across mounts AND app restarts.
