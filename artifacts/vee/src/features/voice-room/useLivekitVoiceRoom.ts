@@ -123,12 +123,103 @@ type PersistedRoom = {
   muted: boolean;
   published: boolean;
   speakerOn: boolean;
+  /** Identity for watchdog repair (leave + fresh join on the same engine). */
+  userId: string;
+  userName: string;
 };
 
 /** Set to true by VoiceRoomScreen.handleMinimize() before router.back(). */
 let _isMinimized = false;
 /** Holds the LiveKit room when the screen is minimized so it isn't disconnected. */
 let _persistedRoom: PersistedRoom | null = null;
+
+// ─── Minimized-room watchdog (2026-10-25, boss: mic/connection must NEVER
+// drop until mute or exit; background must never stop talk or hear) ───────
+// ROOT CAUSE of both reports: the hook's auto-retry only runs while the
+// room screen is mounted — onLocalStateChange early-returns when unmounted
+// and cleanup clears the retry timer. So a minimized room's LiveKit
+// connection could die in the background (network blip, server restart,
+// OS socket suspend) and NOBODY repaired it: the user heard nothing until
+// they returned, and return then refused the restore (not 'connected')
+// and did a fresh join — the mic drop + fresh entry the boss felt.
+// The watchdog closes that gap: while a room is persisted (minimized), it
+// checks the engine every 15 s and repairs a dead connection in the
+// background (the same leave + fresh join the mounted retry uses),
+// re-applying the mic's muted/published intent — so by return time the
+// engine is 'connected' again and the restore path runs with NO mic drop
+// and NO fresh entry. It never touches a 'reconnecting' engine: the
+// LiveKit SDK heals that in place with the mic track intact. It holds one
+// foreground-service ref so the leave→join dip can never drop the service
+// to zero mid-repair. Repair never gives up while minimized.
+let _persistedWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+let _persistedWatchdogRepairing = false;
+let _watchdogHoldsService = false;
+
+function stopPersistedWatchdog(): void {
+  if (_persistedWatchdogTimer) {
+    clearInterval(_persistedWatchdogTimer);
+    _persistedWatchdogTimer = null;
+  }
+  _persistedWatchdogRepairing = false;
+  if (_watchdogHoldsService) {
+    _watchdogHoldsService = false;
+    stopVoiceForegroundService();
+  }
+}
+
+function startPersistedWatchdog(): void {
+  stopPersistedWatchdog();
+  startVoiceForegroundService('Voice room active');
+  _watchdogHoldsService = true;
+  const tick = () => {
+    void (async () => {
+      const p = _persistedRoom;
+      if (!p) {
+        stopPersistedWatchdog();
+        return;
+      }
+      let conn: string;
+      try {
+        conn = p.engine.getLocalState().connection;
+      } catch {
+        conn = 'failed';
+      }
+      // Healthy, or the SDK is healing it in place — hands off.
+      if (conn === 'connected' || conn === 'reconnecting' || conn === 'connecting') return;
+      if (_persistedWatchdogRepairing) return;
+      _persistedWatchdogRepairing = true;
+      try {
+        await p.engine.leave();
+        // Consumed or destroyed while leaving — do not resurrect.
+        if (_persistedRoom !== p) return;
+        await p.engine.join(p.roomId, { userId: p.userId, userName: p.userName });
+        if (_persistedRoom !== p) return;
+        // Re-apply the user's mic intent (mute, then seat publish) on the
+        // fresh room. publish() starts muted and applies this.muted, so
+        // a muted mic never blasts open mid-repair.
+        await p.engine.setMuted(p.muted);
+        if (p.published) {
+          await p.engine.publish();
+        }
+        try {
+          await p.engine.setSpeakerOn(p.speakerOn);
+        } catch {
+          // non-critical — routing defaults apply
+        }
+        const s = p.engine.getLocalState();
+        p.muted = s.muted;
+        p.published = s.publishing;
+        p.speakerOn = s.speakerOn;
+      } catch {
+        // Next tick retries — repair never gives up while minimized.
+      } finally {
+        _persistedWatchdogRepairing = false;
+      }
+    })();
+  };
+  tick();
+  _persistedWatchdogTimer = setInterval(tick, 15_000);
+}
 
 /** Call before router.back() to keep the voice room alive on minimize. */
 export function setVoiceRoomMinimized(minimized: boolean): void {
@@ -181,6 +272,7 @@ export function destroyPersistedVoiceRoomEngine(): void {
   const { engine } = _persistedRoom;
   _persistedRoom = null;
   _isMinimized = false;
+  stopPersistedWatchdog();
   engine.leave().catch(() => {
     // non-critical — teardown after navigation
   });
@@ -199,6 +291,7 @@ export async function destroyPersistedVoiceRoomEngineAsync(): Promise<void> {
   const { engine } = _persistedRoom;
   _persistedRoom = null;
   _isMinimized = false;
+  stopPersistedWatchdog();
   try {
     await engine.leave();
   } catch {
@@ -1387,10 +1480,17 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // 'connected' engine may be restored; anything else falls through to
     // the normal init below, which destroys the dead engine and joins
     // fresh (exactly what a fresh install does).
+    // 2026-10-25 (boss: no mic drop, no fresh entry on return): the
+    // minimized watchdog now repairs dead engines in the background, so
+    // a returned engine is 'connected' again in the normal case. A
+    // 'reconnecting' engine is ALSO restorable — the LiveKit SDK heals
+    // that in place with the mic track intact, so destroying it for a
+    // fresh join would CAUSE the very mic drop this law forbids.
     let canRestore = false;
     if (_persistedRoom && _persistedRoom.roomId === roomID) {
       try {
-        canRestore = _persistedRoom.engine.getLocalState().connection === 'connected';
+        const c = _persistedRoom.engine.getLocalState().connection;
+        canRestore = c === 'connected' || c === 'reconnecting';
       } catch {
         canRestore = false;
       }
@@ -1399,6 +1499,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       const persisted = _persistedRoom;
       _persistedRoom = null;
       _isMinimized = false;
+      stopPersistedWatchdog();
 
       engineRef.current = persisted.engine;
       // Re-attach handlers with fresh closures on this component instance
@@ -1440,6 +1541,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           const stale = _persistedRoom;
           _persistedRoom = null;
           _isMinimized = false;
+          stopPersistedWatchdog();
           try {
             await stale.engine.leave();
           } catch {
@@ -1510,9 +1612,15 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           muted:     mutedRef.current,
           published: publishedRef.current,
           speakerOn: speakerOnRef.current,
+          userId:    userID,
+          userName,
         };
         engineRef.current = null;
         mountedRef.current = false;
+        // 2026-10-25 (boss: connection must never drop while minimized):
+        // start the watchdog so a dead engine is repaired in the
+        // background instead of surfacing as a fresh entry on return.
+        startPersistedWatchdog();
         return;
       }
 
