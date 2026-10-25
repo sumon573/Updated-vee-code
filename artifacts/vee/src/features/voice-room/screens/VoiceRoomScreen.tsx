@@ -1775,6 +1775,9 @@ export default function VoiceRoomScreen() {
   // music entry (panel row, now-playing strip, floating icon). Members
   // and admins elsewhere see nothing music-related at all.
   const isHostSeat = myRole === 'host' || mySeatIdx === 0;
+  // 2026-10-25 (boss): the three-dot button itself is host-seat-only —
+  // only an admin/owner SEATED in the host seat (seat 1) sees it.
+  const isHostSeatedOwnerOrAdmin = isOwnerOrAdmin && mySeatIdx === 0;
 
   // 2026-10-22 (boss): one-time battery-exemption ask. Aggressive OEM power
   // managers kill backgrounded apps even with a foreground service — the
@@ -2820,11 +2823,13 @@ export default function VoiceRoomScreen() {
                   <Feather name="settings" size={26} color={C.sub} />
                 </ScalePress>
               )}
-              {/* 2026-10-25 (boss): three-dot customize panel next to the
-                  gear — everyone (members too: music read-only + games). */}
-              <ScalePress onPress={() => setCustomizeOpen(true)}>
-                <Feather name="more-vertical" size={26} color={C.sub} />
-              </ScalePress>
+              {/* 2026-10-25 (boss): three-dot customize panel — ONLY an
+                  admin/owner seated in the host seat sees it. */}
+              {isHostSeatedOwnerOrAdmin && (
+                <ScalePress onPress={() => setCustomizeOpen(true)}>
+                  <Feather name="more-vertical" size={26} color={C.sub} />
+                </ScalePress>
+              )}
             </View>
           </View>
           {}
