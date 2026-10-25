@@ -699,6 +699,8 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
     msgReply: 'जवाब दें',
     msgDeleteForMe: 'मेरे लिए हटाएं',
     msgDeleteForEveryone: 'सबके लिए हटाएं',
+    msgCopy: 'कॉपी',
+    msgCopied: 'संदेश कॉपी हो गया',
     msgSaveToGallery: 'गैलरी में सेव करें',
     saved: 'सेव हो गया',
     saveToGalleryFailed: 'गैलरी में इमेज सेव नहीं हो सकी।',

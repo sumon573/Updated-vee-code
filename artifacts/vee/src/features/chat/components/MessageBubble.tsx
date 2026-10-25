@@ -14,6 +14,9 @@ import * as MediaLibrary from 'expo-media-library';
 // only accepts LOCAL file URIs; passing an https:// URL silently does nothing.
 import { File, Paths } from 'expo-file-system';
 import { Feather } from '@expo/vector-icons';
+// 2026-10-25 (boss order): DM long-press Copy — expo-clipboard is
+// already a dependency (InviteModal, VoiceRoomScreen), so no new module.
+import * as Clipboard from 'expo-clipboard';
 import { useTranslation } from 'react-i18next';
 import { DmMessage } from '../types/dm';
 import { addReaction, deleteMessage } from '../services/firebaseDmService';
@@ -150,6 +153,23 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
   const handleLongPress = () => {
     bounce();
     setShowReactions(true);
+  };
+
+  // 2026-10-25 (boss order): DM long-press Copy. TEXT messages only
+  // (stickers/media/voice/call logs are not copyable text, same as room
+  // chat); friend's AND own texts both get it. Reactions stay untouched
+  // — Copy sits alongside the reaction picker, and confirms visibly
+  // with an Alert (same confirmation pattern as the invite-link copy).
+  const canCopy = message.type === 'text' && !message.deletedForEveryone && !!message.content;
+  const handleCopy = async () => {
+    if (!canCopy) return;
+    setShowReactions(false);
+    try {
+      await Clipboard.setStringAsync(message.content);
+      Alert.alert(t('chat.msgCopied'));
+    } catch {
+      Alert.alert(t('chat.error'));
+    }
   };
 
   const handleReaction = (emoji: string) => {
@@ -417,6 +437,15 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
             >
               <Feather name="more-horizontal" size={20} color="#8E8E93" />
             </Pressable>
+            {canCopy && (
+              <Pressable
+                onPress={handleCopy}
+                style={{ padding: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Feather name="copy" size={18} color="#8E8E93" />
+                <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.msgCopy')}</Text>
+              </Pressable>
+            )}
           </View>
         )}
 

@@ -747,6 +747,8 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
     msgReply: 'রিপ্লাই',
     msgDeleteForMe: 'শুধু আমার জন্য মুছুন',
     msgDeleteForEveryone: 'সবার জন্য মুছুন',
+    msgCopy: 'কপি',
+    msgCopied: 'মেসেজ কপি হয়েছে',
     msgSaveToGallery: 'গ্যালারিতে সেভ করুন',
     saved: 'সেভ হয়েছে',
     saveToGalleryFailed: 'গ্যালারিতে ছবি সেভ করা যায়নি।',

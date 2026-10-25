@@ -639,6 +639,8 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
     msgReply: 'رد',
     msgDeleteForMe: 'حذف لي',
     msgDeleteForEveryone: 'حذف للجميع',
+    msgCopy: 'نسخ',
+    msgCopied: 'تم نسخ الرسالة',
     msgSaveToGallery: 'حفظ في المعرض',
     saved: 'تم الحفظ',
     saveToGalleryFailed: 'تعذر حفظ الصورة في المعرض.',
