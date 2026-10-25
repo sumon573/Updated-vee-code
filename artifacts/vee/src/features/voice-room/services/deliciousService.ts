@@ -41,6 +41,7 @@
  *     and no money moves — the sheet shows the last known state.
  */
 import {
+  get,
   onValue,
   push,
   ref,
@@ -136,6 +137,69 @@ export interface DeliciousResult {
   day: string;
 }
 
+// Server-driven rules (POLISH 2026-10-25): delicious/config holds the
+// live rules. All fields optional; a missing node/field falls back to
+// today's values, NEVER a crash. Clients only READ config (live rules
+// deny client writes); the boss/admin edits it directly in RTDB.
+export interface DeliciousConfigRaw {
+  bettingSeconds?: number;
+  countSeconds?: number;
+  resultSeconds?: number;
+  chips?: number[];
+  foods?: Record<string, number>;
+  sides?: Record<string, { multiplier?: number; weight?: number }>;
+}
+
+export interface DeliciousConfig {
+  bettingSeconds: number;
+  countSeconds: number;
+  resultSeconds: number;
+  chips: number[];
+  foods: Record<DeliciousFoodId, number>;
+  sides: Record<DeliciousSideId, { multiplier: number; weight: number }>;
+}
+
+export const DELICIOUS_DEFAULT_CONFIG: DeliciousConfig = {
+  bettingSeconds: 30,
+  countSeconds: 3,
+  resultSeconds: 5,
+  chips: [5, 50, 100, 1000],
+  foods: { tomato: 5, hotdog: 10, skewers: 15, cabbage: 5, ham: 25, corn: 5, carrot: 5, steak: 45 },
+  sides: { salad: { multiplier: 1.25, weight: 0.75 }, pizza: { multiplier: 4.37, weight: 0.25 } },
+};
+
+export function mergeDeliciousConfig(raw: DeliciousConfigRaw | null): DeliciousConfig {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  const num = (v: unknown, d: number): number =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : d;
+  const chips = Array.isArray(c.chips) && c.chips.length > 0 &&
+    c.chips.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0)
+    ? [...c.chips] : [...DELICIOUS_DEFAULT_CONFIG.chips];
+  const foods = {} as Record<DeliciousFoodId, number>;
+  (Object.keys(DELICIOUS_DEFAULT_CONFIG.foods) as DeliciousFoodId[]).forEach((id) => {
+    foods[id] = num(c.foods && c.foods[id], DELICIOUS_DEFAULT_CONFIG.foods[id]);
+  });
+  const sides = {} as DeliciousConfig['sides'];
+  (Object.keys(DELICIOUS_DEFAULT_CONFIG.sides) as DeliciousSideId[]).forEach((id) => {
+    const r = c.sides && c.sides[id];
+    sides[id] = {
+      multiplier: num(r && r.multiplier, DELICIOUS_DEFAULT_CONFIG.sides[id].multiplier),
+      weight: num(r && r.weight, DELICIOUS_DEFAULT_CONFIG.sides[id].weight),
+    };
+  });
+  return {
+    bettingSeconds: num(c.bettingSeconds, DELICIOUS_DEFAULT_CONFIG.bettingSeconds),
+    countSeconds: num(c.countSeconds, DELICIOUS_DEFAULT_CONFIG.countSeconds),
+    resultSeconds: num(c.resultSeconds, DELICIOUS_DEFAULT_CONFIG.resultSeconds),
+    chips, foods, sides,
+  };
+}
+
+/** Dhaka calendar date YYYY-MM-DD (client safety net for day filtering). */
+export function deliciousToday(nowMs: number = Date.now()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(nowMs));
+}
+
 // Global node — one game for the whole app (boss correction 2026-10-25).
 function base() {
   return 'delicious';
@@ -189,6 +253,24 @@ export function subscribeMyTodayPrize(
   return onValue(ref(database, `${base()}/todayPrize/${uid}`), (snap) => {
     cb(snap.exists() ? (snap.val() as { total: number; day: string }) : null);
   });
+}
+
+/** Live game rules (server-written config; null until published). */
+export function subscribeDeliciousConfig(
+  cb: (raw: DeliciousConfigRaw | null) => void,
+): () => void {
+  return onValue(ref(database, `${base()}/config`), (snap) => {
+    cb(snap.exists() ? (snap.val() as DeliciousConfigRaw) : null);
+  });
+}
+
+/** One-time read of the viewer's credited payout for one round (history view). */
+export async function getMyDeliciousPayoutOnce(
+  roundN: number,
+  uid: string,
+): Promise<number | null> {
+  const snap = await get(ref(database, `${base()}/payouts/${roundN}/${uid}`));
+  return snap.exists() ? (snap.val() as number) : null;
 }
 
 /**
