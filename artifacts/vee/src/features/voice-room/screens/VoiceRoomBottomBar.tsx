@@ -1,6 +1,6 @@
 /**
  * VoiceRoomBottomBar — extracted from VoiceRoomScreen.tsx (IMO port Phase 1c split).
- * Floating action buttons (mic, speaker, tasks, gift, invite, exit). No logic changes.
+ * Floating action buttons (mic, speaker, tasks, gift, games, invite, exit). No logic changes.
  * 2026-10-22 (Sumon): text labels under the buttons REMOVED — icon-only bar,
  * slimmer, and the reclaimed height goes to the seats/chat above.
  */
@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
 import {
   PulseMicButton, LiquidGoldSpeaker, LiveDateIcon,
-  ObsidianGiftButton, SapphireInviteButton, ObsidianExitButton,
+  ObsidianGiftButton, NeonGamepadButton, SapphireInviteButton, ObsidianExitButton,
 } from './VoiceRoomHelpers';
 
 export interface VoiceRoomBottomBarProps {
@@ -29,6 +29,7 @@ export interface VoiceRoomBottomBarProps {
   speakerOn: boolean;
   setTaskCenterOpen: (v: boolean) => void;
   setGiftsOpen: (v: boolean) => void;
+  setGamesOpen: (v: boolean) => void;
   setInviteOpen: (v: boolean) => void;
   setExitModalOpen: (v: boolean) => void;
 }
@@ -37,7 +38,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const {
     keyboardOpen, bottomPad, handleMicBarPress, mySeatIdx, muted, accentColor,
     toggleSpeaker, speakerOn,
-    setTaskCenterOpen, setGiftsOpen, setInviteOpen, setExitModalOpen,
+    setTaskCenterOpen, setGiftsOpen, setGamesOpen, setInviteOpen, setExitModalOpen,
   } = props;
   return (
     <>
@@ -103,6 +104,21 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
             {/* 2026-10-15 (Sumon): Option C Obsidian Sparkle gift button. */}
 <View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
                         <ObsidianGiftButton />
+            </View>
+          </View>
+        </ScalePress>
+        </View>
+
+        {/* Games — 2026-10-25 (Sumon picked the neon gamepad): opens the
+            games hub (RoomGamesModal) listing every game — Ludu today,
+            future games as they are added. Same flex:1 slot + 50-high
+            wrapper + 52×52 button box as every sibling: EXACTLY the same
+            size, placed right after Gifts (the spot he pointed at). */}
+        <View style={{ flex: 1, alignItems: 'center' }}>
+        <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
+          <View style={{ alignItems: 'center' }}>
+<View style={{ height: 50, justifyContent: 'center', alignItems: 'center' }}>
+                        <NeonGamepadButton />
             </View>
           </View>
         </ScalePress>

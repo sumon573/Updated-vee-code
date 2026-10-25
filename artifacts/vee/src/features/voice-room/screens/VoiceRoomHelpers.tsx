@@ -4,7 +4,7 @@
  */
 import { useRef, useEffect, useState } from 'react';
 import { View, Text, Image, Animated } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import ScalePress from '@/components/ScalePress';
 import { Role, Participant, ChatMsg, roleToLevel } from '../types/room';
 import type { RoomSeat, RoomAudienceMember } from '../services/firebaseRoomService';
@@ -260,6 +260,21 @@ export function ObsidianGiftButton() {
       <TwinkleSparkle delay={0} style={{ position: 'absolute', top: 0, left: 2, fontSize: 10 }} />
       <TwinkleSparkle delay={600} style={{ position: 'absolute', top: 3, right: 3, fontSize: 10 }} />
       <TwinkleSparkle delay={1200} style={{ position: 'absolute', bottom: 2, left: 5, fontSize: 10 }} />
+    </View>
+  );
+}
+
+/* ── NeonGamepadButton — 2026-10-25 (Sumon picked the neon gamepad
+   concept for the new Games hub button): floating violet gamepad glyph,
+   NO background box — same 52×52 wrapper as ObsidianGiftButton /
+   ObsidianExitButton, so it is EXACTLY the same size as every other
+   bottom-bar button (boss law: সব গুলো একই সাইজ). Tapping it opens
+   RoomGamesModal, the hub that lists every game (Ludu today, future
+   games as they are added to GAME_META). ── */
+export function NeonGamepadButton() {
+  return (
+    <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+      <MaterialCommunityIcons name="gamepad-variant" size={30} color="#A855F7" />
     </View>
   );
 }

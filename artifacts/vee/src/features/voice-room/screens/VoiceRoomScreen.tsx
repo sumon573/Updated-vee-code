@@ -3548,6 +3548,7 @@ export default function VoiceRoomScreen() {
         speakerOn={speakerOn}
         setTaskCenterOpen={setTaskCenterOpen}
         setGiftsOpen={setGiftsOpen}
+        setGamesOpen={setGamesOpen}
         setInviteOpen={setInviteOpen}
         setExitModalOpen={setExitModalOpen}
       />
