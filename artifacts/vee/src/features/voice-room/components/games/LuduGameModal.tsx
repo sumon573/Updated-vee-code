@@ -97,7 +97,7 @@ function DiceFace({ value, size }: { value: number | null; size: number }) {
   );
 }
 
-export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myName, myPhotoURL, mySeatIdx, isHost, gameId, onClose }: {
+export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myName, myPhotoURL, mySeatIdx, isHost, gameId, onClose, micMuted, onToggleMic }: {
   visible: boolean;
   roomId: string;
   hostUid: string;
@@ -111,6 +111,11 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
   /** existing game id, or null to show the host mode picker */
   gameId: string | null;
   onClose: () => void;
+  /** room mic state + toggle, passed from the screen (boss 2026-10-25: talk
+      without leaving the game). Reuses the screen's toggleMic, so the
+      seat-mic law holds exactly: host-muted seats cannot self-unmute. */
+  micMuted?: boolean;
+  onToggleMic?: () => void;
 }) {
   const { t } = useTranslation();
   const [game, setGame] = useState<RoomGame | null>(null);
@@ -632,6 +637,15 @@ export function LuduGameModal({ visible, roomId, hostUid, hostName, myUid, myNam
               <Text style={{ color: '#FF6B6B', fontSize: 15, fontWeight: '800' }}>
                 {t('voiceRoom.games.luduCancel')}
               </Text>
+            </Pressable>
+          )}
+          {mySeatIdx >= 0 && onToggleMic && (
+            <Pressable onPress={onToggleMic} hitSlop={12} style={{ marginRight: 16 }}>
+              <Feather
+                name={micMuted ? 'mic-off' : 'mic'}
+                size={20}
+                color={micMuted ? '#FF3B30' : (isPurpleSheet ? '#FFFFFF' : '#22C55E')}
+              />
             </Pressable>
           )}
           <Pressable onPress={onClose} hitSlop={12}>

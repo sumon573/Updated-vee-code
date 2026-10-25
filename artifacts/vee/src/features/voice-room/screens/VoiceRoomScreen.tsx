@@ -3840,6 +3840,8 @@ export default function VoiceRoomScreen() {
           isHost={isOwnerOrAdmin}
           mySeatIdx={mySeatIdx}
           gameId={gameNav.gameId}
+          micMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? true) : true}
+          onToggleMic={toggleMic}
           onClose={() => setGameNav(null)}
         />
       )}
