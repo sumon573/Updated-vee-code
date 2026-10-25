@@ -15,18 +15,25 @@
  * couple game (relationship system), treasure box.
  */
 import { useEffect, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { subscribeGames, type RoomGame, type GameType } from '../../services/roomGameService';
 
-const GAME_META: { type: GameType; icon: string; color: string }[] = [
-  // 2026-10-25 (boss: hub emptied for now — "এখানে এগুলো একটা থাকবে
-  // না, আমি যেটা বলবো ঠিক সেটা অ্যাড করবে"): the offered-games list is
-  // EMPTY on his order. Games are added back ONLY on his word, one by
-  // one, by re-adding their entry here. The game types themselves stay
-  // in code/RTDB — only this hub listing is empty.
+// 2026-10-25 (boss 19:21, his own icons): ONLY these two games are
+// visible in the hub for now — "Next এ পরে আবার অ্যাড করবো" (more come
+// in a later round on his word). Display-only entries with his exact
+// icons (cropped from his screenshot): NO GameType, NO engine, NO
+// modal behind them yet, so they render as display rows (no chevron,
+// no press action) — never a fake playable button. Gameplay comes only
+// when he shows it (like the Ludu walkthrough). To add a future game on
+// his word: append its { id, name, image } here. (The old playable
+// catalog — vote/turntable/luckybag/ludu — was emptied on his 19:14
+// order and stays out until he dictates otherwise.)
+const GAME_DISPLAY: { id: string; name: string; image: any }[] = [
+  { id: 'delicious', name: 'Delicious', image: require('../../../../../assets/images/games-delicious.png') },
+  { id: 'fisher', name: 'Fisher', image: require('../../../../../assets/images/games-fisher.png') },
 ];
 
 export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, onCreateGame, onOpenRank, onOpenProps }: {
@@ -121,31 +128,26 @@ export function RoomGamesModal({ visible, roomId, isHost, onClose, onOpenGame, o
             </View>
           )}
 
-          {GAME_META.length > 0 && (
+          {GAME_DISPLAY.length > 0 && (
             <>
           <Text style={{ fontSize: 13, fontWeight: '800', color: '#8E8E93', marginBottom: 8 }}>
-            {isHost ? t('voiceRoom.games.startNew') : t('voiceRoom.games.allGames')}
+            {t('voiceRoom.games.allGames')}
           </Text>
-          {GAME_META.map(({ type, icon, color }) => (
-            <Pressable
-              key={type}
-              disabled={!isHost}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onCreateGame(type); }}
+          {GAME_DISPLAY.map((g) => (
+            <View
+              key={g.id}
               style={{
                 flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7',
-                borderRadius: 14, padding: 14, marginBottom: 8, opacity: isHost ? 1 : 0.75,
+                borderRadius: 14, padding: 14, marginBottom: 8,
               }}
             >
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: color + '1A', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                {/* @ts-ignore feather name union */}
-                <Feather name={icon} size={22} color={color} />
+              <View style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', marginRight: 12 }}>
+                <Image source={g.image} style={{ width: 44, height: 44 }} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#000' }}>{TYPE_NAMES[type]}</Text>
-                <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>{TYPE_DESCS[type]}</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#000' }}>{g.name}</Text>
               </View>
-              {isHost && <Feather name="chevron-right" size={20} color="#C7C7CC" />}
-            </Pressable>
+            </View>
           ))}
             </>
           )}
