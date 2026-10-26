@@ -119,6 +119,13 @@ export function EventPageView({ event, onBack, onClose }: { event: TaskEvent; on
   };
 
   const miniArt = (tier: EventTier) => {
+    const pImg = (tier.params as { previewImageUrl?: unknown } | undefined)?.previewImageUrl;
+    if (typeof pImg === 'string' && tier.rewardType !== 'frame') {
+      if (tier.rewardType === 'ripple') {
+        return <Image source={{ uri: pImg }} style={{ width: 48, height: 48, borderRadius: 10 }} contentFit="cover" cachePolicy="memory-disk" />;
+      }
+      return <Image source={{ uri: pImg }} style={{ width: 48, height: 48 }} contentFit="contain" cachePolicy="memory-disk" />;
+    }
     if (tier.rewardType === 'vibe') {
       return (
         <LinearGradient colors={vibeColors(tier)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
@@ -302,7 +309,7 @@ export function EventPageView({ event, onBack, onClose }: { event: TaskEvent; on
             </View>
             {previewTier && (
               <>
-                <TierPreview tier={previewTier} eventImage={banner || undefined} nickname={nickname} photoURL={profilePhoto} />
+                <TierPreview tier={previewTier} eventImage={banner || undefined} nickname={nickname} photoURL={profilePhoto} large />
                 <Text style={{ color: C.text, fontSize: 15, fontWeight: '800', marginTop: 2 }}>
                   {previewTier.title || rewardLabel(previewTier)}
                 </Text>

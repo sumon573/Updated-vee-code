@@ -4,6 +4,9 @@
  * The task bar opens THE main event itself — ONE page, no list, no
  * intermediate panel. The main event is the first active event by
  * sortOrder, so the server decides which event is main.
+ * Presentation (boss 2026-10-26 21:47): imo-style HALF display, NOT full
+ * screen — a bottom sheet (70%) with the room visible above; tap outside
+ * closes; the rest scrolls inside the sheet.
  * No events → a plain empty state (real state, never demo content).
  */
 import { useState, useEffect } from 'react';
@@ -25,11 +28,14 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
   const main = events && events.length > 0 ? events[0] : null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <View style={{ height: '70%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
       {main ? (
         <EventPageView event={main} onBack={onClose} onClose={onClose} />
       ) : (
-        <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
           <Pressable onPress={onClose} hitSlop={10} style={{ position: 'absolute', top: 12, right: 16, width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
             <Feather name="x" size={16} color={C.sub} />
           </Pressable>
@@ -38,6 +44,8 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
           </Text>
         </View>
       )}
+        </View>
+      </View>
     </Modal>
   );
 }

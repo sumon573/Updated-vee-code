@@ -82,7 +82,7 @@ export function RealAvatar({ photoURL }: { photoURL: string | null }) {
   );
 }
 
-export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null }) {
+export function TierPreview({ tier, eventImage, nickname, photoURL, large }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null; large?: boolean }) {
   // Demo motion, JS-only: shine sweep across the vibe tile + rising bubbles
   // around the ripple avatar (mirrors the demo's vibeMainShine / rippleBubble).
   const shineX = useRef(new Animated.Value(0)).current;
@@ -101,6 +101,30 @@ export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: Ev
     return () => { shineLoop.stop(); bubbleLoop.stop(); };
   }, [shineX, bubbleT]);
   const shineTranslate = shineX.interpolate({ inputRange: [0, 1], outputRange: [-80, 120] });
+  // Server-driven demo art: tier.params.previewImageUrl carries the demo's own
+  // reward art (vibe = hand gesture, ripple = rings animation). When present
+  // it replaces the procedural preview; otherwise the procedural preview below
+  // (shine / bubbles) is the fallback for art-less events.
+  const previewParams = tier.params as { previewImageUrl?: unknown } | undefined;
+  const previewImage = (previewParams && typeof previewParams.previewImageUrl === 'string') ? previewParams.previewImageUrl : null;
+  if (previewImage && tier.rewardType !== 'frame') {
+    const isRipple = tier.rewardType === 'ripple';
+    const caption = tier.rewardType === 'vibe' ? 'Nickname effect' : tier.rewardType === 'ripple' ? 'Room effect while speaking' : 'Reward';
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 10, width: '100%' }}>
+        {isRipple && large ? (
+          <Image source={{ uri: previewImage }} style={{ width: '100%', aspectRatio: 16 / 9 }} contentFit="contain" cachePolicy="memory-disk" />
+        ) : isRipple ? (
+          <Image source={{ uri: previewImage }} style={{ width: 88, height: 50 }} contentFit="contain" cachePolicy="memory-disk" />
+        ) : large ? (
+          <Image source={{ uri: previewImage }} style={{ width: 160, height: 160 }} contentFit="contain" cachePolicy="memory-disk" />
+        ) : (
+          <Image source={{ uri: previewImage }} style={{ width: 64, height: 64 }} contentFit="contain" cachePolicy="memory-disk" />
+        )}
+        <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>{caption}</Text>
+      </View>
+    );
+  }
   if (tier.rewardType === 'vibe') {
     const colors = (tier.params && Array.isArray((tier.params as { colors?: unknown }).colors))
       ? ((tier.params as { colors: string[] }).colors.filter((c) => typeof c === 'string').slice(0, 3))
