@@ -5,6 +5,10 @@
  * duration label, inside the normal chat bubble.
  *
  * Playback uses expo-audio's useAudioPlayer (already a dependency).
+ * 2026-10-26 (weak-network Phase 2, voice cache): first play streams
+ * remote (unchanged) and downloads in the background; replays swap the
+ * player to the local file (instant + offline-proof). Any cache failure
+ * just keeps remote streaming — the cache is never load-bearing.
  * The player is created lazily per bubble; only one voice message plays at
  * a time is NOT enforced here — rapid taps on two bubbles just move the
  * "now playing" state; each bubble owns its player and cleans up on unmount.
@@ -18,6 +22,7 @@ import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
+import { getCachedVoiceUri, cacheVoiceInBackground } from '../services/voiceCacheService';
 import { formatVoiceDuration } from '../hooks/useVoiceRecorder';
 
 const C = {
@@ -42,10 +47,26 @@ type Props = {
 function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
   // useAudioPlayer(null) is allowed — player stays idle until we load.
   // We pass the uri up-front; the hook handles remote streaming.
+  // A cached local file (from an earlier play) replaces the source before
+  // first play — see the cache effect below.
+  const cacheSwappedForRef = useRef<string | null>(null);
   // updateInterval 250ms: status (currentTime) refreshes 4×/sec, matching
   // the old poll's smoothness but event-driven instead of polled.
   const player = useAudioPlayer(uri ? { uri } : null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
+
+  // Voice cache: swap an idle player to the local file when this note was
+  // downloaded before. Never interrupts live playback (guarded on playing);
+  // a failed lookup or swap just keeps remote streaming.
+  useEffect(() => {
+    if (cacheSwappedForRef.current === uri) return;
+    cacheSwappedForRef.current = uri;
+    void getCachedVoiceUri(uri).then((local) => {
+      if (local && !player.playing) {
+        try { player.replace({ uri: local }); } catch { /* remote stays */ }
+      }
+    });
+  }, [uri, player]);
 
   const playing = status.playing;
   const totalSec = durationSec && durationSec > 0 ? durationSec : status.duration || 0;
@@ -72,6 +93,9 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
       if (playing) {
         player.pause();
       } else {
+        // Cache for replays: download in the background while streaming.
+        // Never awaited, never blocks playback; failures just keep streaming.
+        void cacheVoiceInBackground(uri);
         // Restart from the beginning if we were at the end.
         try {
           const dur = player.duration || totalSec || 0;
@@ -84,7 +108,7 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
     } catch {
       /* player torn down — nothing to toggle */
     }
-  }, [playing, player, totalSec]);
+  }, [playing, player, totalSec, uri]);
 
   // Cleanup the native player on unmount (stops audio if the bubble scrolls away).
   useEffect(() => {
