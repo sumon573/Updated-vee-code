@@ -9,8 +9,13 @@
  * count, and up to 6 real member DPs (photoURL, falling back to initials).
  */
 
+// 2026-10-26 (boss: app must run smooth for every user, no lag): room
+// covers + member DPs used uncached RN Image — every voice-tab mount
+// re-downloaded and re-decoded them. expo-image memory-disk cache
+// fixes that; art now survives restarts without re-fetching.
 import { memo } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
@@ -67,7 +72,8 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               <Image
                 source={{ uri: room.coverImageUrl }}
                 style={{ width: 50, height: 50 }}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
               />
             ) : (
               <Feather name="mic" size={20} color="rgba(255,255,255,0.9)" />
@@ -151,6 +157,7 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
                   <Image
                     key={i}
                     source={{ uri: p.photoURL }}
+                    cachePolicy="memory-disk"
                     style={{
                       width: DP, height: DP, borderRadius: DP / 2,
                       borderWidth: 1.5, borderColor: '#FFFFFF',

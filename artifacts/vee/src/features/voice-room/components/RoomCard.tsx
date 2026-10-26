@@ -1,5 +1,10 @@
+// 2026-10-26 (boss: app must run smooth for every user, no lag): room
+// covers used uncached RN Image — every voice-tab mount re-downloaded
+// and re-decoded all covers. expo-image memory-disk cache fixes that;
+// covers now survive restarts and re-renders without re-fetching.
 import { memo } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
@@ -32,7 +37,8 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
             <Image
               source={{ uri: room.coverImageUrl }}
               style={{ position: 'absolute', width: SIZE, height: SIZE }}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="memory-disk"
             />
           ) : (
             <>
