@@ -352,7 +352,7 @@ export default function IMOHomeScreen() {
     if (!user?.uid || !participantId) return;
     // P1 fix (2026-10-12): busy guard — never dial while a call is active/minimized.
     if (getMinimizedCall()) {
-      Alert.alert('ইতিমধ্যে একটি কলে আছেন', 'আপনি ইতিমধ্যে একটি কলে আছেন। নতুন কল শুরুর আগে বর্তমান কলটি শেষ করুন।');
+      Alert.alert('Already in a call', 'You are already in a call. Please end the current call before starting a new one.');
       return;
     }
     const callRoomId = buildCallRoomId(user.uid, participantId);

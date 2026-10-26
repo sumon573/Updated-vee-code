@@ -719,7 +719,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     const targetKey = kind === 'side' ? `side:${target}` : `food:${target}`;
     const distinctBetBoxes = Object.values(displayBetByTarget).filter((v) => v > 0).length;
     if ((displayBetByTarget[targetKey] ?? 0) <= 0 && distinctBetBoxes >= 6) {
-      Alert.alert('6টির বেশি বক্সে bet করা যাবে না');
+      Alert.alert("You can't bet on more than 6 boxes");
       return;
     }
     // BALANCE GUARD (boss 2026-10-26 03:21: rapid taps must never drop the

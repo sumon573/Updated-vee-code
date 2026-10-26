@@ -180,3 +180,77 @@ export function subscribeTaskEvents(callback: (events: TaskEvent[]) => void): ()
 export function clearTaskEventsCache(): void {
   cachedEvents = null;
 }
+
+/**
+ * Server-driven panel layout (boss 2026-10-26, "last" imo-like build):
+ * RTDB `task_panel/sections` composes the Task Center panel in real time —
+ * banners, the event list, and showcase rows — with NO app update.
+ * Unknown section types are ignored; a missing node = events list only.
+ * Never crashes on bad data; keeps last known on subscription error.
+ */
+export interface PanelShowcaseItem {
+  imageUrl: string;
+  badge?: string;
+  targetEventId?: string;
+}
+
+export interface TaskPanelSection {
+  id: string;
+  type: 'banner' | 'events' | 'showcase';
+  sortOrder: number;
+  title?: string;
+  subtitle?: string;
+  tag?: string;
+  imageUrl?: string;
+  colors?: string[];
+  targetEventId?: string;
+  items?: PanelShowcaseItem[];
+}
+
+export function subscribeTaskPanel(callback: (sections: TaskPanelSection[]) => void): () => void {
+  const panelRef = ref(rtdb, 'task_panel/sections');
+  let delivered = false;
+  const handler = (snap: any) => {
+    const sections: TaskPanelSection[] = [];
+    if (snap.exists()) {
+      const data = snap.val();
+      const list: Array<[string, unknown]> = Array.isArray(data)
+        ? (data as unknown[]).map((v, i) => [String(i), v])
+        : Object.entries(data as Record<string, unknown>);
+      for (const [id, v] of list) {
+        if (!v || typeof v !== 'object') continue;
+        const d = v as Record<string, unknown>;
+        if (d.active === false) continue;
+        const type = String(d.type || '');
+        if (type !== 'banner' && type !== 'events' && type !== 'showcase') continue;
+        sections.push({
+          id: String(d.id || id),
+          type: type as TaskPanelSection['type'],
+          sortOrder: Number(d.sortOrder) || 0,
+          title: d.title ? String(d.title) : undefined,
+          subtitle: d.subtitle ? String(d.subtitle) : undefined,
+          tag: d.tag ? String(d.tag) : undefined,
+          imageUrl: d.imageUrl ? String(d.imageUrl) : undefined,
+          colors: Array.isArray(d.colors)
+            ? (d.colors as unknown[]).filter((c): c is string => typeof c === 'string')
+            : undefined,
+          targetEventId: d.targetEventId ? String(d.targetEventId) : undefined,
+          items: Array.isArray(d.items)
+            ? (d.items as unknown[]).filter((x): x is Record<string, unknown> =>
+                !!x && typeof x === 'object' && typeof (x as Record<string, unknown>).imageUrl === 'string'
+              ).map((x) => ({
+                imageUrl: String(x.imageUrl),
+                badge: x.badge ? String(x.badge) : undefined,
+                targetEventId: x.targetEventId ? String(x.targetEventId) : undefined,
+              }))
+            : undefined,
+        });
+      }
+    }
+    sections.sort((a, b) => a.sortOrder - b.sortOrder);
+    delivered = true;
+    try { callback(sections); } catch (e) { console.warn('[taskPanel] listener error:', e); }
+  };
+  onValue(panelRef, handler, () => { if (!delivered) callback([]); });
+  return () => { off(panelRef, 'value', handler); };
+}
