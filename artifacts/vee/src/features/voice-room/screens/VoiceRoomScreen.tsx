@@ -32,8 +32,8 @@ import { Role, Participant, BlockRecord, ChatMsg, SeatReaction, GiftSentInfo, ro
 import { getWeekStart } from '../utils/format';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import { SeatCard } from '../components/SeatCard';
-import PairHalo, { HALO_R } from '../components/PairHalo';
-import { resolveDesign, HANDSHAKE_DESIGNS, BASIC_DESIGN_KEY } from '../components/handshakeDesigns';
+import PairHandshake, { HANDSHAKE_BADGE } from '../components/PairHandshake';
+import { resolveDesign, HANDSHAKE_DESIGNS, BASIC_DESIGN_KEY, type HandshakeDesign } from '../components/handshakeDesigns';
 import {
   subscribeIntimacy, intimacyLevelFor, intimacyPairKey,
 } from '../services/intimacyService';
@@ -482,7 +482,17 @@ export default function VoiceRoomScreen() {
               }
               if (result.success) {
                 removeSeatInvite(myUid, invite.id).catch(() => {});
+                // 2026-10-26 (boss: invite-accept mic + room-leave laws):
+                // a seat take via invite IS a seat take — it must update
+                // the active-room tracker (else a later room-invite guard
+                // leaves the STALE seat behind in the old room) and start
+                // UNMUTED (startPublishing alone keeps the previous muted
+                // flag, so an invited seat could open muted).
+                mySeatIdxRef.current = invite.seatIdx;
+                setCurrentRoom({ id: roomId, myUid, mySeatIdx: invite.seatIdx });
+                persistActiveRoom({ roomId, myUid, mySeatIdx: invite.seatIdx }).catch(() => {});
                 startPublishing();
+                setMicMuted(false);
                 sendRoomChatMsg(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
                   text: t('voiceRoom.screen.memberJoinedSeat', { name: myName, number: invite.seatIdx + 1 }),
@@ -865,37 +875,24 @@ export default function VoiceRoomScreen() {
     }
     return out;
   }, [seats]);
-  // ── Pair Halo groups (boss pick M, 2026-10-23) ─────────────────────────
-  // Chained active pairs in a row merge into ONE group halo (3–4 seats =
-  // one big ring around everyone). The group's design = the strongest
-  // pair in it: a premium Store design wins (richest pair if several),
-  // otherwise the basic tier of the highest intimacy value in the group.
-  const haloGroups = useMemo(() => {
-    type PairInfo = { value: number; designKey: string | null };
-    const groups: { key: string; uids: string[]; pairs: PairInfo[] }[] = [];
+  // ── Pair Handshake badges (boss pick, 2026-10-26: the ring is GONE)
+  // One small handshake badge per ACTIVE adjacent pair, sitting in the
+  // gap between the two avatars. The badge's colours + sparkle come from
+  // that pair's own design (premium Store design, else the basic tier of
+  // its intimacy value) — so the more the relationship grows, the more
+  // colourful and sparkly the badge, with a gentle pulse. Chains are NOT
+  // merged: A-B-C shows two badges (A↔B, B↔C), one per pair.
+  const pairBadges = useMemo(() => {
+    const out: { key: string; a: string; b: string; design: HandshakeDesign }[] = [];
     for (const p of adjacentPairs) {
       const d = pairData[p.key];
       if (!d || d.value < 1) continue;
-      const last = groups[groups.length - 1];
-      if (last && last.uids[last.uids.length - 1] === p.a) {
-        last.uids.push(p.b);
-        last.pairs.push(d);
-      } else {
-        groups.push({ key: p.key, uids: [p.a, p.b], pairs: [d] });
-      }
+      const design = (d.designKey && d.designKey !== BASIC_DESIGN_KEY && HANDSHAKE_DESIGNS[d.designKey])
+        ? HANDSHAKE_DESIGNS[d.designKey]
+        : resolveDesign(null, intimacyLevelFor(d.value).id);
+      out.push({ key: p.key, a: p.a, b: p.b, design });
     }
-    return groups.map((g) => {
-      let bestPremium: PairInfo | null = null;
-      for (const p of g.pairs) {
-        if (p.designKey && p.designKey !== BASIC_DESIGN_KEY && HANDSHAKE_DESIGNS[p.designKey]) {
-          if (!bestPremium || p.value > bestPremium.value) bestPremium = p;
-        }
-      }
-      const design = bestPremium
-        ? HANDSHAKE_DESIGNS[bestPremium.designKey as string]
-        : resolveDesign(null, intimacyLevelFor(Math.max(...g.pairs.map((p) => p.value))).id);
-      return { key: g.key, uids: g.uids, design };
-    });
+    return out;
   }, [adjacentPairs, pairData]);
   const pairSig = adjacentPairs.map((p) => p.key).join('|');
   useEffect(() => {
@@ -3194,27 +3191,24 @@ export default function VoiceRoomScreen() {
           </View>
         )}
         <View ref={gridWrapRef} style={{ position: 'relative', marginBottom: 4, marginHorizontal: -6 }}>
-        {/* Pair Halo layer — rendered BEHIND the seats (zIndex 1 < 2) so
-            Nobel/store frames and seat names are never covered. Avatar
-            centre sits below the cell's top by cell pad 6 + pressable
-            pad 4 + avatar margin 6 + half of the 53dp avatar, plus the
-            long-standing empirical calibration (+47 total). One halo per
-            connected group: a 2-seat pair, or one big ring when 3–4
-            adjacent seats chain together (boss pick M, 2026-10-23). */}
-        {haloGroups.map((g) => {
-          const gf = cellGeom[g.uids[0]];
-          const gl = cellGeom[g.uids[g.uids.length - 1]];
+        {/* Pair Handshake layer — badges sit ON TOP of the seat grid
+            (zIndex 3) in the gap between each active pair, pointerEvents
+            none so seat taps pass through. Avatar centre = cell top +
+            47 (same calibration as the old halo). One badge per pair;
+            no ring anywhere (boss pick, 2026-10-26). */}
+        {pairBadges.map((b) => {
+          const gf = cellGeom[b.a];
+          const gl = cellGeom[b.b];
           if (!gf || !gl) return null;
-          const cx1 = gf.x + gf.w / 2;
-          const cx2 = gl.x + gl.w / 2;
+          const cx = (gf.x + gf.w / 2 + gl.x + gl.w / 2) / 2;
           const cy = gf.y + 47;
           return (
             <View
-              key={g.key}
+              key={b.key}
               pointerEvents="none"
-              style={{ position: 'absolute', left: cx1 - HALO_R, top: cy - HALO_R, zIndex: 1 }}
+              style={{ position: 'absolute', left: cx - HANDSHAKE_BADGE / 2, top: cy - HANDSHAKE_BADGE / 2, zIndex: 3 }}
             >
-              <PairHalo width={(cx2 - cx1) + HALO_R * 2} design={g.design} />
+              <PairHandshake design={b.design} />
             </View>
           );
         })}

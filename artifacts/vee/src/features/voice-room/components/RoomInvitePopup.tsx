@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal } from 'react-native';
-import { router } from 'expo-router';
+import { router, useSegments, useGlobalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
-import { ref, onValue, remove } from 'firebase/database';
+import { ref, onValue, remove, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
+import { removeSeat, leaveAudience } from '../services/firebaseRoomService';
+import { destroyPersistedVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
 
 type RoomInvite = {
   roomId: string;
@@ -25,6 +27,8 @@ export default function RoomInvitePopup() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [invites, setInvites] = useState<RoomInvite[]>([]);
+  const segments = useSegments();
+  const globalParams = useGlobalSearchParams();
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -49,6 +53,43 @@ export default function RoomInvitePopup() {
       await remove(ref(database, `roomInvites/${user!.uid}/${invite.roomId}`));
     } catch { /* non-critical */ }
     setInvites((prev) => prev.filter((i) => i.roomId !== invite.roomId));
+    const inVoiceRoom = (segments as string[]).includes('voice-room');
+    const currentRoomId = globalParams?.roomId;
+    // Already in the invited room — nothing to do.
+    if (inVoiceRoom && currentRoomId === invite.roomId) return;
+    if (inVoiceRoom && typeof currentRoomId === 'string' && currentRoomId) {
+      // 2026-10-26 (boss: invite-accept while seated in another room):
+      // NEVER stack a second room over an open one. The old code pushed
+      // blindly, so the old screen stayed mounted with its LiveKit engine
+      // still publishing — two engines on one mic (the mic drop), double
+      // subscriptions/load, and the old room's seat never left, so exiting
+      // the new room revealed the old room with the ID still on it. Leave
+      // the current room FULLY first: own seat by live lookup (the
+      // active-room tracker can go stale on seat-invite moves — never
+      // trust it alone here) + audience + persisted engine, then dismiss
+      // the old screen so its engine tears down on unmount, then open the
+      // new room after the same 80ms settle the notification-tap path in
+      // _layout uses. The new room's own one-active-room guard cleans any
+      // remainder as backstop.
+      try {
+        const seatsSnap = await get(ref(database, `rooms/${currentRoomId}/seats`)).catch(() => null);
+        let mySeatIdx = -1;
+        seatsSnap?.forEach((child) => {
+          const s = child.val() as { userId?: string } | null;
+          if (s?.userId === user!.uid) mySeatIdx = Number(child.key);
+        });
+        if (mySeatIdx >= 0) {
+          await removeSeat(currentRoomId, mySeatIdx).catch(() => {});
+        }
+        await leaveAudience(currentRoomId, user!.uid).catch(() => {});
+      } catch { /* backstop: dismiss + new-room guard still clean up */ }
+      try { await destroyPersistedVoiceRoomEngineAsync(); } catch { /* noop */ }
+      if (router.canDismiss()) router.dismiss();
+      setTimeout(() => {
+        router.push({ pathname: '/voice-room', params: { roomId: invite.roomId } } as any);
+      }, 80);
+      return;
+    }
     router.push({ pathname: '/voice-room', params: { roomId: invite.roomId } } as any);
   };
 
