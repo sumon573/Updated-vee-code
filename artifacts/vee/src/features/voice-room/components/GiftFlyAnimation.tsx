@@ -20,7 +20,7 @@
  */
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
-  Animated, Dimensions, Easing, Image, StyleSheet, Text, View,
+  Animated, AppState, Dimensions, Easing, Image, StyleSheet, Text, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
@@ -132,6 +132,11 @@ const DISPLAY_MS = 3400; // IMO fullscreen SVGA display
 const FLY_MS = 1500;     // fly to recipient seat
 const BANNER_MS = 1600;  // follow-up banner
 const BIG_BANNER_MS = 4200; // IMO gold broadcast for big gifts
+// 2026-10-26 (boss: gift rain must never stack minutes of fullscreen):
+// pending shows are capped — a fresh show drops the OLDEST pending one.
+// Live moments matter; a minutes-old backlog does not. Combo merges
+// above never grow the queue, so they are unaffected.
+const MAX_QUEUED_SHOWS = 3;
 
 // Perf (2026-10-22 audit): memoized — with stable props the player no
 // longer re-renders when the parent queue state churns; it re-renders
@@ -383,7 +388,8 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
       setQueue([...queueRef.current]);
       return;
     }
-    // … otherwise enqueue a fresh fullscreen show.
+    // … otherwise enqueue a fresh fullscreen show (capped — see
+    // MAX_QUEUED_SHOWS: the oldest pending show drops, never the live one).
     const fresh: QueuedShow = {
       giftId: e.giftId, emoji: e.emoji, coins: e.coins,
       fromName: e.fromName, fromAvatar: e.fromAvatar,
@@ -392,7 +398,9 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
       videoSize: e.videoSize, videoFullscreen: e.videoFullscreen,
       recipients: [recipient], count: 1, startedAt: now,
     };
-    queueRef.current = [...queueRef.current, fresh];
+    const next = [...queueRef.current, fresh];
+    if (next.length > MAX_QUEUED_SHOWS) next.splice(0, next.length - MAX_QUEUED_SHOWS);
+    queueRef.current = next;
     setQueue(queueRef.current);
   }, []);
 
@@ -412,6 +420,40 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
   }, [active, queue, setActiveBoth]);
 
   const handleDone = useCallback(() => { setActiveBoth(null); }, [setActiveBoth]);
+
+  // 2026-10-26 (boss: a stuck fullscreen gift must be impossible): a
+  // healthy show lives at most ~14 s (4 s load cap + 9.7 s sequence).
+  // If the active show is still there at 20 s, its done timer or
+  // animation was lost (background freeze) — force it off so the queue
+  // can drain. Keyed on startedAt (set once at pump time, never by
+  // combo merges), so merges cannot postpone the watchdog.
+  const activeStartedAt = active ? active.startedAt : 0;
+  useEffect(() => {
+    if (!activeStartedAt) return;
+    const t = setTimeout(() => setActiveBoth(null), 20_000);
+    return () => clearTimeout(t);
+  }, [activeStartedAt, setActiveBoth]);
+
+  // 2026-10-26 (boss: background must never replay stale gifts): on
+  // foreground, drop every queued show older than 15 s and kill an
+  // active show older than 15 s. A healthy show is at most ~14 s old,
+  // so this only ever removes dead moments, never a live one.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      const now = Date.now();
+      const STALE_MS = 15_000;
+      if (activeRef.current && now - activeRef.current.startedAt > STALE_MS) {
+        setActiveBoth(null);
+      }
+      const fresh = queueRef.current.filter((s) => now - s.startedAt <= STALE_MS);
+      if (fresh.length !== queueRef.current.length) {
+        queueRef.current = fresh;
+        setQueue(fresh);
+      }
+    });
+    return () => sub.remove();
+  }, [setActiveBoth]);
 
   // Perf (2026-10-22 audit): the 500ms force-re-render interval that used
   // to live here is GONE. It re-rendered the whole fullscreen overlay tree
@@ -647,6 +689,20 @@ export function GiftReceiveBanners({ roomId }: { roomId: string }) {
   }, [roomId, handleIncoming]);
 
   const handleDismissed = useCallback(() => { advance(); }, [advance]);
+
+  // 2026-10-26 (boss: same stale rule as fullscreen): a banner whose
+  // last activity is over 10 s old on foreground return is stuck
+  // (normal life is 2.5 s) — dismiss it so it can never sit on screen.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      const last = lastRef.current;
+      if (currentRef.current && last && Date.now() - last.at > 10_000) {
+        setDismissSignal((s) => s + 1);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 60 }]} pointerEvents="none">

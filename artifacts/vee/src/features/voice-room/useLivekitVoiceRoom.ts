@@ -154,6 +154,13 @@ let _persistedRoom: PersistedRoom | null = null;
 let _persistedWatchdogTimer: ReturnType<typeof setInterval> | null = null;
 let _persistedWatchdogRepairing = false;
 let _watchdogHoldsService = false;
+// 2026-10-26 (boss: long-background return = dead buttons + dead mic):
+// the watchdog ticks every 15 s — the timestamp of its last tick proves
+// JS was actually alive to observe the engine. A tick older than 120 s
+// proves the app was frozen (Tecno/HiOS force-freeze), so any cached
+// 'connected' string from before the freeze is unproven and the restore
+// path must not trust it. Set on every tick + at watchdog start.
+let _lastWatchdogTick = 0;
 
 function stopPersistedWatchdog(): void {
   if (_persistedWatchdogTimer) {
@@ -199,7 +206,9 @@ function startPersistedWatchdog(): void {
   stopPersistedWatchdog();
   startVoiceForegroundService('Voice room active');
   _watchdogHoldsService = true;
+  _lastWatchdogTick = Date.now();
   const tick = () => {
+    _lastWatchdogTick = Date.now();
     void (async () => {
       const p = _persistedRoom;
       if (!p) {
@@ -1352,6 +1361,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const autoRetryAttemptsRef = useRef(0);
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryConnectionRef = useRef<() => void>(() => {});
+  /** Wall-clock time the app last left the foreground (in-place path). */
+  const backgroundedAtRef = useRef(0);
 
   const [joined,        setJoined]        = useState(false);
   const [muted,         setMuted]         = useState(true);
@@ -1467,16 +1478,28 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // to the foreground with a voice engine that is not 'connected',
       // force a rejoin (leave + fresh join, new token fetch) so voice
       // recovers instead of staying dead with no fetch.
-      if (nextState !== 'active') return;
+      // 2026-10-26 (boss: long-background return = dead room): the same
+      // zombie hole exists for a cached 'connected' — a frozen app
+      // receives no events, so the string can claim connected for
+      // minutes while the socket is dead. A foreground gap over 120 s
+      // forces a rejoin even when the cache claims connected. Mic
+      // intent survives via mutedRef + applyTrackMute on publish, so
+      // this never drops a live mic — it only refuses a zombie.
+      if (nextState !== 'active') {
+        backgroundedAtRef.current = Date.now();
+        return;
+      }
       const engine = engineRef.current;
       if (!engine || !mountedRef.current) return;
+      const gap = backgroundedAtRef.current > 0 ? Date.now() - backgroundedAtRef.current : 0;
+      backgroundedAtRef.current = 0;
       let connected = false;
       try {
         connected = engine.getLocalState().connection === 'connected';
       } catch {
         connected = false;
       }
-      if (!connected) {
+      if (!connected || gap > 120_000) {
         retryConnectionRef.current();
       }
     };
@@ -1523,7 +1546,15 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     if (_persistedRoom && _persistedRoom.roomId === roomID) {
       try {
         const c = _persistedRoom.engine.getLocalState().connection;
-        canRestore = c === 'connected' || c === 'reconnecting';
+        // 2026-10-26 (boss: long-background return = dead buttons + dead
+        // mic): a cached 'connected' is only trustworthy if the JS
+        // watchdog was actually alive to observe it. A last tick older
+        // than 120 s proves the app was frozen while minimized, so the
+        // engine state is unproven — fall through to a fresh join
+        // (mic intent is preserved by the join path, so this never
+        // drops a live mic; it only refuses to trust a zombie).
+        const watchdogFresh = _lastWatchdogTick > 0 && Date.now() - _lastWatchdogTick < 120_000;
+        canRestore = (c === 'connected' || c === 'reconnecting') && watchdogFresh;
       } catch {
         canRestore = false;
       }
