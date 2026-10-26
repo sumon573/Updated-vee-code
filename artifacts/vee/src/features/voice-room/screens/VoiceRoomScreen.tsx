@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image, BackHandler, Modal, KeyboardAvoidingView, Keyboard, AppState } from 'react-native';
-import PremiumLoader from '@/src/components/PremiumLoader';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -12,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
+import { getRoomChatSession, setRoomChatSession, clearRoomChatSession } from '@/src/store/roomChatSession';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
@@ -112,7 +112,7 @@ import {
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
 import {
-  subscribeRoomChat, sendRoomChatMsg, loadOlderMessages, createRoomChatKey,
+  subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
 
 
@@ -355,9 +355,6 @@ export default function VoiceRoomScreen() {
   const [walletBalance, setWalletBalance] = useState(0);
   const [weeklyEarned,  setWeeklyEarned] = useState(0);
   const [pendingSeatInvites, setPendingSeatInvites] = useState<SeatInvite[]>([]);
-  const [chatOldestKey,    setChatOldestKey]    = useState<string | null>(null);
-  const [loadingOlderMsgs, setLoadingOlderMsgs] = useState(false);
-  const [hasOlderMsgs,     setHasOlderMsgs]     = useState(true);
   const [showChatScrollBtn, setShowChatScrollBtn] = useState(false);
 
   const speakingRef = useRef<Record<string, boolean>>({});
@@ -828,8 +825,10 @@ export default function VoiceRoomScreen() {
   
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  const historyCutoffTsRef = useRef<number>(0);
-  const historyCleanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 2026-10-26 (boss: room chat = session + last 30): the join timestamp of
+  // the CURRENT stay. Set by the session effect below (reused across
+  // minimize-return, fresh on every real entry).
+  const chatSessionJoinTsRef = useRef<number>(0);
   const [chatInput,    setChatInput]    = useState('');
   const [replyingTo,   setReplyingTo]   = useState<ChatMsg | null>(null);
   // 2026-10-23 (Sumon): long-press a user TEXT message → Copy/Reply sheet.
@@ -1420,10 +1419,31 @@ export default function VoiceRoomScreen() {
     return () => unsub();
   }, [roomId, myUid]);
 
+  // 2026-10-26 (boss: room chat = session + last 30): the chat view starts
+  // fresh on every entry. A stored session survives minimize-return (the
+  // screen remounts but the user never left); any other mount starts a
+  // new session. The cleanup clears the session unless the user minimized
+  // (the minimized record proves they never left) — so explicit leave,
+  // kick/disband navigation and invite-to-another-room all end the
+  // session, and the next entry shows nothing from before.
+  useEffect(() => {
+    const existing = getRoomChatSession(roomId);
+    const joinTs = existing ?? Date.now();
+    chatSessionJoinTsRef.current = joinTs;
+    if (!existing) setRoomChatSession(roomId, joinTs);
+    return () => {
+      if (getMinimizedRoom()?.id !== roomId) clearRoomChatSession(roomId);
+    };
+  }, [roomId]);
+
   useEffect(() => {
     return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
-      const cutoff = historyCutoffTsRef.current;
-      const visible = cutoff > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= cutoff) : fbMsgs;
+      // 2026-10-26 (boss: session + last 30): only this stay's messages,
+      // capped at the last 30 — pre-join messages and anything older than
+      // the window never render. There is no Load earlier anymore: the
+      // window IS the history.
+      const joinTs = chatSessionJoinTsRef.current;
+      const visible = (joinTs > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= joinTs) : fbMsgs).slice(-30);
       const deliveredMsgs = visible.map(fbChatToMsg);
       // 2026-10-23: optimistic echoes — drop the ones this snapshot now
       // contains (same push key, so the delivered copy replaces them in
@@ -1434,10 +1454,6 @@ export default function VoiceRoomScreen() {
       }
       const pending = pendingEchoesRef.current;
       setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
-      if (visible.length > 0) {
-        setChatOldestKey(visible[0].id);
-        setHasOlderMsgs(visible.length >= 50);
-      }
       if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
       scrollTimerRef.current = setTimeout(() => {
         scrollTimerRef.current = null;
@@ -1446,28 +1462,6 @@ export default function VoiceRoomScreen() {
     });
   }, [roomId, myUid]);
 
-  useEffect(() => {
-    if (!hasJoined) return;
-    if (historyCleanTimerRef.current !== null) return; // already running
-    const TEN_MIN = 10 * 60 * 1000;
-    const clean = () => {
-      setMessages((prev) => {
-        if (prev.length <= 5) return prev;
-        const keep = prev.slice(-5);
-        historyCutoffTsRef.current = keep[0].ts ?? 0;
-        return keep;
-      });
-    };
-    historyCleanTimerRef.current = setInterval(clean, TEN_MIN);
-    return () => {
-      if (historyCleanTimerRef.current !== null) {
-        clearInterval(historyCleanTimerRef.current);
-        historyCleanTimerRef.current = null;
-      }
-    };
-  }, [hasJoined]);
-
-  
   useEffect(() => {
     if (hasSentEntryChatMsgRef.current) return;
     if (!roomId || !myUid || !myName) return;
@@ -2842,21 +2836,6 @@ export default function VoiceRoomScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [roomId, myUid, myName, myColor]);
 
-  const handleLoadOlderMessages = useCallback(async () => {
-    if (!chatOldestKey || loadingOlderMsgs || !hasOlderMsgs) return;
-    setLoadingOlderMsgs(true);
-    try {
-      const older = await loadOlderMessages(roomId, myUid, chatOldestKey, 30);
-      if (older.length === 0) {
-        setHasOlderMsgs(false);
-      } else {
-        setMessages((prev: ChatMsg[]) => [...older.map(fbChatToMsg), ...prev]);
-        setChatOldestKey(older[0].id);
-      }
-    } catch {  }
-    setLoadingOlderMsgs(false);
-  }, [chatOldestKey, loadingOlderMsgs, hasOlderMsgs, roomId, myUid]);
-
   const handleViewOtherProfile = useCallback((uid: string, name: string) => {
     router.push({ pathname: '/user-profile', params: { uid, name } } as Parameters<typeof router.push>[0]);
   }, []);
@@ -3386,20 +3365,6 @@ export default function VoiceRoomScreen() {
               setShowChatScrollBtn(!isAtBottom);
             }}
             scrollEventThrottle={16}
-            ListHeaderComponent={hasOlderMsgs ? (
-              <Pressable
-                onPress={handleLoadOlderMessages}
-                disabled={loadingOlderMsgs}
-                style={{ alignItems: 'center', paddingVertical: 8 }}
-              >
-                {loadingOlderMsgs
-                  ? <PremiumLoader size="small" />
-                  : <Text style={{ color: accentColor, fontSize: 12, fontWeight: '700' }}>
-                      {t('voiceRoom.screen.loadEarlier')}
-                    </Text>
-                }
-              </Pressable>
-            ) : null}
             onContentSizeChange={() => chatRef.current?.scrollToEnd({ animated: true })}
             initialNumToRender={20}
             maxToRenderPerBatch={10}

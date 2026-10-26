@@ -12,7 +12,7 @@
  *   roomBlocks/{roomId}/{userId} → RoomBlockRecord
  */
 
-import { ref, push, set, get, query, limitToLast, orderByKey, endBefore, onChildAdded, onChildChanged, onChildRemoved } from 'firebase/database';
+import { ref, push, set, get, query, limitToLast, onChildAdded, onChildChanged, onChildRemoved } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
 export type RoomChatGift = {
@@ -46,44 +46,20 @@ export type RoomChatMsg = {
   gift?: RoomChatGift;
 };
 
-/**
- * Fix 11: Load a batch of messages older than the given message key.
- * Used for "Load earlier" pagination in the chat panel.
- */
-export async function loadOlderMessages(
-  roomId: string,
-  myUid: string,
-  beforeKey: string,
-  limit = 30,
-): Promise<RoomChatMsg[]> {
-  const q = query(
-    ref(database, `rooms/${roomId}/chat`),
-    orderByKey(),
-    endBefore(beforeKey),
-    limitToLast(limit),
-  );
-  const snap = await get(q);
-  if (!snap.exists()) return [];
-  const msgs: RoomChatMsg[] = [];
-  snap.forEach((child) => {
-    const v = child.val() as Omit<RoomChatMsg, 'id' | 'isMe'>;
-    msgs.push({ ...v, id: child.key!, isMe: v.senderId === myUid });
-  });
-  msgs.sort((a, b) => a.ts - b.ts);
-  return msgs;
-}
-
-/** Subscribe to room chat (last 50 messages).
- *  2026-10-13: limitToLast(15) → 50 — pagination লজিক (`visible.length >= 50`
- *  দিয়ে hasOlderMsgs) আর কমেন্ট 50 ধরে লেখা, 15-এ "Load earlier" ভুল হতো।
+/** Subscribe to room chat (last 30 messages).
+ *  2026-10-26 (boss: room chat = session + last 30): the window is 30 —
+ *  the screen filters it further to this stay only (joinTs) and there is
+ *  no Load earlier anymore, so the service no longer paginates. The old
+ *  loadOlderMessages() is deleted with it: pre-join history must never
+ *  be reachable again.
  *  2026-10-23 (Sumon: "সব কিছু সুপার ফাস্ট send হবে"): INCREMENTAL child
  *  listeners instead of onValue. The old onValue re-downloaded and
- *  re-parsed the ENTIRE 50-message window on every single new message —
+ *  re-parsed the ENTIRE window on every single new message —
  *  the main receiver-side lag. Now each event transfers only the one
  *  changed message; the array is maintained locally and the callback
  *  still receives the full sorted window (same contract as before).
- *  Events are coalesced per tick so the initial 50-child burst produces
- *  one callback, not fifty. */
+ *  Events are coalesced per tick so the initial child burst produces
+ *  one callback, not thirty. */
 export function subscribeRoomChat(
   roomId: string,
   myUid: string,
@@ -91,7 +67,7 @@ export function subscribeRoomChat(
 ): () => void {
   const chatRef = query(
     ref(database, `rooms/${roomId}/chat`),
-    limitToLast(50),
+    limitToLast(30),
   );
   const byId = new Map<string, RoomChatMsg>();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
