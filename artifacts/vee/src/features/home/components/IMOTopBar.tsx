@@ -9,7 +9,9 @@ import { Ionicons } from '@expo/vector-icons';
 interface IMOTopBarProps {
   profilePhotoURL?: string | null;
   profileInitials?: string;
-  activeTab: 'chat' | 'voice' | 'contacts';
+  // 2026-10-26: 'none' = stories/calls tabs, which have no top-bar tab —
+  // renders the bar with no active underline (never a wrong highlight).
+  activeTab: 'chat' | 'voice' | 'contacts' | 'none';
   chatBadgeCount?: number;
   onProfilePress: () => void;
   onTabPress: (tab: 'chat' | 'voice' | 'contacts') => void;

@@ -13,7 +13,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
@@ -30,8 +29,6 @@ import {
 // NOTE 5 (2026-10-11): offline-first chat list — cached history renders
 // instantly when offline, live subscription keeps it fresh on reconnect.
 import { loadChatList, saveChatList } from '@/src/features/chat/services/chatCacheService';
-// NOTE 5 (2026-10-11): IMO-style bottom network status bar.
-import NetworkStatusBar from '@/src/components/NetworkStatusBar';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import type { CallHistoryEntry } from '@/src/features/audio-call/services/callHistoryService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
@@ -41,7 +38,9 @@ import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOSt
 import { UniversalContentRenderer } from '@/src/components/UniversalContentRenderer';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
 import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu';
-import IMOTabBar, { type HomeTab } from '@/src/features/home/components/IMOTabBar';
+import IMOTopBar from '@/src/features/home/components/IMOTopBar';
+import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
+import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
@@ -69,8 +68,6 @@ export default function IMOHomeScreen() {
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
   // Voice rooms entry (FAB → full-screen modal)
   const [voiceRoomsVisible, setVoiceRoomsVisible] = useState(false);
-  // Missed-call badge for the Calls tab
-  const [missedCalls, setMissedCalls] = useState(0);
   const { stories, publish, react, comment, remove, getContactUids } = useStories();
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
@@ -285,17 +282,13 @@ export default function IMOHomeScreen() {
 
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  const handleTabPress = useCallback((tab: HomeTab) => {
-    if (tab === 'me') {
-      // Me → Vee profile (profile screens owned elsewhere; navigate only)
-      router.push('/profile' as any);
-      return;
-    }
-    setActiveTab(tab);
-  }, [router]);
-
-  const handleMissedCountChange = useCallback((n: number) => {
-    setMissedCalls(n);
+  // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
+  // Chat → chats, Voice → rooms modal, Contacts → contacts, DP → profile
+  // (same destinations the old text tab bar offered — nothing lost).
+  const handleTopBarTab = useCallback((tab: 'chat' | 'voice' | 'contacts') => {
+    if (tab === 'chat') setActiveTab('chats');
+    else if (tab === 'voice') setVoiceRoomsVisible(true);
+    else setActiveTab('contacts');
   }, []);
 
   const handleStoryPress = useCallback((storyId: string) => {
@@ -361,27 +354,19 @@ export default function IMOHomeScreen() {
       {/* 2026-10-24 (boss: no more builds): server-driven content surface.
           Renders nothing until RTDB `app_content` carries a 'home' item. */}
       <UniversalContentRenderer location="home" uid={user?.uid} />
+      {/* 2026-10-26 (boss: imo top bar restored, 2026-10-10 design): DP +
+          Chat / Voice / Contacts tabs + unread badge. Stories/calls tabs
+          have no top-bar tab → 'none' (no wrong highlight). */}
+      <IMOTopBar
+        profilePhotoURL={profile?.photoURL || user?.photoURL || null}
+        profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
+        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'contacts' ? 'contacts' : 'none'}
+        chatBadgeCount={totalUnread}
+        onProfilePress={() => router.push('/profile' as any)}
+        onTabPress={handleTopBarTab}
+      />
       {activeTab === 'chats' && (
         <View style={{ flex: 1 }}>
-          {/* IMO search bar — rounded #f4f5f5, magnifier + "Search" hint */}
-          <TouchableOpacity
-            onPress={() => router.push('/search' as any)}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#F4F5F5',
-              borderRadius: 18,
-              marginHorizontal: 15,
-              marginTop: 10,
-              marginBottom: 4,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-            }}
-          >
-            <Ionicons name="search" size={18} color="#788187" />
-            <Text style={{ marginLeft: 8, fontSize: 14, color: '#788187' }}>Search</Text>
-          </TouchableOpacity>
           <IMOStoryRow
             stories={imoStories}
             onAddStory={handleAddStory}
@@ -458,7 +443,6 @@ export default function IMOHomeScreen() {
       {activeTab === 'calls' && (
         <CallsTabScreen
           onCallBack={handleCallBack}
-          onMissedCountChange={handleMissedCountChange}
         />
       )}
 
@@ -509,15 +493,14 @@ export default function IMOHomeScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* NOTE 5: IMO-style network status bar (home screen bottom). */}
-      <NetworkStatusBar />
-      <IMOTabBar
-        activeTab={activeTab}
-        chatsBadgeCount={totalUnread}
-        callsBadgeCount={missedCalls}
-        myAvatar={profile?.photoURL || user?.photoURL || null}
-        onTabPress={handleTabPress}
-        onRoomsPress={() => setVoiceRoomsVisible(true)}
+      {/* 2026-10-26 (boss: imo bottom bar restored): "+" opens Contacts
+          (start a new chat via a contact's Message button); search opens
+          the imo "Search chats and settings" page. The old dark network
+          overlay is gone — connection status now lives IN this bar
+          ("Connecting..." center + green dot on "+"). */}
+      <IMOBottomBar
+        onAddPress={() => setActiveTab('contacts')}
+        onSearchPress={() => router.push('/search' as any)}
       />
     </SafeAreaView>
   );

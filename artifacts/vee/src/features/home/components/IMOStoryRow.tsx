@@ -51,7 +51,7 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
                 justifyContent: 'center',
               }}
             >
-              <Ionicons name="camera" size={28} color="#757575" />
+              <Ionicons name="camera" size={28} color="#000000" />
             </View>
             <View
               style={{
@@ -75,7 +75,7 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
             style={{ marginTop: 6, fontSize: 12, color: '#212121' }}
             numberOfLines={1}
           >
-            Add a story
+            Story
           </Text>
         </TouchableOpacity>
 
