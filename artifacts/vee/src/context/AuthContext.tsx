@@ -13,6 +13,7 @@ import React, {
   createContext, useContext, useEffect, useRef, useState, useCallback,
 } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from 'firebase/auth';
 import { onUserStateChanged, logout as firebaseLogout, getCurrentUser } from '../services/authService';
 import { withTimeout } from '../utils/withTimeout';
@@ -24,6 +25,73 @@ import generateVId from '../utils/generateVId';
 
 /** Maximum ms to wait for the first Firebase auth-state callback. */
 const AUTH_LOADING_TIMEOUT_MS = 10_000;
+
+/**
+ * 2026-10-26 (boss: no loading, super-fast open): cached profile flags.
+ * The guard's routing (home vs complete-profile) and the ban screen used to
+ * wait on a live users/{uid} read on EVERY cold start — a network round trip
+ * before the app could open. These flags are the last KNOWN values, written
+ * on every successful profile snapshot, so routing can proceed from disk
+ * (~ms) while the network read refreshes in the background. Fail-open by
+ * design: a missing/stale entry never blocks — the live read corrects it.
+ */
+const CACHED_PROFILE_FLAGS_KEY = 'vee_cached_profile_flags_v1';
+
+export type CachedProfileFlags = {
+  uid: string;
+  profileComplete: boolean;
+  banned: boolean;
+};
+
+export async function readCachedProfileFlags(): Promise<CachedProfileFlags | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHED_PROFILE_FLAGS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedProfileFlags>;
+    if (typeof parsed.uid !== 'string' || !parsed.uid) return null;
+    return {
+      uid: parsed.uid,
+      profileComplete: parsed.profileComplete !== false,
+      banned: parsed.banned === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedProfileFlags(
+  uid: string, profileComplete: boolean, banned: boolean,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      CACHED_PROFILE_FLAGS_KEY,
+      JSON.stringify({ uid, profileComplete, banned }),
+    );
+  } catch {
+    // Cache is best-effort — a failed write never blocks auth.
+  }
+}
+
+async function updateCachedBanFlag(uid: string, banned: boolean): Promise<void> {
+  try {
+    const prev = await readCachedProfileFlags();
+    if (prev && prev.uid === uid) {
+      await writeCachedProfileFlags(uid, prev.profileComplete, banned);
+    } else {
+      await writeCachedProfileFlags(uid, true, banned);
+    }
+  } catch {
+    // Best-effort only.
+  }
+}
+
+async function clearCachedProfileFlags(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CACHED_PROFILE_FLAGS_KEY);
+  } catch {
+    // Best-effort only.
+  }
+}
 
 /**
  * Result of the single shared users/{uid} read per auth callback.
@@ -98,6 +166,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const bannedUidRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // 2026-10-26 (boss: no loading, super-fast open): EAGER session restore.
+    // Firebase's onAuthStateChanged callback can take seconds on a slow
+    // network (token refresh) — but auth.currentUser is already restored
+    // from on-device persistence by the time React mounts. If it is present,
+    // adopt it immediately (a REAL Firebase User, never a faked object) so
+    // the guard routes to home without waiting on the network. The real
+    // callback still runs right after and corrects anything stale (logout,
+    // ban, profile). If currentUser is null here, behavior is unchanged.
+    const eagerUser = getCurrentUser();
+    if (eagerUser) {
+      setUser(eagerUser);
+      setLoading(false);
+      loadingDoneRef.current = true;
+      // Cached ban flag (same uid only) → ban screen immediately, never a
+      // home flash for a banned user. A stale ban is corrected by the real
+      // callback's unban path (bannedUidRef match clears it).
+      void readCachedProfileFlags().then((flags) => {
+        if (flags && flags.uid === eagerUser.uid && flags.banned) {
+          bannedSessionRef.current = true;
+          bannedUidRef.current = flags.uid;
+          setIsBanned(true);
+        }
+      }).catch(() => {});
+    }
+
     // 2026-10-17 (Sumon): Load server-driven Nobel rewards at startup.
     // Non-blocking — falls back to hardcoded if Firebase unreachable.
     import('@/src/services/nobleRewardsCatalog').then(({ loadServerNobleRewards }) => {
@@ -171,6 +264,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             () => ({ profile: null, ok: false as const }),
           )
           : Promise.resolve({ profile: null, ok: true as const });
+
+        // 2026-10-26 (boss: super-fast open): persist the known profile
+        // flags so the NEXT cold start can route from disk. Only successful
+        // reads write (ok:false = unknown, never overwrites good cache).
+        if (firebaseUser) {
+          sharedProfile.then(({ profile, ok }) => {
+            if (ok && profile) {
+              void writeCachedProfileFlags(
+                firebaseUser.uid,
+                profile.profileComplete !== false,
+                profile.banned === true,
+              );
+            }
+          }).catch(() => {});
+        }
 
         // 2026-10-17 (Sumon): EXISTING USERS — ensure Vee Team system chat
         // exists on every login/app-start (not just signup). Safe to call
@@ -247,6 +355,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     // যাতে setUser(null) → onUserStateChanged(null) isBanned reset না করে।
                     bannedSessionRef.current = true;
                     bannedUidRef.current = subscribeUid;
+                    // 2026-10-26: persist the ban so the next cold start
+                    // shows the ban screen immediately (never a home flash).
+                    void updateCachedBanFlag(subscribeUid, true);
                     // Fetch reason, then force logout and show banned screen
                     import('firebase/database').then(({ get }) => {
                       get(reasonRef).then((rSnap) => {
@@ -263,6 +374,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     bannedUidRef.current = null;
                     setIsBanned(false);
                     setBanReason(null);
+                    // 2026-10-26: clear the cached ban with the unban.
+                    void updateCachedBanFlag(subscribeUid, false);
                   }
                 }, (e) => {
                   // 2026-10-19 polish: a dead ban listener must not silently
@@ -308,6 +421,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             banListenerUidRef.current = null;
             setIsBanned(false);
             setBanReason(null);
+            // 2026-10-26: a real logout clears the fast-open cache. (A
+            // banned session skips this — its banned flag must survive so
+            // the next cold start shows the ban screen immediately.)
+            void clearCachedProfileFlags();
           }
         }
 

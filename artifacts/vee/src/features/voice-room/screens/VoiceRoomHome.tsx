@@ -32,6 +32,7 @@ import {
   verifyRoomPin,
   setPinVerifiedForSession,
   type RoomInfo } from '../services/firebaseRoomService';
+import { prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import {
   getVoiceBreadcrumb,
   clearVoiceBreadcrumb } from '../utils/voiceCrashBreadcrumb';
@@ -104,7 +105,12 @@ function toVoiceRoom(r: RoomInfo): VoiceRoom {
     isPublic: r.isPublic };
 }
 
-function goToRoom(id: string) {
+function goToRoom(id: string, userName?: string) {
+  // 2026-10-26 (boss: super-fast room entry): warm the LiveKit token at TAP
+  // time, not at screen mount — the token round trip runs during the
+  // navigation transition instead of after it. Same (roomId, userName) key
+  // VoiceRoomScreen uses, so its mount prefetch hits this cache (45s TTL).
+  if (userName) prefetchLivekitToken(id, userName);
   router.push({ pathname: '/voice-room', params: { roomId: id } });
 }
 
@@ -301,14 +307,14 @@ export default function VoiceRoomHome({
     if (room.isPublic !== true) {
       // Owner bypasses PIN — they created the room and already know it
       if (user?.uid === room.ownerId) {
-        goToRoom(room.id);
+        goToRoom(room.id, user?.displayName ?? user?.uid);
         return;
       }
       setPinDialogRoom(room);
       setPinInput('');
       setPinError('');
     } else {
-      goToRoom(room.id);
+      goToRoom(room.id, user?.displayName ?? user?.uid);
     }
   };
   handleRoomPressRef.current = handleRoomPress;
@@ -335,7 +341,7 @@ export default function VoiceRoomHome({
         setPinDialogRoom(null);
         setPinInput('');
         setPinError('');
-        goToRoom(roomId);
+        goToRoom(roomId, user?.displayName ?? user?.uid);
       } else {
         setPinError('Incorrect PIN. Please try again.');
       }
@@ -806,7 +812,7 @@ export default function VoiceRoomHome({
         onClose={() => setCreateModalOpen(false)}
         onRoomCreated={(roomId) => {
           setCreateModalOpen(false);
-          goToRoom(roomId);
+          goToRoom(roomId, user?.displayName ?? user?.uid);
         }}
       />
     </>

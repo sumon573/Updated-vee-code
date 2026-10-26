@@ -56,7 +56,7 @@ import {
 import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigationState } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { AuthProvider, useAuth } from '@/src/context/AuthContext';
+import { AuthProvider, useAuth, readCachedProfileFlags } from '@/src/context/AuthContext';
 import { getUser, type VeeUser } from '@/src/services/userService';
 import { requestAllLoginPermissions } from '@/src/services/loginPermissions';
 import { ThemeProvider } from '@/src/context/ThemeContext';
@@ -125,6 +125,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const redirectInFlightRef = useRef<string | null>(null);
+  // 2026-10-26 (boss: no loading screens): DELAYED spinner — a cached user
+  // resolves before 800ms, so this block unmounts before any spinner ever
+  // appears. Only a genuinely slow first-run/network wait shows one, after
+  // 800ms, so the screen never looks frozen either.
+  const [spinnerVisible, setSpinnerVisible] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSpinnerVisible(true), 800);
+    return () => clearTimeout(t);
+  }, []);
   // 2026-10-12 audit fix (HIGH PUSH-1): pending notification deep link,
   // consumed once navigation is ready (see effect below).
   const pendingDeepLinkRef = useRef<(() => void) | null>(null);
@@ -248,6 +257,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        // 2026-10-26 (boss: super-fast open): seed from the cached profile
+        // flags FIRST (disk read, ~ms) so routing to home never waits on
+        // the RTDB read below. The network read still runs and overwrites
+        // with fresh values (and corrects routing if the flag flipped).
+        try {
+          const flags = await readCachedProfileFlags();
+          if (!cancelled && flags && flags.uid === user.uid) {
+            setHasProfile(flags.profileComplete);
+            setProfileChecked(true);
+          }
+        } catch {
+          // Cache is best-effort — the network path below decides.
+        }
         // P1 fix (2026-10-12): bound the profile read at 8s — a stalled
         // connection previously left the user on index.tsx's spinner forever.
         // Timeout is fail-open (treated like a read error): assume the profile
@@ -605,6 +627,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // have internal timeouts (AuthContext: 10s, LanguageContext: 6s) so this
   // block will always resolve in a bounded amount of time.
   if (authLoading || langLoading) {
+    if (!spinnerVisible) {
+      // 2026-10-26: plain white frame while the fast path resolves — no
+      // spinner flash on normal opens.
+      return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
+    }
     return (
       // P1 fix (2026-10-12): white loading screen per the light-mode-everywhere rule.
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
