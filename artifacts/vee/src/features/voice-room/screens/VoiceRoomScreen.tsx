@@ -3336,30 +3336,9 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
-        {(hasJoined || mySeatIdx >= 0) && (
-          <View style={{
-            alignSelf: 'flex-start', marginBottom: 4, flexDirection: 'row', alignItems: 'center',
-            backgroundColor: myRole === 'host'  ? C.gold + '22'
-                           : myRole === 'admin' ? accentColor + '22'
-                           : C.card,
-            borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2,
-            borderWidth: 1,
-            borderColor: myRole === 'host'  ? C.gold + '66'
-                       : myRole === 'admin' ? accentColor + '66'
-                       : C.borderFaint }}>
-            <Text style={{
-              color: myRole === 'host'  ? C.gold
-                   : myRole === 'admin' ? accentColor
-                   : C.sub,
-              fontSize: 11, fontWeight: '800' }}>
-              {myRole === 'host'
-                ? t('voiceRoom.screen.roleOwner')
-                : myRole === 'admin'
-                  ? t('voiceRoom.screen.roleAdmin')
-                  : t('voiceRoom.screen.roleMember')}
-            </Text>
-          </View>
-        )}
+        {/* 2026-10-26 (boss): viewer's role pill REMOVED — nothing sits
+            between the header and the seat grid now, so the grid moves up.
+            Role POWERS are untouched (myRole checks elsewhere). */}
 
         {}
         {}
@@ -3419,14 +3398,15 @@ export default function VoiceRoomScreen() {
         {/* Pair Handshake layer — badges sit ON TOP of the seat grid
             (zIndex 3) in the gap between each active pair, pointerEvents
             none so seat taps pass through. Avatar centre = cell top +
-            47 (same calibration as the old halo). One badge per pair;
+            44.5 (was 47 at SEAT_SIZE 53; centres moved up 2.5 when seats
+            shrank to 48). One badge per pair;
             no ring anywhere (boss pick, 2026-10-26). */}
         {pairBadges.map((b) => {
           const gf = cellGeom[b.a];
           const gl = cellGeom[b.b];
           if (!gf || !gl) return null;
           const cx = (gf.x + gf.w / 2 + gl.x + gl.w / 2) / 2;
-          const cy = gf.y + 47;
+          const cy = gf.y + 44.5; // 2026-10-26: SEAT_SIZE 53 -> 48, centres up 2.5
           return (
             <View
               key={b.key}

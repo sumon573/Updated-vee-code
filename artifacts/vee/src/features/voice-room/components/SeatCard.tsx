@@ -71,7 +71,9 @@ function CrownSeatIcon({ size = 25 }: { size?: number }) {
    Memoized so a single chat message doesn't re-render all 10 seats. */
 // Seat avatar diameter — 2026-10-20 polish (boss): 62 → 53 so the
 // 5-across grid breathes instead of seats crowding each other.
-const SEAT_SIZE = 53;
+// 2026-10-26 (boss): 53 -> 48 — neighbours sat too touching; +5dp side gap
+// gives the pair-handshake badge room between seats. Vacant pods scale too.
+const SEAT_SIZE = 48;
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
   nameColor, labelColor,
@@ -112,7 +114,6 @@ export const SeatCard = memo(function SeatCard({
   // shows ONLY the sticker — the DP photo hides behind nothing, there is
   // no background/plate at all, just the emoji character itself.
   const stickerActive = !!reaction && !!stickerUrl(reaction.emoji);
-  const isAdmin = member?.role === 'admin';
 
   return (
     <Pressable
@@ -285,33 +286,9 @@ export const SeatCard = memo(function SeatCard({
             )}
           </View>
 
-          {/* Role badge — 2026-10-19 (IMO port Phase 1): HOST = gold gradient pill */}
-          {isOwner && (
-            <LinearGradient
-              colors={['#ffe27a', '#ffb62e']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={{
-                borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginTop: 2,
-                shadowColor: '#ffb62e', shadowOpacity: 0.3, shadowRadius: 4,
-              }}
-            >
-              <Text style={{ color: '#5a3c00', fontSize: 8, fontWeight: '900' }}>
-                {t('voiceRoom.seatCard.owner')}
-              </Text>
-            </LinearGradient>
-          )}
-          {isAdmin && (
-            <View style={{
-              backgroundColor: accent + '33', borderRadius: 8,
-              paddingHorizontal: 7, paddingVertical: 2, marginTop: 2,
-              borderWidth: 1, borderColor: accent + '66',
-              shadowColor: accent, shadowOpacity: 0.3, shadowRadius: 4,
-            }}>
-              <Text style={{ color: accent, fontSize: 8, fontWeight: '800' }}>
-                {t('voiceRoom.seatCard.admin')}
-              </Text>
-            </View>
-          )}
+          {/* 2026-10-26 (boss): role pills under seat names REMOVED — names
+              stay clean. Host/admin POWERS are untouched (role checks, not
+              the pill); the crown/host label and verified badge stay. */}
         </>
       ) : (
         /* ── Empty / locked seat — 2026-10-23 (Sumon pick: Style A
