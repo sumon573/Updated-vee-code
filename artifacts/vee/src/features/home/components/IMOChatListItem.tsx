@@ -101,7 +101,8 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
         {/* 2026-10-26 (boss: imo avatar marks): voice club keeps its audio
             badge; otherwise an online contact gets imo's green check badge
             (bottom-right). The badge IS the online mark — the old tiny dot
-            near the time is gone. */}
+            near the time is gone. Check badge 16px (boss 10:51: the 20px
+            one looked a bit big); voice badge stays 20px. */}
         {chat.isVoiceClub ? (
           <View
             style={{
@@ -126,9 +127,9 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
               position: 'absolute',
               bottom: 0,
               right: 0,
-              width: 20,
-              height: 20,
-              borderRadius: 10,
+              width: 16,
+              height: 16,
+              borderRadius: 8,
               backgroundColor: '#4CAF50',
               alignItems: 'center',
               justifyContent: 'center',
@@ -136,7 +137,7 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
               borderColor: '#FFFFFF',
             }}
           >
-            <Ionicons name="checkmark" size={12} color="#fff" />
+            <Ionicons name="checkmark" size={10} color="#fff" />
           </View>
         ) : null}
       </View>

@@ -14,6 +14,7 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -65,6 +66,16 @@ const C = {
   chipBg: 'rgba(139,92,246,0.14)',
   chipBgActive: '#7C3AED',
   surface: '#F2F2F7' } as const;
+
+// 2026-10-26 (boss: no loader + superfast voice tab): cached-first rooms.
+// The module cache survives tab switches (component unmounts) within the
+// session; AsyncStorage survives cold starts. Live subscriptions still
+// refresh underneath. Disk writes are throttled (30s) — member counts
+// change on every join/leave, and the list must never churn the disk.
+// Cache is keyed by uid, so it can never leak across accounts.
+const ROOMS_CACHE_KEY = 'vee_cached_voice_rooms_v1';
+type CachedVoiceRooms = { uid: string; myRooms: RoomInfo[]; allRooms: RoomInfo[]; savedAt: number };
+let memoryCachedVoiceRooms: CachedVoiceRooms | null = null;
 
 // "Recommended" tabs — match the new RoomCategory type
 type RecommendedTab = 'trending' | 'nearby' | 'game' | 'music' | 'talk' | 'study' | 'new';
@@ -215,13 +226,15 @@ export default function VoiceRoomHome({
   const { user } = useAuth();
   const { t } = useTranslation();
 
-  // My Rooms — owned by me
-  const [myRooms,   setMyRooms]   = useState<RoomInfo[]>([]);
-  const [myLoading, setMyLoading] = useState(true);
+  // My Rooms — owned by me (seeded from cache: tab switches render
+  // instantly, no loader flash — live subscriptions refresh underneath).
+  const cachedSeed = memoryCachedVoiceRooms?.uid === user?.uid ? memoryCachedVoiceRooms : null;
+  const [myRooms,   setMyRooms]   = useState<RoomInfo[]>(() => cachedSeed?.myRooms ?? []);
+  const [myLoading, setMyLoading] = useState(() => !cachedSeed);
 
   // All public rooms — for Recommended section
-  const [allRooms,  setAllRooms]  = useState<RoomInfo[]>([]);
-  const [recLoading, setRecLoading] = useState(true);
+  const [allRooms,  setAllRooms]  = useState<RoomInfo[]>(() => cachedSeed?.allRooms ?? []);
+  const [recLoading, setRecLoading] = useState(() => !cachedSeed);
 
   // REAL-TIME live audience (2026-10-11 Issue #1): cached info counts can go
   // stale, so compute the true live count from actual seats+audience nodes.
@@ -383,11 +396,49 @@ export default function VoiceRoomHome({
   // Subscribe to my rooms: created rooms first, then rooms I've joined
   // (most-recently-joined first) — persists even after minimizing or
   // fully exiting a room, so it's always findable again here.
+  // 2026-10-26 (cached-first): each feed marks its own live arrival, so
+  // the disk-cache seed below never overwrites fresh live data.
+  const myLiveRef = useRef(false);
+  const recLiveRef = useRef(false);
+  const myRoomsRef = useRef(myRooms);
+  const allRoomsRef = useRef(allRooms);
+  useEffect(() => { myRoomsRef.current = myRooms; }, [myRooms]);
+  useEffect(() => { allRoomsRef.current = allRooms; }, [allRooms]);
+  const lastCacheWriteRef = useRef(0);
+  const cacheRooms = useCallback((uid: string, my: RoomInfo[], all: RoomInfo[]) => {
+    if (!uid) return;
+    memoryCachedVoiceRooms = { uid, myRooms: my, allRooms: all, savedAt: Date.now() };
+    const now = Date.now();
+    if (now - lastCacheWriteRef.current < 30000) return;
+    lastCacheWriteRef.current = now;
+    AsyncStorage.setItem(ROOMS_CACHE_KEY, JSON.stringify(memoryCachedVoiceRooms)).catch(() => {});
+  }, []);
+  // Cold start: disk cache seeds each list ONLY until its own live feed
+  // arrives — the tab renders instantly with zero loader, then refreshes.
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (memoryCachedVoiceRooms?.uid === user.uid) return; // already seeded
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ROOMS_CACHE_KEY);
+        if (cancelled || !raw) return;
+        const parsed = JSON.parse(raw) as CachedVoiceRooms;
+        if (parsed?.uid !== user.uid || !Array.isArray(parsed.myRooms) || !Array.isArray(parsed.allRooms)) return;
+        memoryCachedVoiceRooms = parsed;
+        if (!myLiveRef.current) { setMyRooms(parsed.myRooms); setMyLoading(false); }
+        if (!recLiveRef.current) { setAllRooms(parsed.allRooms); setRecLoading(false); }
+      } catch { /* ignore — live feeds still load */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
   useEffect(() => {
     if (!user?.uid) { setMyLoading(false); return; }
     const unsub = subscribeMyRoomsCombined(user.uid, (rooms) => {
+      myLiveRef.current = true;
       setMyRooms(rooms);
       setMyLoading(false);
+      cacheRooms(user.uid, rooms, allRoomsRef.current);
       finishRefresh();
     });
     return unsub;
@@ -396,8 +447,10 @@ export default function VoiceRoomHome({
   // Subscribe to all active public rooms
   useEffect(() => {
     const unsub = subscribeActiveRooms((rooms) => {
+      recLiveRef.current = true;
       setAllRooms(rooms);
       setRecLoading(false);
+      cacheRooms(user?.uid ?? '', myRoomsRef.current, rooms);
       finishRefresh();
     });
     return unsub;
@@ -481,8 +534,6 @@ export default function VoiceRoomHome({
     return byActivity(onlyLive(allRooms).filter(r => r.category === activeTab));
   }, [allRooms, activeTab, liveAudienceOf, userLocation]);
 
-  const isLoading = myLoading || recLoading;
-
   return (
     <>
       <ScrollView
@@ -492,13 +543,8 @@ export default function VoiceRoomHome({
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {isLoading ? (
-          <View style={{ paddingTop: 60, alignItems: 'center' }}>
-            <PremiumLoader size="large" />
-          </View>
-        ) : (
-          <>
-            {/* ═══ MY ROOMS ═══ */}
+            {/* ═══ MY ROOMS ═══ (2026-10-26: NO loader, ever — the shell +
+                cached lists render instantly; live feeds refresh underneath) */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
               <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{t('voiceRoom.home.myRooms')}</Text>
               {/* Room ID search (Sumon 2026-10-12) */}
@@ -538,7 +584,7 @@ export default function VoiceRoomHome({
               ))}
             </GHScrollView>
 
-            {myRooms.length === 0 && (
+            {myRooms.length === 0 && !myLoading && (
               <View style={{
                 backgroundColor: C.surface, borderRadius: 14,
                 padding: 18, marginBottom: 8, alignItems: 'center' }}>
@@ -657,10 +703,8 @@ export default function VoiceRoomHome({
                       />
                     );
                   })
-                : <EmptySection message={t('voiceRoom.home.noCategoryRooms')} />
+                : (!recLoading ? <EmptySection message={t('voiceRoom.home.noCategoryRooms')} /> : null)
             )}
-          </>
-        )}
       </ScrollView>
 
       {/* Leaderboard Modal */}
