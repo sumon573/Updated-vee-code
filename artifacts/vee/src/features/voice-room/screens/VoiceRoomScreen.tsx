@@ -1585,7 +1585,14 @@ export default function VoiceRoomScreen() {
     // original 2026-10-23 repeat-line complaint) and the shared key
     // blocks site 2's double. No time-based suppression anymore.
     if (hasSentEntryChatMsgRef.current || isRestore || isReturnFromMinimize) return;
-    if (!roomId || !myUid || !myName) return;
+    // 2026-10-26 (boss: join lines showed 'Vee User' for EVERYONE): the old
+    // guard only required myName, which is never falsy (fallback 'Vee User')
+    // — so the line fired before async myProfile loaded, and the sent-ref
+    // then blocked the correction. Wait for the profile OBJECT like the
+    // entry-banner effect does: named -> real nickname, nameless -> true
+    // fallback. The ref stays unset while waiting, so the re-run on profile
+    // load still sends exactly one line.
+    if (!roomId || !myUid || !myProfile) return;
     hasSentEntryChatMsgRef.current = true;
     const isOwner = ownerId && ownerId === myUid;
     const displayName = isOwner ? `${myName} 👑` : myName;
@@ -1596,7 +1603,7 @@ export default function VoiceRoomScreen() {
       senderColor: C.gold,
       text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
       ts: Date.now() }).catch(() => {});
-  }, [roomId, myUid, myName, ownerId, t, isRestore, isReturnFromMinimize]);
+  }, [roomId, myUid, myName, myProfile, ownerId, t, isRestore, isReturnFromMinimize]);
 
   
   const mySeatIdx = useMemo(
@@ -1985,7 +1992,7 @@ export default function VoiceRoomScreen() {
       // 2026-10-25 (boss: no entry indicators on return): same gate as
       // the self entry banner — a minimized return never re-sends the
       // join line either (the 30-min slot gate below stays as backstop).
-      if (!isRestore && !isReturnFromMinimize && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
+      if (!isRestore && !isReturnFromMinimize && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey) && myProfile) {
         hasSentEntryChatMsgRef.current = true;
         // 2026-10-26: per-stay gate only (the 30-minute persisted slot is
         // gone — it hid every rejoin line). Site 1 above sends first on
