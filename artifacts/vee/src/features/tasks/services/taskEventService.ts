@@ -13,6 +13,15 @@
 import { ref, onValue, off, get } from 'firebase/database';
 import { database as rtdb } from '@/src/config/firebase';
 
+export interface EventTier {
+  id: string;
+  minutes: number;
+  title?: string;
+  rewardType: string;
+  rewardId?: string;
+  validityDays?: number;
+}
+
 export interface TaskEvent {
   id: string;
   title: string;
@@ -32,6 +41,9 @@ export interface TaskEvent {
   // Display
   sortOrder: number;
   active: boolean;
+  // Event Engine v1 (2026-10-26): structured tiers + progress metric.
+  tiers?: EventTier[];
+  progressType?: string;
   // Future-proof
   metadata?: Record<string, unknown>;
 }
@@ -53,7 +65,7 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
   // Preserve unknown fields
   const knownKeys = new Set(['title', 'description', 'imageUrl', 'bannerUrl',
     'rewardType', 'rewardAmount', 'rewardId', 'startTime', 'endTime',
-    'actionType', 'actionData', 'sortOrder', 'active']);
+    'actionType', 'actionData', 'sortOrder', 'active', 'tiers', 'progressType']);
   const metadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (!knownKeys.has(k)) metadata[k] = v;
@@ -72,6 +84,21 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
     endTime: data.endTime ? Number(data.endTime) : undefined,
     actionType: data.actionType ? String(data.actionType) : 'custom',
     actionData: data.actionData || undefined,
+    tiers: Array.isArray(data.tiers)
+      ? (data.tiers as unknown[]).filter((x): x is Record<string, unknown> =>
+          !!x && typeof x === 'object' && typeof (x as Record<string, unknown>).id === 'string'
+          && !!((x as Record<string, unknown>).id as string)
+          && Number.isFinite(Number((x as Record<string, unknown>).minutes))).map((x) => ({
+        id: String(x.id),
+        minutes: Math.max(0, Math.floor(Number(x.minutes))),
+        title: x.title ? String(x.title) : undefined,
+        rewardType: x.rewardType ? String(x.rewardType) : 'none',
+        rewardId: x.rewardId ? String(x.rewardId) : undefined,
+        validityDays: Number.isFinite(Number(x.validityDays))
+          ? Math.max(0, Math.floor(Number(x.validityDays))) : undefined,
+      }))
+      : undefined,
+    progressType: data.progressType ? String(data.progressType) : undefined,
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,

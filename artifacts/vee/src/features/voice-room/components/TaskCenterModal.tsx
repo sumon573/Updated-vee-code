@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, Platform, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../constants/theme';
+import { EventDetailsView } from './EventDetailsView';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import {
   subscribeTaskEvents,
@@ -59,6 +60,10 @@ function RewardChip({ event }: { event: TaskEvent }) {
 
 export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [events, setEvents] = useState<TaskEvent[] | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<TaskEvent | null>(null);
+
+  // Closing the sheet always clears the details view first.
+  const closeAll = () => { setSelectedEvent(null); onClose(); };
 
   useEffect(() => {
     if (!visible) return;
@@ -67,8 +72,8 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
   }, [visible]);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' }} onPress={onClose} />
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={closeAll}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' }} onPress={closeAll} />
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '78%',
         backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -77,6 +82,11 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
       }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted, alignSelf: 'center', marginBottom: 14 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 }}>
+          {selectedEvent && (
+            <Pressable onPress={() => setSelectedEvent(null)} hitSlop={10} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+              <Feather name="chevron-left" size={18} color={C.text} />
+            </Pressable>
+          )}
           <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFBEB', borderWidth: 1.5, borderColor: '#F59E0B', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             <Feather name="calendar" size={18} color="#D97706" />
           </View>
@@ -84,7 +94,7 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
             <Text style={{ color: C.text, fontSize: 17, fontWeight: '800' }}>Task Center</Text>
             <Text style={{ color: C.sub, fontSize: 12, marginTop: 1 }}>Events & rewards, updated live</Text>
           </View>
-          <Pressable onPress={onClose} hitSlop={10} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable onPress={closeAll} hitSlop={10} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
             <Feather name="x" size={16} color={C.sub} />
           </Pressable>
         </View>
@@ -101,10 +111,12 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
             <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', textAlign: 'center' }}>No events right now</Text>
             <Text style={{ color: C.sub, fontSize: 12, textAlign: 'center', marginTop: 4 }}>New events and rewards will appear here.</Text>
           </View>
+        ) : selectedEvent ? (
+          <EventDetailsView event={selectedEvent} />
         ) : (
           <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             {events.map((ev) => (
-              <View key={ev.id} style={{
+              <Pressable key={ev.id} onPress={() => setSelectedEvent(ev)} style={{
                 flexDirection: 'row', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: C.border,
                 borderRadius: 18, padding: 12, marginBottom: 10,
               }}>
@@ -124,7 +136,7 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
                     )}
                   </View>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </ScrollView>
         )}

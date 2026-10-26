@@ -1,5 +1,5 @@
-import { memo, useState, useEffect } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { memo, useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,6 +12,7 @@ import SeatEmojiReaction from './SeatEmojiReaction';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
+import { useEventEffects, getActiveEffect, effectColors, effectColor } from '@/src/hooks/useEventEffects';
 import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
 import { stickerUrl } from '../services/stickerCatalog';
@@ -56,6 +57,37 @@ function CrownSeatIcon({ size = 25 }: { size?: number }) {
       <Path d="M3 17.5 4.6 8.2 9 12 12 5.6 15 12l4.4-3.8L21 17.5H3Z" fill="rgba(245,176,32,0.20)" stroke="#D9930D" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
       <Path d="M4 20.4h16" stroke="#D9930D" strokeWidth="1.7" strokeLinecap="round" />
     </Svg>
+  );
+}
+
+/* ── EventRippleRing — 2026-10-26 (Event Engine v1): gentle pulsing ring
+   around the seat avatar while its owner speaks with an active ripple
+   effect. Self-contained animation (own Animated value); pointerEvents
+   none; sits OUTSIDE the avatar box (top/left/right/bottom -5) so it never
+   wraps or clips frame art. ── */
+function RippleRing({ color }: { color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 1600, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.22] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 0] });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute', top: -5, left: -5, right: -5, bottom: -5,
+        borderRadius: 999, borderWidth: 2, borderColor: color,
+        opacity, transform: [{ scale }], zIndex: 5,
+      }}
+    />
   );
 }
 
@@ -121,6 +153,11 @@ export const SeatCard = memo(function SeatCard({
   const liveFrameId = useActiveFrame(member?.id);
   // 2026-10-16 (Sumon): Store mic sticker — equipped sticker badge on the seat.
   const micSticker = useActiveMicSticker(member?.id);
+  // 2026-10-26 (Event Engine v1): live event effects (vibe/ripple) — same
+  // direct-hook architecture as frames, never a seat copy.
+  const eventEffects = useEventEffects(member?.id);
+  const activeVibe = getActiveEffect(eventEffects, 'vibe');
+  const activeRipple = getActiveEffect(eventEffects, 'ripple');
   // 2026-10-23 (Sumon): while a designed sticker reaction plays, the seat
   // shows ONLY the sticker — the DP photo hides behind nothing, there is
   // no background/plate at all, just the emoji character itself.
@@ -236,6 +273,11 @@ export const SeatCard = memo(function SeatCard({
                 )}
               </>
             )}
+            {/* 2026-10-26 (Event Engine v1): event ripple — glowing ring
+                while speaking, only with an unexpired ripple effect. */}
+            {activeRipple && member.speaking && !stickerActive && (
+              <RippleRing color={effectColor(activeRipple.effect, '#F59E0B')} />
+            )}
             {/* 2026-10-16 (Sumon): Store mic sticker badge — top-right */}
             {micSticker && (
               <Image
@@ -283,10 +325,20 @@ export const SeatCard = memo(function SeatCard({
           {/* 2026-10-14: use live hasVerifiedBadge, not stale (member as any).verified */}
           {/* 2026-10-19 (IMO port Phase 1): 11.5sp seat name (IMO) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
-            <Text style={{
-              color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
-              textAlign: 'center',
-            }} numberOfLines={1}>{seatName(member.name)}</Text>
+            {activeVibe ? (
+              <LinearGradient
+                colors={effectColors(activeVibe.effect, ['#F59E0B', '#EC4899', '#8B5CF6'])}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={{ paddingHorizontal: 8, paddingVertical: 1, borderRadius: 999 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 11.5, fontWeight: '800', textAlign: 'center' }} numberOfLines={1}>{seatName(member.name)}</Text>
+              </LinearGradient>
+            ) : (
+              <Text style={{
+                color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
+                textAlign: 'center',
+              }} numberOfLines={1}>{seatName(member.name)}</Text>
+            )}
             {hasVerifiedBadge && (
               <Image
                 source={badgeSource}
