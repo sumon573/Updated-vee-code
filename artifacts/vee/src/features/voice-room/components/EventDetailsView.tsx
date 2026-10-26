@@ -17,12 +17,12 @@ import type { TaskEvent, EventTier } from '@/src/features/tasks/services/taskEve
  * server bot validates + grants. Nothing here decides a winner or touches
  * a wallet — the bot owns all granting.
  *
- * v1 claim gating (locked in DESIGN.md): only frame/vibe/ripple tiers are
- * claimable. Any other reward type renders as "Soon" — the bot never grants
- * money from this path.
+ * SERVER-ONLY LAW (boss 2026-10-26 19:49): NO app update per event, ever —
+ * every tier of every event is claimable from this generic view. The server
+ * bot is the sole granting authority: it grants kinds it supports and leaves
+ * any other kind's claim pending (logged) until a bot-only update enables
+ * that kind — so a brand-new reward kind NEVER needs an app update either.
  */
-
-const CLAIMABLE_TYPES = new Set(['frame', 'vibe', 'ripple']);
 
 function fmtDate(ts: number): string {
   const d = new Date(ts);
@@ -139,7 +139,6 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
             const claimed = status === 'granted';
             const pending = status === 'pending' || claimingTier === tier.id;
             const claimable = !claimed && !pending && minutes >= tier.minutes;
-            const supported = CLAIMABLE_TYPES.has(tier.rewardType);
             const pct = tier.minutes > 0 ? Math.min(100, Math.floor((minutes / tier.minutes) * 100)) : 100;
             const remaining = Math.max(0, tier.minutes - minutes);
             return (
@@ -175,8 +174,6 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
                     <Text style={{ color: '#16A34A', fontSize: 12, fontWeight: '800' }}>Claimed ✓</Text>
                   ) : pending ? (
                     <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800' }}>Claiming…</Text>
-                  ) : !supported ? (
-                    <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800' }}>Soon</Text>
                   ) : claimable ? (
                     <Pressable
                       onPress={() => claimTier(tier)}
