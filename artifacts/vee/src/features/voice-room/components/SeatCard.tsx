@@ -12,7 +12,7 @@ import SeatEmojiReaction from './SeatEmojiReaction';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
-import { useEventEffects, getActiveEffect, effectColors, effectColor } from '@/src/hooks/useEventEffects';
+import { useEventEffects, getActiveEffect, effectColor } from '@/src/hooks/useEventEffects';
 import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
 import { stickerUrl } from '../services/stickerCatalog';
@@ -106,6 +106,29 @@ function RippleRing({ color }: { color: string }) {
 // 2026-10-26 (boss): 53 -> 48 — neighbours sat too touching; +5dp side gap
 // gives the pair-handshake badge room between seats. Vacant pods scale too.
 const SEAT_SIZE = 48;
+// Demo-exact Vibe seat mark: the animated hand sign immediately beside the
+// nickname, with a soft shimmer (two twinkling dots, mirroring the demo's
+// pvNickRewardFx shine s1/s2). The hand art itself is animated WebP, so the
+// motion is inherent; the dots add the shimmer.
+function VibeHandFx({ artUrl }: { artUrl: string }) {
+  const tw = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(tw, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(tw, { toValue: 0, duration: 1200, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [tw]);
+  return (
+    <View style={{ marginLeft: 2, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+      <Image source={{ uri: artUrl }} style={{ width: 16, height: 16 }} contentFit="contain" cachePolicy="memory-disk" />
+      <Animated.View style={{ position: 'absolute', top: -1, right: -1, width: 4, height: 4, borderRadius: 2, backgroundColor: '#FFFFFF', opacity: tw.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }} />
+      <Animated.View style={{ position: 'absolute', bottom: 0, left: -1, width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#FFFFFF', opacity: tw.interpolate({ inputRange: [0, 1], outputRange: [1, 0.25] }) }} />
+    </View>
+  );
+}
+
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
   nameColor, labelColor, myId, selfMuted,
@@ -157,6 +180,11 @@ export const SeatCard = memo(function SeatCard({
   // direct-hook architecture as frames, never a seat copy.
   const eventEffects = useEventEffects(member?.id);
   const activeVibe = getActiveEffect(eventEffects, 'vibe');
+  // Demo-exact vibe art: the hand sign comes from the grant's server params
+  // (tier params.previewImageUrl, copied by the bot). No art -> no hand;
+  // the name NEVER changes color for a vibe.
+  const vibeArtRaw = (activeVibe?.effect?.params as { previewImageUrl?: unknown } | undefined)?.previewImageUrl;
+  const vibeArtUrl = typeof vibeArtRaw === 'string' ? vibeArtRaw : null;
   const activeRipple = getActiveEffect(eventEffects, 'ripple');
   // 2026-10-23 (Sumon): while a designed sticker reaction plays, the seat
   // shows ONLY the sticker — the DP photo hides behind nothing, there is
@@ -325,20 +353,11 @@ export const SeatCard = memo(function SeatCard({
           {/* 2026-10-14: use live hasVerifiedBadge, not stale (member as any).verified */}
           {/* 2026-10-19 (IMO port Phase 1): 11.5sp seat name (IMO) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
-            {activeVibe ? (
-              <LinearGradient
-                colors={effectColors(activeVibe.effect, ['#F59E0B', '#EC4899', '#8B5CF6'])}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={{ paddingHorizontal: 8, paddingVertical: 1, borderRadius: 999 }}
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: 11.5, fontWeight: '800', textAlign: 'center' }} numberOfLines={1}>{seatName(member.name)}</Text>
-              </LinearGradient>
-            ) : (
-              <Text style={{
-                color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
-                textAlign: 'center',
-              }} numberOfLines={1}>{seatName(member.name)}</Text>
-            )}
+            <Text style={{
+              color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
+              textAlign: 'center',
+            }} numberOfLines={1}>{seatName(member.name)}</Text>
+            {vibeArtUrl ? <VibeHandFx artUrl={vibeArtUrl} /> : null}
             {hasVerifiedBadge && (
               <Image
                 source={badgeSource}
