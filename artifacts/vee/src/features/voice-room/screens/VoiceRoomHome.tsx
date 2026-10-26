@@ -452,6 +452,11 @@ export default function VoiceRoomHome({
       setRecLoading(false);
       cacheRooms(user?.uid ?? '', myRoomsRef.current, rooms);
       finishRefresh();
+    }, () => {
+      // Feed error: keep the cached list (never wipe it with []), and do
+      // NOT mark the feed live — the empty-state text stays suppressed
+      // until a real feed confirms the list is truly empty.
+      finishRefresh();
     });
     return unsub;
   }, [refreshTick]);
@@ -703,7 +708,7 @@ export default function VoiceRoomHome({
                       />
                     );
                   })
-                : (!recLoading ? <EmptySection message={t('voiceRoom.home.noCategoryRooms')} /> : null)
+                : (!recLoading && recLiveRef.current ? <EmptySection message={t('voiceRoom.home.noCategoryRooms')} /> : null)
             )}
       </ScrollView>
 

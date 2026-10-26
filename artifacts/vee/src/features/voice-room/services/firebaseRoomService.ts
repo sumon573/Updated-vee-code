@@ -615,6 +615,7 @@ export function subscribeMyRoomsCombined(
 /** Get all active public rooms in real-time. */
 export function subscribeActiveRooms(
   callback: (rooms: RoomInfo[]) => void,
+  onError?: () => void,
 ): () => void {
   // BUG 14 fix: Query rooms whose info.active === true.
   // orderByChild('info/active') on the 'rooms' collection traverses the
@@ -639,9 +640,12 @@ export function subscribeActiveRooms(
     rooms.sort((a, b) => b.createdAt - a.createdAt);
     callback(rooms);
   }, () => {
-    // On subscription error (e.g. permission denied), return empty list
-    // rather than leaving the UI stuck in loading state.
-    callback([]);
+    // 2026-10-26 (boss: trending showed "No rooms" for a live room): an
+    // error is NOT an empty list. Callers that pass onError keep their
+    // cached list instead of wiping it with []; legacy callers keep the
+    // old callback([]) behaviour.
+    if (onError) onError();
+    else callback([]);
   });
 }
 

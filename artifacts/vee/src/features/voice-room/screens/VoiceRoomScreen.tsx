@@ -364,6 +364,11 @@ export default function VoiceRoomScreen() {
   useEffect(() => { speakingRef.current = speakingUsers; }, [speakingUsers]);
 
   const seatsRef = useRef<Array<Participant | null>>(Array(10).fill(null));
+  // 2026-10-26 (boss: visibly-empty seat said "Seat Occupied"): joinSeat is
+  // declared BELOW handleSeatPress, so it cannot be a dep (TS2448) — mirror
+  // it in a ref instead, or taps keep calling a stale joinSeat whose seats
+  // snapshot still holds the departed member.
+  const joinSeatRef = useRef<((seatIdx: number) => Promise<void>) | null>(null);
   useEffect(() => { seatsRef.current = seats; }, [seats]);
   const audienceRef = useRef<Participant[]>([]);
   useEffect(() => { audienceRef.current = audience; }, [audience]);
@@ -2148,7 +2153,7 @@ export default function VoiceRoomScreen() {
           return;
         }
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        joinSeat(seatIdx);
+        joinSeatRef.current?.(seatIdx);
       }
       return;
     }
@@ -2289,6 +2294,9 @@ export default function VoiceRoomScreen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData, isOwnerOrAdmin]);
+
+  // Mirror the latest joinSeat for handleSeatPress (declared above).
+  useEffect(() => { joinSeatRef.current = joinSeat; }, [joinSeat]);
 
   
   const handleMicBarPress = useCallback(() => {

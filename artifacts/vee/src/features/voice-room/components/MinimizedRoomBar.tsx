@@ -57,9 +57,12 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   const defaultPos = () => {
     const { width: W, height: H } = Dimensions.get('window');
     const s = getMinimizedRoom();
+    // 2026-10-26 (boss: minimized room showed no bubble): a saved position
+    // is NEVER trusted blindly — clamp it to the CURRENT window, so a
+    // position saved in another orientation can never restore off-screen.
     return {
-      x: s?.bubbleX ?? (W - 16 - 64),
-      y: s?.bubbleY ?? (H - bottomOffset - BUBBLE_H),
+      x: Math.min(Math.max(s?.bubbleX ?? (W - 16 - 64), 8), W - BUBBLE_W),
+      y: Math.min(Math.max(s?.bubbleY ?? (H - bottomOffset - BUBBLE_H), insets.top + 8), H - BUBBLE_H),
     };
   };
   const initialPosRef = useRef(defaultPos());
