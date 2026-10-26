@@ -48,12 +48,17 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           float, no bar behind them. ALL buttons uniform 46px circles
           (2026-10-15: Gift resized 56px → 46px per Sumon — same size as others).
           fixed-width items + space-evenly = perfectly equal spacing.
-          Hidden while the comment keyboard is open. */}
-      {!keyboardOpen && (
-      <View style={{
+          Opacity-hidden (kept mounted) while the comment keyboard is open — 2026-10-26 typing-jitter fix. */}
+      {/* 2026-10-26 (typing-jitter fix): kept mounted, opacity-hidden while
+          the comment keyboard is open — unmount/remount restarted every
+          button animation on each keyboard cycle. */}
+      <View
+        pointerEvents={keyboardOpen ? 'none' : 'auto'}
+        style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-evenly',
         paddingBottom: bottomPad, paddingTop: 4, paddingHorizontal: 8,
+        opacity: keyboardOpen ? 0 : 1,
         backgroundColor: 'transparent' }}>
         {/* CRITICAL-3: Mic bar — "Join Seat" for audience, Mute/Unmute for speakers */}
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -148,7 +153,6 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         </ScalePress>
         </View>
       </View>
-      )}
 
       {/* ═══ MODALS ═══ */}
       {/* Fix 3/8/9: Cloudinary upload happens inside RoomInfoModal; we persist the URL here */}

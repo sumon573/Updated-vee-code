@@ -822,6 +822,11 @@ export default function VoiceRoomScreen() {
   
   const [messages,   setMessages]   = useState<ChatMsg[]>([]);
   const chatRef = useRef<FlatList<ChatMsg>>(null);
+  // 2026-10-26 (typing-jitter fix): at-bottom tracking + scroll-button
+  // ref-guard (same pattern as the inbox) — auto-scroll only when the
+  // user is already at the bottom; never yank a history reader.
+  const chatAtBottomRef = useRef(true);
+  const showChatScrollBtnRef = useRef(false);
   
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -1454,6 +1459,10 @@ export default function VoiceRoomScreen() {
       }
       const pending = pendingEchoesRef.current;
       setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
+      // 2026-10-26 (typing-jitter fix): auto-scroll ONLY when already at
+      // the bottom — a scrolled-up reader must never be yanked by a new
+      // message; the scroll button brings them back on tap.
+      if (!chatAtBottomRef.current) return;
       if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
       scrollTimerRef.current = setTimeout(() => {
         scrollTimerRef.current = null;
@@ -2696,6 +2705,7 @@ export default function VoiceRoomScreen() {
     setChatInput('');
     setReplyingTo(null);
     setMentionQuery(null);
+    chatAtBottomRef.current = true;
     if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = setTimeout(() => {
       scrollTimerRef.current = null;
@@ -2913,9 +2923,11 @@ export default function VoiceRoomScreen() {
   
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
+    // 2026-10-26 (typing-jitter fix): no scroll-on-keyboard-open — the
+    // 120ms timer raced the keyboard + pan animations and jumped on
+    // every open, even with no new message.
     const onShow = Keyboard.addListener('keyboardDidShow', () => {
       setKeyboardOpen(true);
-      setTimeout(() => chatRef.current?.scrollToEnd({ animated: true }), 120);
     });
     const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
     return () => { onShow.remove(); onHide.remove(); };
@@ -2994,8 +3006,14 @@ export default function VoiceRoomScreen() {
       // keyboardDidShow/Hide ground truth says the keyboard is open.
       // Keyboard closed ⇒ KAV can never pad ⇒ the room always reaches
       // the very bottom, buttons never float above a gap. The themeBg
+      // 2026-10-26 (typing-jitter fix): the keyboardOpen gate traded the
+      // phantom pad for a per-cycle jump (KAV padding mounted/unmounted on
+      // every keyboard show/hide, on top of OS pan). On Android the window
+      // is adjustPan, so the OS itself keeps the focused input visible —
+      // KAV stays OFF on Android entirely (no phantom pad possible, no
+      // per-cycle jump). iOS keeps KAV as before.
       // on the KAV itself paints any transient frame in theme color.
-      enabled={Platform.OS !== 'android' || keyboardOpen}
+      enabled={Platform.OS !== 'android'}
     >
     <View style={{ flex: 1, backgroundColor: themeBg }}>
       {}
@@ -3419,10 +3437,15 @@ export default function VoiceRoomScreen() {
             onScroll={(e: any) => {
               const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
               const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
-              setShowChatScrollBtn(!isAtBottom);
+              chatAtBottomRef.current = isAtBottom;
+              // 2026-10-26 (typing-jitter fix): ref-guard — throttle 16
+              // fires ~60/s; setState only when the boolean flips.
+              if (showChatScrollBtnRef.current !== !isAtBottom) {
+                showChatScrollBtnRef.current = !isAtBottom;
+                setShowChatScrollBtn(!isAtBottom);
+              }
             }}
             scrollEventThrottle={16}
-            onContentSizeChange={() => chatRef.current?.scrollToEnd({ animated: true })}
             initialNumToRender={20}
             maxToRenderPerBatch={10}
           />
@@ -3431,6 +3454,8 @@ export default function VoiceRoomScreen() {
             <Pressable
               onPress={() => {
                 chatRef.current?.scrollToEnd({ animated: true });
+                chatAtBottomRef.current = true;
+                showChatScrollBtnRef.current = false;
                 setShowChatScrollBtn(false);
               }}
               style={{
@@ -3453,11 +3478,17 @@ export default function VoiceRoomScreen() {
         {}
         {mentionQuery !== null && mentionCandidates.length > 0 && (
           <View style={{
+            // 2026-10-26 (typing-jitter fix): absolute overlay above the
+            // input bar — inserting/removing this box in flow shrank/grew
+            // the chat list by up to 180dp on every @ keystroke. Bottom
+            // clears the input bar (62) and, while replying, the reply bar.
+            position: 'absolute', left: 8, right: 8, zIndex: 50,
+            bottom: replyingTo ? 112 : 70,
             maxHeight: 180,
             backgroundColor: '#FFFFFF',
             borderRadius: 14,
             borderWidth: 1, borderColor: accentColor + '55',
-            marginTop: 6, overflow: 'hidden',
+            overflow: 'hidden',
             shadowColor: accentColor, shadowOpacity: 0.25,
             shadowRadius: 12, shadowOffset: { width: 0, height: -2 },
             elevation: 8 }}>

@@ -269,7 +269,6 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ থাকতে হবে। image/media
   // async load হয়ে content height বদলালে scroll position নষ্ট হয় — তাই
   // initial load phase-এ onContentSizeChange-এও scroll to end করি।
-  const initialScrollAtRef = useRef<number>(0);
   const userScrolledRef    = useRef(false);
 
   // ── Status text helper ────────────────────────────────────────────────────
@@ -324,7 +323,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         lastNotifId.current = latest.id;
         // 2026-10-13 (Sumon): খোলা chat-এ নতুন message এলে শুধু scroll — কোনো
         // banner বা haptic নয় (message এমনিতেই চোখের সামনে, buzz বিরক্তিকর)।
-        shouldScrollRef.current = true;
+        if (atBottomRef.current) shouldScrollRef.current = true;  // 2026-10-26: no yank while reading history
       }
     });
 
@@ -435,29 +434,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Auto-scroll (only for new messages, not when older ones are loaded) ───
   // 2026-10-19 perf: pendingMsgs.length in deps — an optimistic bubble must
   // scroll into view the instant it renders, not when the server echo lands.
+  // 2026-10-26 (typing-jitter fix): the list is inverted, so the bottom is
+  // pinned natively — no scroll choreography needed. This effect only
+  // returns the user to the bottom after their OWN send / initial load /
+  // an incoming message while already at bottom (shouldScrollRef is set
+  // only in those cases — incoming while scrolled up no longer yanks).
   useEffect(() => {
     if (messages.length > 0 && shouldScrollRef.current) {
       shouldScrollRef.current = false;
       if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
       scrollTimerRef.current = setTimeout(() => {
         scrollTimerRef.current = null;
-        flatRef.current?.scrollToEnd({ animated: true });
-        // 2026-10-13: initial scroll-এর timestamp — পরের 3s content height
-        // বদলালেও (image load) onContentSizeChange scroll to end করবে।
-        initialScrollAtRef.current = Date.now();
-        userScrolledRef.current = false;
+        flatRef.current?.scrollToOffset({ offset: 0, animated: true });
       }, 80);
     }
   }, [messages.length, pendingMsgs.length]);
 
   // ── 2026-10-13 (Sumon): content height বদলালে (image/media async load)
   // initial 3s-এ scroll to end — user manually scroll করলে বন্ধ।
-  const handleContentSizeChange = useCallback(() => {
-    if (userScrolledRef.current) return;
-    if (Date.now() - initialScrollAtRef.current > 3000) return;
-    if (initialScrollAtRef.current === 0) return;
-    flatRef.current?.scrollToEnd({ animated: false });
-  }, []);
+  // 2026-10-26 (typing-jitter fix): content-size scroll DELETED — the inverted
+  // list pins the bottom natively, so image loads no longer yank the view.
 
   const handleScrollBeginDrag = useCallback(() => {
     userScrolledRef.current = true;
@@ -475,7 +471,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, []);
   const handleScroll = useCallback((e: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
+    // 2026-10-26 (typing-jitter fix): inverted list — offset 0 IS the bottom.
+    const isAtBottom = contentOffset.y <= 100;
     const wasAtBottom = atBottomRef.current;
     atBottomRef.current = isAtBottom;
     setShowScrollBtnGuarded(!isAtBottom);
@@ -485,7 +482,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, [markSeenThrottled, setShowScrollBtnGuarded]);
 
   const scrollToBottom = useCallback(() => {
-    flatRef.current?.scrollToEnd({ animated: true });
+    flatRef.current?.scrollToOffset({ offset: 0, animated: true });
     setShowScrollBtnGuarded(false);
     userScrolledRef.current = false;
   }, [setShowScrollBtnGuarded]);
@@ -1011,7 +1008,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }
       rows.push({ kind: 'msg', message: m });
     }
-    return rows;
+    // 2026-10-26 (typing-jitter fix): inverted list renders data[0] at the
+    // bottom, so rows run newest-first; separators land correctly because
+    // the whole row array (separators included) is reversed.
+    return rows.reverse();
   }, [allVisibleMessages]);
 
   function dayLabel(ts: number): string {
@@ -1033,7 +1033,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     });
   }
 
-  // ── "Load earlier messages" header ────────────────────────────────────────
+  // ── "Load earlier messages" footer (visual top in the inverted list) ────────────────────────────────────────
   const ListHeaderComponent = useMemo(() => {
     if (!hasMoreOlder && olderMessages.length === 0) return null;
     return (
@@ -1181,13 +1181,17 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            // 2026-10-19 polish: 'height' on Android — the old code used
-            // 'padding' on both platforms (identical branches).
+            // 2026-10-26 (typing-jitter fix): Android is adjustPan — the OS
+            // already keeps the input visible, so KAV must stay OFF there
+            // (KAV + pan double-shifted the layout on every keyboard cycle).
+            // iOS keeps 'padding' as before.
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            enabled={Platform.OS !== 'android'}
           >
             <FlatList
               ref={flatRef}
+              inverted
               data={chatRows}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
@@ -1199,12 +1203,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               showsVerticalScrollIndicator={false}
               // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ scroll —
               // image load-এ height বদলালেও নিচেই থাকবে।
-              onContentSizeChange={handleContentSizeChange}
               onScrollBeginDrag={handleScrollBeginDrag}
               onScroll={handleScroll}
               scrollEventThrottle={16}
-              // RC8-A: header shows "Load earlier messages" when older pages exist
-              ListHeaderComponent={ListHeaderComponent}
+              // RC8-A: footer shows "Load earlier messages" when older pages exist
+              // (inverted list: the footer renders at the visual top)
+              ListFooterComponent={ListHeaderComponent}
               ListEmptyComponent={
                 // A1: show spinner during initial load, not false "empty".
                 initialLoading ? (
@@ -1219,7 +1223,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   </View>
                 )
               }
-              ListFooterComponent={isTypingRemote ? <TypingDots /> : null}
+              // 2026-10-26 (typing-jitter fix): inverted list — the header
+              // renders at the visual bottom, so typing dots stay under
+              // the newest message exactly as before.
+              ListHeaderComponent={isTypingRemote ? <TypingDots /> : null}
             />
 
             {/* ── Reply preview ─────────────────────────────────────────── */}
