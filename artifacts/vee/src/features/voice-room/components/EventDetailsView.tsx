@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, Animated } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { ref, onValue, off, set } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
@@ -40,6 +42,76 @@ function rewardLabel(t: EventTier): string {
     case 'badge': return 'Badge';
     default: return 'Reward';
   }
+}
+
+// Gentle pulsing ring for the Ripple tier preview (self-animated, no deps).
+function PulseRing({ color }: { color: string }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(0.7)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.parallel([
+      Animated.timing(scale, { toValue: 1.35, duration: 1600, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 1600, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [scale, opacity]);
+  return (
+    <Animated.View
+      style={{ position: 'absolute', width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: color, transform: [{ scale }], opacity }}
+    />
+  );
+}
+
+// Per-tier reward preview, rendered from the server tier data only:
+// vibe = gradient nickname tile, ripple = pulsing ring on an avatar,
+// frame = the event art overlaid on an avatar (frame art only looks
+// right ON an avatar, never cropped in a banner). Other kinds: no preview.
+function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string | undefined }) {
+  if (tier.rewardType === 'vibe') {
+    const colors = (tier.params && Array.isArray((tier.params as { colors?: unknown }).colors))
+      ? ((tier.params as { colors: string[] }).colors.filter((c) => typeof c === 'string').slice(0, 3))
+      : [];
+    const gradient = colors.length >= 2 ? colors : ['#F59E0B', '#EC4899', '#8B5CF6'];
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+        <LinearGradient colors={gradient as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 6 }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>YourName</Text>
+        </LinearGradient>
+        <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Nickname effect</Text>
+      </View>
+    );
+  }
+  if (tier.rewardType === 'ripple') {
+    const color = (tier.params && typeof (tier.params as { color?: unknown }).color === 'string')
+      ? (tier.params as { color: string })
+      : '#F59E0B';
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+        <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
+          <PulseRing color={color} />
+          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="user" size={24} color="#9CA3AF" />
+          </View>
+        </View>
+        <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Room effect while speaking</Text>
+      </View>
+    );
+  }
+  if (tier.rewardType === 'frame' && eventImage) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+        <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="user" size={24} color="#9CA3AF" />
+          </View>
+          <Image source={{ uri: eventImage }} style={{ position: 'absolute', width: 56, height: 56 }} contentFit="contain" cachePolicy="memory-disk" />
+        </View>
+        <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Avatar frame</Text>
+      </View>
+    );
+  }
+  return null;
 }
 
 function legacyRewardText(event: TaskEvent): string | null {
@@ -103,12 +175,15 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
   return (
     <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
       {!!banner && (
-        <Image
-          source={{ uri: banner }}
-          style={{ width: '100%', height: 140, borderRadius: 18, backgroundColor: C.card }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
+        <View style={{ width: '100%', height: 170, borderRadius: 18, overflow: 'hidden' }}>
+          <LinearGradient colors={['#7C3AED', '#9333EA', '#C026D3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
+          <Image
+            source={{ uri: banner }}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+          />
+        </View>
       )}
       <Text style={{ color: C.text, fontSize: 17, fontWeight: '800', marginTop: 12 }}>{event.title}</Text>
       {!!event.description && (
@@ -149,6 +224,7 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
                   padding: 12, marginBottom: 10, backgroundColor: '#FFFFFF',
                 }}
               >
+                <TierPreview tier={tier} eventImage={banner || undefined} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Text style={{ color: C.text, fontSize: 14, fontWeight: '800', flex: 1 }} numberOfLines={1}>
                     {rewardLabel(tier)}

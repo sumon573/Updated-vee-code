@@ -6,11 +6,12 @@
  * `task_events` service was never consumed. This modal completes the
  * section: events are FULLY SERVER-DRIVEN from RTDB `task_events/{id}`
  * (see taskEventService) — adding/editing/removing an event on the
- * server updates this panel with no app build. Events without an
- * image are filtered out by the service (no broken visuals).
+ * server updates this panel with no app build. Imageless events show
+ * a clean placeholder tile (never filtered out).
  */
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, Modal, Platform, ScrollView, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Modal, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../constants/theme';
 import { EventDetailsView } from './EventDetailsView';
@@ -44,14 +45,14 @@ function RewardChip({ event }: { event: TaskEvent }) {
   if (event.rewardType === 'coin' && event.rewardAmount) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-        <Text style={{ color: '#92400E', fontSize: 11, fontWeight: '800' }}>🪙 {fmtCompact(event.rewardAmount)}</Text>
+        <Text style={{ color: '#92400E', fontSize: 11, fontWeight: '800' }}>{fmtCompact(event.rewardAmount)} Coins</Text>
       </View>
     );
   }
   if (event.rewardType === 'badge' || event.rewardType === 'frame') {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-        <Text style={{ color: '#5B21B6', fontSize: 11, fontWeight: '800' }}>{event.rewardType === 'badge' ? '🏅 Badge' : '🖼️ Frame'}</Text>
+        <Text style={{ color: '#5B21B6', fontSize: 11, fontWeight: '800' }}>{event.rewardType === 'badge' ? 'Badge' : 'Frame'}</Text>
       </View>
     );
   }
@@ -112,7 +113,9 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
             <Text style={{ color: C.sub, fontSize: 12, textAlign: 'center', marginTop: 4 }}>New events and rewards will appear here.</Text>
           </View>
         ) : selectedEvent ? (
-          <EventDetailsView event={selectedEvent} />
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingBottom: 8 }}>
+            <EventDetailsView event={selectedEvent} />
+          </ScrollView>
         ) : (
           <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             {events.map((ev) => (
@@ -121,14 +124,14 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
                 borderRadius: 18, padding: 12, marginBottom: 10,
               }}>
                 {ev.imageUrl ? (
-                  <Image source={{ uri: ev.imageUrl }} style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: C.card }} resizeMode="cover" />
+                  <Image source={{ uri: ev.imageUrl }} style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: C.card }} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
-                  <View style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="gift" size={24} color="#D97706" />
+                  <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', alignItems: 'center', justifyContent: 'center' }}>
+                    <Feather name="gift" size={26} color="#D97706" />
                   </View>
                 )}
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={{ color: C.text, fontSize: 14, fontWeight: '800' }} numberOfLines={1}>{ev.title}</Text>
+                  <Text style={{ color: C.text, fontSize: 15, fontWeight: '800' }} numberOfLines={1}>{ev.title}</Text>
                   {!!ev.description && (
                     <Text style={{ color: C.sub, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{ev.description}</Text>
                   )}
@@ -141,6 +144,9 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
                       <Text style={{ color: C.muted, fontSize: 11, fontWeight: '600' }}>Starts {fmtDate(ev.startTime)}</Text>
                     )}
                   </View>
+                </View>
+                <View style={{ justifyContent: 'center', marginLeft: 6 }}>
+                  <Feather name="chevron-right" size={20} color={C.muted} />
                 </View>
               </Pressable>
             ))}
