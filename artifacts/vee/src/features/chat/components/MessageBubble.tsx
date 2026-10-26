@@ -60,6 +60,7 @@ type Props = {
   chatId: string;
   myUid: string;
   onReply: (msg: DmMessage) => void;
+  onRetry?: (msg: DmMessage) => void;
   onMediaPress?: (uri: string, type: 'image' | 'video') => void;
 };
 
@@ -134,7 +135,7 @@ export async function saveRemoteMediaToGallery(
 }
 
 // Memoized: the DM thread FlatList renders one of these per message.
-function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props) {
+function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress }: Props) {
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const [showReactions, setShowReactions] = useState(false);
@@ -275,6 +276,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
 
         {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
         <Pressable
+          onPress={() => { if (message.sendState === 'failed' && isMe && message.type === 'text') onRetry?.(message); }}
           onLongPress={handleLongPress}
           delayLongPress={200}
           style={isMediaMsg ? {
@@ -381,6 +383,11 @@ function MessageBubble({ message, chatId, myUid, onReply, onMediaPress }: Props)
                 )
               )}
             </View>
+          )}
+          {isMe && message.sendState === 'failed' && (
+            <Text style={{ color: '#D32F2F', fontSize: 12, marginTop: 4, textAlign: 'right' }}>
+              Not sent — tap to retry
+            </Text>
           )}
         </Pressable>
 

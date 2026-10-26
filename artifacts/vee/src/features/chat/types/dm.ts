@@ -42,6 +42,9 @@ export type DmMessage = {
   };
   /** Voice message duration in seconds (type='voice' only) */
   durationSec?: number;
+  /** DM text outbox (weak-network Phase 2): own optimistic echoes only.
+      'sending' = in flight, 'failed' = send failed, bubble stays with retry. */
+  sendState?: 'sending' | 'failed';
 };
 
 export type TypingState = {

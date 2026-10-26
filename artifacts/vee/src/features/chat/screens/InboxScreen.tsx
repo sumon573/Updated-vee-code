@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
@@ -221,6 +222,36 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // instantly while the real write is in flight. Same id as the final message
   // (client-generated push key), so the live subscription dedupes them.
   const [pendingMsgs, setPendingMsgs]       = useState<DmMessage[]>([]);
+
+  // ── DM text outbox (weak-network Phase 2, mirrors room outbox) ──
+  // Failed text sends stay as bubbles with tap-to-retry instead of vanishing;
+  // pendings persist per chat so a killed app re-sends them on reopen.
+  const DM_OUTBOX_KEY = 'vee_dm_outbox';
+  type DmOutboxEntry = { id: string; text: string; replyTo?: DmReplyPreview; createdAt: number };
+  const dmOutboxRestoredRef = useRef<string | null>(null);
+  const loadDmOutbox = useCallback(async (): Promise<Record<string, DmOutboxEntry[]>> => {
+    try {
+      const raw = await AsyncStorage.getItem(DM_OUTBOX_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, DmOutboxEntry[]>) : {};
+    } catch { return {}; }
+  }, []);
+  const saveDmOutboxEntry = useCallback(async (chat: string, entry: DmOutboxEntry) => {
+    try {
+      const all = await loadDmOutbox();
+      const list = (all[chat] ?? []).filter((e) => e.id !== entry.id);
+      list.push(entry);
+      all[chat] = list;
+      await AsyncStorage.setItem(DM_OUTBOX_KEY, JSON.stringify(all));
+    } catch { /* outbox persistence is best-effort; the bubble still retries */ }
+  }, [loadDmOutbox]);
+  const clearDmOutboxEntry = useCallback(async (chat: string, id: string) => {
+    try {
+      const all = await loadDmOutbox();
+      const list = (all[chat] ?? []).filter((e) => e.id !== id);
+      if (list.length > 0) all[chat] = list; else delete all[chat];
+      await AsyncStorage.setItem(DM_OUTBOX_KEY, JSON.stringify(all));
+    } catch { /* best-effort */ }
+  }, [loadDmOutbox]);
   const [inputText, setInputText]           = useState('');
   const [replyTarget, setReplyTarget]       = useState<DmMessage | null>(null);
   const [isTypingRemote, setIsTypingRemote] = useState(false);
@@ -337,6 +368,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       unsubMsgs();
     };
   }, [chatId, myUid]);
+
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
   useEffect(() => {
@@ -533,6 +565,84 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // of genuinely new text.
   const lastSendRef = useRef<{ text: string; at: number } | null>(null);
 
+  // ── DM text outbox: retry + mount-restore + ack cleanup ──
+  const retryDmText = useCallback(async (msg: DmMessage) => {
+    if (msg.type !== 'text' || msg.sendState !== 'failed' || msg.senderId !== myUid) return;
+    setPendingMsgs((prev) => prev.map((m) => (m.id === msg.id ? { ...m, sendState: 'sending' as const } : m)));
+    try {
+      await sendMessage(chatId, myUid, effectiveParticipantId, msg.content, 'text', msg.replyTo, undefined, myRealName || user?.displayName || undefined, msg.id);
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== msg.id));
+      void clearDmOutboxEntry(chatId, msg.id);
+    } catch (e) {
+      if (e instanceof BlockedInteractionError) {
+        setPendingMsgs((prev) => prev.filter((m) => m.id !== msg.id));
+        void clearDmOutboxEntry(chatId, msg.id);
+        const d = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
+        setBlockDirection(d);
+        Alert.alert(
+          t('chat.blockedTitle') ?? 'Blocked',
+          d === 'byMe'
+            ? (t('chat.blockedByMeMsg', { name: displayName }) ?? `You blocked ${displayName}. Unblock to send messages.`)
+            : (t('chat.blockedByThemMsg', { name: displayName }) ?? `${displayName} has blocked you.`),
+        );
+      } else {
+        setPendingMsgs((prev) => prev.map((m) => (m.id === msg.id ? { ...m, sendState: 'failed' as const } : m)));
+      }
+    }
+  }, [chatId, myUid, effectiveParticipantId, myRealName, user, displayName, t, clearDmOutboxEntry]);
+
+  // Mount-restore: re-send persisted text pendings for this chat verbatim.
+  // Runs once per chat open; the ack-cleanup effect below drops any echo
+  // whose real message has already landed.
+  useEffect(() => {
+    if (dmOutboxRestoredRef.current === chatId) return;
+    dmOutboxRestoredRef.current = chatId;
+    void loadDmOutbox().then(async (all) => {
+      const entries = all[chatId] ?? [];
+      if (entries.length === 0) return;
+      const echoes: DmMessage[] = entries.map((e) => ({
+        id: e.id, chatId, senderId: myUid, type: 'text', content: e.text,
+        createdAt: e.createdAt, status: 'sending', sendState: 'sending',
+        reactions: {}, ...(e.replyTo ? { replyTo: e.replyTo } : {}),
+      }));
+      setPendingMsgs((prev) => {
+        const have = new Set(prev.map((m) => m.id));
+        return [...prev, ...echoes.filter((m) => !have.has(m.id))];
+      });
+      for (const e of entries) {
+        try {
+          await sendMessage(chatId, myUid, effectiveParticipantId, e.text, 'text', e.replyTo, undefined, myRealName || user?.displayName || undefined, e.id);
+          setPendingMsgs((prev) => prev.filter((m) => m.id !== e.id));
+          void clearDmOutboxEntry(chatId, e.id);
+        } catch (err) {
+          if (err instanceof BlockedInteractionError) {
+            setPendingMsgs((prev) => prev.filter((m) => m.id !== e.id));
+            void clearDmOutboxEntry(chatId, e.id);
+          } else {
+            setPendingMsgs((prev) => prev.map((m) => (m.id === e.id ? { ...m, sendState: 'failed' as const } : m)));
+          }
+        }
+      }
+    });
+  }, [chatId, myUid, effectiveParticipantId, myRealName, user, loadDmOutbox, clearDmOutboxEntry]);
+
+  // Ack cleanup: a 'sending' optimistic whose real message arrived (same id
+  // in the live window) is dropped. Failed bubbles are never auto-cleaned —
+  // only a retry or a block clears them.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const liveIds = new Set(messages.map((m) => m.id));
+    setPendingMsgs((prev) => {
+      const kept = prev.filter((m) => !(m.sendState === 'sending' && liveIds.has(m.id)));
+      return kept.length === prev.length ? prev : kept;
+    });
+    void loadDmOutbox().then((all) => {
+      const list = all[chatId] ?? [];
+      const stale = list.filter((e) => liveIds.has(e.id));
+      stale.forEach((e) => void clearDmOutboxEntry(chatId, e.id));
+    });
+  }, [messages, chatId, loadDmOutbox, clearDmOutboxEntry]);
+
   const handleSend = useCallback(async () => {
     // 2026-10-13 (Sumon): auth ছাড়া পাঠানো যাবে না — myUid 'unknown' হলে
     // Firebase rules reject করতো (senderId অবশ্যই auth.uid হতে হবে)।
@@ -559,9 +669,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     // instantly with status:'sending' and the input clears immediately — the
     // user never waits on the network. The optimistic id IS the final push
     // key (newMessageKey), so the live subscription dedupes it by id when
-    // the real message arrives. On failure the input text is restored, so a
-    // failed send never loses what was typed.
-    const savedReplyTarget = replyTarget;
+    // the real message arrives. 2026-10-26 (weak-network Phase 2, DM outbox):
+    // on failure the bubble STAYS with sendState 'failed' + tap-to-retry
+    // (same pattern as the room outbox) — the text lives in the bubble,
+    // long-press Copy recovers it for editing, so nothing typed is lost.
     const messageKey = newMessageKey(chatId);
     const optimistic: DmMessage = {
       id: messageKey,
@@ -569,12 +680,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       senderId: myUid,
       type: 'text',
       content: text,
-      createdAt: Date.now(),
+      createdAt: now,
       status: 'sending',
+      sendState: 'sending',
       reactions: {},
       ...(replyPreview ? { replyTo: replyPreview } : {}),
     };
     setPendingMsgs((prev) => [...prev, optimistic]);
+    void saveDmOutboxEntry(chatId, { id: messageKey, text, replyTo: replyPreview, createdAt: now });
     setInputText('');
     setReplyTarget(null);
     shouldScrollRef.current = true;
@@ -585,12 +698,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       // Success — the live subscription delivers the real message under the
       // same id; drop the optimistic copy (the id-dedupe is the backstop).
       setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+      void clearDmOutboxEntry(chatId, messageKey);
     } catch (e) {
-      // Failed — remove the optimistic bubble and restore the input text.
-      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
-      setInputText(text);
-      // Restore the reply target too (was previously dropped silently).
-      if (savedReplyTarget) setReplyTarget(savedReplyTarget);
+      // DM outbox: blocked stays final (drop + alert below); any other
+      // failure keeps the bubble with sendState 'failed' for tap-to-retry.
+      // The text lives in the bubble (long-press Copy recovers it) — the
+      // input is NOT restored, so a retry never duplicates the text.
+      if (e instanceof BlockedInteractionError) {
+        setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+        void clearDmOutboxEntry(chatId, messageKey);
+      } else {
+        setPendingMsgs((prev) => prev.map((m) => (m.id === messageKey ? { ...m, sendState: 'failed' as const } : m)));
+      }
       if (e instanceof BlockedInteractionError) {
         const d = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
         setBlockDirection(d);
@@ -601,11 +720,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             : (t('chat.blockedByThemMsg', { name: displayName }) ?? `${displayName} has blocked you.`),
         );
       } else {
-        // NOTE 5 (2026-10-11): show the ACTUAL cause, not a generic message.
-        Alert.alert(t('chat.error'), `${t('chat.sendError')}\n\nReason: ${getErrorCause(e)}`);
+        // DM outbox: no alert — the kept 'failed' bubble IS the signal
+        // ("Not sent — tap to retry"). Alerting on every weak-network
+        // failure would double-notify; the cause surfaces on retry.
       }
     }
-  }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, displayName, t, user]);
+  }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, displayName, t, user, saveDmOutboxEntry, clearDmOutboxEntry]);
 
   // ── IMO-style voice messages ─────────────────────────────────────────────
   // Mic button (in the send circle, IMO beb.xml) → recording bar with timer +
@@ -932,13 +1052,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         chatId={chatId}
         myUid={myUid}
         onReply={handleReply}
+        onRetry={retryDmText}
         onMediaPress={(uri, type) => {
           setMediaViewerUri(uri);
           setMediaViewerType(type as 'image' | 'video');
         }}
       />
     );
-  }, [chatId, myUid, handleReply]);
+  }, [chatId, myUid, handleReply, retryDmText]);
 
   const keyExtractor = useCallback((item: ChatRow) => (
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
