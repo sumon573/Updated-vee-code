@@ -124,7 +124,7 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
                 borderRadius: 18, padding: 12, marginBottom: 10,
               }}>
                 {ev.imageUrl ? (
-                  <Image source={{ uri: ev.imageUrl }} style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: C.card }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: ev.imageUrl }} style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: '#EDE9FE' }} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', alignItems: 'center', justifyContent: 'center' }}>
                     <Feather name="gift" size={26} color="#D97706" />

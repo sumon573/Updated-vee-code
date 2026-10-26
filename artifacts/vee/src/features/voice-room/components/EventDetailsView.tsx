@@ -63,11 +63,26 @@ function PulseRing({ color }: { color: string }) {
   );
 }
 
-// Per-tier reward preview, rendered from the server tier data only:
-// vibe = gradient nickname tile, ripple = pulsing ring on an avatar,
-// frame = the event art overlaid on an avatar (frame art only looks
-// right ON an avatar, never cropped in a banner). Other kinds: no preview.
-function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string | undefined }) {
+// Per-tier reward preview — REAL user data only (boss law 2026-10-26:
+// sample text / placeholder avatars ARE demo, never ship them).
+// vibe = the viewer's OWN nickname in the server gradient tile,
+// ripple = the viewer's OWN photo with the pulsing ring,
+// frame = the event art overlaid on the viewer's OWN photo
+// (frame art only looks right ON an avatar, never cropped in a banner).
+// No photo on file = the plain circle (their real state, not a fake face).
+// Other kinds: no preview.
+function RealAvatar({ photoURL }: { photoURL: string | null }) {
+  if (photoURL) {
+    return <Image source={{ uri: photoURL }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" cachePolicy="memory-disk" />;
+  }
+  return (
+    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
+      <Feather name="user" size={24} color="#9CA3AF" />
+    </View>
+  );
+}
+
+function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null }) {
   if (tier.rewardType === 'vibe') {
     const colors = (tier.params && Array.isArray((tier.params as { colors?: unknown }).colors))
       ? ((tier.params as { colors: string[] }).colors.filter((c) => typeof c === 'string').slice(0, 3))
@@ -76,7 +91,7 @@ function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string
     return (
       <View style={{ alignItems: 'center', paddingVertical: 10 }}>
         <LinearGradient colors={gradient as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 6 }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>YourName</Text>
+          <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>{nickname}</Text>
         </LinearGradient>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Nickname effect</Text>
       </View>
@@ -89,9 +104,7 @@ function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string
       <View style={{ alignItems: 'center', paddingVertical: 10 }}>
         <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
           <PulseRing color={color} />
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
-            <Feather name="user" size={24} color="#9CA3AF" />
-          </View>
+          <RealAvatar photoURL={photoURL} />
         </View>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Room effect while speaking</Text>
       </View>
@@ -101,9 +114,7 @@ function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string
     return (
       <View style={{ alignItems: 'center', paddingVertical: 10 }}>
         <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
-            <Feather name="user" size={24} color="#9CA3AF" />
-          </View>
+          <RealAvatar photoURL={photoURL} />
           <Image source={{ uri: eventImage }} style={{ position: 'absolute', width: 56, height: 56 }} contentFit="contain" cachePolicy="memory-disk" />
         </View>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Avatar frame</Text>
@@ -125,17 +136,28 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const [minutes, setMinutes] = useState<number>(0);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [claims, setClaims] = useState<Record<string, { status?: string }>>({});
   const [claimingTier, setClaimingTier] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
 
   const tiers = event.tiers ?? [];
 
-  // Progress + claims: keep last known on error (never wipe with an error).
+  // Progress + claims + own profile: keep last known on error (never wipe with an error).
   useEffect(() => {
     if (!uid || !event.id) return;
     const progressRef = ref(database, `event_progress/${event.id}/${uid}`);
     const claimsRef = ref(database, `event_claims/${event.id}/${uid}`);
+    const profileRef = ref(database, `users/${uid}`);
+    const onProfile = (snap: { val: () => unknown }) => {
+      const v = snap.val() as { name?: unknown; photoURL?: unknown } | null;
+      if (v && typeof v === 'object') {
+        if (typeof v.name === 'string' && v.name) setProfileName(v.name);
+        if (typeof v.photoURL === 'string' && v.photoURL) setProfilePhoto(v.photoURL);
+      }
+    };
+    onValue(profileRef, onProfile, () => { /* keep last known */ });
     const onProgress = (snap: { val: () => unknown }) => {
       const v = snap.val() as { minutes?: unknown } | null;
       if (v && typeof v.minutes === 'number') setMinutes(v.minutes);
@@ -149,6 +171,7 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
     return () => {
       off(progressRef, 'value', onProgress);
       off(claimsRef, 'value', onClaims);
+      off(profileRef, 'value', onProfile);
     };
   }, [uid, event.id]);
 
@@ -223,7 +246,7 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
                   padding: 12, marginBottom: 10, backgroundColor: '#FFFFFF',
                 }}
               >
-                <TierPreview tier={tier} eventImage={banner || undefined} />
+                <TierPreview tier={tier} eventImage={banner || undefined} nickname={profileName || (user as { displayName?: string | null } | null)?.displayName || 'Vee User'} photoURL={profilePhoto} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Text style={{ color: C.text, fontSize: 14, fontWeight: '800', flex: 1 }} numberOfLines={1}>
                     {rewardLabel(tier)}
