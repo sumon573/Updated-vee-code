@@ -11,7 +11,7 @@ import {
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
 import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
-import { removeSeat, leaveAudience, refreshSeatHeartbeat, getSeatHostMuted, setSeatMute } from '@/src/features/voice-room/services/firebaseRoomService';
+import { removeSeat, leaveAudience, refreshSeatHeartbeat, getSeatHostMuted, setSeatMute, writeSeatMuteReliable } from '@/src/features/voice-room/services/firebaseRoomService';
 import { clearPersistedActiveRoom } from '@/src/store/activeRoom';
 
 const C = {
@@ -268,9 +268,10 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     // 2026-10-26 (mic intent): bar toggles used to update ONLY the engine
     // + persisted room — the seat record kept the OLD value, so the
     // return seat-sync forced the stale value over the mic (auto-on/off).
-    // Best-effort seat write; setSeatMute no-ops on a missing seat, and a
-    // failed write is healed by the screen's first-sight sync below.
-    if (r && r.mySeatIdx >= 0) setSeatMute(r.id, r.mySeatIdx, newMuted).catch(() => {});
+    // Reliable seat write: retries with backoff and records the intent
+    // for the screen's pending-seat-mute reconciliation (first-sight heal
+    // alone never covered a mid-stay failed write).
+    if (r && r.mySeatIdx >= 0) writeSeatMuteReliable(r.id, r.mySeatIdx, newMuted).catch(() => {});
   };
 
   if (!room) return null;

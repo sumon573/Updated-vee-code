@@ -76,7 +76,7 @@ function CrownSeatIcon({ size = 25 }: { size?: number }) {
 const SEAT_SIZE = 48;
 export const SeatCard = memo(function SeatCard({
   seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
-  nameColor, labelColor,
+  nameColor, labelColor, myId, selfMuted,
 }: {
   seatIndex: number;
   member: Participant | null | undefined;
@@ -90,6 +90,10 @@ export const SeatCard = memo(function SeatCard({
   nameColor?: string;
   labelColor?: string;
   myId?: string;
+  /** 2026-10-26 (boss: realtime true mute state): the screen passes the
+      live ENGINE muted state here; the self badge uses it instead of the
+      possibly-stale seat record. */
+  selfMuted?: boolean;
   /** 2026-10-16 (Sumon): Store-bought room mic decor — shown on the mic dot. */
   micDecorUrl?: string | null;
 }) {
@@ -101,6 +105,13 @@ export const SeatCard = memo(function SeatCard({
   const serverBadgeIcon = useServerBadgeIcon();
   const badgeSource = serverBadgeIcon ? { uri: serverBadgeIcon } : FALLBACK_BADGE;
   const isOwner = member?.role === 'host';
+  // 2026-10-26 (boss: realtime true mute state): the seat record can lag
+  // the live engine (a failed seat-mute write) — for MY OWN seat the badge
+  // must show the engine's live state, never a stale record. Host red
+  // always wins; other members keep their seat record (only their own app
+  // knows their engine state).
+  const isSelfSeat = !!myId && member?.id === myId;
+  const showMuted = member?.hostMuted === true ? true : isSelfSeat && selfMuted !== undefined ? selfMuted : !!member?.muted;
   // 2026-10-14 (Sumon): LIVE verified check — seat data's verified flag goes stale
   // on revocation (written once at takeSeat, never cleared). Use real-time hook.
   const hasVerifiedBadge = useVerifiedBadge(member?.id);
@@ -246,13 +257,13 @@ export const SeatCard = memo(function SeatCard({
             <View style={{
               position: 'absolute', bottom: 0, left: 0,
               width: 18, height: 18, borderRadius: 9,
-              backgroundColor: (member.muted || member.hostMuted) ? C.red : '#FFFFFF',
+              backgroundColor: showMuted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 1.5, borderColor: C.bg,
-              shadowColor: (member.muted || member.hostMuted) ? C.red : '#000',
+              shadowColor: showMuted ? C.red : '#000',
               shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
             }}>
-              <Feather name={(member.muted || member.hostMuted) ? 'mic-off' : 'mic'} size={9} color={(member.muted || member.hostMuted) ? '#fff' : '#333'} />
+              <Feather name={showMuted ? 'mic-off' : 'mic'} size={9} color={showMuted ? '#fff' : '#333'} />
             </View>
             {micDecorUrl && (
               <Image

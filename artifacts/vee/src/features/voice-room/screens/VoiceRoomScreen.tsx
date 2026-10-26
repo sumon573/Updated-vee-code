@@ -92,7 +92,7 @@ import {
   subscribeSeats, subscribeAudience, subscribeRoomInfo,
   subscribeLockedSeats, subscribeRoomAdmins,
   joinRoomAsAudience, leaveAudience, takeSeat, clearOtherSeats, leaveSeat as fbLeaveSeat,
-  setSeatMute, setSeatHostMute, setSeatRole, removeSeat, removeAudienceMember,
+  setSeatMute, setPendingSeatMute, getPendingSeatMute, clearPendingSeatMute, writeSeatMuteReliable, setSeatHostMute, setSeatRole, removeSeat, removeAudienceMember,
   lockSeat as fbLockSeat, unlockSeat as fbUnlockSeat, setAudienceRole,
   grantRoomAdmin, revokeRoomAdmin,
   closeRoom, updateRoomSettings, getUserColor, getInitials,
@@ -1758,6 +1758,7 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = -1;
+      clearPendingSeatMute();
       // 2026-10-25 (boss: mic drops + re-enables on minimize→return):
       // on return the voice restore sets isPublishing=true SYNCHRONOUSLY
       // at mount, before the seats snapshot arrives — so mySeatIdx is
@@ -1775,6 +1776,7 @@ export default function VoiceRoomScreen() {
     if (prevMySeatIdxRef.current !== mySeatIdx) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = mySeatIdx;
+      clearPendingSeatMute();
     }
     const mySeat = seats[mySeatIdx];
     if (!mySeat) return;
@@ -1803,6 +1805,27 @@ export default function VoiceRoomScreen() {
         .then(() => { prevFbMutedRef.current = intent; })
         .catch(() => {});
       return;
+    }
+    // 2026-10-26 (boss: icon muted + voice live / muted auto-unmute): a
+    // local tap's seat write can fail silently mid-stay. While its intent
+    // is pending and the engine still holds it, retry the write (throttled)
+    // and NEVER let the stale snapshot force the mic (that was the
+    // auto-unmute: the stale snapshot enforced itself onto the engine).
+    // Clear when the snapshot confirms, or when intent moved (remote/host
+    // took over — normal sync then owns it). Host-mute always wins.
+    const pend = getPendingSeatMute();
+    if (pend && pend.roomId === roomId && pend.seatIdx === mySeatIdx && mySeat.hostMuted !== true) {
+      if (mutedRef.current !== pend.value) {
+        clearPendingSeatMute();
+      } else if (fbMuted !== pend.value) {
+        if (Date.now() - pend.lastTry >= 3000) {
+          pend.lastTry = Date.now();
+          setSeatMute(roomId, mySeatIdx, pend.value).catch(() => {});
+        }
+        return;
+      } else {
+        clearPendingSeatMute();
+      }
     }
     prevFbMutedRef.current = fbMuted;
     // Host-mute wins: never let the self-mute sync unmute a host-muted mic.
@@ -2297,7 +2320,7 @@ export default function VoiceRoomScreen() {
     setSeats(prev => prev.map((s, i) =>
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
-    setSeatMute(roomId, mySeatIdx, newMuted).catch(() => {});
+    writeSeatMuteReliable(roomId, mySeatIdx, newMuted).catch(() => {});
   }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId, seats, t, voiceJoined, retryConnection]);
 
   const toggleSpeaker = useCallback(() => {
@@ -3442,6 +3465,7 @@ export default function VoiceRoomScreen() {
               <SeatCard
                 seatIndex={idx}
                 member={member}
+                selfMuted={muted}
                 isLocked={lockedSeats.has(idx)}
                 accentColor={accentColor}
                 nameColor={themeOnBg}

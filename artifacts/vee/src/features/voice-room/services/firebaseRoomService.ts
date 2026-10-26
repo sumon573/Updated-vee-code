@@ -1203,6 +1203,45 @@ export async function leaveSeat(
 }
 
 /** Toggle mute on a seat. */
+/** 2026-10-26 (boss: icon muted + voice live, and muted auto-unmuting):
+    a local mic tap flips the ENGINE first; the seat-mute write can fail
+    silently and nothing reconciled engine and seat mid-stay afterwards.
+    The tap records its intent here; the screen's FB sync effect
+    reconciles it (retry until the seat snapshot confirms, or drop it
+    when intent moves). Host-mute always wins (the effect checks it). */
+let pendingSeatMute: { roomId: string; seatIdx: number; value: boolean; lastTry: number } | null = null;
+export function setPendingSeatMute(roomId: string, seatIdx: number, value: boolean) {
+  pendingSeatMute = { roomId, seatIdx, value, lastTry: 0 };
+}
+export function getPendingSeatMute() {
+  return pendingSeatMute;
+}
+export function clearPendingSeatMute() {
+  pendingSeatMute = null;
+}
+/** Seat-mute write that survives a failed attempt: retries with backoff,
+    aborting the moment a newer tap supersedes it (pending store match).
+    Never throws; the pending record stays for snapshot reconciliation. */
+export async function writeSeatMuteReliable(
+  roomId: string,
+  seatIdx: number,
+  value: boolean,
+): Promise<void> {
+  setPendingSeatMute(roomId, seatIdx, value);
+  const delays = [0, 1000, 3000, 8000];
+  for (let i = 0; i < delays.length; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delays[i]));
+    const p = getPendingSeatMute();
+    if (!p || p.roomId !== roomId || p.seatIdx !== seatIdx || p.value !== value) return;
+    try {
+      await setSeatMute(roomId, seatIdx, value);
+      return;
+    } catch {
+      // retry on backoff; pending stays for snapshot reconciliation
+    }
+  }
+}
+
 export async function setSeatMute(
   roomId: string,
   seatIndex: number,
