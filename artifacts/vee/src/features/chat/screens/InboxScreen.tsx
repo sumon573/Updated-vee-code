@@ -23,7 +23,7 @@ import {
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, Animated, Dimensions, Alert, Modal, Image, Linking } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -1146,10 +1146,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               <Pressable hitSlop={12} onPress={handleVoiceCall}
                 style={{
                   width: 44, height: 44, borderRadius: 22,
-                  backgroundColor: 'rgba(34,197,94,0.15)',
-                  borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
                   alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name="phone" size={22} color={C.onlineGreen} />
+                {/* 2026-10-26 (boss: imo call icon): plain blue handset,
+                    exactly like the search-page rows — the old green
+                    circle button is gone. */}
+                <Ionicons name="call" size={24} color="#2196F3" />
               </Pressable>
               )}
               {/* Video call hidden until implemented — the "coming soon" alert
