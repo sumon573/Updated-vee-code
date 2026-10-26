@@ -1616,7 +1616,12 @@ export default function VoiceRoomScreen() {
       prevHostSeatIdxRef.current = -1;
       return;
     }
-    if (prevHostSeatIdxRef.current !== mySeatIdx) {
+    // 2026-10-26 (stale-seat heal): first sight of this seat — a muted
+    // value disagreeing with live intent is STALE (a failed seat-mute
+    // write), never force it onto the mic; the FB sync effect below
+    // rewrites the seat instead. Later fires keep normal sync.
+    const firstForSeat = prevHostSeatIdxRef.current !== mySeatIdx;
+    if (firstForSeat) {
       prevHostMutedRef.current = null;
       prevHostSeatIdxRef.current = mySeatIdx;
     }
@@ -1630,7 +1635,10 @@ export default function VoiceRoomScreen() {
     // Only explicit true/false moves the mic; undefined holds current state.
     // Host-mute still always wins on explicit true.
     if (hostMuted) setMicMuted(true);
-    else if (mySeat.muted !== undefined) setMicMuted(mySeat.muted);
+    else if (mySeat.muted !== undefined) {
+      if (firstForSeat && mySeat.muted !== mutedRef.current) return;
+      setMicMuted(mySeat.muted);
+    }
   }, [seats, mySeatIdx, isPublishing]);
   useEffect(() => {
     if (mySeatIdx < 0) {
@@ -1666,6 +1674,22 @@ export default function VoiceRoomScreen() {
     // the mic and keep prev at the last explicit value, so a later explicit
     // value still fires. Never let an undefined snapshot mute or unmute.
     if (fbMuted === undefined) return;
+    // 2026-10-26 (stale-seat heal): first sight of this seat (prev null)
+    // with a value disagreeing with live intent = STALE seat (a seat-mute
+    // write that failed while offline/backgrounded, or a bar toggle whose
+    // seat write never landed). Rewrite the seat instead of forcing the
+    // stale value onto the mic (that was the return auto-on/off).
+    // Success marks prev = intent so the corrected snapshot is a no-op;
+    // failure leaves prev null so the next seats change retries the heal.
+    // Host-mute never heals (hostMuted wins separately, below). Later
+    // fires (prev set) keep normal cross-device sync.
+    if (prevFbMutedRef.current === null && fbMuted !== mutedRef.current && mySeat.hostMuted !== true) {
+      const intent = mutedRef.current;
+      setSeatMute(roomId, mySeatIdx, intent)
+        .then(() => { prevFbMutedRef.current = intent; })
+        .catch(() => {});
+      return;
+    }
     prevFbMutedRef.current = fbMuted;
     // Host-mute wins: never let the self-mute sync unmute a host-muted mic.
     if (mySeat.hostMuted === true) return;

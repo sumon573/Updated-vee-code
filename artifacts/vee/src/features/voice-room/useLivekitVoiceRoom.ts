@@ -1612,6 +1612,9 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // (Same for userID 'anonymous': AuthContext starts with null.)
         if (!roomID || userID === 'anonymous') return;
 
+        // 2026-10-26 (mic intent seed): same-room minimize-time intent,
+        // captured before the teardown below destroys it.
+        let seededMuted: boolean | null = null;
         if (_persistedRoom) {
           // Stale persisted room for a DIFFERENT room (roomID is real
           // here, and restore already failed the same-room check above)
@@ -1622,6 +1625,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           // (room.disconnect + AudioSession.stop vs start + Room.connect),
           // a classic SIGSEGV source on Android.
           const stale = _persistedRoom;
+          // Same-room leftovers (stale watchdog) carry the user's live
+          // intent; different-room leftovers must NOT seed (a new room's
+          // seat-take still starts unmuted by design).
+          if (stale.roomId === roomID) seededMuted = stale.muted;
           _persistedRoom = null;
           _isMinimized = false;
           stopPersistedWatchdog();
@@ -1657,6 +1664,18 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // foreground service to zero mid-session (see hold comment).
         acquireSessionServiceHold();
         const engine = new LivekitVoiceRoomEngine();
+        // 2026-10-26 (mic intent seed): a fresh engine defaults to
+        // muted=true — on a long-background return that default dropped
+        // live mics (and the seat sync then auto-on'd them). Seed the
+        // same-room minimize-time intent BEFORE join, mirroring the
+        // watchdog repair's setMuted(p.muted) pattern. Null = true fresh
+        // entry or different room: defaults stand (seat-take unmuted).
+        // setMuted pre-join is safe: applyTrackMute no-ops with no room.
+        if (seededMuted !== null) {
+          await engine.setMuted(seededMuted);
+          mutedRef.current = seededMuted;
+          setMuted(seededMuted);
+        }
         attachHandlers(engine);
         engineRef.current = engine;
         await engine.join(roomID, { userId: userID, userName });
