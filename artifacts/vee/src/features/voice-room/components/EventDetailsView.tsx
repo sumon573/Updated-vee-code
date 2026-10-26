@@ -83,9 +83,8 @@ function TierPreview({ tier, eventImage }: { tier: EventTier; eventImage: string
     );
   }
   if (tier.rewardType === 'ripple') {
-    const color = (tier.params && typeof (tier.params as { color?: unknown }).color === 'string')
-      ? (tier.params as { color: string })
-      : '#F59E0B';
+    const params = tier.params as { color?: unknown } | undefined;
+    const color = (params && typeof params.color === 'string') ? params.color : '#F59E0B';
     return (
       <View style={{ alignItems: 'center', paddingVertical: 10 }}>
         <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
