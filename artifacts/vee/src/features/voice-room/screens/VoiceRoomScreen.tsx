@@ -1560,7 +1560,7 @@ export default function VoiceRoomScreen() {
   // return keeps the normal seat-driven path so a muted mic never
   // leaks open. Safety: the seat-sync effect below stops publishing
   // the moment live seats show no seat (kicked while minimized).
-  const [returningSeatIdx] = useState(() => {
+  const [returningSeatIdx, setReturningSeatIdx] = useState(() => {
     const prev = getMinimizedRoom();
     if (prev && prev.id === roomId && prev.mySeatIdx >= 0 && prev.muted === false) return prev.mySeatIdx;
     return -1;
@@ -1890,7 +1890,31 @@ export default function VoiceRoomScreen() {
       const activeNow = getCurrentRoom();
       if (activeNow && activeNow.id !== roomId) return;
       try {
-        const seatIdx = mySeatIdxRef.current;
+        // 2026-10-26 (boss: seated user invisible while talking — many
+        // users): mySeatIdx is DERIVED from the live seats subscription,
+        // so after the guard sweeps a seat (frozen app: heartbeats stopped
+        // + LiveKit dead) the derived index is -1 even though the user
+        // never left — and the old code then re-registered them as
+        // AUDIENCE while the returning-seat mic fast path kept publishing:
+        // talking + hearing with NO seat record = invisible on the grid
+        // for everyone, including themselves, until they manually re-tap
+        // a seat. Fall back to the persisted seat (minimized room, then
+        // active room) — the record of a seat held without an explicit
+        // leave — and restore it with the same empty-or-mine check below.
+        // Kick safety: owner kicks always write roomBlocks (checked live
+        // below), global bans are checked live too, and a seat taken by
+        // someone else still demotes to audience. Live kicks are never
+        // undone by this: the restore runs only on reconnect/foreground/
+        // mount, never on a live subscription update.
+        let seatIdx = mySeatIdxRef.current;
+        const fromPersisted = seatIdx < 0;
+        if (fromPersisted) {
+          const minRoom = getMinimizedRoom();
+          const curRoom = getCurrentRoom();
+          const persisted = (minRoom && minRoom.id === roomId) ? minRoom
+            : (curRoom && curRoom.id === roomId) ? curRoom : null;
+          if (persisted && persisted.mySeatIdx >= 0) seatIdx = persisted.mySeatIdx;
+        }
         const audData = {
           userId: myUid,
           userName: myName,
@@ -1898,6 +1922,31 @@ export default function VoiceRoomScreen() {
           color: myColor,
           ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
           ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}) };
+        // Live kick/ban guards for a persisted-fallback restore only. A
+        // seat derived from live seats needs no check (a kicked user's
+        // seat is gone, so they never arrive here with seatIdx >= 0 from
+        // derivation). Reads are fail-open: a failed read restores,
+        // exactly today's behaviour — only a PROVEN block/ban refuses.
+        if (seatIdx >= 0 && fromPersisted) {
+          const blockedSnap = await get(ref(database, `roomBlocks/${roomId}/${myUid}`)).catch(() => null);
+          if (blockedSnap?.exists()) { setReturningSeatIdx(-1); return; }
+          const ban = await checkVoiceBan(myUid).catch(() => null);
+          if (ban) { setReturningSeatIdx(-1); return; }
+          if (seatIdx === 0) {
+            // Host seat is owner/admin-only (mirrors takeSeatInner).
+            // Proven non-privilege demotes to audience; read failure
+            // restores (fail open — never demote an owner on a blip).
+            try {
+              const [infoSnap, adminSnap] = await Promise.all([
+                get(ref(database, `rooms/${roomId}/info`)),
+                get(ref(database, `rooms/${roomId}/admins/${myUid}`)),
+              ]);
+              const info = infoSnap?.val() as { ownerId?: string } | null;
+              const privileged = info?.ownerId === myUid || adminSnap?.exists();
+              if (!privileged) seatIdx = -1;
+            } catch { /* fail open — restore */ }
+          }
+        }
         if (seatIdx >= 0) {
           const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${seatIdx}`)).catch(() => null);
           const cur = seatSnap?.val() as { userId?: string } | null;
@@ -1925,11 +1974,19 @@ export default function VoiceRoomScreen() {
             persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
           } else {
             mySeatIdxRef.current = -1;
+            // Seat taken by someone else while away: demote to audience
+            // AND disarm the returning-seat mic fast path — otherwise the
+            // publish effect keeps the demoted user talking from the
+            // audience with no seat (the invisible-talker state).
+            setReturningSeatIdx(-1);
             setCurrentRoom({ id: roomId, myUid, mySeatIdx: -1 });
             persistActiveRoom({ roomId, myUid, mySeatIdx: -1 }).catch(() => {});
             await joinRoomAsAudience(roomId, audData).catch(() => {});
           }
         } else {
+          // Audience outcome: never publish via the returning-seat fast
+          // path (audience listens; only a seat grants the mic).
+          setReturningSeatIdx(-1);
           await joinRoomAsAudience(roomId, audData).catch(() => {});
         }
       } catch {  }
