@@ -121,16 +121,14 @@ export function EventDetailsView({ event }: { event: TaskEvent }) {
       )}
 
       {tiers.length === 0 ? (
-        <View style={{ marginTop: 14, padding: 12, borderWidth: 1, borderColor: C.border, borderRadius: 14 }}>
-          {(() => {
-            const reward = legacyRewardText(event);
-            return reward ? (
+        (() => {
+          const reward = legacyRewardText(event);
+          return reward ? (
+            <View style={{ marginTop: 14, padding: 12, borderWidth: 1, borderColor: C.border, borderRadius: 14 }}>
               <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>Reward: {reward}</Text>
-            ) : (
-              <Text style={{ color: C.sub, fontSize: 13 }}>Details for this event will appear here.</Text>
-            );
-          })()}
-        </View>
+            </View>
+          ) : null;
+        })()
       ) : (
         <View style={{ marginTop: 14 }}>
           <Text style={{ color: C.text, fontSize: 13, fontWeight: '800', marginBottom: 8 }}>
