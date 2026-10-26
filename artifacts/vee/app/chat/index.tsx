@@ -22,6 +22,12 @@ import UserSearchModal from '@/src/features/user-search/UserSearchModal';
 import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats, pinChat, unpinChat, clearChat } from '@/src/features/chat/services/firebaseDmService';
+import { CoupleInviteCard, type CoupleInviteSenderProfile } from '@/src/features/intimacy/CoupleInviteCard';
+import {
+  subscribeIncomingCoupleInvites, acceptCoupleInvite, rejectCoupleInvite,
+  type CoupleInvite,
+} from '@/src/features/intimacy/coupleService';
+import { fetchPeerProfile } from '@/src/features/voice-room/services/intimacyService';
 import { deleteStory } from '@/src/features/chat/services/firebaseStoryService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
 import { useAuth } from '@/src/context/AuthContext';
@@ -61,6 +67,73 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     const timeout = setTimeout(() => setLoadingChats(false), 3000);
     return () => { unsub(); clearTimeout(timeout); };
   }, [user?.uid]);
+
+  // ── Couple invitations (Builder D 2026-10-26) ─────────────────────────────
+  // Rendered ONLY in ListHeaderComponent below — never injected into the
+  // FlatList data (typed Chat list, fixed 73px getItemLayout). Own
+  // subscription on couple_invites by recipientUid; keys are
+  // `couple-invite:{inviteId}` so they can never collide with a chatId.
+  const [coupleInvites, setCoupleInvites] = useState<CoupleInvite[]>([]);
+  const [coupleSenderProfiles, setCoupleSenderProfiles] = useState<Record<string, CoupleInviteSenderProfile>>({});
+  // Invites acted on this session stay visible with their terminal text
+  // ("Accepted" / "Declined") instead of vanishing mid-tap; on a fresh
+  // mount only pending invites show.
+  const [actedCoupleInviteIds, setActedCoupleInviteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    return subscribeIncomingCoupleInvites(user.uid, setCoupleInvites);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    const missing = coupleInvites
+      .map((i) => i.senderUid)
+      .filter((uid) => uid && !coupleSenderProfiles[uid]);
+    if (missing.length === 0) return;
+    let live = true;
+    Promise.all(missing.map(async (uid) => {
+      const p = await fetchPeerProfile(uid).catch(() => ({ name: '', photoURL: null }));
+      return [uid, { name: p.name || '', photoURL: p.photoURL ?? null }] as const;
+    })).then((pairs) => {
+      if (!live) return;
+      setCoupleSenderProfiles((prev) => {
+        const next = { ...prev };
+        for (const [uid, profile] of pairs) next[uid] = profile;
+        return next;
+      });
+    });
+    return () => { live = false; };
+  }, [coupleInvites, coupleSenderProfiles]);
+
+  const visibleCoupleInvites = coupleInvites.filter(
+    (i) => i.status === 'pending' || actedCoupleInviteIds.includes(i.id),
+  );
+
+  const handleAcceptCoupleInvite = useCallback(async (invite: CoupleInvite) => {
+    if (!user?.uid) return;
+    try {
+      await acceptCoupleInvite(invite.id, user.uid);
+      setActedCoupleInviteIds((prev) => (prev.includes(invite.id) ? prev : [...prev, invite.id]));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      // Expired accepts throw 'This invitation has expired' — the card
+      // already renders Expired for a past-deadline pending invite.
+      Alert.alert(t('chat.error'), e instanceof Error ? e.message : t('chat.error'));
+      throw e;
+    }
+  }, [user?.uid, t]);
+
+  const handleRejectCoupleInvite = useCallback(async (invite: CoupleInvite) => {
+    if (!user?.uid) return;
+    try {
+      await rejectCoupleInvite(invite.id, user.uid);
+      setActedCoupleInviteIds((prev) => (prev.includes(invite.id) ? prev : [...prev, invite.id]));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert(t('chat.error'), e instanceof Error ? e.message : t('chat.error'));
+      throw e;
+    }
+  }, [user?.uid, t]);
 
   // 2026-10-19 stability fix (batch 2D): clear the app icon badge whenever
   // the chat list gains focus — the user has seen the conversations.
@@ -286,6 +359,27 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           onOpenCreator={openCreator}
           onOpenPlanet={onOpenPlanet}
         />
+
+        {/* Pending couple invitations — buttons only, no thread navigation */}
+        {visibleCoupleInvites.length > 0 && (
+          <>
+            <Text style={{
+              color: C.muted, fontSize: 11, fontWeight: '700',
+              letterSpacing: 0.8, marginBottom: 8, marginTop: 4,
+              paddingHorizontal: 2 }}>
+              {t('coupleInvite.sectionTitle', { defaultValue: 'Couple invitations' })}
+            </Text>
+            {visibleCoupleInvites.map((invite) => (
+              <CoupleInviteCard
+                key={`couple-invite:${invite.id}`}
+                invite={invite}
+                sender={coupleSenderProfiles[invite.senderUid] ?? { name: '', photoURL: null }}
+                onAccept={() => handleAcceptCoupleInvite(invite)}
+                onReject={() => handleRejectCoupleInvite(invite)}
+              />
+            ))}
+          </>
+        )}
 
         {/* Pinned chats */}
         {pinnedChats.length > 0 && (

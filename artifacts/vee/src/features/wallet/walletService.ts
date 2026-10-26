@@ -187,6 +187,13 @@ export type SendGiftArgs = {
   price?: number;
   /** Room the gift was sent in (for the weekly Top Rooms board; optional) */
   roomId?: string;
+  /**
+   * Builder D (2026-10-26): true ONLY when the gift was sent from a voice
+   * room while the sender was seated. Threaded from the gift caller
+   * (GiftsModal); game modals and other callers pass nothing, which means
+   * no couple hearts. Gates bumpCoupleHeartsForGift — never inferred here.
+   */
+  seatedSender?: boolean;
 };
 
 export type SendGiftResult = {
@@ -543,6 +550,7 @@ async function sendGiftViaFirebase(
   toPhotoURL?: string,
   priceOverride?: number,
   roomId?: string,
+  seatedSender?: boolean,
 ): Promise<SendGiftResult> {
   const { auth } = await import('@/src/config/firebase');
   const { ref, runTransaction, push, set, update, serverTimestamp, get, increment } = await import('firebase/database');
@@ -824,6 +832,22 @@ async function sendGiftViaFirebase(
     }
   }
 
+  // Builder D (2026-10-26): couple hearts, fallback path — beside
+  // recordIntimacy above, so exactly one path bumps per gift (replayed
+  // gifts return early at the Step 0 claim, before reaching here).
+  // Fire-and-forget; seatedSender === true required, same as server path.
+  {
+    const me = auth.currentUser;
+    if (me && toUid !== fromUid && price > 0 && seatedSender === true) {
+      import('@/src/features/intimacy/coupleService').then(({ bumpCoupleHeartsForGift }) =>
+        bumpCoupleHeartsForGift({
+          senderUid: fromUid, recipientUid: toUid,
+          diamonds: price, seatedSender: true,
+        }).catch(() => {}),
+      ).catch(() => {});
+    }
+  }
+
   return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
 }
 
@@ -901,6 +925,7 @@ export async function sendGift({
   toPhotoURL,
   price,
   roomId,
+  seatedSender,
 }: SendGiftArgs): Promise<SendGiftResult> {
   // 2026-10-24 (Sumon): self-gift guard — enforced here so EVERY send path
   // (VPS server + Firebase fallback) is covered. The API server enforces
@@ -969,6 +994,19 @@ export async function sendGift({
     if (serverFromUid && toUid !== serverFromUid && serverPrice) {
       import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
         recordIntimacy(serverFromUid, toUid, serverPrice).catch(() => {}),
+      ).catch(() => {});
+    }
+    // Builder D (2026-10-26): couple hearts, server path — exactly once per
+    // gift, beside recordIntimacy above. Fire-and-forget: a failed bump
+    // never fails a gift that already succeeded. Only fires when the caller
+    // proved the sender was seated (seatedSender === true); the bump itself
+    // additionally requires the pair to be coupled to each other.
+    if (serverFromUid && toUid !== serverFromUid && serverPrice && seatedSender === true) {
+      import('@/src/features/intimacy/coupleService').then(({ bumpCoupleHeartsForGift }) =>
+        bumpCoupleHeartsForGift({
+          senderUid: serverFromUid, recipientUid: toUid,
+          diamonds: serverPrice, seatedSender: true,
+        }).catch(() => {}),
       ).catch(() => {});
     }
     return {
@@ -1054,7 +1092,7 @@ export async function sendGift({
   // InsufficientFundsError vs GiftError distinction is preserved: the
   // fallback throws InsufficientFundsError when the balance is truly low.
   try {
-    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price, roomId);
+    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price, roomId, seatedSender);
     if (fbResult.ok) return fbResult;
   } catch (e) {
     // Firebase fallback also failed — surface the meaningful error.

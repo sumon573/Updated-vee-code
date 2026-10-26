@@ -41,6 +41,13 @@ import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
+import {
+  subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
+  type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
+import {
+  subscribeCoupleState, type CoupleState } from '@/src/features/intimacy/coupleLevels';
+import {
+  CoupleTile, IntimacyFriendTile } from '@/src/features/intimacy/IntimacyTiles';
 import { useTranslation } from 'react-i18next';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
@@ -468,6 +475,10 @@ export default function ProfileScreen({
   const [uploadingDp, setUploadingDp] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
+  // 2026-10-26: Intimacy card — real pairs for the VIEWED uid + couple pointer (null = no couple).
+  const [intimacyEntries, setIntimacyEntries] = useState<IntimacyEntry[]>([]);
+  const [intimacyPeers, setIntimacyPeers] = useState<Record<string, { name: string; photoURL: string | null }>>({});
+  const [intimacyCouple, setIntimacyCouple] = useState<CoupleState | null>(null);
   // 2026-10-13 (Sumon): official badge check for verified logo next to name
   const [isOfficial, setIsOfficial] = useState(false);
   // 2026-10-13 (Sumon): server-driven badge icon (his design) next to name
@@ -539,6 +550,39 @@ export default function ProfileScreen({
     if (!displayUid) { setGrantedBadges([]); return; }
     return subscribeBadges(displayUid, setGrantedBadges);
   }, [displayUid]);
+
+  // 2026-10-26: Intimacy card data — pairs (value-desc) + couple pointer for the viewed uid.
+  useEffect(() => {
+    if (!displayUid) { setIntimacyEntries([]); setIntimacyCouple(null); return; }
+    const unsubI = subscribeMyIntimacies(displayUid, setIntimacyEntries);
+    const unsubC = subscribeCoupleState(displayUid, setIntimacyCouple);
+    return () => { unsubI(); unsubC(); };
+  }, [displayUid]);
+
+  // 2026-10-26: peer names/photos for intimacy tiles (best-effort, cached).
+  useEffect(() => {
+    const missing = new Set<string>();
+    for (const e of intimacyEntries) {
+      if (e.otherUid && !intimacyPeers[e.otherUid]) missing.add(e.otherUid);
+    }
+    if (intimacyCouple?.partnerUid && !intimacyPeers[intimacyCouple.partnerUid]) {
+      missing.add(intimacyCouple.partnerUid);
+    }
+    if (missing.size === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, { name: string; photoURL: string | null }> = {};
+      for (const uid of missing) {
+        try {
+          next[uid] = await fetchPeerProfile(uid);
+        } catch {
+          next[uid] = { name: '', photoURL: null };
+        }
+      }
+      if (!cancelled) setIntimacyPeers((prev) => ({ ...prev, ...next }));
+    })();
+    return () => { cancelled = true; };
+  }, [intimacyEntries, intimacyCouple?.partnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 2026-10-13 (Sumon): Check for valid Vee Official badge → verified logo next to name
   useEffect(() => {
@@ -1091,6 +1135,48 @@ export default function ProfileScreen({
             </Pressable>
           </View>
         )}
+
+        {/* ─── Intimacy card — couple tile first, then friend tiles (always rendered, Honor shape) ─── */}
+        <View style={[cardStyle, { paddingBottom: 12 }]}>
+          <SectionHeader
+            title={t('profile.intimacy', { defaultValue: 'Intimacy' })}
+            count={intimacyEntries.length + (intimacyCouple ? 1 : 0)}
+            onPress={() => router.push((isMe ? '/profile/intimacy' : `/profile/intimacy?uid=${displayUid}`) as never)}
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 15 }}
+            nestedScrollEnabled
+            directionalLockEnabled
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <CoupleTile
+                coupled={!!intimacyCouple}
+                partnerPhotoURL={intimacyCouple?.partnerUid ? (intimacyPeers[intimacyCouple.partnerUid]?.photoURL ?? null) : null}
+                partnerName={intimacyCouple?.partnerUid ? (intimacyPeers[intimacyCouple.partnerUid]?.name || '') : ''}
+                onPress={() => router.push((isMe ? '/profile/intimacy' : `/profile/intimacy?uid=${displayUid}`) as never)}
+              />
+              {intimacyEntries.length > 0 ? (
+                intimacyEntries.map((e) => (
+                  <IntimacyFriendTile
+                    key={e.pairKey}
+                    photoURL={intimacyPeers[e.otherUid]?.photoURL ?? null}
+                    name={intimacyPeers[e.otherUid]?.name || ''}
+                    levelLabel={`Lv.${intimacyLevelFor(e.value).id}`}
+                    onPress={() => router.push({ pathname: '/user-profile', params: { uid: e.otherUid, name: intimacyPeers[e.otherUid]?.name || '' } } as Parameters<typeof router.push>[0])}
+                  />
+                ))
+              ) : (
+                <View style={{ alignSelf: 'center', paddingLeft: 8 }}>
+                  <Text style={{ color: C.muted, fontSize: 13 }}>
+                    {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </View>
 
         {/* ─── Honor card — real granted badges only (sacred: official badge stays next to name) ─── */}
         <View style={[cardStyle, { paddingBottom: 12 }]}>

@@ -36,7 +36,7 @@ import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
-import { ref, push, serverTimestamp } from 'firebase/database';
+import { ref, push, get, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Participant, GiftSentInfo } from '../types/room';
 import {
@@ -187,9 +187,17 @@ const GiftTile = memo(function GiftTile({
 
 export function GiftsModal({
   visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
-  walletBalance, myUid, myName, roomId }: {
+  walletBalance, myUid, myName, roomId, senderSeated }: {
   visible: boolean;
   onClose: () => void;
+  /**
+   * Builder D (2026-10-26): true when the sender is seated in this room.
+   * The room caller passes (mySeatIdx >= 0). When omitted, handleSend
+   * falls back to a one-time rooms/{roomId}/seats read (members mixes
+   * seated + audience, so membership alone cannot prove seating).
+   * Undefined = unknown = no couple hearts for these gifts.
+   */
+  senderSeated?: boolean;
   /** Called after a successful gift send — chat line + room gift events. */
   onGiftSent: (info: GiftSentInfo) => void;
   /** 2026-10-21 (boss: gift must play the instant Send is tapped): called
@@ -410,6 +418,28 @@ export function GiftsModal({
     setSending(true);
     let didSucceed = false;
     try {
+      // Builder D (2026-10-26): seated-sender flag for couple hearts.
+      // Preferred source is the senderSeated prop (room caller: mySeatIdx
+      // >= 0). Fallback when omitted: one-time seats read — a seat entry
+      // with userId === myUid proves seating (members includes audience,
+      // so membership alone would falsely count audience senders).
+      // Undefined stays undefined (no hearts); false means seated check
+      // ran and the sender is not seated.
+      let seatedSender: boolean | undefined = senderSeated;
+      if (seatedSender === undefined && roomId) {
+        try {
+          const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`));
+          seatedSender = false;
+          if (seatsSnap.exists()) {
+            seatsSnap.forEach((child) => {
+              const seat = child.val() as { userId?: string } | null;
+              if (seat && seat.userId === myUid) seatedSender = true;
+            });
+          }
+        } catch {
+          seatedSender = undefined;
+        }
+      }
       // Idempotency: ONE persisted key per (recipient, gift, unit) — a retry
       // reuses the same keys so the server dedupes instead of double-charging.
       const keys = new Map<string, string[]>();
@@ -474,7 +504,7 @@ export function GiftsModal({
               await sendGift({
                 toUid: r.id, giftId: g.id, idempotencyKey: key,
                 toName: r.name, toPhotoURL: r.photoURL, price: g.coins,
-                roomId,
+                roomId, seatedSender,
               });
               charged = true;
             } catch (e) {
