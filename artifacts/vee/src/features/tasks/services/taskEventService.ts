@@ -20,6 +20,7 @@ export interface EventTier {
   rewardType: string;
   rewardId?: string;
   validityDays?: number;
+  params?: Record<string, unknown>;
 }
 
 export interface TaskEvent {
@@ -96,6 +97,8 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
         rewardId: x.rewardId ? String(x.rewardId) : undefined,
         validityDays: Number.isFinite(Number(x.validityDays))
           ? Math.max(0, Math.floor(Number(x.validityDays))) : undefined,
+        params: x.params && typeof x.params === 'object'
+          ? (x.params as Record<string, unknown>) : undefined,
       }))
       : undefined,
     progressType: data.progressType ? String(data.progressType) : undefined,
