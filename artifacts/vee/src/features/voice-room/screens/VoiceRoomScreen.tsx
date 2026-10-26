@@ -132,6 +132,37 @@ import { VoiceRoomModals } from './VoiceRoomModals';
  * on devices is never read again (harmless).
  */
 
+// ── 2026-10-26 (weak network outbox) ───────────────────────────────────────
+// Room text sends survive a kill mid-outage: pending sends persist to
+// AsyncStorage keyed by room, and re-sending reuses the SAME push key,
+// so a retry can never duplicate (it overwrites the same node).
+const OUTBOX_KEY = 'vee_room_chat_outbox';
+type OutboxEntry = { id: string; payload: Omit<RoomChatMsg, 'id' | 'isMe'> };
+async function loadOutboxEntries(roomId: string): Promise<OutboxEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, OutboxEntry[]>) : {};
+    return map[roomId] ?? [];
+  } catch { return []; }
+}
+async function persistOutboxEntry(roomId: string, entry: OutboxEntry): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, OutboxEntry[]>) : {};
+    map[roomId] = [...(map[roomId] ?? []).filter((e) => e.id !== entry.id), entry];
+    await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(map));
+  } catch { /* outbox is best-effort; the live send still runs */ }
+}
+async function removeOutboxEntry(roomId: string, id: string): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOX_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, OutboxEntry[]>;
+    map[roomId] = (map[roomId] ?? []).filter((e) => e.id !== id);
+    await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
   const isRestore = restore === '1';
@@ -280,6 +311,7 @@ export default function VoiceRoomScreen() {
   
   const {
     joined: voiceJoined,
+    connection: voiceConnection,
     muted,
     speakerOn,
     speakingUsers,
@@ -1429,6 +1461,50 @@ export default function VoiceRoomScreen() {
   // (the minimized record proves they never left) — so explicit leave,
   // kick/disband navigation and invite-to-another-room all end the
   // session, and the next entry shows nothing from before.
+  // 2026-10-26 (weak network outbox): update an echo's send state in
+  // both the pending list (so subscription fires keep it) and the
+  // rendered list. Never removes from pending on ack — the
+  // subscription's delivered-filter cleans it up when the snapshot
+  // arrives, and echoes the snapshot never delivers (old-ts restores)
+  // stay visible instead of vanishing.
+  const markEchoSendState = useCallback((echoId: string, state: 'sending' | 'failed' | undefined) => {
+    pendingEchoesRef.current = pendingEchoesRef.current.map((e) => (e.id === echoId ? { ...e, sendState: state } : e));
+    setMessages((prev: ChatMsg[]) => prev.map((m) => (m.id === echoId ? { ...m, sendState: state } : m)));
+  }, []);
+
+  // Tap-to-retry for a failed own echo. Re-sends the ORIGINAL payload
+  // verbatim (echo's sender/color/text/ts/replyTo + own uid) under the
+  // SAME key — idempotent overwrite, never a duplicate. 'blocked' stays
+  // final: drop the echo + alert, exactly like a first-send block.
+  const retryChatEcho = useCallback((msg: ChatMsg) => {
+    if (!roomId || !myUid || msg.sendState !== 'failed') return;
+    const payload: Omit<RoomChatMsg, 'id' | 'isMe'> = {
+      senderId: myUid,
+      senderName: msg.sender,
+      senderColor: msg.color,
+      text: msg.text,
+      ts: msg.ts,
+      ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+    };
+    markEchoSendState(msg.id, 'sending');
+    sendRoomChatMsg(roomId, payload, msg.id).then(() => {
+      markEchoSendState(msg.id, undefined);
+      void removeOutboxEntry(roomId, msg.id);
+    }).catch((err) => {
+      if (err instanceof Error && err.message === 'blocked') {
+        pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== msg.id);
+        setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== msg.id));
+        void removeOutboxEntry(roomId, msg.id);
+        Alert.alert(
+          t('voiceRoom.screen.blockedTitle'),
+          t('voiceRoom.screen.commentBlockedMsg'),
+        );
+        return;
+      }
+      markEchoSendState(msg.id, 'failed');
+    });
+  }, [roomId, myUid, t]);
+
   useEffect(() => {
     const existing = getRoomChatSession(roomId);
     const joinTs = existing ?? Date.now();
@@ -1438,6 +1514,39 @@ export default function VoiceRoomScreen() {
       if (getMinimizedRoom()?.id !== roomId) clearRoomChatSession(roomId);
     };
   }, [roomId]);
+
+  // 2026-10-26 (weak network outbox): resume sends that were in flight
+  // when the app was killed mid-outage. Declared after the session
+  // effect so the subscription (declared next) picks the restored
+  // echoes up in its first fire via pendingEchoesRef.
+  const outboxRestoredRoomRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!roomId || !myUid || outboxRestoredRoomRef.current === roomId) return;
+    outboxRestoredRoomRef.current = roomId;
+    void (async () => {
+      const entries = await loadOutboxEntries(roomId);
+      for (const entry of entries) {
+        if (pendingEchoesRef.current.some((e) => e.id === entry.id)) continue;
+        const echo: ChatMsg = { ...fbChatToMsg({ ...entry.payload, id: entry.id, isMe: true }), sendState: 'sending' };
+        pendingEchoesRef.current = [...pendingEchoesRef.current, echo];
+        setMessages((prev: ChatMsg[]) => [...prev, echo]);
+        // Fire-and-forget re-send of the ORIGINAL payload under the same
+        // key; ack clears it, failure marks it for tap-to-retry.
+        sendRoomChatMsg(roomId, entry.payload, entry.id).then(() => {
+          markEchoSendState(entry.id, undefined);
+          void removeOutboxEntry(roomId, entry.id);
+        }).catch((err) => {
+          if (err instanceof Error && err.message === 'blocked') {
+            pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== entry.id);
+            setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== entry.id));
+            void removeOutboxEntry(roomId, entry.id);
+            return;
+          }
+          markEchoSendState(entry.id, 'failed');
+        });
+      }
+    })();
+  }, [roomId, myUid, markEchoSendState]);
 
   useEffect(() => {
     return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
@@ -2722,9 +2831,11 @@ export default function VoiceRoomScreen() {
       ts: now,
       ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}),
     };
-    const echo = fbChatToMsg({ ...payload, id, isMe: true });
+    const echo: ChatMsg = { ...fbChatToMsg({ ...payload, id, isMe: true }), sendState: 'sending' };
     pendingEchoesRef.current = [...pendingEchoesRef.current, echo];
     setMessages((prev: ChatMsg[]) => [...prev, echo]);
+    // 2026-10-26 (weak network outbox): persist so kill-and-reopen resumes.
+    void persistOutboxEntry(roomId, { id, payload });
     setChatInput('');
     setReplyingTo(null);
     setMentionQuery(null);
@@ -2734,22 +2845,30 @@ export default function VoiceRoomScreen() {
       scrollTimerRef.current = null;
       chatRef.current?.scrollToEnd({ animated: true });
     }, 80);
-    sendRoomChatMsg(roomId, payload, id).catch((err) => {
-      // Write failed — pull the echo back; restore the typed text if the
-      // box is still empty so nothing the user wrote is lost.
-      pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== id);
-      setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== id));
+    sendRoomChatMsg(roomId, payload, id).then(() => {
+      // Server acked — the echo becomes a normal message (kept in
+      // pending until the snapshot delivers it; see markEchoSendState).
+      markEchoSendState(id, undefined);
+      void removeOutboxEntry(roomId, id);
+    }).catch((err) => {
       if (err instanceof Error && err.message === 'blocked') {
+        // Blocked is final — drop the echo, keep the alert, clear outbox.
+        pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== id);
+        setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== id));
+        void removeOutboxEntry(roomId, id);
         Alert.alert(
           t('voiceRoom.screen.blockedTitle'),
           t('voiceRoom.screen.commentBlockedMsg'),
         );
-      } else {
-        setChatInput((cur: string) => (cur ? cur : text));
+        return;
       }
+      // NOT lost: the bubble stays with a tap-to-retry state instead of
+      // vanishing. (The old input-restore is gone — the text lives in
+      // the bubble; long-press Copy still recovers it for editing.)
+      markEchoSendState(id, 'failed');
     });
     sendingMsgRef.current = false;
-  }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t, amChatBlocked]);
+  }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t, amChatBlocked, markEchoSendState]);
 
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
 
@@ -2916,12 +3035,18 @@ export default function VoiceRoomScreen() {
       text: emoji,
       ts: now,
     };
-    const echo = fbChatToMsg({ ...payload, id, isMe: true });
+    const echo: ChatMsg = { ...fbChatToMsg({ ...payload, id, isMe: true }), sendState: 'sending' };
     pendingEchoesRef.current = [...pendingEchoesRef.current, echo];
     setMessages((prev: ChatMsg[]) => [...prev, echo]);
-    sendRoomChatMsg(roomId, payload, id).catch(() => {
-      pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => e.id !== id);
-      setMessages((prev: ChatMsg[]) => prev.filter((m) => m.id !== id));
+    // 2026-10-26 (weak network outbox): persist so kill-and-reopen resumes.
+    void persistOutboxEntry(roomId, { id, payload });
+    sendRoomChatMsg(roomId, payload, id).then(() => {
+      markEchoSendState(id, undefined);
+      void removeOutboxEntry(roomId, id);
+    }).catch(() => {
+      // Same outbox rule as text: keep the bubble, mark failed for
+      // tap-to-retry (retry drops it with the blocked alert if blocked).
+      markEchoSendState(id, 'failed');
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [roomId, myUid, myName, myColor]);
@@ -2932,7 +3057,7 @@ export default function VoiceRoomScreen() {
 
   const renderChatMessage = useCallback(
     ({ item }: { item: ChatMsg }) => (
-      <RoomChatMessage item={item} accentColor={accentColor} onReply={setReplyingTo} onAction={setActionMsg} />
+      <RoomChatMessage item={item} accentColor={accentColor} onReply={setReplyingTo} onAction={setActionMsg} onRetry={retryChatEcho} />
     ),
     [accentColor],
   );
@@ -3237,6 +3362,21 @@ export default function VoiceRoomScreen() {
         )}
 
         {}
+        {}
+        {!voiceError && (voiceConnection === 'reconnecting' || voiceConnection === 'failed') && (
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            backgroundColor: 'rgba(245,158,11,0.12)',
+            borderWidth: 1, borderColor: 'rgba(245,158,11,0.45)',
+            borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9,
+            marginBottom: 6 }}>
+            <Feather name="wifi-off" size={16} color="#F59E0B" />
+            <Text style={{ flex: 1, color: themeOnBg, fontSize: 12, fontWeight: '600' }}>
+              {t('voiceRoom.screen.reconnecting', { defaultValue: 'Reconnecting… voice will resume automatically' })}
+            </Text>
+          </View>
+        )}
+
         {voiceError && (
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 10,

@@ -13,7 +13,7 @@
 // covers + member DPs used uncached RN Image — every voice-tab mount
 // re-downloaded and re-decoded them. expo-image memory-disk cache
 // fixes that; art now survives restarts without re-fetching.
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -43,6 +43,9 @@ function formatDistance(km: number): string {
 
 // Perf (2026-10-22 audit): memoized — see RoomCard note.
 export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
+  // 2026-10-26 (weak network): same failed-cover fallback as RoomCard.
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, MAX_DP) ?? [];
   const isPrivate = room.isPublic === false;
@@ -68,12 +71,13 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
             shadowColor: room.themeColor, shadowOpacity: 0.4,
             shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
           }}>
-            {room.coverImageUrl ? (
+            {room.coverImageUrl && !imgFailed ? (
               <Image
                 source={{ uri: room.coverImageUrl }}
                 style={{ width: 50, height: 50 }}
                 contentFit="cover"
                 cachePolicy="memory-disk"
+                onError={() => setImgFailed(true)}
               />
             ) : (
               <Feather name="mic" size={20} color="rgba(255,255,255,0.9)" />

@@ -325,6 +325,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         // banner বা haptic নয় (message এমনিতেই চোখের সামনে, buzz বিরক্তিকর)।
         if (atBottomRef.current) shouldScrollRef.current = true;  // 2026-10-26: no yank while reading history
       }
+    }, () => {
+      // 2026-10-26 (weak network): a failed/denied read must clear the
+      // spinner instead of spinning forever; cached messages stay put
+      // and the SDK keeps retrying in the background.
+      if (!cancelled) setInitialLoading(false);
     });
 
     return () => {
@@ -633,6 +638,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       const uploaded = await uploadImage(rec.uri, {
         folder: 'vee/dm',
         mimeHint: 'audio/mp4',
+        // 2026-10-26 (weak network): a stalled upload must fail, not hang
+        // forever with no error and no retry.
+        timeoutMs: 30000,
       });
       const messageKey = newMessageKey(chatId);
       const optimistic: DmMessage = {
@@ -738,6 +746,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           const uploaded = await uploadImage(asset.uri, {
             folder: 'vee/dm',
             mimeHint: isVideo ? 'video/mp4' : undefined,
+            // 2026-10-26 (weak network): stalled media upload must time out.
+            timeoutMs: 60000,
           });
           await sendMessage(
             chatId, myUid, effectiveParticipantId, uploaded.url,

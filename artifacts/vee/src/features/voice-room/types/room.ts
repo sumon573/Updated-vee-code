@@ -158,6 +158,9 @@ export type ChatMsg = {
   color: string;
   text: string;
   isMe: boolean;
+  /** 2026-10-26 (weak network outbox): optimistic-echo send state — set
+      only on the sender's own echoes; delivered messages never carry it. */
+  sendState?: 'sending' | 'failed';
   ts: number;
   replyTo?: { sender: string; text: string; color: string };
   /** 'gift' renders the highlight gift card instead of a plain bubble. */

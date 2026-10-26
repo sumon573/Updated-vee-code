@@ -45,8 +45,13 @@ async function authedFetch(
   // the caller's fallback path takes over, same as a network failure.
   const doFetch = async (forceRefresh: boolean): Promise<Response> => {
     const idToken = await user.getIdToken(forceRefresh);
-    const ctrl = opts?.timeoutMs ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), opts!.timeoutMs) : null;
+    // 2026-10-26 (weak network): default 15s bound — callers that pass no
+    // timeout used to hang until the OS gave up (minutes). Explicit
+    // timeouts (gift send: 6s) are untouched; no retry change here —
+    // money mutations keep the landed-guard pattern, never blind retry.
+    const timeoutMs = opts?.timeoutMs ?? 15000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       return await fetch(`${getApiBase()}/api${path}`, {
         method: opts?.method ?? 'POST',
@@ -55,10 +60,10 @@ async function authedFetch(
           'Authorization': `Bearer ${idToken}`,
         },
         body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
-        ...(ctrl ? { signal: ctrl.signal } : {}),
+        signal: ctrl.signal,
       });
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
   };
   let res = await doFetch(false);

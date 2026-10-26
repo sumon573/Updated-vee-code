@@ -93,6 +93,9 @@ export function subscribeMessages(
   chatId: string,
   myUid: string,
   callback: (messages: DmMessage[], oldestKey: string | null) => void,
+  // 2026-10-26 (weak network): a failed/denied read must clear the
+  // spinner instead of spinning forever; cached messages stay put.
+  onError?: () => void,
 ): () => void {
   const msgsQuery = query(
     ref(database, `chats/${chatId}/messages`),
@@ -117,6 +120,8 @@ export function subscribeMessages(
     // chronologically ordered, so same-ms messages keep a stable order.
     msgs.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     callback(msgs, firstKey);
+  }, () => {
+    onError?.();
   });
 }
 

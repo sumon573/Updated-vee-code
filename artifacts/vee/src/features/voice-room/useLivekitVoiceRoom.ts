@@ -79,6 +79,9 @@ export type LivekitRoomOptions = {
 
 export type LivekitRoomReturn = {
   joined: boolean;
+  /** 2026-10-26 (weak network): engine connection state, surfaced so the
+      room can show a "Reconnecting…" pill while auto-recovery runs. */
+  connection: VoiceConnectionState;
   muted: boolean;
   speakerOn: boolean;
   isPublishing: boolean;
@@ -1365,6 +1368,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const backgroundedAtRef = useRef(0);
 
   const [joined,        setJoined]        = useState(false);
+  // 2026-10-26 (weak network): surfaced so the room can show a
+  // "Reconnecting…" pill while auto-recovery runs (it used to hide the
+  // error AND show nothing — silence with zero explanation).
+  const [connection,    setConnection]    = useState<VoiceConnectionState>('idle');
   const [muted,         setMuted]         = useState(true);
   const [speakerOn,     setSpeakerOn]     = useState(true);
   /** True when the hook was initialized from a persisted (minimized) room. */
@@ -1437,6 +1444,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
           } else {
             setError(s.error);
           }
+          setConnection(s.connection);
           setJoined(s.connection === 'connected');
         },
         onSpeakingChange: (speakingUserId: string, speaking: boolean) => {
@@ -1867,6 +1875,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
 
   return {
     joined,
+    connection,
     muted,
     speakerOn,
     isPublishing,

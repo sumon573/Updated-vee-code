@@ -2,7 +2,7 @@
 // covers used uncached RN Image — every voice-tab mount re-downloaded
 // and re-decoded all covers. expo-image memory-disk cache fixes that;
 // covers now survive restarts and re-renders without re-fetching.
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -20,6 +20,11 @@ type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number };
 // objects + stable press handlers, so cards re-render only when their own
 // room's visible data or live count changes.
 export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
+  // 2026-10-26 (weak network): a failed cover load used to leave blank
+  // space until remount. Fall back to the mic placeholder, and retry on
+  // the next feed refresh (URL change resets the failure).
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, 4) ?? [];
 
@@ -33,12 +38,13 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
           overflow: 'hidden',
           borderWidth: 1, borderColor: 'rgba(0,0,0,0.07)',
         }}>
-          {room.coverImageUrl ? (
+          {room.coverImageUrl && !imgFailed ? (
             <Image
               source={{ uri: room.coverImageUrl }}
               style={{ position: 'absolute', width: SIZE, height: SIZE }}
               contentFit="cover"
               cachePolicy="memory-disk"
+              onError={() => setImgFailed(true)}
             />
           ) : (
             <>

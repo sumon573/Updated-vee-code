@@ -655,10 +655,14 @@ export function subscribeRoomInfo(
   callback: (info: RoomInfo | null) => void,
 ): () => void {
   // BUG 16 fix: handle null snapshot (room deleted / closed)
+  // 2026-10-26 (weak network): an error must NOT deliver null mid-room —
+  // consumers read null as "room closed". Keep last info instead.
+  let delivered = false;
   return onValue(ref(database, `rooms/${roomId}/info`), (snap) => {
+    delivered = true;
     callback(snap.exists() ? (snap.val() as RoomInfo) : null);
   }, () => {
-    callback(null);
+    if (!delivered) { delivered = true; callback(null); }
   });
 }
 
@@ -667,6 +671,11 @@ export function subscribeSeats(
   roomId: string,
   callback: (seats: Array<RoomSeat>) => void,
 ): () => void {
+  // 2026-10-26 (weak network): a transient network error must NEVER wipe
+  // the seat grid mid-room (it read as "everyone left"). Keep the last
+  // delivered seats; the SDK retries silently. Only a first-load error
+  // delivers the empty grid (so loading still clears).
+  let delivered = false;
   return onValue(ref(database, `rooms/${roomId}/seats`), (snap) => {
     const seats: Array<RoomSeat> = Array(10).fill(null);
     if (snap.exists()) {
@@ -694,9 +703,10 @@ export function subscribeSeats(
         seats[i] = null;
       }
     }
+    delivered = true;
     callback(seats);
   }, () => {
-    callback(Array(10).fill(null));
+    if (!delivered) { delivered = true; callback(Array(10).fill(null)); }
   });
 }
 
@@ -705,6 +715,8 @@ export function subscribeAudience(
   roomId: string,
   callback: (audience: RoomAudienceMember[]) => void,
 ): () => void {
+  // 2026-10-26 (weak network): same keep-last-known rule as seats.
+  let delivered = false;
   return onValue(ref(database, `rooms/${roomId}/audience`), (snap) => {
     const audience: RoomAudienceMember[] = [];
     if (snap.exists()) {
@@ -712,9 +724,10 @@ export function subscribeAudience(
         audience.push(child.val() as RoomAudienceMember);
       });
     }
+    delivered = true;
     callback(audience);
   }, () => {
-    callback([]);
+    if (!delivered) { delivered = true; callback([]); }
   });
 }
 

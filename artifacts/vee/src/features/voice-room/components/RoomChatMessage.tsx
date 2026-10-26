@@ -19,6 +19,9 @@ type Props = {
   /** Text messages only: long-press opens the Copy/Reply action sheet
       (2026-10-23, Sumon — copy applies to user-sent text, nothing else). */
   onAction?: (msg: ChatMsg) => void;
+  /** 2026-10-26 (weak network outbox): tap on a failed own echo retries
+      the send (same key — idempotent, never duplicates). */
+  onRetry?: (msg: ChatMsg) => void;
 };
 
 function initialsFor(name: string): string {
@@ -69,7 +72,7 @@ function CardAvatar({ name, photoURL, color, size }: {
  * @mention tokens are highlighted in the accent color via MsgText.
  * Memoized: every incoming message would otherwise re-render the whole list.
  */
-function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
+function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Props) {
   const { t } = useTranslation();
   const isSystem = item.sender === 'System';
 
@@ -248,6 +251,11 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
 
   return (
     <Pressable
+      onPress={() => {
+        // Failed own echo: tap retries. Normal bubbles keep tap doing
+        // nothing, exactly as before.
+        if (item.isMe && item.sendState === 'failed' && onRetry) onRetry(item);
+      }}
       onLongPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         // User-sent TEXT only → action sheet (Copy / Reply). Gift cards
@@ -308,6 +316,18 @@ function RoomChatMessage({ item, accentColor, onReply, onAction }: Props) {
           {t(onAction ? 'voiceRoom.chat.holdForActions' : 'voiceRoom.chat.holdToReply')}
         </Text>
       </View>
+
+      {/* 2026-10-26 (weak network outbox): own-echo send state. */}
+      {item.isMe && item.sendState === 'sending' && (
+        <Text style={{ color: C.muted + '66', fontSize: 9, marginTop: 1, marginHorizontal: 4 }}>
+          {t('voiceRoom.chat.sending', { defaultValue: 'Sending…' })}
+        </Text>
+      )}
+      {item.isMe && item.sendState === 'failed' && (
+        <Text style={{ color: C.red, fontSize: 9, fontWeight: '700', marginTop: 1, marginHorizontal: 4 }}>
+          {t('voiceRoom.chat.notSentRetry', { defaultValue: 'Not sent — tap to retry' })}
+        </Text>
+      )}
     </Pressable>
   );
 }

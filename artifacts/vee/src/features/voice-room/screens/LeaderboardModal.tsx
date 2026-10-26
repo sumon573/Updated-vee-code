@@ -169,6 +169,10 @@ export function LeaderboardModal({
     const unsub = subscribeActiveRooms((allRooms) => {
       setRooms(allRooms);
       setRoomsLoading(false);
+    }, () => {
+      // 2026-10-26 (weak network): keep the cached list on feed error
+      // (same pattern as VoiceRoomHome) — never wipe it with [].
+      setRoomsLoading(false);
     });
     return unsub;
   }, [visible]);
