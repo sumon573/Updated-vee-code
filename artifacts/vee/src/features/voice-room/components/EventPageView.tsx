@@ -58,6 +58,7 @@ export function EventPageView({ event, onBack, onClose }: { event: TaskEvent; on
 
   const tiers = event.tiers ?? [];
   const banner = event.bannerUrl || event.imageUrl;
+  const hero = event.heroImageUrl || banner;
   const rules = event.rules ?? [];
   const nickname = profileName || (user as { displayName?: string | null } | null)?.displayName || 'Vee User';
 
@@ -154,13 +155,13 @@ export function EventPageView({ event, onBack, onClose }: { event: TaskEvent; on
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
-        {!!banner && (
+        {!!hero && (
           <View style={{ marginHorizontal: 16, height: 240, borderRadius: 20, overflow: 'hidden' }}>
             <LinearGradient colors={['#7C3AED', '#9333EA', '#C026D3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
             <Image
-              source={{ uri: banner }}
+              source={{ uri: hero }}
               style={{ width: '100%', height: '100%' }}
-              contentFit="contain"
+              contentFit={event.heroImageUrl ? 'cover' : 'contain'}
               cachePolicy="memory-disk"
             />
             <View style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>

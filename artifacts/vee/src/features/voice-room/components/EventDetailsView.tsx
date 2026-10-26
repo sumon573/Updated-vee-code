@@ -83,6 +83,24 @@ export function RealAvatar({ photoURL }: { photoURL: string | null }) {
 }
 
 export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null }) {
+  // Demo motion, JS-only: shine sweep across the vibe tile + rising bubbles
+  // around the ripple avatar (mirrors the demo's vibeMainShine / rippleBubble).
+  const shineX = useRef(new Animated.Value(0)).current;
+  const bubbleT = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const shineLoop = Animated.loop(Animated.sequence([
+      Animated.timing(shineX, { toValue: 1, duration: 2000, useNativeDriver: true }),
+      Animated.delay(900),
+    ]));
+    const bubbleLoop = Animated.loop(Animated.sequence([
+      Animated.timing(bubbleT, { toValue: 1, duration: 2600, useNativeDriver: true }),
+      Animated.delay(400),
+    ]));
+    shineLoop.start();
+    bubbleLoop.start();
+    return () => { shineLoop.stop(); bubbleLoop.stop(); };
+  }, [shineX, bubbleT]);
+  const shineTranslate = shineX.interpolate({ inputRange: [0, 1], outputRange: [-80, 120] });
   if (tier.rewardType === 'vibe') {
     const colors = (tier.params && Array.isArray((tier.params as { colors?: unknown }).colors))
       ? ((tier.params as { colors: string[] }).colors.filter((c) => typeof c === 'string').slice(0, 3))
@@ -90,9 +108,18 @@ export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: Ev
     const gradient = colors.length >= 2 ? colors : ['#F59E0B', '#EC4899', '#8B5CF6'];
     return (
       <View style={{ alignItems: 'center', paddingVertical: 10 }}>
-        <LinearGradient colors={gradient as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 6 }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>{nickname}</Text>
-        </LinearGradient>
+        <View style={{ borderRadius: 999, overflow: 'hidden' }}>
+          <LinearGradient colors={gradient as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 6 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>{nickname}</Text>
+          </LinearGradient>
+          <Animated.View
+            style={{
+              position: 'absolute', top: -4, bottom: -4, width: 26,
+              backgroundColor: 'rgba(255,255,255,0.55)',
+              transform: [{ translateX: shineTranslate }, { rotate: '18deg' }],
+            }}
+          />
+        </View>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Nickname effect</Text>
       </View>
     );
@@ -105,6 +132,23 @@ export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: Ev
         <View style={{ width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
           <PulseRing color={color} />
           <RealAvatar photoURL={photoURL} />
+          {[0, 1, 2].map((i) => {
+            const start = i * 0.25;
+            const end = start + 0.55;
+            const size = 7 + i * 2;
+            return (
+              <Animated.View
+                key={i}
+                style={{
+                  position: 'absolute', left: 14 + i * 14, bottom: 16,
+                  width: size, height: size, borderRadius: size / 2,
+                  borderWidth: 1.5, borderColor: color,
+                  opacity: bubbleT.interpolate({ inputRange: [start, start + 0.12, end - 0.12, end], outputRange: [0, 0.9, 0.9, 0], extrapolate: 'clamp' }),
+                  transform: [{ translateY: bubbleT.interpolate({ inputRange: [start, end], outputRange: [14, -30], extrapolate: 'clamp' }) }],
+                }}
+              />
+            );
+          })}
         </View>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Room effect while speaking</Text>
       </View>

@@ -47,6 +47,10 @@ export interface TaskEvent {
   progressType?: string;
   // Full event page (2026-10-26): server-written rules, rendered verbatim.
   rules?: string[];
+  // Single-page hero (2026-10-26): the demo's hero motion as animated WebP
+  // (no video native module in the production build, so true video cannot
+  // ship via OTA). Falls back to bannerUrl when absent.
+  heroImageUrl?: string;
   // Future-proof
   metadata?: Record<string, unknown>;
 }
@@ -68,7 +72,7 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
   // Preserve unknown fields
   const knownKeys = new Set(['title', 'description', 'imageUrl', 'bannerUrl',
     'rewardType', 'rewardAmount', 'rewardId', 'startTime', 'endTime',
-    'actionType', 'actionData', 'sortOrder', 'active', 'tiers', 'progressType', 'rules']);
+    'actionType', 'actionData', 'sortOrder', 'active', 'tiers', 'progressType', 'rules', 'heroImageUrl']);
   const metadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (!knownKeys.has(k)) metadata[k] = v;
@@ -107,6 +111,7 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
     rules: Array.isArray(data.rules)
       ? (data.rules as unknown[]).filter((r): r is string => typeof r === 'string' && !!r)
       : undefined,
+    heroImageUrl: data.heroImageUrl ? String(data.heroImageUrl) : undefined,
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
