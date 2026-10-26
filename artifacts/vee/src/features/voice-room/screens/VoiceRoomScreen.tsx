@@ -121,24 +121,16 @@ import { VoiceRoomBottomBar } from './VoiceRoomBottomBar';
 import { VoiceRoomModals } from './VoiceRoomModals';
 
 /**
- * 2026-10-23 (boss: একই "joined the room" লাইন বারবার): the single
- * gate for the room join system-message. In-memory set (this session)
- * + AsyncStorage timestamp (across restarts): at most one join line
- * per room per user per 30 minutes. Returns true when the caller may
- * send. Storage trouble never blocks a legitimate first send.
+ * 2026-10-26 (boss: every genuine entry must show its join line):
+ * the 2026-10-23 30-minute persisted slot (claimJoinMsgSlot) is DELETED
+ * — it suppressed the join line on every rejoin within 30 minutes, so
+ * frequent joiners never saw a join line at all. The per-stay gates
+ * replace it: hasSentEntryChatMsgRef (same mount) + sentJoinMsgKeys
+ * (same app session, cleared on leave) + isRestore/isReturnFromMinimize
+ * (returns never re-send). One line per genuine entry, never twice for
+ * the same stay, never on return. The orphaned 'vee_join_msg_ts' key
+ * on devices is never read again (harmless).
  */
-async function claimJoinMsgSlot(joinKey: string): Promise<boolean> {
-  if (sentJoinMsgKeys.has(joinKey)) return false;
-  addSentJoinMsgKey(joinKey);
-  try {
-    const raw = await AsyncStorage.getItem('vee_join_msg_ts');
-    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-    if (map[joinKey] && Date.now() - map[joinKey] < 30 * 60 * 1000) return false;
-    map[joinKey] = Date.now();
-    await AsyncStorage.setItem('vee_join_msg_ts', JSON.stringify(map));
-  } catch { /* fall through — send */ }
-  return true;
-}
 
 export default function VoiceRoomScreen() {
   const { roomId: paramRoomId, restore } = useLocalSearchParams<{ roomId: string; restore?: string }>();
@@ -1478,24 +1470,24 @@ export default function VoiceRoomScreen() {
   }, [roomId, myUid]);
 
   useEffect(() => {
-    if (hasSentEntryChatMsgRef.current) return;
+    // 2026-10-26 (boss: every genuine entry must show its join line):
+    // one line per genuine entry — fresh mount, not a restore, not a
+    // minimize return. The ref blocks same-mount duplicates (the
+    // original 2026-10-23 repeat-line complaint) and the shared key
+    // blocks site 2's double. No time-based suppression anymore.
+    if (hasSentEntryChatMsgRef.current || isRestore || isReturnFromMinimize) return;
     if (!roomId || !myUid || !myName) return;
     hasSentEntryChatMsgRef.current = true;
     const isOwner = ownerId && ownerId === myUid;
     const displayName = isOwner ? `${myName} 👑` : myName;
-    // 2026-10-23 (boss: একই join লাইন বারবার): this effect used to send
-    // on EVERY screen mount — the persisted 30-minute slot below is
-    // now the single gate for both join-message send sites.
-    void (async () => {
-      if (!(await claimJoinMsgSlot(`${roomId}:${myUid}`))) return;
-      sendRoomChatMsg(roomId, {
-        senderId: 'system',
-        senderName: 'System',
-        senderColor: C.gold,
-        text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
-        ts: Date.now() }).catch(() => {});
-    })();
-  }, [roomId, myUid, myName, ownerId, t]);
+    addSentJoinMsgKey(`${roomId}:${myUid}`);
+    sendRoomChatMsg(roomId, {
+      senderId: 'system',
+      senderName: 'System',
+      senderColor: C.gold,
+      text: t('voiceRoom.screen.joinedRoom', { name: displayName }),
+      ts: Date.now() }).catch(() => {});
+  }, [roomId, myUid, myName, ownerId, t, isRestore, isReturnFromMinimize]);
 
   
   const mySeatIdx = useMemo(
@@ -1886,16 +1878,17 @@ export default function VoiceRoomScreen() {
       // join line either (the 30-min slot gate below stays as backstop).
       if (!isRestore && !isReturnFromMinimize && !hasSentEntryChatMsgRef.current && !sentJoinMsgKeys.has(joinKey)) {
         hasSentEntryChatMsgRef.current = true;
-        // Single persisted gate (see claimJoinMsgSlot): one join line
-        // per room per 30 minutes, across mounts AND app restarts.
-        if (await claimJoinMsgSlot(joinKey)) {
-          sendRoomChatMsg(roomId, {
-            senderId: 'system',
-            senderName: 'System',
-            senderColor: C.gold,
-            text: t('voiceRoom.screen.joinedRoom', { name: myName }),
-            ts: Date.now() }).catch(() => {});
-        }
+        // 2026-10-26: per-stay gate only (the 30-minute persisted slot is
+        // gone — it hid every rejoin line). Site 1 above sends first on
+        // a fresh mount, so this is only a backstop for mounts where
+        // site 1 never ran; the ref + key here block any double.
+        addSentJoinMsgKey(joinKey);
+        sendRoomChatMsg(roomId, {
+          senderId: 'system',
+          senderName: 'System',
+          senderColor: C.gold,
+          text: t('voiceRoom.screen.joinedRoom', { name: myName }),
+          ts: Date.now() }).catch(() => {});
       }
       presenceReadyRef.current = true;
     })();
