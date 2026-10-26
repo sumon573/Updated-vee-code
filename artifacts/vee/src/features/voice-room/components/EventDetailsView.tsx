@@ -45,7 +45,7 @@ export function rewardLabel(t: EventTier): string {
 }
 
 // Gentle pulsing ring for the Ripple tier preview (self-animated, no deps).
-function PulseRing({ color }: { color: string }) {
+export function PulseRing({ color }: { color: string }) {
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
@@ -71,7 +71,7 @@ function PulseRing({ color }: { color: string }) {
 // (frame art only looks right ON an avatar, never cropped in a banner).
 // No photo on file = the plain circle (their real state, not a fake face).
 // Other kinds: no preview.
-function RealAvatar({ photoURL }: { photoURL: string | null }) {
+export function RealAvatar({ photoURL }: { photoURL: string | null }) {
   if (photoURL) {
     return <Image source={{ uri: photoURL }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" cachePolicy="memory-disk" />;
   }
