@@ -610,7 +610,8 @@ export function LeaderboardModal({
   // (e.g. after an in-app profile edit) while the leaderboard rows are live.
   // Falls back to the auth snapshot, then 'Vee User'.
   const myLiveProfile = useLiveUserProfile(myUid);
-  const myName = myLiveProfile.name || auth.currentUser?.displayName || 'Vee User';
+  // 2026-10-26 (boss: one name only): no Auth fallback.
+  const myName = myLiveProfile.name || 'Vee User';
   const myPhoto = myLiveProfile.avatar || auth.currentUser?.photoURL || undefined;
 
   const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [

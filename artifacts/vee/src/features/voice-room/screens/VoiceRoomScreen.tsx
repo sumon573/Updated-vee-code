@@ -187,7 +187,13 @@ export default function VoiceRoomScreen() {
   // forever. The change-driven effect above already syncs the frame the
   // moment it actually changes, and buildSeatData includes it on claim.
 
-  const myName = myProfile?.name || user?.displayName || t('voiceRoom.screen.defaultUserName');
+  // 2026-10-26 (boss: one name only): room display names resolve from the
+  // RTDB profile (nickname) ONLY — never Firebase Auth displayName (the
+  // Google name that showed up next to nicknames). myProfile is already
+  // sanitize-resolved, so it is never empty once loaded; before it loads
+  // the default shows briefly instead of a Google name. Photo fallback
+  // stays (a photo is not a name, and dropping it would blank avatars).
+  const myName = myProfile?.name || t('voiceRoom.screen.defaultUserName');
   const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
   const myColor = getUserColor(myUid);
   const myInitials = getInitials(myName);
@@ -1510,7 +1516,7 @@ export default function VoiceRoomScreen() {
   }, [roomId]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
-    const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx, myUid).catch(() => {});
+    const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx, myUid, myName).catch(() => {});
     beat(); // immediate first beat on seating
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
@@ -1541,7 +1547,7 @@ export default function VoiceRoomScreen() {
     const recover = () => {
       if (hasLeftRef.current || !presenceReadyRef.current) return;
       if (mySeatIdxRef.current >= 0) {
-        refreshSeatHeartbeat(roomId, mySeatIdxRef.current, myUid).catch(() => {});
+        refreshSeatHeartbeat(roomId, mySeatIdxRef.current, myUid, myName).catch(() => {});
       }
       refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
       void reRegisterPresenceRef.current?.();

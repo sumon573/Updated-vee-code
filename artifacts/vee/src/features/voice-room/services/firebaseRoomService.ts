@@ -1021,14 +1021,20 @@ export async function refreshSeatHeartbeat(
   roomId: string,
   seatIndex: number,
   userId: string,
+  // 2026-10-26 (boss: one name only): self-heal a renamed user's seat —
+  // when the caller's nickname differs from the stored seat name, the
+  // heartbeat carries the fresh name so renames converge within ~60s
+  // instead of lingering until the user re-takes the seat.
+  userName?: string,
 ): Promise<void> {
   try {
     await runTransaction(
       ref(database, `rooms/${roomId}/seats/${seatIndex}`),
       (current) => {
-        const s = current as { userId?: string } | null | undefined;
+        const s = current as { userId?: string; userName?: string } | null | undefined;
         // নিজের সিট না হলে (মুছে গেছে / অন্যের) heartbeat লিখবে না
         if (!s || s.userId !== userId) return undefined;
+        if (userName && s.userName !== userName) return { ...s, userName, seatTs: serverTimestamp() };
         return { ...s, seatTs: serverTimestamp() };
       },
     );

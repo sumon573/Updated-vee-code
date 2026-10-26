@@ -9,6 +9,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { get, ref, set, type DataSnapshot } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { sendRoomInvite } from '../services/firebaseRoomService';
+import { resolveProfileName } from '@/src/services/userService';
 
 type Contact = {
   uid: string;
@@ -108,9 +109,15 @@ export function InviteModal({
   const inviteContact = async (contact: Contact) => {
     try {
       // Write room invite to Firebase → Cloud Function sends push notification
-      if (user?.uid && user?.displayName) {
+      // 2026-10-26 (boss: one name only): inviter name comes from the RTDB
+      // profile (nickname), NEVER Firebase Auth displayName (invitees used
+      // to see the Google name next to the room nickname). Gate on uid
+      // only — users without an Auth displayName can invite too.
+      if (user?.uid) {
+        const snap = await get(ref(database, `users/${user.uid}`)).catch(() => null);
+        const inviterName = resolveProfileName(snap?.exists() ? snap.val() : null);
         await sendRoomInvite(
-          roomId, roomName, user.uid, user.displayName, contact.uid,
+          roomId, roomName, user.uid, inviterName, contact.uid,
         );
       }
       // Also open native share sheet

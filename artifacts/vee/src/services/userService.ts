@@ -184,6 +184,21 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
   };
 }
 
+/**
+ * 2026-10-26 (boss: one name only): display-name resolution for room
+ * surfaces — profile nickname first, RTDB displayName mirror second,
+ * 'User' last. NEVER Firebase Auth displayName (that's the Google name
+ * that showed up next to nicknames). sanitizeVeeUser above stays as the
+ * profile-object resolver (it keeps its email fallback for other
+ * surfaces); this one is for display only.
+ */
+export function resolveProfileName(raw: any): string {
+  if (!raw || typeof raw !== 'object') return 'User';
+  const n = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const d = typeof raw.displayName === 'string' ? raw.displayName.trim() : '';
+  return n || d || 'User';
+}
+
 /** Update specific fields of a user's profile */
 export async function updateUser(
   uid: string,

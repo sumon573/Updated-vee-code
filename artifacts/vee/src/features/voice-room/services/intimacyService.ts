@@ -159,7 +159,9 @@ export async function fetchPeerProfile(uid: string): Promise<{ name: string; pho
     if (snap.exists()) {
       const v = snap.val() as { displayName?: string; name?: string; photoURL?: string };
       return {
-        name: v.displayName || v.name || '',
+        // 2026-10-26 (boss: one name only): nickname first — displayName
+        // first used to show the Google name next to the nickname.
+        name: v.name?.trim() || v.displayName?.trim() || '',
         photoURL: typeof v.photoURL === 'string' ? v.photoURL : null,
       };
     }

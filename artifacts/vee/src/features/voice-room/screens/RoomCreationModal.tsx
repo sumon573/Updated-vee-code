@@ -205,13 +205,14 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
             if (snap.exists()) {
               const p = snap.val() as any;
               return {
-                hostName: p.name || p.displayName || user.displayName || t('voiceRoom.screen.defaultUserName'),
+                // 2026-10-26 (boss: one name only): no Auth fallback.
+                hostName: p.name || p.displayName || t('voiceRoom.screen.defaultUserName'),
                 // P1 fix (2026-10-12): || not ?? — খালি-string photoURL অকেজো
                 hostPhotoURL: p.photoURL || user.photoURL || undefined };
             }
           } catch { /* fallback */ }
           return {
-            hostName: user.displayName || t('voiceRoom.screen.defaultUserName'),
+            hostName: t('voiceRoom.screen.defaultUserName'),
             hostPhotoURL: user.photoURL || undefined };
         })(),
         coverImageUrl,
