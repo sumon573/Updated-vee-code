@@ -6,11 +6,12 @@
  * - Stories: StoriesTabScreen (story groups list)
  * - Calls: CallsTabScreen (call history)
  * - Me: navigates to /profile (profile screens untouched)
- * Voice rooms: floating action button on Chats tab → full-screen VoiceRoomHome modal.
+ * Voice rooms: voice top-bar tab renders VoiceRoomHome INLINE (tab form —
+ * top bar + bottom bar stay visible). Never a separate full page/modal.
  * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Modal, Image, Platform, StatusBar } from 'react-native';
+import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -45,12 +46,11 @@ import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
-import MinimizedRoomBar from '@/src/features/voice-room/components/MinimizedRoomBar';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
 import StoryViewer from '@/src/features/chat/screens/StoryViewer';
 import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
-type ContentTab = Exclude<HomeTab, 'me'>;
+type ContentTab = Exclude<HomeTab, 'me'> | 'voice';
 
 export default function IMOHomeScreen() {
   const router = useRouter();
@@ -67,8 +67,6 @@ export default function IMOHomeScreen() {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storyCreatorVisible, setStoryCreatorVisible] = useState(false);
-  // Voice rooms entry (FAB → full-screen modal)
-  const [voiceRoomsVisible, setVoiceRoomsVisible] = useState(false);
   const { stories, publish, react, comment, remove, getContactUids } = useStories();
 
   // DP HYDRATION (2026-10-10): Cache for missing profile DPs from RTDB
@@ -307,11 +305,11 @@ export default function IMOHomeScreen() {
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
-  // Chat → chats, Voice → rooms modal, Contacts → contacts, DP → profile
+  // Chat → chats, Voice → rooms tab (inline, bars stay), Contacts → contacts, DP → profile
   // (same destinations the old text tab bar offered — nothing lost).
   const handleTopBarTab = useCallback((tab: 'chat' | 'voice' | 'contacts') => {
     if (tab === 'chat') setActiveTab('chats');
-    else if (tab === 'voice') setVoiceRoomsVisible(true);
+    else if (tab === 'voice') setActiveTab('voice');
     else setActiveTab('contacts');
   }, []);
 
@@ -384,7 +382,7 @@ export default function IMOHomeScreen() {
       <IMOTopBar
         profilePhotoURL={profile?.photoURL || user?.photoURL || null}
         profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
-        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'contacts' ? 'contacts' : 'none'}
+        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : 'none'}
         chatBadgeCount={totalUnread}
         onProfilePress={() => router.push('/profile' as any)}
         onTabPress={handleTopBarTab}
@@ -452,6 +450,15 @@ export default function IMOHomeScreen() {
         </View>
       )}
 
+      {activeTab === 'voice' && (
+        // 2026-10-26 (boss: tab form, not a separate page): rooms render
+        // inline between the top bar and bottom bar. No onClose → the
+        // header ✕ is hidden (imo's rooms tab has no close button;
+        // switching tabs is the navigation). The minimized-room bar is
+        // the root-layout instance (visible again now that no modal
+        // covers it) — no second instance needed.
+        <VoiceRoomHome />
+      )}
       {activeTab === 'contacts' && <ContactsScreen />}
 
       {activeTab === 'stories' && (
@@ -496,26 +503,6 @@ export default function IMOHomeScreen() {
           setStoryCreatorVisible(false);
         }}
       />
-
-      {/* Voice rooms full-screen modal */}
-      <Modal
-        visible={voiceRoomsVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setVoiceRoomsVisible(false)}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-          {/* 2026-10-23 (Sumon): the close (✕) button now lives inside
-              VoiceRoomHome's own header row, right of the search icon —
-              the old floating corner button is gone. */}
-          <VoiceRoomHome onClose={() => setVoiceRoomsVisible(false)} />
-          {/* 2026-10-22 (Sumon): the minimized-room bar is mounted in the
-              root layout, but an RN Modal renders ABOVE it — so the bar
-              never showed on this screen. A second, store-driven instance
-              lives inside the modal (no tab bar here → small offset). */}
-          <MinimizedRoomBar bottomOffsetOverride={20} />
-        </SafeAreaView>
-      </Modal>
 
       {/* 2026-10-26 (boss: imo bottom bar restored): "+" opens Contacts
           (start a new chat via a contact's Message button); search opens
