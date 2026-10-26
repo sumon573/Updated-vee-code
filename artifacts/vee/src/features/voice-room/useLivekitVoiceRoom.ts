@@ -38,6 +38,7 @@ import { setVoiceRoomAudioActive } from '@/src/services/audioOwner';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { getMusicVolumeSync } from '@/src/features/voice-room/services/musicVolumeService';
 import { useTranslation } from 'react-i18next';
+import { getMicIntent } from '@/src/store/activeRoom';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
 import { isExpoGo, getApiBase } from '@/src/utils/platform';
@@ -83,6 +84,10 @@ export type LivekitRoomReturn = {
       room can show a "Reconnecting…" pill while auto-recovery runs. */
   connection: VoiceConnectionState;
   muted: boolean;
+  /** 2026-10-26 (mic durability): the synchronously-current mute truth
+   *  (toggleMic, setMicMuted, restore, seed all set it synchronously).
+   *  The screen's first-sight heal reads this, not its lagging mirror. */
+  mutedRef: { current: boolean };
   speakerOn: boolean;
   isPublishing: boolean;
   localSpeaking: boolean;
@@ -1486,28 +1491,29 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // to the foreground with a voice engine that is not 'connected',
       // force a rejoin (leave + fresh join, new token fetch) so voice
       // recovers instead of staying dead with no fetch.
-      // 2026-10-26 (boss: long-background return = dead room): the same
-      // zombie hole exists for a cached 'connected' — a frozen app
-      // receives no events, so the string can claim connected for
-      // minutes while the socket is dead. A foreground gap over 120 s
-      // forces a rejoin even when the cache claims connected. Mic
-      // intent survives via mutedRef + applyTrackMute on publish, so
-      // this never drops a live mic — it only refuses a zombie.
+      // 2026-10-26 (boss: long-background return = mic drop + re-on):
+      // retryConnection() does leave() + fresh join() — a FULL track
+      // teardown. The old gap > 120 s clause therefore tore down a
+      // HEALTHY engine on every long return: that teardown IS the dip
+      // (mic drops, then publish re-opens it). A healthy engine must
+      // never be torn down on return. 'connected' and 'reconnecting'
+      // both stay untouched — the LiveKit SDK heals 'reconnecting'
+      // in place with the mic track intact. Only a genuinely dead
+      // engine (neither state) gets the leave + rejoin recovery.
       if (nextState !== 'active') {
         backgroundedAtRef.current = Date.now();
         return;
       }
       const engine = engineRef.current;
       if (!engine || !mountedRef.current) return;
-      const gap = backgroundedAtRef.current > 0 ? Date.now() - backgroundedAtRef.current : 0;
       backgroundedAtRef.current = 0;
-      let connected = false;
+      let conn: string = '';
       try {
-        connected = engine.getLocalState().connection === 'connected';
+        conn = engine.getLocalState().connection;
       } catch {
-        connected = false;
+        conn = '';
       }
-      if (!connected || gap > 120_000) {
+      if (conn !== 'connected' && conn !== 'reconnecting') {
         retryConnectionRef.current();
       }
     };
@@ -1550,19 +1556,19 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // 'reconnecting' engine is ALSO restorable — the LiveKit SDK heals
     // that in place with the mic track intact, so destroying it for a
     // fresh join would CAUSE the very mic drop this law forbids.
+    // 2026-10-26 (boss: long-background return = mic dip): a frozen
+    // app stops the JS watchdog, so a stale tick no longer proves the
+    // engine is dead — the native LiveKit room can stay healthy while
+    // JS is frozen, and destroying it for a fresh join CAUSES the dip
+    // this law forbids. A 'connected' or 'reconnecting' engine is
+    // restored as-is (the SDK heals 'reconnecting' in place). A
+    // genuinely degraded engine still falls through to 'failed', where
+    // auto-retry engages — restore never hides a dead engine forever.
     let canRestore = false;
     if (_persistedRoom && _persistedRoom.roomId === roomID) {
       try {
         const c = _persistedRoom.engine.getLocalState().connection;
-        // 2026-10-26 (boss: long-background return = dead buttons + dead
-        // mic): a cached 'connected' is only trustworthy if the JS
-        // watchdog was actually alive to observe it. A last tick older
-        // than 120 s proves the app was frozen while minimized, so the
-        // engine state is unproven — fall through to a fresh join
-        // (mic intent is preserved by the join path, so this never
-        // drops a live mic; it only refuses to trust a zombie).
-        const watchdogFresh = _lastWatchdogTick > 0 && Date.now() - _lastWatchdogTick < 120_000;
-        canRestore = (c === 'connected' || c === 'reconnecting') && watchdogFresh;
+        canRestore = c === 'connected' || c === 'reconnecting';
       } catch {
         canRestore = false;
       }
@@ -1649,6 +1655,21 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
             // non-critical — stale room teardown
           }
           if (!mountedRef.current) return;
+        }
+
+        // 2026-10-26 (mic durability, cold-start seed): a cold start has
+        // no _persistedRoom (process died with it), so the old code left
+        // the fresh engine on its muted=true default and the first-sight
+        // seat heal then wrote that default into the seat, cementing a
+        // stuck mute. Fall back to the durable tap intent — same room
+        // only. Host-mute never writes this key (see persistMicIntent).
+        if (seededMuted === null) {
+          try {
+            const d = await getMicIntent();
+            if (d && d.roomId === roomID && typeof d.muted === 'boolean') seededMuted = d.muted;
+          } catch {
+            // non-critical — seed is best-effort, defaults stand
+          }
         }
 
         // Skip entirely in Expo Go — native WebRTC modules not available
@@ -1877,6 +1898,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     joined,
     connection,
     muted,
+    // 2026-10-26 (mic durability): the synchronously-current mute truth.
+    // toggleMic, setMicMuted, restore and seed all set mutedRef.current
+    // synchronously; the screen's mirrored ref lags one commit, which
+    // is exactly what let the first-sight heal write a default.
+    mutedRef,
     speakerOn,
     isPublishing,
     localSpeaking,

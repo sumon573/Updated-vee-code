@@ -12,7 +12,7 @@ import ScalePress from '@/components/ScalePress';
 import { database } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { getRoomChatSession, setRoomChatSession, clearRoomChatSession } from '@/src/store/roomChatSession';
-import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
+import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
 import { useAuth } from '@/src/context/AuthContext';
@@ -313,6 +313,7 @@ export default function VoiceRoomScreen() {
     joined: voiceJoined,
     connection: voiceConnection,
     muted,
+    mutedRef: engineMutedRef,
     speakerOn,
     speakingUsers,
     localSpeaking,
@@ -525,6 +526,7 @@ export default function VoiceRoomScreen() {
                 persistActiveRoom({ roomId, myUid, mySeatIdx: invite.seatIdx }).catch(() => {});
                 startPublishing();
                 setMicMuted(false);
+                persistMicIntent(roomId, false).catch(() => {});
                 sendRoomChatMsg(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
                   text: t('voiceRoom.screen.memberJoinedSeat', { name: myName, number: invite.seatIdx + 1 }),
@@ -1689,6 +1691,15 @@ export default function VoiceRoomScreen() {
     return -1;
   });
 
+  // 2026-10-26 (mic durability): the bar used to clear minimizedRoom
+  // BEFORE router.push, so these initializers (render-time) read null
+  // and the return fast-path was dead. The record is now cleared HERE,
+  // after render has captured it into the initializers above.
+  useEffect(() => {
+    if (isReturnFromMinimize || returningSeatIdx >= 0) setMinimizedRoom(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 2026-10-24 (boss: mic must actually open): seated + voice-connected +
   // not-publishing means publishing was skipped or died silently (seat-take
   // raced the LiveKit join, or a silent publish early-return). The old
@@ -1758,7 +1769,11 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx < 0) {
       prevFbMutedRef.current = null;
       prevMySeatIdxRef.current = -1;
-      clearPendingSeatMute();
+      // 2026-10-26 (mic durability): the mount-transient -1 (seats not
+      // loaded yet) must NOT wipe a bar-toggle intent recorded while
+      // minimized — only clear when seatlessness is CONFIRMED (same
+      // rule as the stopPublishing() gate in this branch).
+      if (seatsLoadedRef.current) clearPendingSeatMute();
       // 2026-10-25 (boss: mic drops + re-enables on minimize→return):
       // on return the voice restore sets isPublishing=true SYNCHRONOUSLY
       // at mount, before the seats snapshot arrives — so mySeatIdx is
@@ -1799,8 +1814,8 @@ export default function VoiceRoomScreen() {
     // failure leaves prev null so the next seats change retries the heal.
     // Host-mute never heals (hostMuted wins separately, below). Later
     // fires (prev set) keep normal cross-device sync.
-    if (prevFbMutedRef.current === null && fbMuted !== mutedRef.current && mySeat.hostMuted !== true) {
-      const intent = mutedRef.current;
+    if (prevFbMutedRef.current === null && fbMuted !== engineMutedRef.current && mySeat.hostMuted !== true) {
+      const intent = engineMutedRef.current;
       setSeatMute(roomId, mySeatIdx, intent)
         .then(() => { prevFbMutedRef.current = intent; })
         .catch(() => {});
@@ -1815,7 +1830,7 @@ export default function VoiceRoomScreen() {
     // took over — normal sync then owns it). Host-mute always wins.
     const pend = getPendingSeatMute();
     if (pend && pend.roomId === roomId && pend.seatIdx === mySeatIdx && mySeat.hostMuted !== true) {
-      if (mutedRef.current !== pend.value) {
+      if (engineMutedRef.current !== pend.value) {
         clearPendingSeatMute();
       } else if (fbMuted !== pend.value) {
         if (Date.now() - pend.lastTry >= 3000) {
@@ -2317,6 +2332,9 @@ export default function VoiceRoomScreen() {
     }
 
     const newMuted = engineToggleMic(); // single source of truth — never `!muted`
+    // 2026-10-26 (mic durability): this tap path is already host-guarded
+    // above — record the user's own intent durably for cold-start seed.
+    persistMicIntent(roomId, newMuted).catch(() => {});
     setSeats(prev => prev.map((s, i) =>
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
@@ -2512,6 +2530,7 @@ export default function VoiceRoomScreen() {
       // 2026-10-24 (boss concept): audience → seat starts UNMUTED — the old
       // setMicMuted(true) here is exactly what auto-muted every seat take.
       setMicMuted(false);
+      persistMicIntent(roomId, false).catch(() => {});
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

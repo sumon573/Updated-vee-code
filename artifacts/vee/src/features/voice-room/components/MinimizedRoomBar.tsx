@@ -12,7 +12,7 @@ import {
 } from '@/src/store/minimizedRoom';
 import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
 import { removeSeat, leaveAudience, refreshSeatHeartbeat, getSeatHostMuted, setSeatMute, writeSeatMuteReliable } from '@/src/features/voice-room/services/firebaseRoomService';
-import { clearPersistedActiveRoom } from '@/src/store/activeRoom';
+import { clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
 
 const C = {
   bg: '#0F0A1E',
@@ -265,6 +265,10 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     setMicMuted(newMuted);
     const r = getMinimizedRoom();
     if (r) setMinimizedRoom({ ...r, muted: newMuted });
+    // 2026-10-26 (mic durability): user-tap path only — the host-guard
+    // early return above never reaches here, so host-mute never writes
+    // durable self intent. Record the tap for cold-start seed.
+    if (r) persistMicIntent(r.id, newMuted).catch(() => {});
     // 2026-10-26 (mic intent): bar toggles used to update ONLY the engine
     // + persisted room — the seat record kept the OLD value, so the
     // return seat-sync forced the stale value over the mic (auto-on/off).
@@ -278,7 +282,10 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
 
   const handleReturn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setMinimizedRoom(null);
+    // 2026-10-26 (mic durability): do NOT clear minimizedRoom here — the
+    // new screen's returningSeatIdx/isReturnFromMinimize initializers
+    // read it at render time, and clearing first killed the fast-path.
+    // The screen clears it itself on mount, after capturing it.
     router.push({ pathname: '/voice-room', params: { roomId: room.id } } as any);
   };
 
