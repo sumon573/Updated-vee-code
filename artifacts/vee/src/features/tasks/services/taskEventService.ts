@@ -129,8 +129,8 @@ export async function fetchTaskEvents(): Promise<TaskEvent[]> {
     const events: TaskEvent[] = [];
     for (const [id, eventData] of Object.entries(data)) {
       const event = normalizeEvent(id, eventData);
-      // Only include events with images (no broken visuals)
-      if (event && event.imageUrl) events.push(event);
+      // Every active event shows (imageless events get a placeholder tile).
+      if (event) events.push(event);
     }
     cachedEvents = sortEvents(events);
     return cachedEvents;
@@ -157,7 +157,7 @@ export function subscribeTaskEvents(callback: (events: TaskEvent[]) => void): ()
       const data = snap.val();
       for (const [id, eventData] of Object.entries(data)) {
         const event = normalizeEvent(id, eventData);
-        if (event && event.imageUrl) events.push(event);
+        if (event) events.push(event);
       }
     }
     cachedEvents = sortEvents(events);

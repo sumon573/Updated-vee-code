@@ -120,7 +120,13 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
                 flexDirection: 'row', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: C.border,
                 borderRadius: 18, padding: 12, marginBottom: 10,
               }}>
-                <Image source={{ uri: ev.imageUrl }} style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: C.card }} resizeMode="cover" />
+                {ev.imageUrl ? (
+                  <Image source={{ uri: ev.imageUrl }} style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: C.card }} resizeMode="cover" />
+                ) : (
+                  <View style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', alignItems: 'center', justifyContent: 'center' }}>
+                    <Feather name="gift" size={24} color="#D97706" />
+                  </View>
+                )}
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={{ color: C.text, fontSize: 14, fontWeight: '800' }} numberOfLines={1}>{ev.title}</Text>
                   {!!ev.description && (
