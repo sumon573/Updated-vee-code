@@ -44,7 +44,7 @@ import { RoomInfoModal } from '../components/RoomInfoModal';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
-import { RoomMusicModal } from '../components/RoomMusicModal';
+import { MusicFlowModal } from '../components/music/MusicFlowModal';
 import { PkModal } from '../components/PkModal';
 import { PkBanner } from '../components/PkBanner';
 import { LuduLobbyStrip } from '../components/LuduLobbyStrip';
@@ -4043,13 +4043,14 @@ export default function VoiceRoomScreen() {
           });
         }}
       />
-      <RoomMusicModal
+      <MusicFlowModal
         visible={musicOpen}
         onClose={() => setMusicOpen(false)}
         roomId={roomId}
         canControl={isOwnerOrAdmin}
         myName={myName}
         onVolumeChange={setMusicVolume}
+        activeThemeId={activeThemeId}
       />
       {/* Player bar above replaces the old floating icon (2026-10-25). */}
       <PkModal

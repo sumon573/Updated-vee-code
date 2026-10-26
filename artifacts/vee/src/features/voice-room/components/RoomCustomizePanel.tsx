@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { C, getActiveThemes } from '../constants/theme';
+import { MUSIC_PREMIUM_ICON_URL } from './music/musicArt';
 
 /* ─────────────────────── Room Customize Panel ─────────────────────── */
 
@@ -126,6 +128,17 @@ export function RoomCustomizePanel({
               <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
                 textAlign: 'center' }}>
                 Vote
+              </Text>
+            </Pressable>
+            {/* 2026-10-27 (boss): premium + unique Music icon beside Vote;
+                opens the new player sheet first (MusicFlowModal). */}
+            <Pressable onPress={() => tap(onOpenMusic)}
+              style={{ alignItems: 'center', width: 72 }}>
+              <Image source={{ uri: MUSIC_PREMIUM_ICON_URL }}
+                style={{ width: 60, height: 60, borderRadius: 16 }} />
+              <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', marginTop: 8,
+                textAlign: 'center' }}>
+                Music
               </Text>
             </Pressable>
           </ScrollView>

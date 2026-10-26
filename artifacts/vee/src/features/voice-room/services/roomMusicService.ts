@@ -97,7 +97,7 @@ export async function addMusicTrack(
   roomId: string,
   track: { title: string; url: string; mediaId: string; durationSec?: number | null },
   addedByName: string,
-): Promise<void> {
+): Promise<string> {
   const uid = auth.currentUser?.uid ?? 'anonymous';
   const payload: Record<string, unknown> = {
     ...track,
@@ -106,7 +106,8 @@ export async function addMusicTrack(
     addedAt: Date.now(),
   };
   if (track.durationSec == null) delete payload.durationSec;
-  await push(ref(database, `roomMusic/${roomId}/queue`), payload);
+  const newRef = await push(ref(database, `roomMusic/${roomId}/queue`), payload);
+  return newRef.key ?? '';
 }
 
 /**
@@ -185,6 +186,11 @@ export async function saveMusicLibraryEntry(
     const extra = keys.slice(0, keys.length - MUSIC_LIBRARY_CAP);
     await Promise.all(extra.map((k) => remove(ref(database, `users/${uid}/musicLibrary/${k}`))));
   }
+}
+
+/** Remove one library entry (delete flow; the room queue is untouched). */
+export async function removeMusicLibraryEntry(uid: string, libraryKey: string): Promise<void> {
+  await remove(ref(database, `users/${uid}/musicLibrary/${libraryKey}`));
 }
 
 /** Find a library entry for a phone asset (same-device dedup). Null when absent. */
