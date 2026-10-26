@@ -119,20 +119,11 @@ export const SeatCard = memo(function SeatCard({
       onPress={onPress}
       style={{ alignItems: 'center', width: '100%', paddingVertical: 4, paddingHorizontal: 2 }}
     >
-      {/* ── Seat number badge — only on EMPTY seats (2026-10-11: hidden when occupied) ── */}
-      {!member && (
-        <View style={{
-          position: 'absolute', top: 8, left: '14%', zIndex: 10,
-          width: 17, height: 17, borderRadius: 8.5,
-          backgroundColor: accent,
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: accent,
-          shadowOpacity: 0.6, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
-          elevation: 3,
-        }}>
-          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900' }}>{seatNum}</Text>
-        </View>
-      )}
+      {/* ── 2026-10-26 (boss: seated → no number; vacant → number BELOW) ──
+          The old number badge above empty seats is GONE: a vacant seat
+          shows its number in the label below (where "Empty" used to be),
+          and a seated seat shows no number anywhere. The host seat keeps
+          "Host" below with no 1 badge above. */}
 
       {/* ── Lock badge ── */}
       {/* 2026-10-14 (Sumon): সিটে কেউ বসা থাকলে lock icon দেখাবে না —
@@ -374,7 +365,7 @@ export const SeatCard = memo(function SeatCard({
               ? t('voiceRoom.seatCard.locked')
               : seatNum === 1
                 ? t('voiceRoom.seatCard.host')
-                : t('voiceRoom.seatCard.empty')}
+                : seatNum}
           </Text>
         </>
       )}
