@@ -45,6 +45,8 @@ export interface TaskEvent {
   // Event Engine v1 (2026-10-26): structured tiers + progress metric.
   tiers?: EventTier[];
   progressType?: string;
+  // Full event page (2026-10-26): server-written rules, rendered verbatim.
+  rules?: string[];
   // Future-proof
   metadata?: Record<string, unknown>;
 }
@@ -66,7 +68,7 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
   // Preserve unknown fields
   const knownKeys = new Set(['title', 'description', 'imageUrl', 'bannerUrl',
     'rewardType', 'rewardAmount', 'rewardId', 'startTime', 'endTime',
-    'actionType', 'actionData', 'sortOrder', 'active', 'tiers', 'progressType']);
+    'actionType', 'actionData', 'sortOrder', 'active', 'tiers', 'progressType', 'rules']);
   const metadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (!knownKeys.has(k)) metadata[k] = v;
@@ -102,6 +104,9 @@ function normalizeEvent(id: string, data: any): TaskEvent | null {
       }))
       : undefined,
     progressType: data.progressType ? String(data.progressType) : undefined,
+    rules: Array.isArray(data.rules)
+      ? (data.rules as unknown[]).filter((r): r is string => typeof r === 'string' && !!r)
+      : undefined,
     sortOrder: Number(data.sortOrder) || 0,
     active: true,
     metadata: Object.keys(metadata).length > 0 ? metadata : undefined,

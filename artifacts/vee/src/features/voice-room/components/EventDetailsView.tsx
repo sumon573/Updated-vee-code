@@ -31,7 +31,7 @@ function fmtDate(ts: number): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function rewardLabel(t: EventTier): string {
+export function rewardLabel(t: EventTier): string {
   if (t.title) return t.title;
   switch (t.rewardType) {
     case 'frame': return 'Frame';
@@ -82,7 +82,7 @@ function RealAvatar({ photoURL }: { photoURL: string | null }) {
   );
 }
 
-function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null }) {
+export function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier; eventImage: string | undefined; nickname: string; photoURL: string | null }) {
   if (tier.rewardType === 'vibe') {
     const colors = (tier.params && Array.isArray((tier.params as { colors?: unknown }).colors))
       ? ((tier.params as { colors: string[] }).colors.filter((c) => typeof c === 'string').slice(0, 3))
@@ -124,7 +124,7 @@ function TierPreview({ tier, eventImage, nickname, photoURL }: { tier: EventTier
   return null;
 }
 
-function legacyRewardText(event: TaskEvent): string | null {
+export function legacyRewardText(event: TaskEvent): string | null {
   if (event.rewardType === 'diamond' && event.rewardAmount) return `${event.rewardAmount} diamonds`;
   if (event.rewardType === 'coin' && event.rewardAmount) return `${event.rewardAmount} coins`;
   if (event.rewardType === 'badge') return 'Badge';

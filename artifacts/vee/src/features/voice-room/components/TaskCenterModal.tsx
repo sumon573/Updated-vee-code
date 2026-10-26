@@ -20,7 +20,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { C } from '../constants/theme';
-import { EventDetailsView } from './EventDetailsView';
+import { EventPageView } from './EventPageView';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import {
   subscribeTaskEvents,
@@ -192,6 +192,7 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
   }, [visible]);
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" transparent onRequestClose={closeAll}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' }} onPress={closeAll} />
       <View style={{
@@ -203,11 +204,6 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted, alignSelf: 'center', marginBottom: 14 }} />
         <View style={{ backgroundColor: '#111827', paddingHorizontal: 20, paddingVertical: 12, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {selectedEvent && (
-              <Pressable onPress={() => setSelectedEvent(null)} hitSlop={10} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#374151', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
-                <Feather name="chevron-left" size={18} color="#FFFFFF" />
-              </Pressable>
-            )}
             <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFBEB', borderWidth: 1.5, borderColor: '#F59E0B', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
               <Feather name="calendar" size={18} color="#D97706" />
             </View>
@@ -233,10 +229,6 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
             <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', textAlign: 'center' }}>No events right now</Text>
             <Text style={{ color: C.sub, fontSize: 12, textAlign: 'center', marginTop: 4 }}>New events and rewards will appear here.</Text>
           </View>
-        ) : selectedEvent ? (
-          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingBottom: 8 }}>
-            <EventDetailsView event={selectedEvent} />
-          </ScrollView>
         ) : (
           <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             {(() => {
@@ -257,5 +249,11 @@ export function TaskCenterModal({ visible, onClose }: { visible: boolean; onClos
         )}
       </View>
     </Modal>
+      {selectedEvent && (
+        <Modal visible animationType="slide" onRequestClose={() => setSelectedEvent(null)}>
+          <EventPageView event={selectedEvent} onBack={() => setSelectedEvent(null)} onClose={closeAll} />
+        </Modal>
+      )}
+    </>
   );
 }
