@@ -18,6 +18,7 @@ import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimiz
 import { Chat } from '@/src/features/chat/types';
 import {
   subscribeUserChats,
+  subscribePresence,
   pinChat,
   unpinChat,
   muteChat,
@@ -165,6 +166,26 @@ export default function IMOHomeScreen() {
     }, 8000);
   }, []);
 
+  // 2026-10-26 (boss: chat-list online + unseen-story marks): realtime
+  // presence per chat participant (privacy-masked inside subscribePresence
+  // — a contact hiding online status reads offline here, same as inbox)
+  // + unseen-story set from stories' unreadCount. The effect re-subscribes
+  // only when the participant SET changes (key string), never on every
+  // incoming message.
+  const participantIdsKey = useMemo(() => [...new Set(chats.map((c) => c.participantId).filter(Boolean) as string[])].sort().join(','), [chats]);
+  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const ids = participantIdsKey ? participantIdsKey.split(',') : [];
+    if (ids.length === 0) { setOnlineMap({}); return; }
+    const unsubs = ids.map((pid) => subscribePresence(pid, (online) => {
+      setOnlineMap((prev) => (prev[pid] === online ? prev : { ...prev, [pid]: online }));
+    }));
+    return () => { unsubs.forEach((u) => { try { u(); } catch {} }); };
+  }, [participantIdsKey]);
+  const unseenStoryUids = useMemo(() => new Set(
+    (stories || []).filter((s: any) => (s.unreadCount || 0) > 0).map((s: any) => s.userId).filter(Boolean),
+  ), [stories]);
+
   // Stories (already loaded above via useStories)
   // Convert to IMO format — live profile name/DP wins over cached values
   // (2026-10-11 Issue #4).
@@ -186,8 +207,11 @@ export default function IMOHomeScreen() {
       isPinned: c.isPinned === true,
       isMuted: (c as any).isMuted === true,
       participantId: c.participantId,
+      // 2026-10-26: chat-list avatar marks (imo) — online check + story ring.
+      isOnline: c.participantId ? (onlineMap[c.participantId] ?? false) : false,
+      hasUnseenStory: c.participantId ? unseenStoryUids.has(c.participantId) : false,
     };
-  }), [chats, liveProfiles, avatarCache]);
+  }), [chats, liveProfiles, avatarCache, onlineMap, unseenStoryUids]);
 
   // 2026-10-19 perf: fixed row heights (76px; 84px for the taller voice-club
   // ring rows) with memoized prefix-sum offsets, so FlatList can skip
@@ -198,12 +222,12 @@ export default function IMOHomeScreen() {
     let y = 0;
     for (let i = 0; i < imoChats.length; i += 1) {
       offsets[i] = y;
-      y += imoChats[i].isVoiceClub ? 84 : 76;
+      y += (imoChats[i].isVoiceClub || imoChats[i].hasUnseenStory) ? 84 : 76;
     }
     return offsets;
   }, [imoChats]);
   const getRowLayout = useCallback((_data: ArrayLike<IMOChat> | null | undefined, index: number) => {
-    const h = _data?.[index]?.isVoiceClub ? 84 : 76;
+    const h = (_data?.[index]?.isVoiceClub || _data?.[index]?.hasUnseenStory) ? 84 : 76;
     return { length: h, offset: rowOffsets[index] ?? index * 76, index };
   }, [rowOffsets]);
 

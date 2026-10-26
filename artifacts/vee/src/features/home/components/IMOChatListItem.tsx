@@ -19,6 +19,7 @@ export interface IMOChat {
   isPinned?: boolean;
   isMuted?: boolean;
   isOnline?: boolean;
+  hasUnseenStory?: boolean; // green ring — contact shared a story I haven't seen
   hasCallIcon?: boolean; // blue phone icon (voice call chats)
   isVoiceClub?: boolean; // special blue ring + audio badge
   isNew?: boolean; // "[New]" prefix in green
@@ -61,13 +62,15 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
       <View>
         <View
           style={
-            chat.isVoiceClub
+            chat.isVoiceClub || chat.hasUnseenStory
               ? {
                   width: 56,
                   height: 56,
                   borderRadius: 28,
                   borderWidth: 2,
-                  borderColor: '#2196F3',
+                  // Voice club keeps its blue ring; unseen story gets imo's
+                  // green ring. Same geometry, so row height stays 84.
+                  borderColor: chat.isVoiceClub ? '#2196F3' : '#4CAF50',
                   padding: 2,
                 }
               : undefined
@@ -76,14 +79,14 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
           {chat.photoURL ? (
             <Image
               source={{ uri: chat.photoURL }}
-              style={{ width: chat.isVoiceClub ? 48 : 52, height: chat.isVoiceClub ? 48 : 52, borderRadius: chat.isVoiceClub ? 24 : 26 }}
+              style={{ width: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, height: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, borderRadius: chat.isVoiceClub || chat.hasUnseenStory ? 24 : 26 }}
             />
           ) : (
             <View
               style={{
-                width: chat.isVoiceClub ? 48 : 52,
-                height: chat.isVoiceClub ? 48 : 52,
-                borderRadius: chat.isVoiceClub ? 24 : 26,
+                width: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52,
+                height: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52,
+                borderRadius: chat.isVoiceClub || chat.hasUnseenStory ? 24 : 26,
                 backgroundColor: '#E0E0E0',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -95,7 +98,11 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
             </View>
           )}
         </View>
-        {chat.isVoiceClub && (
+        {/* 2026-10-26 (boss: imo avatar marks): voice club keeps its audio
+            badge; otherwise an online contact gets imo's green check badge
+            (bottom-right). The badge IS the online mark — the old tiny dot
+            near the time is gone. */}
+        {chat.isVoiceClub ? (
           <View
             style={{
               position: 'absolute',
@@ -113,7 +120,25 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
           >
             <Ionicons name="volume-high" size={10} color="#fff" />
           </View>
-        )}
+        ) : chat.isOnline ? (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: '#4CAF50',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 2,
+              borderColor: '#FFFFFF',
+            }}
+          >
+            <Ionicons name="checkmark" size={12} color="#fff" />
+          </View>
+        ) : null}
       </View>
 
       {/* Name + Preview */}
@@ -177,17 +202,6 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
                 new
               </Text>
             </View>
-          )}
-          {chat.isOnline && (
-            <View
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 5,
-                backgroundColor: '#4CAF50',
-                marginRight: 6,
-              }}
-            />
           )}
           {chat.hasCallIcon ? (
             <TouchableOpacity onPress={handleCallPress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
