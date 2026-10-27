@@ -789,10 +789,11 @@ export async function joinRoomAsAudience(
   // now heartbeat-based: entries carry `ts`, and VeeGuard sweeps only
   // entries stale >5 min whose user is NOT a live LiveKit participant.
   // Explicit leave still removes the entry immediately (leaveAudience).
-  // Record this room in the joiner's persistent "My Room" index (never
-  // cleared on leave/exit — see recordUserRoomVisit).
-  // background: safe to swallow — analytics index write
-  recordUserRoomVisit(member.userId, roomId, 'member').catch(() => {});
+  // 2026-10-27 (boss): audience entry must NOT create membership.
+  // Entry = audience ONLY. The member record (roomMembers + userRooms)
+  // is written ONLY when the user taps the green + button (handleJoinRoom),
+  // takes a seat, or owns the room. Previously this line wrote the record
+  // on every entry, so every visitor auto-became a member forever.
   // Count update is best-effort
   _updateCounts(roomId).catch(() => {});
 }

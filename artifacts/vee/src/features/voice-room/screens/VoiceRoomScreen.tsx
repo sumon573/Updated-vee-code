@@ -3253,18 +3253,18 @@ export default function VoiceRoomScreen() {
             </Pressable>
 
             {}
+            {/* 2026-10-27 (boss): green + button by the room name,
+                audience ONLY (showJoinBanner: non-member, non-owner/admin,
+                unseated). Tap = handleJoinRoom (writes the member record). */}
             {showJoinBanner && (
               <ScalePress onPress={handleJoinRoom}>
                 <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 5,
-                  backgroundColor: accentColor, borderRadius: 20,
-                  paddingHorizontal: 14, paddingVertical: 7,
-                  shadowColor: accentColor, shadowOpacity: 0.5, shadowRadius: 8,
+                  width: 36, height: 36, borderRadius: 18,
+                  backgroundColor: '#22C55E',
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: '#22C55E', shadowOpacity: 0.5, shadowRadius: 8,
                   shadowOffset: { width: 0, height: 2 } }}>
-                  <Feather name="user-plus" size={14} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>
-                    {t('voiceRoom.screen.joinRoom')}
-                  </Text>
+                  <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', lineHeight: 26 }}>+</Text>
                 </View>
               </ScalePress>
             )}
@@ -3368,21 +3368,8 @@ export default function VoiceRoomScreen() {
       <View style={{ flex: 1, paddingHorizontal: 14, paddingBottom: BOTTOM_BAR_H }}>
 
         {}
-        {showJoinBanner && (
-          <ScalePress onPress={handleJoinRoom}>
-            <View style={{
-              marginVertical: 6, borderRadius: 16, padding: 14,
-              backgroundColor: accentColor,
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              shadowColor: accentColor, shadowOpacity: 0.5,
-              shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}>
-              <Feather name="log-in" size={20} color="#fff" />
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '900', flex: 1 }}>
-                {t('voiceRoom.screen.joinBanner')}
-              </Text>
-            </View>
-          </ScalePress>
-        )}
+        {/* 2026-10-27 (boss): big join banner card REMOVED — the green
+            + button by the room name is the only join CTA. */}
 
         {}
         {/* 2026-10-26 (boss): viewer's role pill REMOVED — nothing sits
