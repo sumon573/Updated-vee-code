@@ -270,6 +270,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         myName={p.myName}
         roomId={p.roomId}
         senderSeated={p.mySeatIdx >= 0}
+        seats={p.seats}
+        mySeatIdx={p.mySeatIdx}
       />
       <LeaderboardModal
         visible={p.leaderboardOpen}

@@ -19,6 +19,11 @@
  * keys (no double-charge), parallel multi-recipient sends, balance pre-check,
  * self-gift routing, giftFeed push, 70/30 commission via walletService,
  * gift-only-inside-rooms.
+ *
+ * 2026-10-27 (boss: To-row): with live seats, the To row is the
+ * quick-pick strip — nearest seated user auto-selected, up to 5
+ * other seated users, [+] at the end; without seats, the old
+ * selected-chips row renders.
  */
 import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Image as ExpoImage } from 'expo-image';
@@ -187,7 +192,7 @@ const GiftTile = memo(function GiftTile({
 
 export function GiftsModal({
   visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
-  walletBalance, myUid, myName, roomId, senderSeated }: {
+  walletBalance, myUid, myName, roomId, senderSeated, seats, mySeatIdx }: {
   visible: boolean;
   onClose: () => void;
   /**
@@ -212,6 +217,15 @@ export function GiftsModal({
   myUid: string;
   myName: string;
   roomId?: string;
+  /**
+   * 2026-10-27 (boss: To-row auto-select): live seat array (index =
+   * seat index, null = empty) + sender's seat index (-1 = not seated).
+   * When provided, the To row becomes the quick-pick strip (auto
+   * nearest + up to 5 others + [+]); when omitted, the old
+   * selected-chips row stays.
+   */
+  seats?: Array<Participant | null>;
+  mySeatIdx?: number;
 }) {
   const { t } = useTranslation();
   const [sending, setSending] = useState(false);
@@ -246,6 +260,50 @@ export function GiftsModal({
 
   const pickableMembers = selfAllowed ? members : members.filter((m) => m.id !== myUid);
 
+  /* ── To-row quick-pick strip (2026-10-27, boss: nearest seat auto-select) ──
+   * Row = [auto-selected nearest seated user] [up to 5 other seated users]
+   * [+ at the end]. Only seated occupants, never the sender. Auto = nearest
+   * by seat-index distance to the sender's seat (tie → lower seat index);
+   * sender not seated → lowest occupied seat index. Auto is sticky while the
+   * modal is open; if the auto user leaves their seat, fall back to the next
+   * nearest seated user (selected when there is room). Explicit choices win:
+   * tapping the auto user off clears the marker, and an initialRecipient
+   * overrides auto-select entirely. Without `seats`, the old chips row renders. */
+  const [autoId, setAutoId] = useState<string | null>(null);
+
+  type SeatedEntry = { idx: number; m: Participant };
+  const seatedOthers = useMemo<SeatedEntry[]>(() => {
+    if (!seats) return [];
+    const out: SeatedEntry[] = [];
+    seats.forEach((m, idx) => {
+      if (m && m.id !== myUid) out.push({ idx, m });
+    });
+    return out;
+  }, [seats, myUid]);
+
+  const computeAuto = useCallback((entries: SeatedEntry[]): Participant | null => {
+    if (entries.length === 0) return null;
+    if (mySeatIdx == null || mySeatIdx < 0) return entries[0].m; // seat order
+    let best = entries[0];
+    for (const e of entries) {
+      const d = Math.abs(e.idx - mySeatIdx);
+      const bd = Math.abs(best.idx - mySeatIdx);
+      if (d < bd || (d === bd && e.idx < best.idx)) best = e;
+    }
+    return best.m;
+  }, [mySeatIdx]);
+
+  // Strip order: auto first (when marked), then other seated users in seat
+  // order, capped so the strip never shows more than 6 DPs before [+].
+  const stripUsers = useMemo<Participant[]>(() => {
+    if (!seats) return [];
+    const auto = autoId
+      ? seatedOthers.find((e) => e.m.id === autoId)?.m ?? null
+      : null;
+    const others = seatedOthers.filter((e) => e.m.id !== autoId).map((e) => e.m);
+    return auto ? [auto, ...others.slice(0, 5)] : others.slice(0, 6);
+  }, [seats, seatedOthers, autoId]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -270,13 +328,39 @@ export function GiftsModal({
       setQuantity(1);
       setActiveTab('hot');
       setPickerOpen(false);
-      if (initialRecipient) setSelected([initialRecipient.id]);
-      else setSelected([]);
+      if (initialRecipient) {
+        setSelected([initialRecipient.id]);
+        setAutoId(null);
+      } else if (seats) {
+        const auto = computeAuto(seatedOthers);
+        setAutoId(auto ? auto.id : null);
+        setSelected(auto ? [auto.id] : []);
+      } else {
+        setSelected([]);
+        setAutoId(null);
+      }
       AsyncStorage.getItem(`recentGifts:${myUid}`)
         .then((v) => { if (v) { try { setRecentIds(JSON.parse(v)); } catch { /* ignore */ } } })
         .catch(() => {});
     }
   }, [visible, initialRecipient?.id, myUid]);
+
+  // Live seat-change fallback: if the auto user leaves their seat mid-open,
+  // move the auto marker to the next nearest seated user (and select them
+  // when there is room). Explicit deselects are never overridden: autoId is
+  // null once the user taps the auto user off, and this effect then stays out.
+  useEffect(() => {
+    if (!visible || !seats || !autoId) return;
+    if (seatedOthers.some((e) => e.m.id === autoId)) return;
+    const next = computeAuto(seatedOthers);
+    setAutoId(next ? next.id : null);
+    if (next) {
+      setSelected((prev) => {
+        if (prev.includes(next.id) || prev.length >= MAX_RECIPIENTS) return prev;
+        return [...prev, next.id];
+      });
+    }
+  }, [visible, seats, autoId, seatedOthers, computeAuto]);
 
   // Server-driven catalog (single source of truth)
   // 2026-10-21 (boss: voice room loads slowly): this effect used to run on
@@ -330,6 +414,9 @@ export function GiftsModal({
   }, [activeTab, serverGifts, recentIds]);
 
   const toggleSelect = (id: string) => {
+    // Explicit choice wins: tapping the auto user off clears the marker
+    // (the live-seat fallback effect then stays out).
+    if (id === autoId && selected.includes(id)) setAutoId(null);
     setSelected((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
       if (prev.length >= MAX_RECIPIENTS) return prev;
@@ -671,51 +758,103 @@ export function GiftsModal({
           <Feather name="x" size={18} color="#111827" />
         </Pressable>
 
-        {/* ── Recipient bar (paddingRight clears the ✕ chip) ── */}
+        {/* ── Recipient bar (paddingRight clears the ✕ chip) ──
+            2026-10-27 (boss: To-row): with live seats, the row is the
+            quick-pick strip — auto nearest first, up to 5 other seated
+            users, [+] at the end. DP + small name under each; ring =
+            selected (existing picker selection style). Without seats, the
+            old selected-chips row renders unchanged. ── */}
         <View style={{
-          flexDirection: 'row', alignItems: 'center',
+          flexDirection: 'row', alignItems: 'flex-start',
           paddingHorizontal: 20, paddingRight: 56, paddingTop: 12, paddingBottom: 4,
         }}>
-          <Text style={{ color: IMO_SUB, fontSize: 13, fontWeight: '600', marginRight: 8 }}>
+          <Text style={{ color: IMO_SUB, fontSize: 13, fontWeight: '600', marginRight: 8, marginTop: 12 }}>
             {t('voiceRoom.gifts.toLabel')}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {selectedMembers.map((m) => (
+            {seats ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                {stripUsers.map((m) => {
+                  const isSel = selected.includes(m.id);
+                  return (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => toggleSelect(m.id)}
+                      style={{ alignItems: 'center', width: 52 }}>
+                      <View style={{
+                        width: 40, height: 40, borderRadius: 20, overflow: 'hidden',
+                        backgroundColor: m.color + '33',
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 2, borderColor: isSel ? IMO_BLUE : 'transparent',
+                      }}>
+                        {m.photoURL ? (
+                          <Image source={{ uri: m.photoURL }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                        ) : (
+                          <Text style={{ color: m.color, fontSize: 14, fontWeight: '800' }}>{m.initials}</Text>
+                        )}
+                      </View>
+                      <Text
+                        style={{
+                          color: isSel ? IMO_TITLE : IMO_SUB, fontSize: 10,
+                          fontWeight: isSel ? '700' : '400', marginTop: 3, textAlign: 'center',
+                        }}
+                        numberOfLines={1}>
+                        {m.name || 'User'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
                 <Pressable
-                  key={m.id}
-                  onPress={() => removeRecipient(m.id)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center',
-                    backgroundColor: '#e8f7ff', borderRadius: 999,
-                    paddingLeft: 4, paddingRight: 8, paddingVertical: 4,
+                  onPress={() => setPickerOpen((v) => !v)}
+                  style={{ alignItems: 'center', width: 52 }}>
+                  <View style={{
+                    width: 40, height: 40, borderRadius: 20,
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: IMO_BLUE,
+                    alignItems: 'center', justifyContent: 'center',
                   }}>
-                  {m.photoURL ? (
-                    <Image source={{ uri: m.photoURL }} style={{ width: 24, height: 24, borderRadius: 12 }} />
-                  ) : (
-                    <View style={{
-                      width: 24, height: 24, borderRadius: 12, backgroundColor: m.color + '55',
-                      alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Text style={{ color: m.color, fontSize: 11, fontWeight: '800' }}>{m.initials}</Text>
-                    </View>
-                  )}
-                  <Text style={{ color: IMO_TITLE, fontSize: 12, fontWeight: '700', marginLeft: 6, maxWidth: 80 }} numberOfLines={1}>
-                    {m.name || 'User'}
-                  </Text>
-                  <Feather name="x" size={12} color={IMO_SUB} style={{ marginLeft: 4 }} />
+                    <Feather name={pickerOpen ? 'chevron-up' : 'plus'} size={16} color={IMO_BLUE} />
+                  </View>
+                  <View style={{ height: 13 }} />
                 </Pressable>
-              ))}
-              <Pressable
-                onPress={() => setPickerOpen((v) => !v)}
-                style={{
-                  width: 32, height: 32, borderRadius: 16,
-                  borderWidth: 1.5, borderStyle: 'dashed', borderColor: IMO_BLUE,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                <Feather name={pickerOpen ? 'chevron-up' : 'plus'} size={16} color={IMO_BLUE} />
-              </Pressable>
-            </View>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {selectedMembers.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => removeRecipient(m.id)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      backgroundColor: '#e8f7ff', borderRadius: 999,
+                      paddingLeft: 4, paddingRight: 8, paddingVertical: 4,
+                    }}>
+                    {m.photoURL ? (
+                      <Image source={{ uri: m.photoURL }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+                    ) : (
+                      <View style={{
+                        width: 24, height: 24, borderRadius: 12, backgroundColor: m.color + '55',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ color: m.color, fontSize: 11, fontWeight: '800' }}>{m.initials}</Text>
+                      </View>
+                    )}
+                    <Text style={{ color: IMO_TITLE, fontSize: 12, fontWeight: '700', marginLeft: 6, maxWidth: 80 }} numberOfLines={1}>
+                      {m.name || 'User'}
+                    </Text>
+                    <Feather name="x" size={12} color={IMO_SUB} style={{ marginLeft: 4 }} />
+                  </Pressable>
+                ))}
+                <Pressable
+                  onPress={() => setPickerOpen((v) => !v)}
+                  style={{
+                    width: 32, height: 32, borderRadius: 16,
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: IMO_BLUE,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  <Feather name={pickerOpen ? 'chevron-up' : 'plus'} size={16} color={IMO_BLUE} />
+                </Pressable>
+              </View>
+            )}
           </ScrollView>
         </View>
 
