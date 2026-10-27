@@ -699,13 +699,22 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           {/* Store moved here from the room card (boss 2026-10-27): the
               card pill squeezed the room name; the header pill frees the
               full card width for the name. Same route, same label. */}
+          {/* Store pill (boss 2026-10-27: "Store" text bottom was clipped):
+              the header row is height 48 with paddingTop 14 + paddingBottom 6,
+              so its content box is exactly 28px — the old content-sized pill
+              (~32px: 13px text line box + paddingVertical 7x2) overflowed that
+              box and the text bottom got cut. Now the pill is an explicit
+              height 28 (fits the row exactly, zero overflow) with an explicit
+              20px text line box (roomy for 13px glyphs) centered in it, so the
+              full "Store" label renders with air above and below. Header row,
+              pill position, dark styling, bag icon: all unchanged. */}
           <Pressable
             onPress={onOpenStore}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-              backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+              backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, height: 28 }}
           >
             <Feather name="shopping-bag" size={12} color={TEXT} />
-            <Text style={{ color: TEXT, fontSize: 13, fontWeight: '700' }}>
+            <Text style={{ color: TEXT, fontSize: 13, lineHeight: 20, fontWeight: '700' }}>
               {t('voiceRoom.info.store', { defaultValue: 'Store' })}
             </Text>
           </Pressable>
