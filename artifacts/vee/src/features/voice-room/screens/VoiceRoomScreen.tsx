@@ -41,6 +41,7 @@ import { subscribePairHandshake } from '../services/micHandshakeService';
 import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
 import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
+import { MarqueeRoomName } from '../components/MarqueeRoomName';
 import GrabTopPill from '../components/GrabTopPill';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
@@ -3215,9 +3216,7 @@ export default function VoiceRoomScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '700', flex: 1 }}>
-                    {roomName}
-                  </Text>
+                  <MarqueeRoomName text={roomName} color={themeOnBg} fontWeight="700" />
                 </Pressable>
                 {/* Blue "+" right after the name = the EXISTING audience→member
                     join action (handleJoinRoom), restyled from today's green
@@ -3288,9 +3287,7 @@ export default function VoiceRoomScreen() {
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '700', flex: 1 }}>
-                  {roomName}
-                </Text>
+                <MarqueeRoomName text={roomName} color={themeOnBg} fontWeight="700" />
               </Pressable>
               {joinedMemberCount !== null && (
                 <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 11, fontWeight: '500', marginTop: 1 }}>
@@ -3360,9 +3357,7 @@ export default function VoiceRoomScreen() {
 
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '900', flex: 1 }}>
-                {roomName}
-              </Text>
+              <MarqueeRoomName text={roomName} color={themeOnBg} fontWeight="900" />
             </Pressable>
 
             {}
