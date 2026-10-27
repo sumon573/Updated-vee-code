@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
+import { get, ref } from 'firebase/database';
+import { database } from '@/src/config/firebase';
+import { resolveProfileName } from '@/src/services/userService';
 import type { RoomMusic } from '../../services/roomMusicService';
 import { MUSIC_VINYL_URL } from './musicArt';
 import type { MusicPalette } from './musicTheme';
@@ -67,8 +70,37 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
 
   const progress = duration != null && duration > 0 ? Math.min(elapsed / duration, 1) : 0;
   const title = current ? displayTitle(current.title) : 'No music yet';
+  // Player name (2026-10-27, boss: sheet showed "undefined is playing
+  // music"): the bot-written current node does not always carry
+  // addedByName, so resolve it — queue item by queueId, then by mediaId,
+  // then a one-shot profile read for the player uid (nickname first,
+  // displayName second, 'User' last — the codebase's nameless fallback).
+  // Never "undefined", never a placeholder name.
+  const queuedName =
+    music?.queue.find((t) => t.queueId === current?.queueId)?.addedByName ||
+    music?.queue.find((t) => t.mediaId === current?.mediaId)?.addedByName ||
+    '';
+  const [profileName, setProfileName] = useState('');
+  useEffect(() => {
+    if (!current || current.addedByName || queuedName) {
+      setProfileName('');
+      return;
+    }
+    let cancelled = false;
+    get(ref(database, `users/${current.addedBy}`))
+      .then((snap) => {
+        if (!cancelled && snap.exists()) setProfileName(resolveProfileName(snap.val()));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [current?.queueId, current?.addedBy, current?.addedByName, queuedName]);
+  const playerName = (current?.addedByName || '').trim() || queuedName || profileName;
   const subtitle = current
-    ? `${current.addedByName} is playing music`
+    ? playerName
+      ? `${playerName} is playing music`
+      : 'Now playing'
     : 'Tap the playlist icon to add songs';
   const playDisabled = !canControl || (state !== 'playing' && state !== 'paused' && !controls.canPlaySomething());
 
@@ -147,6 +179,37 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
           <Feather name="list" size={24} color={palette.text} />
         </Pressable>
       </View>
+
+      {/* Volume LEVEL (2026-10-27, boss: speaker was mute-only) — local to
+          this phone, the same mechanism as mute (LiveKit track gain +
+          AsyncStorage persist via controls.setVolume). Mute toggle above
+          is unchanged; this row raises/lowers the level in 10% steps. */}
+      <View style={styles.volRow}>
+        <Pressable onPress={() => controls.setVolume(controls.volume - 0.1)} hitSlop={8} style={styles.volStep}>
+          <Feather name="minus" size={18} color={palette.text} />
+        </Pressable>
+        <View style={styles.volSegs}>
+          {Array.from({ length: 10 }, (_, i) => (
+            <Pressable
+              key={i}
+              onPress={() => controls.setVolume((i + 1) / 10)}
+              hitSlop={2}
+              style={styles.volSegHit}
+            >
+              <View
+                style={[
+                  styles.volSeg,
+                  { backgroundColor: i < Math.round(controls.volume * 10) ? palette.blue : palette.faint },
+                ]}
+              />
+            </Pressable>
+          ))}
+        </View>
+        <Pressable onPress={() => controls.setVolume(controls.volume + 0.1)} hitSlop={8} style={styles.volStep}>
+          <Feather name="plus" size={18} color={palette.text} />
+        </Pressable>
+        <Text style={[styles.volPct, { color: palette.sub }]}>{Math.round(controls.volume * 100)}%</Text>
+      </View>
     </View>
   );
 }
@@ -172,6 +235,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   ctl: { padding: 4 },
+  volRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14, gap: 8 },
+  volStep: { padding: 4 },
+  volSegs: { flex: 1, flexDirection: 'row', gap: 3 },
+  volSegHit: { flex: 1, paddingVertical: 6 },
+  volSeg: { height: 6, borderRadius: 3 },
+  volPct: { fontSize: 12, fontWeight: '800', width: 36, textAlign: 'right' },
   playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   dim: { opacity: 0.35 },
 });

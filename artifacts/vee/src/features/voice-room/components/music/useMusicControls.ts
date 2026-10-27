@@ -262,6 +262,10 @@ export function useMusicControls(args: ControlsArgs) {
     stop,
     volume,
     toggleMute,
+    // 2026-10-27 (boss: speaker was mute-only): the level setter already
+    // existed (clamp + persist + engine gain via onVolumeChange) but was
+    // never exposed — the sheet had no way to raise/lower the level.
+    setVolume: setVol,
     syncVolume,
     canPlaySomething,
     freshMusic,

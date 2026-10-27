@@ -168,6 +168,44 @@ export function subscribeMusicLibrary(
 const MUSIC_LIBRARY_CAP = 200;
 
 /**
+ * One-shot read of a user's library (for batch Add dedup — one read
+ * instead of one RTDB query per song).
+ */
+export async function getMusicLibraryOnce(uid: string): Promise<MusicLibraryEntry[]> {
+  const snap = await get(libraryRef(uid));
+  if (!snap.exists()) return [];
+  const v = snap.val() as Record<string, any>;
+  return Object.keys(v)
+    .map((k) => ({ libraryKey: k, ...(v[k] as object) } as MusicLibraryEntry))
+    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+}
+
+/**
+ * Save several uploaded songs at once (batch Add): all sets in parallel,
+ * then ONE library read + ONE prune pass. Same semantics as
+ * saveMusicLibraryEntry per song (cap 200, oldest pruned) without the
+ * per-song full-library GET — the Add flow's wasted round-trips. A
+ * failed batch leaves already-set entries in place; the next batch's
+ * dedup read skips them, so a retry never duplicates.
+ */
+export async function saveMusicLibraryEntries(
+  uid: string,
+  entries: Array<Omit<MusicLibraryEntry, 'libraryKey'>>,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const refs = entries.map(() => push(libraryRef(uid)));
+  await Promise.all(entries.map((e, i) => set(refs[i], e)));
+  const snap = await get(libraryRef(uid));
+  if (!snap.exists()) return;
+  const v = snap.val() as Record<string, any>;
+  const sorted = Object.keys(v).sort((a, b) => (v[a].addedAt || 0) - (v[b].addedAt || 0));
+  if (sorted.length > MUSIC_LIBRARY_CAP) {
+    const extra = sorted.slice(0, sorted.length - MUSIC_LIBRARY_CAP);
+    await Promise.all(extra.map((k) => remove(ref(database, `users/${uid}/musicLibrary/${k}`))));
+  }
+}
+
+/**
  * Save one uploaded song to the user's library. Prunes the oldest entries
  * beyond the cap (rare: only when at the cap, and user-paced).
  */

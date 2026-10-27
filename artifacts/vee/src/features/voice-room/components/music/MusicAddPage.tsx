@@ -9,7 +9,8 @@ import { displayTitle, fmtRowMeta } from './musicFormat';
 import { useMediaSize } from './useMediaSize';
 import {
   findLibraryEntryByAsset,
-  saveMusicLibraryEntry,
+  getMusicLibraryOnce,
+  saveMusicLibraryEntries,
   uploadMusicFile,
   friendlyUploadError,
 } from '../../services/roomMusicService';
@@ -208,20 +209,27 @@ export function MusicAddPage(props: AddPageProps) {
     setBatchRunning(true);
     setBatchError(null);
     let failed = 0;
+    // Batch dedup (2026-10-27 upload speedup): ONE library read up front
+    // instead of one RTDB query per song. If that read fails, fall back
+    // to the per-song query (never risk a duplicate on a failed read).
+    let knownAssets: Set<string> | null = null;
+    try {
+      const lib = await getMusicLibraryOnce(uid);
+      knownAssets = new Set(lib.map((e) => e.assetId).filter((a): a is string => !!a));
+    } catch {
+      knownAssets = null;
+    }
+    const pending: Array<{ asset: MediaLibrary.Asset; up: { mediaId: string; url: string } }> = [];
     const resolveOne = async (asset: MediaLibrary.Asset): Promise<boolean> => {
       setStatus((prev) => ({ ...prev, [asset.id]: 'uploading' }));
       try {
-        const existing = await findLibraryEntryByAsset(uid, asset.id);
-        if (!existing) {
+        const already =
+          knownAssets !== null
+            ? knownAssets.has(asset.id)
+            : !!(await findLibraryEntryByAsset(uid, asset.id));
+        if (!already) {
           const up = await uploadMusicFile({ uri: asset.uri, filename: asset.filename });
-          await saveMusicLibraryEntry(uid, {
-            mediaId: up.mediaId,
-            url: up.url,
-            title: asset.filename ?? `music-${asset.id}`,
-            assetId: asset.id,
-            duration: asset.duration ?? null,
-            addedAt: Date.now(),
-          });
+          pending.push({ asset, up });
         }
         if (mountedRef.current) {
           setStatus((prev) => ({ ...prev, [asset.id]: 'done' }));
@@ -244,6 +252,34 @@ export function MusicAddPage(props: AddPageProps) {
       const chunk = picked.slice(i, i + 3);
       const results = await Promise.all(chunk.map(resolveOne));
       failed += results.filter((r) => !r).length;
+    }
+    // ONE batch save (sets in parallel + a single prune pass) instead of
+    // one set + full-library GET per song. If it fails, the uploaded
+    // rows go back to failed + selected for retry; the retry's dedup
+    // read skips anything that did get saved, so nothing duplicates.
+    if (pending.length > 0) {
+      try {
+        await saveMusicLibraryEntries(
+          uid,
+          pending.map(({ asset, up }) => ({
+            mediaId: up.mediaId,
+            url: up.url,
+            title: asset.filename ?? `music-${asset.id}`,
+            assetId: asset.id,
+            duration: asset.duration ?? null,
+            addedAt: Date.now(),
+          })),
+        );
+      } catch (e) {
+        if (mountedRef.current) {
+          pending.forEach(({ asset }) => {
+            setStatus((prev) => ({ ...prev, [asset.id]: 'failed' }));
+            setSelected((prev) => ({ ...prev, [asset.id]: true }));
+          });
+          setBatchError(friendlyUploadError(e));
+        }
+        failed += pending.length;
+      }
     }
     if (mountedRef.current) {
       setBatchRunning(false);
