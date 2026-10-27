@@ -3180,7 +3180,7 @@ export default function VoiceRoomScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
+                  <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '700' }}>
                     {roomName}
                   </Text>
                 </Pressable>
@@ -3197,7 +3197,7 @@ export default function VoiceRoomScreen() {
                 </ScalePress>
               </View>
               {joinedMemberCount !== null && (
-                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '600', marginTop: 1 }}>
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
                   {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
                 </Text>
               )}
@@ -3207,12 +3207,12 @@ export default function VoiceRoomScreen() {
                 action as the bottom-bar cross — which is hidden for the
                 audience view so the cross exists only here (moved, not
                 duplicated). */}
-            <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+            <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center', flexShrink: 0 }}>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <Feather name="share-2" size={26} color={themeOnBg} />
+                <Feather name="share-2" size={22} color={themeOnBg} />
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <Feather name="x" size={28} color={themeOnBg} />
+                <Feather name="x" size={22} color={themeOnBg} />
               </ScalePress>
             </View>
           </View>
@@ -3246,17 +3246,17 @@ export default function VoiceRoomScreen() {
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
+                <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '700' }}>
                   {roomName}
                 </Text>
               </Pressable>
               {joinedMemberCount !== null && (
-                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '600', marginTop: 1 }}>
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
                   {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
                 </Text>
               )}
             </View>
-            <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+            <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center', flexShrink: 0 }}>
               {pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
@@ -3277,13 +3277,13 @@ export default function VoiceRoomScreen() {
                 </ScalePress>
               )}
               <ScalePress onPress={() => setCustomizeOpen(true)}>
-                <Feather name="more-vertical" size={26} color={themeOnBg} />
+                <Feather name="more-horizontal" size={22} color={themeOnBg} />
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <Feather name="share-2" size={26} color={themeOnBg} />
+                <Feather name="share-2" size={22} color={themeOnBg} />
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <Feather name="x" size={28} color={themeOnBg} />
+                <Feather name="x" size={22} color={themeOnBg} />
               </ScalePress>
             </View>
           </View>
@@ -3362,7 +3362,7 @@ export default function VoiceRoomScreen() {
                   admin/owner seated in the host seat sees it. */}
               {isHostSeatedOwnerOrAdmin && (
                 <ScalePress onPress={() => setCustomizeOpen(true)}>
-                  <Feather name="more-vertical" size={26} color={C.sub} />
+                  <Feather name="more-horizontal" size={22} color={C.sub} />
                 </ScalePress>
               )}
             </View>
@@ -3376,8 +3376,8 @@ export default function VoiceRoomScreen() {
                 flexDirection: 'row', alignItems: 'center', gap: 5,
                 backgroundColor: C.card,
                 borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
-                <Text style={{ fontSize: 13 }}>🏆</Text>
-                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
+                <Text style={{ fontSize: 12 }}>🏆</Text>
+                <Text style={{ color: C.text, fontSize: 12, fontWeight: 600 }}>
                   Hourly Rank
                 </Text>
               </View>

@@ -70,14 +70,14 @@ function SenderAvatar({ sender }: { sender: GrabTopSender }) {
   return (
     <View
       style={{
-        width: 22, height: 22, borderRadius: 11, overflow: 'hidden',
+        width: 18, height: 18, borderRadius: 9, overflow: 'hidden',
         alignItems: 'center', justifyContent: 'center',
-        backgroundColor: '#E5E7EB', marginLeft: -4,
+        backgroundColor: '#E5E7EB', marginLeft: -3,
       }}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: 22, height: 22 }} />
+        <Image source={{ uri }} style={{ width: 18, height: 18 }} />
       ) : (
-        <Text style={{ color: '#6B7280', fontSize: 11, fontWeight: '800' }}>{initial}</Text>
+        <Text style={{ color: '#6B7280', fontSize: 10, fontWeight: '800' }}>{initial}</Text>
       )}
     </View>
   );
@@ -114,7 +114,7 @@ export default function GrabTopPill({ roomId }: { roomId: string }) {
       style={{
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: '#FFE7CC',
-        borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5,
+        borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4,
         flexShrink: 0,
       }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 4 }}>
@@ -122,8 +122,8 @@ export default function GrabTopPill({ roomId }: { roomId: string }) {
           <SenderAvatar key={s.uid} sender={s} />
         ))}
       </View>
-      <Text style={{ color: '#F97316', fontSize: 12, fontWeight: '800', marginLeft: 6 }}>x1</Text>
-      <Text style={{ color: '#F97316', fontSize: 12, fontWeight: '800', marginLeft: 8 }}>{elapsedSec}s</Text>
+      <Text style={{ color: '#F97316', fontSize: 12, fontWeight: '700', marginLeft: 6 }}>x1</Text>
+      <Text style={{ color: '#F97316', fontSize: 12, fontWeight: '700', marginLeft: 8 }}>{elapsedSec}s</Text>
     </View>
   );
 }

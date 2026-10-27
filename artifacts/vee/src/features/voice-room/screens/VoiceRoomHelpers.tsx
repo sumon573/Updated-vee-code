@@ -128,14 +128,14 @@ export function LiveAudiencePill({ count, onPress, person }: { count: number; on
         backgroundColor: '#F1F5F9',
         borderRadius: 16, paddingLeft: 10, paddingRight: 5, paddingVertical: 3,
         borderWidth: 1, borderColor: '#E2E8F0' }}>
-        <Text style={{ color: '#111827', fontSize: 13, fontWeight: '800', marginRight: 5 }}>
+        <Text style={{ color: '#111827', fontSize: 13, fontWeight: '700', marginRight: 5 }}>
           {formatCount(count)}
         </Text>
         {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+          <Image source={{ uri: photoURL }} style={{ width: 22, height: 22, borderRadius: 11 }} />
         ) : (
           <View style={{
-            width: 24, height: 24, borderRadius: 12,
+            width: 22, height: 22, borderRadius: 11,
             backgroundColor: person?.color || '#8B5CF6', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '800' }}>{person?.initials || ''}</Text>
           </View>
