@@ -60,6 +60,9 @@ import {
   DEFAULT_COUPLE_LEVELS,
   type CoupleLevel,
   type CoupleState } from '@/src/features/intimacy/coupleLevels';
+import {
+  subscribeUserFriends, MAX_FRIENDS,
+  type FriendEntry } from '@/src/features/intimacy/friendService';
 import { INTIMACY_ART } from '@/src/features/intimacy/intimacyArt';
 import { subscribeLevel } from '@/src/services/levelService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
@@ -141,20 +144,24 @@ function TabsRow({ tab, setTab, friendCount, variant }: {
   );
 }
 
-/** Friend row with the friend's own user total level as the blue pill. */
-function FriendRowWithLevel({ entry, peer, onPress }: {
-  entry: IntimacyEntry;
+/** Friend row with the friend's own user total level as the blue pill.
+ *  pairValue = this pair's intimacy value when a pair exists (red pill +
+ *  hearts text); absent = 0 (a friend who never gifted yet). */
+function FriendRowWithLevel({ friendUid, pairValue, peer, onPress }: {
+  friendUid: string;
+  pairValue?: number;
   peer: { name: string; photoURL: string | null } | undefined;
   onPress: () => void;
 }) {
   const { t } = useTranslation();
   const [totalLevel, setTotalLevel] = useState<number | null>(null);
   useEffect(() => {
-    if (!entry.otherUid) return;
-    return subscribeLevel(entry.otherUid, (l) => setTotalLevel(l.totalLevel));
-  }, [entry.otherUid]);
+    if (!friendUid) return;
+    return subscribeLevel(friendUid, (l) => setTotalLevel(l.totalLevel));
+  }, [friendUid]);
+  const value = pairValue ?? 0;
   const name = peer?.name || t('profile.intimacyUser', { defaultValue: 'User' });
-  const redLabel = formatCoupleLevel(coupleLevelFor(entry.value));
+  const redLabel = formatCoupleLevel(coupleLevelFor(value));
   const blueLabel = totalLevel === null
     ? null
     : totalLevel >= 49
@@ -166,7 +173,7 @@ function FriendRowWithLevel({ entry, peer, onPress }: {
       name={name}
       redLabel={redLabel}
       blueLabel={blueLabel}
-      pointsText={`${formatHearts(entry.value)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })}`}
+      pointsText={`${formatHearts(value)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })}`}
       onPress={onPress}
     />
   );
@@ -175,17 +182,23 @@ function FriendRowWithLevel({ entry, peer, onPress }: {
 export default function IntimacyScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
-  const params = useLocalSearchParams<{ uid?: string }>();
+  const params = useLocalSearchParams<{ uid?: string; tab?: string }>();
   const viewUid = typeof params.uid === 'string' && params.uid ? params.uid : user?.uid;
   const isOwn = !!user?.uid && viewUid === user.uid;
+  // Friend (+) slots land here: ?tab=friend opens the Friend tab on mount.
+  const initialTab: Tab =
+    params.tab === 'friend' || params.tab === 'intimacy' ? params.tab : 'couple';
 
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [entries, setEntries] = useState<IntimacyEntry[]>([]);
   const [couple, setCouple] = useState<CoupleState | null>(null);
+  // 2026-10-27 (boss correction): EXPLICIT friends — the ONLY Friend tab
+  // source. Intimacy pairs never render as friends.
+  const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [coupleLevels, setCoupleLevels] = useState<CoupleLevel[]>(DEFAULT_COUPLE_LEVELS);
   const [peers, setPeers] = useState<Record<string, { name: string; photoURL: string | null }>>({});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('couple');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [ringBoxFailed, setRingBoxFailed] = useState(false);
   const [loveHouseFailed, setLoveHouseFailed] = useState(false);
@@ -200,8 +213,9 @@ export default function IntimacyScreen() {
     let profileDone = false;
     let intimacyDone = false;
     let coupleDone = false;
+    let friendsDone = false;
     const maybeDone = () => {
-      if (profileDone && intimacyDone && coupleDone) setLoading(false);
+      if (profileDone && intimacyDone && coupleDone && friendsDone) setLoading(false);
     };
     const unsubProfile = subscribeUser(viewUid, (u) => {
       profileDone = true;
@@ -210,6 +224,7 @@ export default function IntimacyScreen() {
     });
     let unsubIntimacy: () => void = () => {};
     let unsubCouple: () => void = () => {};
+    let unsubFriends: () => void = () => {};
     try {
       unsubIntimacy = subscribeMyIntimacies(viewUid, (e) => {
         intimacyDone = true;
@@ -232,12 +247,24 @@ export default function IntimacyScreen() {
       coupleDone = true;
       maybeDone();
     }
+    try {
+      unsubFriends = subscribeUserFriends(viewUid, (f) => {
+        friendsDone = true;
+        setFriends(f);
+        maybeDone();
+      });
+    } catch (e) {
+      setError(t('profile.intimacyLoadError', { defaultValue: 'Could not load intimacy.' }) + ` ${getErrorCause(e)}`);
+      friendsDone = true;
+      maybeDone();
+    }
     const timeout = setTimeout(() => setLoading(false), 8000);
     return () => {
       clearTimeout(timeout);
       unsubProfile();
       unsubIntimacy();
       unsubCouple();
+      unsubFriends();
     };
   }, [viewUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -248,6 +275,7 @@ export default function IntimacyScreen() {
   useEffect(() => {
     const uids = new Set<string>();
     for (const e of entries) uids.add(e.otherUid);
+    for (const f of friends) uids.add(f.uid);
     if (couple?.partnerUid) uids.add(couple.partnerUid);
     const missing = [...uids].filter((u) => u && !peers[u]);
     if (missing.length === 0) return;
@@ -264,7 +292,7 @@ export default function IntimacyScreen() {
       if (!cancelled) setPeers((prev) => ({ ...prev, ...next }));
     })();
     return () => { cancelled = true; };
-  }, [entries, couple?.partnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entries, friends, couple?.partnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayName =
     profile?.name ||
@@ -294,7 +322,7 @@ export default function IntimacyScreen() {
     Alert.alert(
       t('profile.intimacyAboutTitle', { defaultValue: 'About Intimacy' }),
       t('profile.intimacyAboutBody', {
-        defaultValue: 'Intimacy grows when you send gifts to a friend — higher intimacy means a higher level. A couple is one partner: form a couple to unlock the Love House, and your couple level grows from gifts, time spent together in voice rooms, and PK battles. A couple invitation costs 5000 diamonds, is never refunded, and expires 5 hours after sending.',
+        defaultValue: 'Intimacy grows when you send gifts to a friend — higher intimacy means a higher level. A couple is one partner: form a couple to unlock the Love House, and your couple level grows from gifts, time spent together in voice rooms, and PK battles. A couple invitation costs 5000 diamonds, is never refunded, and expires 5 hours after sending. Friends are people you explicitly add (up to 5); a friend invitation is free and never expires.',
       }),
     );
   };
@@ -307,6 +335,10 @@ export default function IntimacyScreen() {
     router.push('/profile/couple-invite' as never);
   };
 
+  const goFriendInvite = () => {
+    router.push('/profile/friend-invite' as never);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -315,7 +347,8 @@ export default function IntimacyScreen() {
     );
   }
 
-  const noFriends = entries.length === 0;
+  const noFriends = friends.length === 0;
+  const noPairs = entries.length === 0;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -414,7 +447,7 @@ export default function IntimacyScreen() {
                 )}
               </View>
             </View>
-            <TabsRow tab={tab} setTab={setTab} friendCount={entries.length} variant="onPink" />
+            <TabsRow tab={tab} setTab={setTab} friendCount={friends.length} variant="onPink" />
           </LinearGradient>
 
           <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
@@ -562,14 +595,32 @@ export default function IntimacyScreen() {
             <View style={{ marginLeft: 12, flex: 1 }}>
               <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>{displayName}</Text>
               <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
-                {`${entries.length} ${t('profile.intimacyTabFriend', { defaultValue: 'Friend' })}${entries.length === 1 ? '' : 's'}`}
+                {`${friends.length} ${t('profile.intimacyTabFriend', { defaultValue: 'Friend' })}${friends.length === 1 ? '' : 's'}`}
               </Text>
             </View>
           </View>
-          <TabsRow tab={tab} setTab={setTab} friendCount={entries.length} variant="plain" />
+          <TabsRow tab={tab} setTab={setTab} friendCount={friends.length} variant="plain" />
 
           {tab === 'friend' ? (
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {isOwn && friends.length < MAX_FRIENDS && (
+                <Pressable
+                  onPress={goFriendInvite}
+                  style={{
+                    marginHorizontal: 15, marginTop: 12, backgroundColor: C.blue,
+                    borderRadius: 12, paddingVertical: 12, alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFFFFF' }}>
+                    {t('profile.intimacySendFriendInvite', { defaultValue: 'Send Friend Invitation' })}
+                  </Text>
+                </Pressable>
+              )}
+              {isOwn && friends.length >= MAX_FRIENDS && (
+                <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 12, paddingHorizontal: 15 }}>
+                  {t('profile.intimacyMaxFriends', { defaultValue: 'You already have 5 friends — the maximum.' })}
+                </Text>
+              )}
               {noFriends ? (
                 <View style={[cardStyle, { alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
@@ -581,12 +632,13 @@ export default function IntimacyScreen() {
                 </View>
               ) : (
                 <View style={{ paddingHorizontal: 15, paddingTop: 12, paddingBottom: 32, gap: 10 }}>
-                  {entries.map((e) => (
+                  {friends.map((f) => (
                     <FriendRowWithLevel
-                      key={e.pairKey}
-                      entry={e}
-                      peer={peers[e.otherUid]}
-                      onPress={() => goFriendProfile(e.otherUid, peers[e.otherUid]?.name || '')}
+                      key={f.uid}
+                      friendUid={f.uid}
+                      pairValue={entries.find((e) => e.otherUid === f.uid)?.value}
+                      peer={peers[f.uid]}
+                      onPress={() => goFriendProfile(f.uid, peers[f.uid]?.name || '')}
                     />
                   ))}
                 </View>
@@ -600,7 +652,7 @@ export default function IntimacyScreen() {
                 paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
                 {t('profile.intimacyPairsTitle', { defaultValue: 'Your intimacy levels' })}
               </Text>
-              {noFriends ? (
+              {noPairs ? (
                 <View style={[cardStyle, { marginTop: 0, alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
                     {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}

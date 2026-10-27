@@ -230,26 +230,37 @@ export const SeatCard = memo(function SeatCard({
             {/* 2026-10-23 (Sumon): the reaction is a DESIGNED animated
                 sticker — a glossy 3D character with a transparent
                 background and NO plate/disc (font glyphs rejected as
-                "demo"). While it plays, ONLY the sticker is visible in
-                the seat: the DP photo is hidden, nothing sits behind
-                the emoji. Legacy glyph reactions overlay as before. */}
+                "demo"). Legacy glyph reactions overlay as before.
+                2026-10-27 (boss): the sticker plays confined to a
+                CIRCLE of exactly the seat avatar DP size (SEAT_SIZE),
+                centered on the avatar, NEVER overflowing onto the
+                frame — the frame (1.15x) or gradient ring stays fully
+                visible around it. The avatar block below always
+                renders now; the sticker is only an overlay, and the
+                circle's overflow:hidden clips the spring overshoot +
+                bounce so nothing can spill past the DP edge. */}
             {stickerActive ? (
               <View pointerEvents="none" style={{
-                width: SEAT_SIZE, height: SEAT_SIZE,
-                alignItems: 'center', justifyContent: 'center',
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                alignItems: 'center', justifyContent: 'center', zIndex: 20,
               }}>
-                <SeatEmojiReaction key={reaction!.key} emoji={reaction!.emoji} size={SEAT_SIZE} />
+                <View style={{
+                  width: SEAT_SIZE, height: SEAT_SIZE, borderRadius: SEAT_SIZE / 2,
+                  overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <SeatEmojiReaction key={reaction!.key} emoji={reaction!.emoji} size={SEAT_SIZE} />
+                </View>
               </View>
-            ) : (
-              <>
-                {reaction && (
-                  <View pointerEvents="none" style={{
-                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                    alignItems: 'center', justifyContent: 'center', zIndex: 20,
-                  }}>
-                    <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={SEAT_SIZE} />
-                  </View>
-                )}
+            ) : reaction ? (
+              <View pointerEvents="none" style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                alignItems: 'center', justifyContent: 'center', zIndex: 20,
+              }}>
+                <SeatEmojiReaction key={reaction.key} emoji={reaction.emoji} size={SEAT_SIZE} />
+              </View>
+            ) : null}
+            {/* Avatar block — ALWAYS rendered now (frame or ring), so the
+                sticker circle sits ON the avatar instead of replacing it. */}
                 {/* 2026-10-23 (Sumon pick: Style A — Glass Pod): occupied
                     seats get the same gradient ring as the empty pods —
                     gold for the host, sky→violet for members, green→sky
@@ -299,8 +310,6 @@ export const SeatCard = memo(function SeatCard({
                     />
                   </View>
                 )}
-              </>
-            )}
             {/* 2026-10-26 (Event Engine v1): event ripple — glowing ring
                 while speaking, only with an unexpired ripple effect. */}
             {activeRipple && member.speaking && !stickerActive && (

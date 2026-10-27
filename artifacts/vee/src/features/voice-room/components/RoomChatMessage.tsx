@@ -97,7 +97,9 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
   /* ── Gift messages: highlight gift card (2026-10-23, Sumon picked A) ──
      Full-width soft gold-rose card: sender DP + name, the real gift
      thumbnail + name, then the receiver DP(s) + name and the diamond
-     total — so a gift reads as a gift at a glance, never as plain text. */
+     total — so a gift reads as a gift at a glance, never as plain text.
+     2026-10-27 (boss): THIRD compact pass — same info + layout, ~20%
+     smaller everywhere (nothing below 9pt, still legible). */
   if (item.kind === 'gift' && item.gift) {
     const g = item.gift;
     const recipients = g.recipients.slice(0, 3);
@@ -109,14 +111,14 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           onReply(item);
         }}
-        style={{ marginBottom: 8 }}
+        style={{ marginBottom: 6 }}
       >
         <LinearGradient
           colors={['#FFF8E1', '#FFEDD5', '#FFE4E6']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{
-            borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5,
+            borderRadius: 10, paddingHorizontal: 7, paddingVertical: 4,
             borderWidth: 1, borderColor: '#F0B64F',
           }}
         >
@@ -124,30 +126,30 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
               still found it big on device, so every element shrank again
               (~30% shorter than the first compact pass). Same design. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <CardAvatar name={item.sender} photoURL={g.senderAvatar} color={item.color} size={20} />
-            <Text style={{ color: '#7C2D12', fontSize: 10.5, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
+            <CardAvatar name={item.sender} photoURL={g.senderAvatar} color={item.color} size={17} />
+            <Text style={{ color: '#7C2D12', fontSize: 10, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
               {truncateTo12(item.sender)}
             </Text>
-            <Text style={{ color: '#9A3412', fontSize: 9.5, fontWeight: '600' }}>
+            <Text style={{ color: '#9A3412', fontSize: 9, fontWeight: '600' }}>
               {t('voiceRoom.chat.giftSent')}
             </Text>
             <View style={{ flex: 1 }} />
             <View style={{
               backgroundColor: '#D97706', borderRadius: 999,
-              paddingHorizontal: 6, paddingVertical: 1,
+              paddingHorizontal: 5, paddingVertical: 1,
               flexDirection: 'row', alignItems: 'center',
             }}>
-              <DiamondIcon size={9} />
-              <Text style={{ color: '#FFFFFF', fontSize: 9.5, fontWeight: '800', marginLeft: 3 }}>
+              <DiamondIcon size={8} />
+              <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '800', marginLeft: 3 }}>
                 {formatDiamonds(g.totalCoins)}
               </Text>
             </View>
           </View>
 
           {/* Gift → receiver line */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
             <View style={{
-              width: 30, height: 30, borderRadius: 9,
+              width: 25, height: 25, borderRadius: 8,
               backgroundColor: 'rgba(255,255,255,0.75)',
               borderWidth: 1, borderColor: '#F5C86B',
               alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
@@ -155,35 +157,35 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
               {g.thumbnailUrl ? (
                 <Image
                   source={{ uri: g.thumbnailUrl }}
-                  style={{ width: 26, height: 26 }}
+                  style={{ width: 21, height: 21 }}
                   contentFit="contain"
                   cachePolicy="memory-disk"
                   recyclingKey={g.giftId}
                 />
               ) : (
-                <Text style={{ fontSize: 16 }}>🎁</Text>
+                <Text style={{ fontSize: 14 }}>🎁</Text>
               )}
             </View>
             <View style={{ flexShrink: 1 }}>
-              <Text style={{ color: '#431407', fontSize: 11, fontWeight: '800' }} numberOfLines={1}>
+              <Text style={{ color: '#431407', fontSize: 10.5, fontWeight: '800' }} numberOfLines={1}>
                 {g.giftName}
               </Text>
               {g.quantity > 1 && (
-                <Text style={{ color: '#B45309', fontSize: 9.5, fontWeight: '700' }}>
+                <Text style={{ color: '#B45309', fontSize: 9, fontWeight: '700' }}>
                   {'×' + g.quantity}
                 </Text>
               )}
             </View>
-            <Text style={{ color: '#D97706', fontSize: 12, fontWeight: '900' }}>➜</Text>
+            <Text style={{ color: '#D97706', fontSize: 11, fontWeight: '900' }}>➜</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {recipients.map((r, i) => (
-                <View key={r.uid} style={{ marginLeft: i === 0 ? 0 : -7, zIndex: recipients.length - i }}>
-                  <CardAvatar name={r.name} photoURL={r.photoURL} color="#BE123C" size={22} />
+                <View key={r.uid} style={{ marginLeft: i === 0 ? 0 : -6, zIndex: recipients.length - i }}>
+                  <CardAvatar name={r.name} photoURL={r.photoURL} color="#BE123C" size={19} />
                 </View>
               ))}
               {extraCount > 0 && (
                 <View style={{
-                  marginLeft: -7, width: 22, height: 22, borderRadius: 11,
+                  marginLeft: -6, width: 19, height: 19, borderRadius: 9.5,
                   backgroundColor: '#9A3412', alignItems: 'center', justifyContent: 'center',
                   borderWidth: 1.5, borderColor: '#FFFFFF',
                 }}>
@@ -193,7 +195,7 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
                 </View>
               )}
             </View>
-            <Text style={{ color: '#7C2D12', fontSize: 10.5, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+            <Text style={{ color: '#7C2D12', fontSize: 10, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
               {truncateTo12(recipientNames)}
             </Text>
           </View>

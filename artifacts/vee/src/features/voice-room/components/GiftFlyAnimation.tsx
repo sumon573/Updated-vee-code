@@ -5,8 +5,11 @@
  * - Fullscreen SVGA-style animation plays for premium gifts (vr_full_anim)
  * - ComboState: the same gift re-sent within the combo window stacks xN on the
  *   RUNNING animation instead of starting a new one
- * - Blast gifts = multi-target: ONE animation hits all recipients
- * - Big gifts trigger the room-wide gold broadcast banner (GiftAwardsBroadcast)
+ * - Blast gifts = multi-target: ONE flyer per recipient, all flying
+ *   SIMULTANEOUSLY to their own seat DPs (boss 2026-10-27 05:33)
+ * - 2026-10-27 (boss): ONE uniform compact banner bar for ALL gifts —
+ *   the big-gift gold broadcast variant is GONE (banner uniformity order)
+ * - 2026-10-27 (boss): kiss (1 diamond) is FLY-ONLY — no center display
  * - Fullscreen animations QUEUE — they never overlap or break each other
  *
  * Two pieces:
@@ -22,7 +25,6 @@ import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, 
 import {
   Animated, AppState, Dimensions, Easing, Image, StyleSheet, Text, View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
@@ -57,8 +59,6 @@ export type GiftFlyHandle = {
   playFly: (e: Omit<GiftFlyEvent, 'key'>) => void;
 };
 
-/** IMO big-gift broadcast threshold (server decides in IMO; Vee: blast tier). */
-const BIG_GIFT_COINS = 2000;
 /** IMO combo window — re-sends inside it stack xN on the running animation. */
 const SHOW_COMBO_WINDOW_MS = 6000;
 
@@ -130,8 +130,8 @@ type QueuedShow = {
 
 const DISPLAY_MS = 3400; // IMO fullscreen SVGA display
 const FLY_MS = 1500;     // fly to recipient seat
+const FLYER_SIZE = 140;   // simultaneous per-recipient flyer art size
 const BANNER_MS = 1600;  // follow-up banner
-const BIG_BANNER_MS = 4200; // IMO gold broadcast for big gifts
 // 2026-10-26 (boss: gift rain must never stack minutes of fullscreen):
 // pending shows are capped — a fresh show drops the OLDEST pending one.
 // Live moments matter; a minutes-old backlog does not. Combo merges
@@ -145,12 +145,21 @@ const MAX_QUEUED_SHOWS = 3;
 const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void }) {
   const { width: W, height: H } = Dimensions.get('window');
   const { t } = useTranslation();
-  const isBig = show.coins >= BIG_GIFT_COINS;
+  // 2026-10-27 (boss): kiss is 1 diamond → NO center animation, ONLY fly.
+  // Code-level rule for gift id 'kiss': the catalog carries no fly-only
+  // flag (kiss videoFullscreen is true and the player never read it for
+  // the center piece), so the renderer decides by id. Every other gift
+  // keeps the fullscreen center display.
+  const isFlyOnly = show.giftId === 'kiss';
   const displaySize = Math.min(W * 0.92, H * 0.62);
   const centerX = W / 2;
   const centerY = H / 2;
-  // IMO blast = multi-target: fly toward the first recipient's seat.
-  const end = show.recipients[0]?.target ?? { x: W / 2, y: 110 };
+  // 2026-10-27 (boss: a multi-recipient gift must reach EVERY seat DP):
+  // every recipient gets a fly target (seat center, or the top-center
+  // fallback when the recipient is not on a seat). The center showpiece
+  // still flies to recipients[0]; recipients[1..] get their own flyers.
+  const flyTargets = show.recipients.map((r) => r.target ?? { x: W / 2, y: 110 });
+  const end = flyTargets[0] ?? { x: W / 2, y: 110 };
   const dx = end.x - centerX;
   const dy = end.y - centerY;
 
@@ -164,9 +173,25 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
 
   const flyX = flyP.interpolate({ inputRange: [0, 1], outputRange: [0, dx] });
   const flyY = flyP.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, dy * 0.7, dy] });
+  // Per-recipient fly interpolations, all driven by the SAME flyP so every
+  // flyer moves simultaneously over FLY_MS. Flyers are invisible until
+  // the fly phase starts and fade out as they land (mirroring the center
+  // piece's end fade). Fly-only shows fly ALL recipients (no center
+  // piece); normal shows fly recipients[1..] (recipients[0] rides the
+  // center piece) — so single-recipient behavior is byte-identical.
+  const flyerOp = flyP.interpolate({ inputRange: [0, 0.08, 0.75, 1], outputRange: [0, 1, 1, 0] });
+  const flyerTargets = isFlyOnly ? flyTargets : flyTargets.slice(1);
+  const flyerMoves = flyerTargets.map((tp) => ({
+    x: flyP.interpolate({ inputRange: [0, 1], outputRange: [0, tp.x - centerX] }),
+    y: flyP.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, (tp.y - centerY) * 0.7, tp.y - centerY] }),
+  }));
 
-  const bannerDuration = isBig ? BIG_BANNER_MS : BANNER_MS;
-  const totalMs = DISPLAY_MS + FLY_MS + bannerDuration + 600;
+  // 2026-10-27 (boss: ONE uniform banner bar for ALL gifts): no big-gift
+  // variant anymore — every gift gets the same compact banner duration.
+  const bannerDuration = BANNER_MS;
+  const totalMs = isFlyOnly
+    ? FLY_MS + bannerDuration + 1500
+    : DISPLAY_MS + FLY_MS + bannerDuration + 600;
 
   // 2026-10-21 (boss: "gift play হতে সময় নিচ্ছে, timing চলে যাচ্ছে"): the
   // show clock used to start at MOUNT — the WebP then spent part of its
@@ -198,7 +223,7 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
       Animated.timing(displayOp, { toValue: 0, duration: 400, delay: FLY_MS - 400, useNativeDriver: true }),
     ]);
     const banner = Animated.sequence([
-      Animated.delay(DISPLAY_MS + 300),
+      Animated.delay((isFlyOnly ? FLY_MS : DISPLAY_MS) + 300),
       Animated.parallel([
         Animated.timing(bannerOp, { toValue: 1, duration: 260, useNativeDriver: true }),
         Animated.timing(bannerY, { toValue: 0, duration: 320, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }),
@@ -209,7 +234,9 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
         Animated.timing(bannerY, { toValue: -18, duration: 320, useNativeDriver: true }),
       ]),
     ]);
-    Animated.parallel([Animated.sequence([entrance, hold, fly]), banner]).start();
+    // Fly-only shows skip the center display entirely: straight to fly.
+    const showSeq = isFlyOnly ? fly : Animated.sequence([entrance, hold, fly]);
+    Animated.parallel([showSeq, banner]).start();
     const timer = setTimeout(onDone, totalMs);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -234,7 +261,8 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* IMO fullscreen center display */}
+      {/* IMO fullscreen center display (skipped for fly-only gifts) */}
+      {!isFlyOnly && (
       <Animated.View style={{
         position: 'absolute',
         left: centerX - displaySize / 2,
@@ -264,8 +292,44 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
           </Animated.View>
         )}
       </Animated.View>
+      )}
 
-      {/* Sender pill during display */}
+      {/* Simultaneous flyers — one per additional recipient (ALL recipients
+          for fly-only shows). Same FLY_MS, same easing, each landing on
+          its own seat DP. The first flyer carries onReady for fly-only
+          shows (no center piece exists to report load). */}
+      {flyerTargets.map((tp, i) => (
+        <Animated.View
+          key={`flyer-${show.recipients[isFlyOnly ? i : i + 1]?.uid ?? i}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: centerX - FLYER_SIZE / 2,
+            top: centerY - FLYER_SIZE / 2,
+            width: FLYER_SIZE,
+            height: FLYER_SIZE,
+            opacity: flyerOp,
+            transform: [
+              { translateX: flyerMoves[i].x },
+              { translateY: flyerMoves[i].y },
+              { scale: flyScale },
+            ],
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <AnimatedGift
+            giftId={show.giftId} emoji={show.emoji} size={FLYER_SIZE}
+            animationUrl={show.animationUrl} animationType={show.animationType}
+            thumbnailUrl={show.thumbnailUrl}
+            videoSize={FLYER_SIZE}
+            onReady={isFlyOnly && i === 0 ? handleReady : undefined}
+          />
+        </Animated.View>
+      ))}
+
+      {/* Sender pill during display (not rendered for fly-only shows) */}
+      {!isFlyOnly && (
       <Animated.View style={{
         position: 'absolute', top: 60, alignSelf: 'center',
         opacity: displayOp, flexDirection: 'row', alignItems: 'center',
@@ -277,75 +341,39 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
           {show.fromName}
         </Text>
       </Animated.View>
-
-      {/* IMO big-gift gold broadcast (room-wide) —
-          2026-10-23 (Sumon): banner looked far too big. Root cause: the
-          banner's AnimatedGift had no videoSize, so webp/video gifts
-          rendered at size × 2.5 (44 → 110dp) and stretched the whole
-          banner. Now pinned to an exact small thumb (videoSize 34) with
-          slimmer padding and text — a compact one-line-high broadcast. */}
-      {isBig ? (
-        <Animated.View style={{
-          position: 'absolute', top: 100, left: 24, right: 24,
-          opacity: bannerOp, transform: [{ translateY: bannerY }],
-        }}>
-          <LinearGradient
-            colors={['#ffe27a', '#ffb62e']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={{
-              borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7,
-              flexDirection: 'row', alignItems: 'center',
-              shadowColor: '#ffb62e', shadowOpacity: 0.5, shadowRadius: 8,
-              shadowOffset: { width: 0, height: 3 }, elevation: 6,
-            }}>
-            <Text style={{ fontSize: 16, marginRight: 6 }}>🎉</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: '#4a2f00', fontSize: 12, fontWeight: '900' }} numberOfLines={1}>
-                {show.fromName} → {shownRecipients.map((r) => r.name).join(', ')}
-                {extraCount > 0 ? ` +${extraCount}` : ''}
-              </Text>
-              <Text style={{ color: '#4a2f00', fontSize: 11, fontWeight: '700', marginTop: 1 }} numberOfLines={1}>
-                {t('voiceRoom.gifts.bigGiftSent', { coins: show.coins })}
-                {show.count > 1 ? ` ×${show.count}` : ''}
-              </Text>
-            </View>
-            <AnimatedGift
-              giftId={show.giftId} emoji={show.emoji} size={34}
-              animationUrl={show.animationUrl} animationType={show.animationType}
-              videoSize={34}
-            />
-          </LinearGradient>
-        </Animated.View>
-      ) : (
-        /* follow-up banner: sender -> gift xN -> recipients */
-        <Animated.View style={{
-          position: 'absolute', top: 96, alignSelf: 'center',
-          opacity: bannerOp, transform: [{ translateY: bannerY }],
-        }}>
-          <View style={[styles.banner, { maxWidth: W - 48 }]}>
-            <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={30} />
-            <Text style={styles.bannerName} numberOfLines={1}>{show.fromName}</Text>
-            <Text style={styles.bannerArrow}>→</Text>
-            <AnimatedGift
-              giftId={show.giftId} emoji={show.emoji} size={30}
-              animationUrl={show.animationUrl} animationType={show.animationType}
-              videoSize={30}
-            />
-            {show.count > 1 && <Text style={styles.comboInline}>×{show.count}</Text>}
-            <Text style={styles.bannerArrow}>→</Text>
-            {shownRecipients.map((r) => (
-              <View key={r.uid} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
-                <GiftAvatar photoURL={r.photoURL} name={r.name} size={26} />
-              </View>
-            ))}
-            {extraCount > 0 && <Text style={styles.bannerName}>+{extraCount}</Text>}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
-              <DiamondIcon size={13} />
-              <Text style={[styles.bannerCoins, { marginLeft: 2 }]}>{show.coins}</Text>
-            </View>
-          </View>
-        </Animated.View>
       )}
+
+      {/* 2026-10-27 (boss): ONE uniform compact banner for ALL gifts —
+          sender -> gift xN -> recipients + coins. Same layout/size/style
+          for every gift, big or small; the old big-gift gold variant is
+          gone. Thumb pinned to an exact small size (videoSize 24). */}
+      <Animated.View style={{
+        position: 'absolute', top: 96, alignSelf: 'center',
+        opacity: bannerOp, transform: [{ translateY: bannerY }],
+      }}>
+        <View style={[styles.banner, { maxWidth: W - 48 }]}>
+          <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={24} />
+          <Text style={styles.bannerName} numberOfLines={1}>{show.fromName}</Text>
+          <Text style={styles.bannerArrow}>→</Text>
+          <AnimatedGift
+            giftId={show.giftId} emoji={show.emoji} size={24}
+            animationUrl={show.animationUrl} animationType={show.animationType}
+            videoSize={24}
+          />
+          {show.count > 1 && <Text style={styles.comboInline}>×{show.count}</Text>}
+          <Text style={styles.bannerArrow}>→</Text>
+          {shownRecipients.map((r) => (
+            <View key={r.uid} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+              <GiftAvatar photoURL={r.photoURL} name={r.name} size={22} />
+            </View>
+          ))}
+          {extraCount > 0 && <Text style={styles.bannerName}>+{extraCount}</Text>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
+            <DiamondIcon size={12} />
+            <Text style={[styles.bannerCoins, { marginLeft: 2 }]}>{show.coins}</Text>
+          </View>
+        </View>
+      </Animated.View>
     </View>
   );
 });
@@ -726,16 +754,16 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(12,14,20,0.92)',
-    borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6,
     borderWidth: 1, borderColor: 'rgba(255,215,0,0.45)',
   },
   bannerName: {
-    color: '#fff', fontSize: 13, fontWeight: '800',
+    color: '#fff', fontSize: 12, fontWeight: '800',
     marginHorizontal: 6, flexShrink: 1,
   },
-  bannerArrow: { color: '#ffd700', fontSize: 16, fontWeight: '800', marginHorizontal: 4 },
-  bannerCoins: { color: '#ffd700', fontSize: 13, fontWeight: '800', marginLeft: 6 },
-  comboInline: { color: '#ffd700', fontSize: 14, fontWeight: '900', marginLeft: 2 },
+  bannerArrow: { color: '#ffd700', fontSize: 14, fontWeight: '800', marginHorizontal: 4 },
+  bannerCoins: { color: '#ffd700', fontSize: 12, fontWeight: '800', marginLeft: 6 },
+  comboInline: { color: '#ffd700', fontSize: 13, fontWeight: '900', marginLeft: 2 },
   recvBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(12,14,20,0.94)',

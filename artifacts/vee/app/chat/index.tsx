@@ -27,6 +27,11 @@ import {
   subscribeIncomingCoupleInvites, acceptCoupleInvite, rejectCoupleInvite,
   type CoupleInvite,
 } from '@/src/features/intimacy/coupleService';
+import { FriendInviteCard, type FriendInviteSenderProfile } from '@/src/features/intimacy/FriendInviteCard';
+import {
+  subscribeIncomingFriendInvites, acceptFriendInvitation, rejectFriendInvitation,
+  type FriendInvite,
+} from '@/src/features/intimacy/friendService';
 import { fetchPeerProfile } from '@/src/features/voice-room/services/intimacyService';
 import { deleteStory } from '@/src/features/chat/services/firebaseStoryService';
 import { useStories } from '@/src/features/chat/hooks/useStories';
@@ -109,6 +114,42 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     (i) => i.status === 'pending' || actedCoupleInviteIds.includes(i.id),
   );
 
+  // ── Friend invitations (2026-10-27, friendship correction) ───────────
+  // Same ListHeader-only pattern as couple invites: own subscription on
+  // friend_invites by recipientUid; keys are `friend-invite:{inviteId}`.
+  const [friendInvites, setFriendInvites] = useState<FriendInvite[]>([]);
+  const [friendSenderProfiles, setFriendSenderProfiles] = useState<Record<string, FriendInviteSenderProfile>>({});
+  const [actedFriendInviteIds, setActedFriendInviteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    return subscribeIncomingFriendInvites(user.uid, setFriendInvites);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    const missing = friendInvites
+      .map((i) => i.senderUid)
+      .filter((uid) => uid && !friendSenderProfiles[uid]);
+    if (missing.length === 0) return;
+    let live = true;
+    Promise.all(missing.map(async (uid) => {
+      const p = await fetchPeerProfile(uid).catch(() => ({ name: '', photoURL: null }));
+      return [uid, { name: p.name || '', photoURL: p.photoURL ?? null }] as const;
+    })).then((pairs) => {
+      if (!live) return;
+      setFriendSenderProfiles((prev) => {
+        const next = { ...prev };
+        for (const [uid, profile] of pairs) next[uid] = profile;
+        return next;
+      });
+    });
+    return () => { live = false; };
+  }, [friendInvites, friendSenderProfiles]);
+
+  const visibleFriendInvites = friendInvites.filter(
+    (i) => i.status === 'pending' || actedFriendInviteIds.includes(i.id),
+  );
+
   const handleAcceptCoupleInvite = useCallback(async (invite: CoupleInvite) => {
     if (!user?.uid) return;
     try {
@@ -128,6 +169,30 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     try {
       await rejectCoupleInvite(invite.id, user.uid);
       setActedCoupleInviteIds((prev) => (prev.includes(invite.id) ? prev : [...prev, invite.id]));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert(t('chat.error'), e instanceof Error ? e.message : t('chat.error'));
+      throw e;
+    }
+  }, [user?.uid, t]);
+
+  const handleAcceptFriendInvite = useCallback(async (invite: FriendInvite) => {
+    if (!user?.uid) return;
+    try {
+      await acceptFriendInvitation(invite.id, user.uid);
+      setActedFriendInviteIds((prev) => (prev.includes(invite.id) ? prev : [...prev, invite.id]));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert(t('chat.error'), e instanceof Error ? e.message : t('chat.error'));
+      throw e;
+    }
+  }, [user?.uid, t]);
+
+  const handleRejectFriendInvite = useCallback(async (invite: FriendInvite) => {
+    if (!user?.uid) return;
+    try {
+      await rejectFriendInvitation(invite.id, user.uid);
+      setActedFriendInviteIds((prev) => (prev.includes(invite.id) ? prev : [...prev, invite.id]));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       Alert.alert(t('chat.error'), e instanceof Error ? e.message : t('chat.error'));
@@ -376,6 +441,27 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
                 sender={coupleSenderProfiles[invite.senderUid] ?? { name: '', photoURL: null }}
                 onAccept={() => handleAcceptCoupleInvite(invite)}
                 onReject={() => handleRejectCoupleInvite(invite)}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Pending friend invitations — buttons only, no thread navigation */}
+        {visibleFriendInvites.length > 0 && (
+          <>
+            <Text style={{
+              color: C.muted, fontSize: 11, fontWeight: '700',
+              letterSpacing: 0.8, marginBottom: 8, marginTop: 4,
+              paddingHorizontal: 2 }}>
+              {t('friendInvite.sectionTitle', { defaultValue: 'Friend invitations' })}
+            </Text>
+            {visibleFriendInvites.map((invite) => (
+              <FriendInviteCard
+                key={`friend-invite:${invite.id}`}
+                invite={invite}
+                sender={friendSenderProfiles[invite.senderUid] ?? { name: '', photoURL: null }}
+                onAccept={() => handleAcceptFriendInvite(invite)}
+                onReject={() => handleRejectFriendInvite(invite)}
               />
             ))}
           </>

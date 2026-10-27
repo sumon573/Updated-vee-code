@@ -126,14 +126,16 @@ export function CoupleTile({
 
 /**
  * Friend tile: 72dp photo in an 80dp tile, blue Lv pill overlapping the
- * tile bottom, label "Friend".
+ * tile bottom, label "Friend". levelLabel null = no pill (a friend with
+ * neither a pair level nor a user level record) — the label then sits
+ * tight under the photo like the Couple tile's.
  */
 export function IntimacyFriendTile({
   photoURL, name, levelLabel, onPress,
 }: {
   photoURL: string | null;
   name: string;
-  levelLabel: string;
+  levelLabel: string | null;
   onPress?: () => void;
 }) {
   const { t } = useTranslation();
@@ -141,9 +143,43 @@ export function IntimacyFriendTile({
     <View style={{ width: 80, padding: 4, alignItems: 'center' }}>
       <View style={{ position: 'relative' }}>
         <PhotoBox photoURL={photoURL} name={name} />
-        <BlueLvPill label={levelLabel} />
+        {levelLabel ? <BlueLvPill label={levelLabel} /> : null}
       </View>
-      <Text style={{ fontSize: 12, color: C.muted, marginTop: 14 }} numberOfLines={1}>
+      <Text style={{ fontSize: 12, color: C.muted, marginTop: levelLabel ? 14 : 4 }} numberOfLines={1}>
+        {t('profile.intimacyFriend', { defaultValue: 'Friend' })}
+      </Text>
+    </View>
+  );
+  if (!onPress) return body;
+  return <Pressable onPress={onPress}>{body}</Pressable>;
+}
+
+/**
+ * Empty friend slot (2026-10-27, boss correction): the Friend tiles
+ * start EMPTY like the Couple (+) slot — a light-pink tile with a
+ * pink-outlined circle + plus, label "Friend". Rendered only for the
+ * viewer's own card, up to MAX_FRIENDS slots total (friends + slots).
+ */
+export function FriendPlusTile({ onPress }: { onPress?: () => void }) {
+  const { t } = useTranslation();
+  const body = (
+    <View style={{ width: 80, padding: 4, alignItems: 'center' }}>
+      <View
+        style={{
+          width: 72, height: 72, borderRadius: 16, backgroundColor: C.pinkTile,
+          alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <View
+          style={{
+            width: 56, height: 56, borderRadius: 28, borderWidth: 2,
+            borderColor: C.pinkBorder, alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 30, fontWeight: '300', color: C.pink, lineHeight: 34 }}>+</Text>
+        </View>
+      </View>
+      <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>
         {t('profile.intimacyFriend', { defaultValue: 'Friend' })}
       </Text>
     </View>

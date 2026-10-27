@@ -47,7 +47,10 @@ import {
 import {
   subscribeCoupleState, type CoupleState } from '@/src/features/intimacy/coupleLevels';
 import {
-  CoupleTile, IntimacyFriendTile } from '@/src/features/intimacy/IntimacyTiles';
+  subscribeUserFriends, MAX_FRIENDS,
+  type FriendEntry } from '@/src/features/intimacy/friendService';
+import {
+  CoupleTile, IntimacyFriendTile, FriendPlusTile } from '@/src/features/intimacy/IntimacyTiles';
 import { useTranslation } from 'react-i18next';
 
 // Gift emojis — canonical catalog, matches api-server GIFT_CATALOG + GiftsModal
@@ -414,6 +417,40 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
 
 // ─── Main Component ───
 
+/**
+ * Card friend tile (2026-10-27, friendship correction): the blue Lv pill
+ * keeps the OLD meaning — the pair's intimacy level when a pair exists —
+ * and falls back to the friend's own user total level (Lv Max at 49)
+ * when no pair exists; no pill at all when neither record exists.
+ */
+function CardFriendTile({ friendUid, peer, pairValue, onPress }: {
+  friendUid: string;
+  peer: { name: string; photoURL: string | null } | undefined;
+  pairValue: number | undefined;
+  onPress?: () => void;
+}) {
+  const [totalLevel, setTotalLevel] = useState<number | null>(null);
+  useEffect(() => {
+    if (!friendUid) return;
+    return subscribeLevel(friendUid, (l) => setTotalLevel(l.totalLevel));
+  }, [friendUid]);
+  const pairLabel = pairValue !== undefined ? `Lv.${intimacyLevelFor(pairValue).id}` : null;
+  const ownLabel = totalLevel === null
+    ? null
+    : totalLevel >= 49
+      ? 'Lv Max'
+      : `Lv.${totalLevel}`;
+  const label = pairLabel ?? ownLabel;
+  return (
+    <IntimacyFriendTile
+      photoURL={peer?.photoURL ?? null}
+      name={peer?.name || ''}
+      levelLabel={label}
+      onPress={onPress}
+    />
+  );
+}
+
 export default function ProfileScreen({
   onNavigateToContacts,
   targetUid,
@@ -479,6 +516,9 @@ export default function ProfileScreen({
   const [intimacyEntries, setIntimacyEntries] = useState<IntimacyEntry[]>([]);
   const [intimacyPeers, setIntimacyPeers] = useState<Record<string, { name: string; photoURL: string | null }>>({});
   const [intimacyCouple, setIntimacyCouple] = useState<CoupleState | null>(null);
+  // 2026-10-27 (boss correction): EXPLICIT friends only — intimacy pairs
+  // NEVER render as Friend tiles. Empty (+) slots fill up to MAX_FRIENDS.
+  const [intimacyFriends, setIntimacyFriends] = useState<FriendEntry[]>([]);
   // 2026-10-13 (Sumon): official badge check for verified logo next to name
   const [isOfficial, setIsOfficial] = useState(false);
   // 2026-10-13 (Sumon): server-driven badge icon (his design) next to name
@@ -552,11 +592,13 @@ export default function ProfileScreen({
   }, [displayUid]);
 
   // 2026-10-26: Intimacy card data — pairs (value-desc) + couple pointer for the viewed uid.
+  // 2026-10-27: + explicit friends (the ONLY source of Friend tiles).
   useEffect(() => {
-    if (!displayUid) { setIntimacyEntries([]); setIntimacyCouple(null); return; }
+    if (!displayUid) { setIntimacyEntries([]); setIntimacyCouple(null); setIntimacyFriends([]); return; }
     const unsubI = subscribeMyIntimacies(displayUid, setIntimacyEntries);
     const unsubC = subscribeCoupleState(displayUid, setIntimacyCouple);
-    return () => { unsubI(); unsubC(); };
+    const unsubF = subscribeUserFriends(displayUid, setIntimacyFriends);
+    return () => { unsubI(); unsubC(); unsubF(); };
   }, [displayUid]);
 
   // 2026-10-26: peer names/photos for intimacy tiles (best-effort, cached).
@@ -564,6 +606,9 @@ export default function ProfileScreen({
     const missing = new Set<string>();
     for (const e of intimacyEntries) {
       if (e.otherUid && !intimacyPeers[e.otherUid]) missing.add(e.otherUid);
+    }
+    for (const f of intimacyFriends) {
+      if (f.uid && !intimacyPeers[f.uid]) missing.add(f.uid);
     }
     if (intimacyCouple?.partnerUid && !intimacyPeers[intimacyCouple.partnerUid]) {
       missing.add(intimacyCouple.partnerUid);
@@ -582,7 +627,7 @@ export default function ProfileScreen({
       if (!cancelled) setIntimacyPeers((prev) => ({ ...prev, ...next }));
     })();
     return () => { cancelled = true; };
-  }, [intimacyEntries, intimacyCouple?.partnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [intimacyEntries, intimacyFriends, intimacyCouple?.partnerUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 2026-10-13 (Sumon): Check for valid Vee Official badge → verified logo next to name
   useEffect(() => {
@@ -1136,11 +1181,14 @@ export default function ProfileScreen({
           </View>
         )}
 
-        {/* ─── Intimacy card — couple tile first, then friend tiles (always rendered, Honor shape) ─── */}
+        {/* ─── Intimacy card — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
+            2026-10-27 (boss correction): intimacy pairs NEVER render here.
+            Own card: real friends (max 5) + (+) slots filling up to 5.
+            Other users' cards: real friends only, or "No friends yet". */}
         <View style={[cardStyle, { paddingBottom: 12 }]}>
           <SectionHeader
             title={t('profile.intimacy', { defaultValue: 'Intimacy' })}
-            count={intimacyEntries.length + (intimacyCouple ? 1 : 0)}
+            count={intimacyFriends.length + (intimacyCouple ? 1 : 0)}
             onPress={() => router.push((isMe ? '/profile/intimacy' : `/profile/intimacy?uid=${displayUid}`) as never)}
           />
           <ScrollView
@@ -1157,17 +1205,22 @@ export default function ProfileScreen({
                 partnerName={intimacyCouple?.partnerUid ? (intimacyPeers[intimacyCouple.partnerUid]?.name || '') : ''}
                 onPress={() => router.push((isMe ? '/profile/intimacy' : `/profile/intimacy?uid=${displayUid}`) as never)}
               />
-              {intimacyEntries.length > 0 ? (
-                intimacyEntries.map((e) => (
-                  <IntimacyFriendTile
-                    key={e.pairKey}
-                    photoURL={intimacyPeers[e.otherUid]?.photoURL ?? null}
-                    name={intimacyPeers[e.otherUid]?.name || ''}
-                    levelLabel={`Lv.${intimacyLevelFor(e.value).id}`}
-                    onPress={() => router.push({ pathname: '/user-profile', params: { uid: e.otherUid, name: intimacyPeers[e.otherUid]?.name || '' } } as Parameters<typeof router.push>[0])}
-                  />
-                ))
-              ) : (
+              {intimacyFriends.map((f) => (
+                <CardFriendTile
+                  key={f.uid}
+                  friendUid={f.uid}
+                  peer={intimacyPeers[f.uid]}
+                  pairValue={intimacyEntries.find((e) => e.otherUid === f.uid)?.value}
+                  onPress={() => router.push({ pathname: '/user-profile', params: { uid: f.uid, name: intimacyPeers[f.uid]?.name || '' } } as Parameters<typeof router.push>[0])}
+                />
+              ))}
+              {isMe && Array.from({ length: Math.max(0, MAX_FRIENDS - intimacyFriends.length) }).map((_, i) => (
+                <FriendPlusTile
+                  key={`friend-plus-${i}`}
+                  onPress={() => router.push('/profile/intimacy?tab=friend' as never)}
+                />
+              ))}
+              {!isMe && intimacyFriends.length === 0 && (
                 <View style={{ alignSelf: 'center', paddingLeft: 8 }}>
                   <Text style={{ color: C.muted, fontSize: 13 }}>
                     {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}
