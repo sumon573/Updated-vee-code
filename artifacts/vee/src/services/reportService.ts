@@ -76,3 +76,40 @@ export async function submitReport(input: ReportInput): Promise<string> {
   await set(newRef, payload);
   return reportId;
 }
+
+/**
+ * Submit a ROOM report (the room itself is the subject, not a user).
+ * reportedUid is intentionally empty and targetType 'room' marks it, so
+ * moderators never mistake it for a user report. The live rules for
+ * reports/$reportId require reporterUid === auth.uid, reportedUid a string,
+ * reason a string and ts a number — this payload satisfies all four, so no
+ * rules change is needed. NOTE: no in-app admin review UI exists yet for
+ * these records; they sit in reports/ with status 'pending'.
+ */
+export type RoomReportInput = {
+  reporterUid: string;
+  reporterName: string;
+  roomId: string;
+  roomName: string;
+};
+
+export async function submitRoomReport(input: RoomReportInput): Promise<string> {
+  const newRef = push(ref(database, 'reports'));
+  const reportId = newRef.key!;
+  await set(newRef, {
+    reporterUid: input.reporterUid,
+    reporterName: input.reporterName,
+    reportedUid: '',
+    reportedName: input.roomName,
+    roomId: input.roomId,
+    messageId: '',
+    messageContent: '',
+    additionalNotes: '',
+    reason: 'other',
+    targetType: 'room',
+    ts: Date.now(),
+    status: 'pending',
+    moderatorNotes: '',
+  });
+  return reportId;
+}

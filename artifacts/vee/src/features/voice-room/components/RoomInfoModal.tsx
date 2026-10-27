@@ -1,28 +1,186 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, Modal, TextInput, Image } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, FlatList, Alert, Pressable, Modal, TextInput, Image, Animated } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { C, ROOM_META } from '../constants/theme';
-import { Participant } from '../types/room';
-import { fmtDiamonds } from '../utils/format';
+import { Participant, BlockRecord } from '../types/room';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
+import { subscribeBadges } from '@/src/services/badgeService';
+import { submitRoomReport } from '@/src/services/reportService';
 import { getUser } from '@/src/services/userService';
 
+/* ─────────────────────────── Room Info Panel (imo-style, 2026-10-27) ──
+ * Dark panel, exactly like the boss's imo screenshots: collapsing room
+ * card, Room Details | Member tabs, member list with color role badges.
+ * HARD NO-DEMO LAW: every value comes from real data or a real flow.
+ * Rows with no real source are OMITTED (Member's Group, Followers) and
+ * reported — never faked. Room Level has no Vee system yet, so it shows
+ * the documented starting default Lv.1 (never imo's Lv.7).
+ * ─────────────────────────────────────────────────────────────────────── */
+
+// imo panel palette (dark, like the screenshots)
+const PANEL_BG = '#000000';
+const CARD_BG = '#1C1C1E';
+const ROW_BG = '#1C1C1E';
+const TEXT = '#FFFFFF';
+const SUB = '#9C9C9C';
+const DIM = '#8A8A8A';
+const DIVIDER = 'rgba(255,255,255,0.09)';
+const GOLD = '#FFB300'; // Honor
+const BLUE = '#42A5F5'; // admin (+ owner default, boss to confirm)
+const GREY = '#8A8A8E'; // regular member
+const GREEN = '#22C55E';
+const RED = '#FF453A';
+
+// Row-level caches: one-shot reads per uid, so scrolling back never refetches.
+const honorCache = new Map<string, boolean>();
+const lastSeenCache = new Map<string, number | null>();
+
+/** Honor = ≥1 currently-valid granted badge (users/{uid}/badges).
+ * subscribeBadges already filters expired badges at its choke point. */
+function useMemberHonor(uid: string): boolean | null {
+  const [has, setHas] = useState<boolean | null>(() => honorCache.get(uid) ?? null);
+  useEffect(() => {
+    if (honorCache.has(uid)) { setHas(honorCache.get(uid) ?? false); return; }
+    const unsub = subscribeBadges(uid, (badges) => {
+      const v = badges.length > 0;
+      honorCache.set(uid, v);
+      setHas(v);
+    });
+    return unsub;
+  }, [uid]);
+  return has;
+}
+
+/** Raw lastSeen (users/{uid}/lastSeen) — only a NUMBER counts. Anything else
+ * (e.g. an unresolved server timestamp) means "unknown": no status text is
+ * shown, never a fabricated "Active N days ago". Semantics: lastSeen is
+ * written on sign-in/profile writes, NOT room activity — live presence
+ * (the "Active" override) comes from the live participant list instead. */
+function useMemberLastSeen(uid: string): number | null | undefined {
+  const [v, setV] = useState<number | null | undefined>(() => lastSeenCache.get(uid));
+  useEffect(() => {
+    if (lastSeenCache.has(uid)) { setV(lastSeenCache.get(uid) ?? null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { get, ref } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const snap = await get(ref(database, `users/${uid}/lastSeen`));
+        const val = snap.val();
+        const num = typeof val === 'number' ? val : null;
+        if (!cancelled) { lastSeenCache.set(uid, num); setV(num); }
+      } catch { if (!cancelled) { lastSeenCache.set(uid, null); setV(null); } }
+    })();
+    return () => { cancelled = true; };
+  }, [uid]);
+  return v;
+}
+
+type MemberRowProps = {
+  m: Participant;
+  live: boolean;
+  isMe: boolean;
+  isOwner: boolean;
+  isAdmin: boolean;
+  blockedRecs: BlockRecord[];
+  onVisitProfile?: (uid: string, name: string) => void;
+  onSetAdmin: (uid: string) => void;
+  onBlock: (uid: string) => void;
+  onUnblock: (uid: string) => void;
+};
+
+function MemberRow({ m, live, isMe, isOwner, isAdmin, blockedRecs,
+  onVisitProfile, onSetAdmin, onBlock, onUnblock }: MemberRowProps) {
+  const { t } = useTranslation();
+  const honor = useMemberHonor(m.id);
+  const lastSeen = useMemberLastSeen(m.id);
+  // Role badge = status-icon COLOR (boss rule). Owner defaults to BLUE
+  // (management color) — flagged for the boss to correct on phone check.
+  const roleColor = honor === true ? GOLD : (m.role === 'host' || m.role === 'admin' ? BLUE : GREY);
+  const isGrey = m.role === 'member' && honor !== true;
+  const isBlocked = blockedRecs.some((r) => r.id === m.id && r.isActive && r.action === 'room-block');
+  // "..." ONLY on grey rows, and ONLY where a real action exists:
+  // owner can Set as Admin; owner/admin can Block/Unblock. A plain member
+  // viewing another member gets no "..." at all (never a dead menu).
+  const canSetAdmin = isOwner && !isMe;
+  const canBlock = !isMe && (isOwner || isAdmin);
+  const showDots = isGrey && (canSetAdmin || canBlock);
+
+  let status: string | null = null;
+  if (live) {
+    status = 'Active';
+  } else if (typeof lastSeen === 'number') {
+    const days = Math.floor((Date.now() - lastSeen) / 86400000);
+    status = days >= 1 ? `Active ${days} day${days > 1 ? 's' : ''} ago` : 'Active';
+  }
+
+  return (
+    <Pressable
+      onPress={() => onVisitProfile?.(m.id, m.name)}
+      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11 }}
+    >
+      <View style={{ width: 44, height: 44, borderRadius: 22,
+        backgroundColor: m.color + '33', alignItems: 'center', justifyContent: 'center',
+        marginRight: 12, overflow: 'hidden' }}>
+        {m.photoURL
+          ? <Image source={{ uri: m.photoURL }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+          : <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
+        }
+      </View>
+      <View style={{ flex: 1 }}>
+        {/* Real nickname ONLY — "Op Assistant" / star prefixes in imo are
+            nickname text, never badges; nothing is added here. */}
+        <Text style={{ color: TEXT, fontSize: 16, fontWeight: '600' }}>{m.name}</Text>
+        {status && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
+            <Feather name="user" size={12} color={roleColor} />
+            <Text style={{ color: DIM, fontSize: 13 }}>{status}</Text>
+          </View>
+        )}
+      </View>
+      {showDots && (
+        <Pressable
+          hitSlop={10}
+          onPress={() => {
+            const buttons: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
+            if (canSetAdmin) {
+              buttons.push({ text: t('voiceRoom.info.setAdmin', { defaultValue: 'Set as Admin' }),
+                onPress: () => onSetAdmin(m.id) });
+            }
+            buttons.push(isBlocked
+              ? { text: t('voiceRoom.info.unblock', { defaultValue: 'Unblock' }),
+                  onPress: () => onUnblock(m.id) }
+              : { text: t('voiceRoom.info.roomBlock', { defaultValue: 'Room Block' }),
+                  style: 'destructive', onPress: () => onBlock(m.id) });
+            buttons.push({ text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' });
+            Alert.alert(m.name, undefined, buttons);
+          }}
+        >
+          <Feather name="more-horizontal" size={20} color={DIM} />
+        </Pressable>
+      )}
+    </Pressable>
+  );
+}
+
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
-export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, roomTopic, accent,
+export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   roomName, onChangeRoomName, roomImageUri, onChangeRoomImage, roomId, description,
-  isOwner, isAdmin, ownerId, onDisband, onLeave, onVisitProfile }: {
+  isOwner, isAdmin, ownerId, onDisband, onVisitProfile,
+  myUid, myName, blockedRecs,
+  onOpenSettings, onOpenStore, onOpenInvite, onOpenRequests, onJoinRoom, onUnjoinRoom,
+  onSetAdmin, onBlock, onUnblock }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
-  /** Fix 9: Weekly diamonds earned (from wallets/{uid}/weeklyEarned). */
-  weeklyEarned: number;
   /** Room description text (may be empty). */
   description?: string;
-  roomTopic: string; accent: string;
+  roomTopic: string;
   roomName: string; onChangeRoomName: (name: string) => void;
   roomImageUri: string | null;
   /** Called with the Cloudinary URL after upload. */
@@ -30,22 +188,37 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
   roomId: string;
   /** Whether the current user is the room owner. */
   isOwner?: boolean;
-  /** Whether the current user is a room admin (can also edit name/image). */
+  /** Whether the current user is a room admin. */
   isAdmin?: boolean;
   /** Room owner's user ID — shown even if not currently in the room. */
   ownerId?: string;
   /** Called when the owner confirms "Disband Room". */
   onDisband?: () => void;
-  /** Called when a non-owner taps "Leave Room". */
-  onLeave?: () => void;
   /** Called when a member row is tapped — navigates to their profile. */
   onVisitProfile?: (uid: string, name: string) => void;
+  myUid: string; myName: string;
+  blockedRecs: BlockRecord[];
+  /** Opens the existing Room Settings modal (gear / Management Center / Edit). */
+  onOpenSettings: () => void;
+  /** Opens the existing Store route. */
+  onOpenStore: () => void;
+  /** Opens the existing room Invite modal. */
+  onOpenInvite: () => void;
+  /** Opens the existing seat-request queue modal. */
+  onOpenRequests: () => void;
+  /** Existing join handler (writes the member record). */
+  onJoinRoom: () => void;
+  /** Existing full-leave handler (membership removal + session exit). */
+  onUnjoinRoom: () => void;
+  onSetAdmin: (uid: string) => void;
+  onBlock: (uid: string) => void;
+  onUnblock: (uid: string) => void;
 }) {
   const { t } = useTranslation();
   const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
 
-  // JOINED MEMBERS (2026-10-11 Issue #5): Room Info shows ALL joined members
-  // (owner → admin → members), not just currently-live participants.
+  // JOINED MEMBERS: same pipeline as before (roomMembers + live, owner →
+  // admin → members by join time). The panel re-presents this data only.
   const [joinedMembers, setJoinedMembers] = useState<JoinedMember[]>([]);
   const [joinedProfiles, setJoinedProfiles] = useState<Record<string, { name: string; photoURL?: string }>>({});
   useEffect(() => {
@@ -53,8 +226,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     return subscribeRoomMembers(roomId, setJoinedMembers);
   }, [visible, roomId]);
   useEffect(() => {
-    // Fetch profiles for all joined members PLUS the owner when the owner
-    // has no roomMembers record (synthesized into the list below).
     const uids = new Set(joinedMembers.map((m) => m.uid));
     if (ownerId) uids.add(ownerId);
     if (uids.size === 0) return;
@@ -65,7 +236,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
           try {
             const p = await getUser(uid);
             if (!p) return null;
-            // Name fallback: DB name → email prefix → 'User' (Google users may have empty name)
             const fallbackName = p.name || (p.email ? p.email.split('@')[0] : null) || 'User';
             return [uid, { name: fallbackName, photoURL: p.photoURL || undefined }] as const;
           } catch { return null; }
@@ -73,27 +243,12 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
       );
       if (cancelled) return;
       const map: Record<string, { name: string; photoURL?: string }> = {};
-      for (const r of results) {
-        if (r) map[r[0]] = r[1];
-      }
+      for (const r of results) { if (r) map[r[0]] = r[1]; }
       setJoinedProfiles(map);
     })();
     return () => { cancelled = true; };
   }, [joinedMembers, ownerId]);
 
-  // Build display list: owner first, then admins, then members (by join time).
-  // Falls back to live allMembers if the joined index is empty.
-  // 2026-10-20 FIX (boss): three corrections —
-  //  (1) The OWNER is whoever owns the room (ownerId), regardless of the
-  //      role stored in their roomMembers record: a re-entry used to
-  //      downgrade that record to 'member', so the owner ALSO appeared in
-  //      the regular Members list (owner shown twice, "2 total" wrong).
-  //  (2) If the owner has no roomMembers record at all, synthesize one so
-  //      the owner always appears (and counts) exactly once.
-  //  (3) Name chain: a getUser() result of 'User' means "unresolved"
-  //      (thin users/{uid} profile) — fall through to the name stored in
-  //      the member's own roomMembers record at join time, then the live
-  //      participant name, and only then 'User'.
   const joinedAtByUid: Record<string, number> = {};
   const displayMembers: Participant[] = (() => {
     if (joinedMembers.length === 0) return allMembers;
@@ -127,7 +282,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
       });
   })();
 
-  // Fetch owner info if not in allMembers (2026-10-09)
   useEffect(() => {
     const ownerInList = allMembers.find((m: Participant) => m.role === 'host');
     if (ownerInList || !ownerId) return;
@@ -138,8 +292,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
         const { database } = await import('@/src/config/firebase');
         const snap = await get(ref(database, `users/${ownerId}`));
         if (!cancelled && snap.exists()) {
-          // P1 fix (2026-10-12): the DB field is `name` — nothing ever writes
-          // `displayName`, so this always fell back to 'Room Owner'.
           const data = snap.val() as { name?: string; photoURL?: string };
           setOwnerInfo({
             name: data.name || 'Room Owner',
@@ -150,41 +302,24 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     return () => { cancelled = true; };
   }, [allMembers, ownerId]);
 
-  const owner   = displayMembers.find((m: Participant) => m.role === 'host');
-  const admins  = displayMembers.filter((m: Participant) => m.role === 'admin');
-  // Sort regular members by activity: live (speaking, then unmuted) first,
-  // then SERIAL order by join time (joinedAt) — the member list is the
-  // room's joined roster, so its stable order is join order (2026-10-20).
-  const regular = displayMembers
-    .filter((m: Participant) => m.role === 'member')
-    .sort((a, b) => {
-      if (a.speaking !== b.speaking) return a.speaking ? -1 : 1;
-      if (a.muted !== b.muted) return a.muted ? 1 : -1;
-      return (joinedAtByUid[a.id] ?? 0) - (joinedAtByUid[b.id] ?? 0);
-    });
+  const liveIds = new Set(allMembers.map((p) => p.id));
+  const isMember = isOwner === true || isAdmin === true ||
+    displayMembers.some((m) => m.id === myUid);
+  const viewerIsOwnerOrAdmin = isOwner === true || isAdmin === true;
 
-  const [editingName,    setEditingName]    = useState(false);
-  const [nameInput,      setNameInput]      = useState(roomName);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(roomName);
   const [uploadingImage, setUploadingImage] = useState(false);
-
-  // PERMISSION FIX (2026-10-09): only owner/admin can edit room name or image.
-  // Regular members see a static name with no edit affordance.
-  // 2026-10-12: room name/cover are OWNER-only. Admins were offered editing
-  // here, but the security rules (rooms/$roomId/info/.write) deny them —
-  // UI must never offer what the rules deny. Admins keep full moderation
-  // powers (mute/unmute/kick/block/lock), not room identity.
+  // Name/image editing stays OWNER-only (rules deny admin writes to info).
   const canEdit = isOwner === true;
-
   useEffect(() => { if (!editingName) setNameInput(roomName); }, [roomName, editingName]);
 
-  // Fix 3/8: Pick image, upload to Cloudinary, then persist via onChangeRoomImage
   async function pickRoomImage() {
-    if (!canEdit) return; // owner/admin only
+    if (!canEdit) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       const title = t('voiceRoom.info.permissionRequired');
       const msg = t('voiceRoom.info.permissionMsg');
-      // Permanently denied — re-requesting shows nothing; offer Settings.
       if (perm.canAskAgain === false) alertPermissionPermanentlyDenied(title, msg);
       else Alert.alert(title, msg);
       return;
@@ -199,8 +334,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
       const uploaded = await uploadRoomCover(localUri);
       onChangeRoomImage(uploaded.url);
     } catch {
-      // Do NOT store the local device URI — it is inaccessible to other users.
-      // Silently discard and leave the existing room image unchanged.
       Alert.alert(
         t('voiceRoom.info.uploadError', 'Upload failed'),
         t('voiceRoom.info.uploadErrorMsg', 'Could not upload the image. Please try again.'),
@@ -218,38 +351,95 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     setEditingName(false);
   }
 
-  function MRow({ m, badge }: { m: Participant; badge?: string }) {
-    return (
-      <Pressable
-        onPress={() => onVisitProfile?.(m.id, m.name)}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9 }}
-      >
-        <View style={{ width: 38, height: 38, borderRadius: 19,
-          backgroundColor: m.color + '33', alignItems: 'center', justifyContent: 'center',
-          borderWidth: 2, borderColor: m.speaking ? C.gold : C.borderFaint, marginRight: 12,
-          overflow: 'hidden' }}>
-          {m.photoURL
-            ? <Image source={{ uri: m.photoURL }} style={{ width: 38, height: 38, borderRadius: 19 }} />
-            : <Text style={{ color: m.color, fontSize: 13, fontWeight: '800' }}>{m.initials}</Text>
-          }
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
-          {badge && <Text style={{ color: C.sub, fontSize: 11, marginTop: 1 }}>{badge}</Text>}
-        </View>
-        {m.speaking && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.mic }} />}
-        <Feather name="chevron-right" size={16} color={C.muted} style={{ marginLeft: 8 }} />
-      </Pressable>
+  // ── Panel state: tab, collapse-on-scroll, "..." menu, incremental list ──
+  const [tab, setTab] = useState<'member' | 'details'>('member');
+  const [collapsed, setCollapsed] = useState(false);
+  const [cardH, setCardH] = useState(120);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const flatRef = useRef<FlatList<Participant>>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const id = scrollY.addListener(({ value }: { value: number }) => {
+      setCollapsed(value > 80);
+    });
+    return () => { scrollY.removeListener(id); };
+  }, [scrollY]);
+  useEffect(() => {
+    if (visible) { setVisibleCount(30); scrollY.setValue(0); setCollapsed(false); setMenuOpen(false); }
+  }, [visible, roomId, scrollY]);
+
+  const cardHeight = scrollY.interpolate({
+    inputRange: [0, cardH], outputRange: [cardH, 0], extrapolate: 'clamp' });
+  const cardOpacity = scrollY.interpolate({
+    inputRange: [0, cardH * 0.7], outputRange: [1, 0], extrapolate: 'clamp' });
+
+  function onScroll(e: { nativeEvent: { contentOffset: { y: number } } }) {
+    scrollY.setValue(e.nativeEvent.contentOffset.y);
+  }
+  function switchTab(next: 'member' | 'details') {
+    setTab(next);
+    scrollY.setValue(0);
+    setCollapsed(false);
+    setMenuOpen(false);
+    flatRef.current?.scrollToOffset({ offset: 0, animated: false });
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  async function copyRoomId() {
+    try {
+      await Clipboard.setStringAsync(roomId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert(t('voiceRoom.info.copyIdTitle', { defaultValue: 'Room ID copied' }), roomId);
+    } catch { /* clipboard unavailable — nothing to show */ }
+  }
+
+  function askUnjoin() {
+    setMenuOpen(false);
+    Alert.alert(
+      t('voiceRoom.info.unjoinTitle', { defaultValue: 'Unjoin room' }),
+      t('voiceRoom.info.unjoinMsg', { defaultValue: 'Leave this room and remove your membership? You can join again anytime.' }),
+      [
+        { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        { text: t('voiceRoom.info.unjoin', { defaultValue: 'Unjoin' }), style: 'destructive',
+          onPress: () => onUnjoinRoom() },
+      ],
     );
   }
 
-  function Row({ label, value }: { label: string; value: string }) {
+  function askReport() {
+    setMenuOpen(false);
+    Alert.alert(
+      t('voiceRoom.info.reportTitle', { defaultValue: 'Report this room' }),
+      t('voiceRoom.info.reportMsg', { defaultValue: 'Report this room to moderators for review?' }),
+      [
+        { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        { text: t('voiceRoom.info.report', { defaultValue: 'Report' }),
+          onPress: async () => {
+            try {
+              await submitRoomReport({ reporterUid: myUid, reporterName: myName, roomId, roomName });
+              Alert.alert(t('voiceRoom.info.reportSuccess', { defaultValue: 'Report submitted. Thank you.' }));
+            } catch {
+              Alert.alert(t('voiceRoom.screen.error'),
+                t('voiceRoom.info.reportError', { defaultValue: 'Could not submit the report. Please try again.' }));
+            }
+          } },
+      ],
+    );
+  }
+
+  function TabButton({ id, label }: { id: 'member' | 'details'; label: string }) {
+    const selected = tab === id;
     return (
-      <View style={{ flexDirection: 'row', paddingVertical: 9,
-        borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
-        <Text style={{ flex: 1, color: C.muted, fontSize: 13 }}>{label}</Text>
-        <Text style={{ color: C.text, fontSize: 13, fontWeight: '700' }}>{value}</Text>
-      </View>
+      <Pressable onPress={() => switchTab(id)} style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
+        <Text style={{ color: selected ? TEXT : DIM, fontSize: 17, fontWeight: selected ? '700' : '400' }}>
+          {label}
+        </Text>
+        <View style={{ height: 3, width: 28, borderRadius: 2, marginTop: 8,
+          backgroundColor: selected ? TEXT : 'transparent' }} />
+      </Pressable>
     );
   }
 
@@ -257,185 +447,372 @@ export function RoomInfoModal({ visible, onClose, allMembers, weeklyEarned, room
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: accent + '44', maxHeight: '88%' }}>
-        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
-          alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
+        backgroundColor: PANEL_BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+        maxHeight: '88%' }}>
+        {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+          paddingTop: 14, paddingBottom: 6, gap: 10 }}>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Feather name="chevron-down" size={24} color={TEXT} />
+          </Pressable>
+          {collapsed && (
+            <>
+              <View style={{ width: 28, height: 28, borderRadius: 6, overflow: 'hidden',
+                backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center' }}>
+                {roomImageUri
+                  ? <Image source={{ uri: roomImageUri }} style={{ width: 28, height: 28 }} />
+                  : <Text style={{ color: TEXT, fontSize: 12, fontWeight: '800' }}>
+                      {(roomName || '?').charAt(0).toUpperCase()}
+                    </Text>
+                }
+              </View>
+              <Text numberOfLines={1} style={{ flex: 1, color: TEXT, fontSize: 16, fontWeight: '700' }}>
+                {roomName}
+              </Text>
+            </>
+          )}
+          {!collapsed && <View style={{ flex: 1 }} />}
+          {viewerIsOwnerOrAdmin && (
+            <Pressable onPress={onOpenSettings} hitSlop={8}>
+              <Feather name="settings" size={24} color={TEXT} />
+            </Pressable>
+          )}
+          <Pressable onPress={() => setMenuOpen((v) => !v)} hitSlop={8}>
+            <Feather name="more-horizontal" size={24} color={TEXT} />
+          </Pressable>
+        </View>
 
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
-          {/* ── Profile section ── */}
-          <View style={{ alignItems: 'center', marginBottom: 20 }}>
-            {/* Tappable room profile picture — Fix 3/8 (owner/admin only) */}
-            <Pressable onPress={pickRoomImage} disabled={uploadingImage || !canEdit} style={{ marginBottom: 14 }}>
-              <View style={{ width: 84, height: 84, borderRadius: 42,
-                backgroundColor: accent + '33',
-                alignItems: 'center', justifyContent: 'center',
-                borderWidth: 2.5, borderColor: accent + '66', overflow: 'hidden' }}>
+        {/* ── Collapsing room card (expanded state only) ── */}
+        <Animated.View style={{ height: cardHeight, opacity: cardOpacity, overflow: 'hidden' }}>
+          <View
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              if (h > 0 && h !== cardH) setCardH(h);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: CARD_BG,
+              borderRadius: 16, marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 }}
+          >
+            <Pressable onPress={pickRoomImage} disabled={uploadingImage || !canEdit}>
+              <View style={{ width: 72, height: 72, borderRadius: 12, overflow: 'hidden',
+                backgroundColor: '#2C2C2E', alignItems: 'center', justifyContent: 'center' }}>
                 {uploadingImage
                   ? <PremiumLoader size="medium" />
                   : roomImageUri
-                    ? <Image source={{ uri: roomImageUri }} style={{ width: 84, height: 84 }} />
-                    : <Feather name="mic" size={34} color={accent} />
+                    ? <Image source={{ uri: roomImageUri }} style={{ width: 72, height: 72 }} />
+                    : <Text style={{ color: TEXT, fontSize: 28, fontWeight: '800' }}>
+                        {(roomName || '?').charAt(0).toUpperCase()}
+                      </Text>
                 }
               </View>
-              {/* Camera badge — only for editors */}
-              {canEdit && (
-              <View style={{ position: 'absolute', bottom: 2, right: 2,
-                width: 26, height: 26, borderRadius: 13,
-                backgroundColor: accent, alignItems: 'center', justifyContent: 'center',
-                borderWidth: 2, borderColor: '#FFFFFF' }}>
-                <Feather name="camera" size={13} color="#fff" />
-              </View>
+              {/* Owner-only camera badge (retained: this is the ONLY
+                  name/cover edit path; imo's card has none — deviation
+                  reported, not hidden). */}
+              {canEdit && !uploadingImage && (
+                <View style={{ position: 'absolute', bottom: 2, right: 2,
+                  width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="camera" size={12} color="#000000" />
+                </View>
               )}
             </Pressable>
-
-            {/* Room name — tap > to edit (owner/admin only) */}
-            {editingName ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 }}>
-                <TextInput
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                  autoFocus
-                  style={{ color: C.text, fontSize: 19, fontWeight: '900',
-                    borderBottomWidth: 1.5, borderBottomColor: accent,
-                    minWidth: 120, textAlign: 'center', paddingBottom: 2 }}
-                  onSubmitEditing={commitName}
-                  maxLength={30}
-                />
-                <Pressable onPress={commitName} hitSlop={8}>
-                  <Feather name="check" size={22} color={accent} />
+            <View style={{ flex: 1 }}>
+              {editingName ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput
+                    value={nameInput}
+                    onChangeText={setNameInput}
+                    autoFocus
+                    style={{ color: TEXT, fontSize: 18, fontWeight: '800',
+                      borderBottomWidth: 1.5, borderBottomColor: '#555555',
+                      minWidth: 100, paddingBottom: 2 }}
+                    onSubmitEditing={commitName}
+                    maxLength={30}
+                  />
+                  <Pressable onPress={commitName} hitSlop={8}>
+                    <Feather name="check" size={20} color={TEXT} />
+                  </Pressable>
+                  <Pressable onPress={() => { setNameInput(roomName); setEditingName(false); }} hitSlop={8}>
+                    <Feather name="x" size={18} color={DIM} />
+                  </Pressable>
+                </View>
+              ) : canEdit ? (
+                <Pressable
+                  onPress={() => { setNameInput(roomName); setEditingName(true); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                >
+                  <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800' }}>
+                    {roomName}
+                  </Text>
+                  <Feather name="chevron-right" size={18} color={DIM} />
                 </Pressable>
-                <Pressable onPress={() => { setNameInput(roomName); setEditingName(false); }} hitSlop={8}>
-                  <Feather name="x" size={19} color={C.muted} />
+              ) : (
+                <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800' }}>
+                  {roomName}
+                </Text>
+              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
+                <Text style={{ color: SUB, fontSize: 13 }}>
+                  {t('voiceRoom.info.roomId')} : {roomId}
+                </Text>
+                <Pressable onPress={copyRoomId} hitSlop={8}>
+                  <Feather name="copy" size={14} color={SUB} />
                 </Pressable>
               </View>
-            ) : canEdit ? (
-              <Pressable
-                onPress={() => { setNameInput(roomName); setEditingName(true); }}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{roomName}</Text>
-                <Feather name="chevron-right" size={18} color={accent} />
-              </Pressable>
-            ) : (
-              <View style={{ marginBottom: 2 }}>
-                <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{roomName}</Text>
-              </View>
-            )}
-
-            <Text style={{ color: C.sub, fontSize: 13, marginTop: 4 }}>{roomTopic}</Text>
-          </View>
-
-          {/* ── Info rows ── */}
-          <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
-            borderWidth: 1, borderColor: C.borderFaint, marginBottom: description ? 12 : 20 }}>
-            <Row label={t('voiceRoom.info.roomId')}      value={roomId} />
-            <Row label={t('voiceRoom.info.type')}        value={ROOM_META.type} />
-            <Row label={t('voiceRoom.info.members')}     value={t('voiceRoom.info.membersTotal', { count: displayMembers.length })} />
-            <Row label={t('voiceRoom.info.coinsWeekly')} value={fmtDiamonds(weeklyEarned)} />
-          </View>
-
-          {/* ── Room description ── */}
-          {!!description && (
-            <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
-              borderWidth: 1, borderColor: C.borderFaint, marginBottom: 20 }}>
-              <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 0.8,
-                textTransform: 'uppercase', marginBottom: 8 }}>
-                {t('voiceRoom.info.description', { defaultValue: 'Description' })}
+            </View>
+            <Pressable
+              onPress={onOpenStore}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}
+            >
+              <Feather name="shopping-bag" size={14} color={TEXT} />
+              <Text style={{ color: TEXT, fontSize: 13, fontWeight: '700' }}>
+                {t('voiceRoom.info.store', { defaultValue: 'Store' })}
               </Text>
-              <Text style={{ color: C.text, fontSize: 14, lineHeight: 20 }}>
-                {description}
+            </Pressable>
+          </View>
+        </Animated.View>
+
+        {/* ── Tabs (fixed under the header) ── */}
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: DIVIDER,
+          marginTop: 4 }}>
+          <TabButton id="details" label={t('voiceRoom.info.roomDetails', { defaultValue: 'Room Details' })} />
+          <TabButton id="member" label={t('voiceRoom.info.memberTab', { defaultValue: 'Member' })} />
+        </View>
+
+        {/* ── Tab content ── */}
+        <View style={{ flex: 1 }}>
+          {tab === 'details' ? (
+            <ScrollView
+              ref={scrollRef}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
+            >
+              {viewerIsOwnerOrAdmin && (
+                <Pressable
+                  onPress={onOpenSettings}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14 }}
+                >
+                  <Text style={{ flex: 1, color: TEXT, fontSize: 17 }}>
+                    {t('voiceRoom.info.managementCenter', { defaultValue: 'Room Management Center' })}
+                  </Text>
+                  <Feather name="chevron-right" size={20} color={DIM} />
+                </Pressable>
+              )}
+              <View style={{ marginBottom: 28 }}>
+                <Text style={{ color: TEXT, fontSize: 15, marginBottom: 8 }}>
+                  {t('voiceRoom.info.roomLevel', { defaultValue: 'Room Level' })}
+                </Text>
+                {/* No room-level system exists in Vee yet: Lv.1 is the
+                    documented starting default for every room (never
+                    imo's Lv.7, never a per-room invented value). */}
+                <Text style={{ color: TEXT, fontSize: 34, fontWeight: '700' }}>Lv.1</Text>
+              </View>
+              <View style={{ marginBottom: 28 }}>
+                <Text style={{ color: TEXT, fontSize: 15, marginBottom: 8 }}>
+                  {t('voiceRoom.info.members')}
+                </Text>
+                <Text style={{ color: TEXT, fontSize: 34, fontWeight: '700' }}>
+                  {displayMembers.length}
+                </Text>
+              </View>
+              {(!!roomTopic || isOwner === true) && (
+                <View style={{ marginBottom: 28 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ flex: 1, color: TEXT, fontSize: 15 }}>
+                      {t('voiceRoom.info.topic', { defaultValue: 'Topic' })}
+                    </Text>
+                    {isOwner === true && (
+                      <Pressable onPress={onOpenSettings} hitSlop={8}
+                        style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ color: DIM, fontSize: 14 }}>
+                          {t('voiceRoom.info.edit', { defaultValue: 'Edit' })}
+                        </Text>
+                        <Feather name="chevron-right" size={16} color={DIM} />
+                      </Pressable>
+                    )}
+                  </View>
+                  {!!roomTopic && (
+                    <Text style={{ color: TEXT, fontSize: 15, lineHeight: 21 }}>{roomTopic}</Text>
+                  )}
+                </View>
+              )}
+              {(!!description || isOwner === true) && (
+                <View style={{ marginBottom: 28 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ flex: 1, color: TEXT, fontSize: 15 }}>
+                      {t('voiceRoom.info.description', { defaultValue: 'Description' })}
+                    </Text>
+                    {isOwner === true && (
+                      <Pressable onPress={onOpenSettings} hitSlop={8}
+                        style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ color: DIM, fontSize: 14 }}>
+                          {t('voiceRoom.info.edit', { defaultValue: 'Edit' })}
+                        </Text>
+                        <Feather name="chevron-right" size={16} color={DIM} />
+                      </Pressable>
+                    )}
+                  </View>
+                  {!!description && (
+                    <Text style={{ color: TEXT, fontSize: 15, lineHeight: 21 }}>{description}</Text>
+                  )}
+                </View>
+              )}
+              {/* Owner-only Disband (deliberate deviation, reported): the
+                  old panel's Disband button was the ONLY disband path;
+                  imo's screenshots show none, but deleting the capability
+                  would break owner functionality. */}
+              {isOwner === true && (
+                <Pressable
+                  onPress={() => {
+                    Alert.alert(
+                      t('voiceRoom.info.disbandTitle', { defaultValue: 'Disband Room' }),
+                      t('voiceRoom.info.disbandMsg', { defaultValue: 'This will permanently delete the room for everyone. Are you sure?' }),
+                      [
+                        { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                        { text: t('voiceRoom.info.disbandConfirm', { defaultValue: 'Disband' }),
+                          style: 'destructive', onPress: () => { onClose(); onDisband?.(); } },
+                      ],
+                    );
+                  }}
+                  style={{ paddingVertical: 14 }}
+                >
+                  <Text style={{ color: RED, fontSize: 16, fontWeight: '700' }}>
+                    {t('voiceRoom.info.disbandRoom', { defaultValue: 'Disband Room' })}
+                  </Text>
+                </Pressable>
+              )}
+            </ScrollView>
+          ) : (
+            <FlatList
+              ref={flatRef}
+              data={displayMembers.slice(0, visibleCount)}
+              keyExtractor={(m) => m.id}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
+              initialNumToRender={30}
+              maxToRenderPerBatch={20}
+              windowSize={10}
+              onEndReached={() => {
+                if (visibleCount < displayMembers.length) {
+                  setVisibleCount((c) => Math.min(c + 30, displayMembers.length));
+                }
+              }}
+              onEndReachedThreshold={0.5}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+              ListHeaderComponent={
+                <View>
+                  {viewerIsOwnerOrAdmin && (
+                    <Pressable
+                      onPress={onOpenRequests}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
+                        borderBottomWidth: 1, borderBottomColor: DIVIDER }}
+                    >
+                      <Feather name="users" size={20} color={TEXT} style={{ marginRight: 14 }} />
+                      <Text style={{ flex: 1, color: TEXT, fontSize: 16 }}>
+                        {t('voiceRoom.info.memberRequest', { defaultValue: 'Member request' })}
+                      </Text>
+                      <Feather name="chevron-right" size={20} color={DIM} />
+                    </Pressable>
+                  )}
+                  <Pressable
+                    onPress={onOpenInvite}
+                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
+                      borderBottomWidth: 1, borderBottomColor: DIVIDER }}
+                  >
+                    <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
+                      borderColor: TEXT, alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                      <Feather name="plus" size={16} color={TEXT} />
+                    </View>
+                    <Text style={{ color: TEXT, fontSize: 16 }}>
+                      {t('voiceRoom.info.addMembers', { defaultValue: 'Add Members' })}
+                    </Text>
+                  </Pressable>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <MemberRow
+                  m={item}
+                  live={liveIds.has(item.id)}
+                  isMe={item.id === myUid}
+                  isOwner={isOwner === true}
+                  isAdmin={isAdmin === true}
+                  blockedRecs={blockedRecs}
+                  onVisitProfile={onVisitProfile}
+                  onSetAdmin={onSetAdmin}
+                  onBlock={onBlock}
+                  onUnblock={onUnblock}
+                />
+              )}
+            />
+          )}
+        </View>
+
+        {/* ── Persistent bottom Joined toggle ── */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+          {!isMember ? (
+            <Pressable
+              onPress={onJoinRoom}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                gap: 8, backgroundColor: GREEN, borderRadius: 14, paddingVertical: 14 }}
+            >
+              <Feather name="user-plus" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '800' }}>
+                {t('voiceRoom.info.join', { defaultValue: 'Join' })}
+              </Text>
+            </Pressable>
+          ) : isOwner === true ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 8, borderWidth: 1, borderColor: '#444444', borderRadius: 14, paddingVertical: 14 }}>
+              <Feather name="user" size={18} color={TEXT} />
+              <Text style={{ color: TEXT, fontSize: 16, fontWeight: '700' }}>
+                {t('voiceRoom.info.joined', { defaultValue: 'Joined' })}
               </Text>
             </View>
-          )}
-
-          {(owner || ownerInfo) && (
-            <>
-              <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
-                marginBottom: 8, textTransform: 'uppercase' }}>
-                {t('voiceRoom.info.ownerSection')}
-              </Text>
-              <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
-                borderWidth: 1, borderColor: C.borderFaint, marginBottom: 20 }}>
-                {owner ? (
-                  <MRow m={owner} badge={t('voiceRoom.info.ownerBadge')} />
-                ) : ownerInfo ? (
-                  <MRow
-                    m={{
-                      id: ownerId ?? '',
-                      name: ownerInfo.name,
-                      photoURL: ownerInfo.photoURL,
-                      role: 'host' } as Participant}
-                    badge={t('voiceRoom.info.ownerBadge')}
-                  />
-                ) : null}
-              </View>
-            </>
-          )}
-          {admins.length > 0 && (
-            <>
-              <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
-                marginBottom: 8, textTransform: 'uppercase' }}>
-                {t('voiceRoom.info.adminsSection', { count: admins.length })}
-              </Text>
-              <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
-                borderWidth: 1, borderColor: C.borderFaint, marginBottom: 20 }}>
-                {admins.map(m => <MRow key={m.id} m={m} badge={t('voiceRoom.info.adminBadge')} />)}
-              </View>
-            </>
-          )}
-          {regular.length > 0 && (
-            <>
-              <Text style={{ color: C.sub, fontSize: 12, fontWeight: '800', letterSpacing: 1.2,
-                marginBottom: 8, textTransform: 'uppercase' }}>
-                {t('voiceRoom.info.membersSection', { count: regular.length })}
-              </Text>
-              <View style={{ backgroundColor: C.card, borderRadius: 16, padding: 14,
-                borderWidth: 1, borderColor: C.borderFaint, marginBottom: 20 }}>
-                {regular.map(m => <MRow key={m.id} m={m} />)}
-              </View>
-            </>
-          )}
-        </ScrollView>
-
-        <View style={{ padding: 16, gap: 10 }}>
-          {isOwner ? (
-            <Pressable
-              onPress={() => {
-                Alert.alert(
-                  t('voiceRoom.info.disbandTitle', { defaultValue: 'Disband Room' }),
-                  t('voiceRoom.info.disbandMsg', { defaultValue: 'This will permanently delete the room for everyone. Are you sure?' }),
-                  [
-                    { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-                    {
-                      text: t('voiceRoom.info.disbandConfirm', { defaultValue: 'Disband' }),
-                      style: 'destructive',
-                      onPress: () => { onClose(); onDisband?.(); } },
-                  ],
-                );
-              }}
-              style={{ backgroundColor: '#EF4444', borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-                {t('voiceRoom.info.disbandRoom', { defaultValue: '🗑 Disband Room' })}
-              </Text>
-            </Pressable>
           ) : (
             <Pressable
-              onPress={() => { onClose(); onLeave?.(); }}
-              style={{ backgroundColor: '#EF4444', borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+              onPress={askUnjoin}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                gap: 8, borderWidth: 1, borderColor: '#444444', borderRadius: 14, paddingVertical: 14 }}
             >
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-                {t('voiceRoom.info.leaveRoom', { defaultValue: '✕ Leave Room' })}
+              <Feather name="user" size={18} color={TEXT} />
+              <Text style={{ color: TEXT, fontSize: 16, fontWeight: '700' }}>
+                {t('voiceRoom.info.joined', { defaultValue: 'Joined' })}
               </Text>
             </Pressable>
           )}
-          <Pressable onPress={onClose} style={{ backgroundColor: accent + '33', borderRadius: 16,
-            paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: accent + '55' }}>
-            <Text style={{ color: accent, fontWeight: '700', fontSize: 14 }}>
-              {t('voiceRoom.info.close')}
-            </Text>
-          </Pressable>
         </View>
+
+        {/* ── Panel-header "..." dropdown (dark, anchored top-right) ── */}
+        {menuOpen && (
+          <>
+            <Pressable
+              onPress={() => setMenuOpen(false)}
+              style={{ position: 'absolute', top: 56, left: 0, right: 0, bottom: 0, zIndex: 20 }}
+            />
+            <View style={{ position: 'absolute', top: 52, right: 12, width: 200,
+              backgroundColor: CARD_BG, borderRadius: 14, paddingVertical: 6, zIndex: 21,
+              shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 12, elevation: 8 }}>
+              <Pressable onPress={askReport}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16 }}>
+                <Feather name="alert-triangle" size={20} color={TEXT} />
+                <Text style={{ color: TEXT, fontSize: 16 }}>
+                  {t('voiceRoom.info.report', { defaultValue: 'Report' })}
+                </Text>
+              </Pressable>
+              {isMember && isOwner !== true && (
+                <Pressable onPress={askUnjoin}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13,
+                    paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: DIVIDER }}>
+                  <Feather name="log-out" size={20} color={TEXT} />
+                  <Text style={{ color: TEXT, fontSize: 16 }}>
+                    {t('voiceRoom.info.unjoin', { defaultValue: 'Unjoin' })}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </>
+        )}
       </View>
     </Modal>
   );

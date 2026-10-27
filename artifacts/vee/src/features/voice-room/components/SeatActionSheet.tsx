@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactElement } from 'react';
+import { useState, useEffect, type ComponentProps, type ReactElement } from 'react';
 import { View, Text, Image, Pressable, Modal, Platform, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -11,7 +11,7 @@ import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../typ
 /* Thin white outline line-icons matching imo's seat-menu glyphs (never emoji). */
 function ImoSeatIcon() {
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
       <Path d="M4 11a2 2 0 0 1 2 2v1h12v-1a2 2 0 0 1 2-2" />
       <Path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" />
@@ -21,7 +21,7 @@ function ImoSeatIcon() {
 }
 function ImoInviteIcon() {
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       <Circle cx="9" cy="8" r="3.5" />
       <Path d="M3.5 19c.6-3 2.9-4.5 5.5-4.5S14 16 14.5 19" />
       <Path d="M16 4.5v5M13.5 7h5" />
@@ -30,7 +30,7 @@ function ImoInviteIcon() {
 }
 function ImoLockIcon() {
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       <Rect x="5" y="10.5" width="14" height="10" rx="2" />
       <Path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
       <Circle cx="12" cy="15.5" r="1.4" />
@@ -64,6 +64,13 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   anchor?: { x: number; y: number; width: number; height: number } | null;
 }) {
   const { t } = useTranslation();
+  // 2026-10-27 (boss): the imo popup is CONTENT-SIZED, not fixed-width —
+  // the card measures itself (onLayout) and is then placed centered on the
+  // tapped seat's column with the measured width. Hidden (opacity 0) until
+  // the first measurement so it never flashes at a wrong width/position.
+  // Same logic covers the host 2-row popup (same component, fewer rows).
+  const [popupW, setPopupW] = useState<number | null>(null);
+  useEffect(() => { setPopupW(null); }, [visible, seatIdx, anchor?.x, anchor?.y, audience.length]);
   const isOwner = myRole === 'host';
   const isAdminMe = myRole === 'admin';
   const occupied = !!member;
@@ -233,6 +240,9 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   // Occupied seats fall through to the existing sheet below, untouched.
   // Host seat (seatIdx 0) NEVER gets a Lock/Unlock row: the host seat is
   // admin/owner-only by takeSeat rules, so locking it is meaningless.
+  // 2026-10-27 (boss): MEDIUM sizes — text 16, icons 22, row padding
+  // 12 vertical / 18 horizontal, radius 14 — and CONTENT-FIT width (see
+  // popupW above): no extra dark space past the longest row text.
   if (!occupied) {
     const imoRows: { label: string; icon: ReactElement; onPress: () => void }[] = [
       { label: t('voiceRoom.seatAction.takeMic', { defaultValue: 'Take Mic' }), icon: <ImoSeatIcon />, onPress: onJoin },
@@ -247,34 +257,38 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
         imoRows.push({ label: t('voiceRoom.seatAction.lockMic', { defaultValue: 'Lock Mic' }), icon: <ImoLockIcon />, onPress: onLock });
       }
     }
-    const POPUP_WIDTH = 300;
-    const ROW_HEIGHT = 56;
+    const ROW_HEIGHT = 46;
     const popupHeight = imoRows.length * ROW_HEIGHT + 12;
     const win = Dimensions.get('window');
-    let popupLeft = (win.width - POPUP_WIDTH) / 2;
-    let popupTop = 180;
-    if (anchor) {
-      popupLeft = anchor.x + anchor.width / 2 - POPUP_WIDTH / 2;
-      popupLeft = Math.min(Math.max(popupLeft, 12), Math.max(12, win.width - POPUP_WIDTH - 12));
-      popupTop = anchor.y + anchor.height + 8;
-      if (popupTop + popupHeight > win.height - 12) {
-        popupTop = anchor.y - popupHeight - 8;
-      }
-      if (popupTop < 12) popupTop = 12;
+    const measuredW = popupW ?? 0;
+    let popupLeft = anchor
+      ? anchor.x + anchor.width / 2 - measuredW / 2
+      : (win.width - measuredW) / 2;
+    popupLeft = Math.min(Math.max(popupLeft, 12), Math.max(12, win.width - measuredW - 12));
+    let popupTop = anchor ? anchor.y + anchor.height + 8 : 180;
+    if (anchor && popupTop + popupHeight > win.height - 12) {
+      popupTop = anchor.y - popupHeight - 8;
     }
+    if (popupTop < 12) popupTop = 12;
     return (
       <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-        <View style={{ position: 'absolute', left: popupLeft, top: popupTop, width: POPUP_WIDTH,
-          backgroundColor: '#1e1e20', borderRadius: 16, paddingVertical: 6,
+        <View
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && w !== popupW) setPopupW(w);
+          }}
+          style={{ position: 'absolute', left: popupLeft, top: popupTop,
+          width: popupW ?? undefined, opacity: popupW == null ? 0 : 1,
+          backgroundColor: '#1e1e20', borderRadius: 14, paddingVertical: 6,
           shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
           elevation: 12 }}>
           {imoRows.map((r, i) => (
             <Pressable key={r.label} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); r.onPress(); }}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 22, gap: 16,
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 18, gap: 16,
                 borderTopWidth: i === 0 ? 0 : 1, borderTopColor: 'rgba(255,255,255,0.09)' }}>
               {r.icon}
-              <Text style={{ color: '#FFFFFF', fontSize: 18 }}>{r.label}</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 16 }}>{r.label}</Text>
             </Pressable>
           ))}
         </View>

@@ -108,7 +108,8 @@ import {
   isPinVerifiedForSession as isPinVerified,
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
-  sendRoomGiftEvent, subscribeRoomGiftEvents } from '../services/firebaseRoomService';
+  sendRoomGiftEvent, subscribeRoomGiftEvents,
+  leaveRoomCompletely } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
@@ -2710,6 +2711,17 @@ export default function VoiceRoomScreen() {
     }
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
 
+  // 2026-10-27 (boss: Room Info Unjoin = full Room Leave): Unjoin removes
+  // membership (leaveRoomCompletely: roomMembers + userRooms + audience)
+  // AND exits the session via the existing handleLeave path. The owner
+  // never gets this path (the panel hides Unjoin for owners).
+  const handleUnjoinRoom = useCallback(async () => {
+    try { await leaveRoomCompletely(roomId, myUid); } catch { /* best-effort */ }
+    setIsRoomMember(false);
+    setHasJoined(false);
+    handleLeave();
+  }, [roomId, myUid, handleLeave]);
+
   const handleMinimize = useCallback(() => {
     hasLeftRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -3185,11 +3197,8 @@ export default function VoiceRoomScreen() {
                   </View>
                 </ScalePress>
               )}
-              {isOwnerOrAdmin && (
-                <ScalePress onPress={() => setSettingsOpen(true)}>
-                  <Feather name="settings" size={26} color={C.sub} />
-                </ScalePress>
-              )}
+              {/* 2026-10-27 (boss): settings gear moved into the Room Info
+                  panel — no longer duplicated in the room header. */}
               {/* 2026-10-25 (boss): three-dot customize panel — ONLY an
                   admin/owner seated in the host seat sees it. */}
               {isHostSeatedOwnerOrAdmin && (
@@ -3764,6 +3773,9 @@ export default function VoiceRoomScreen() {
         entryBanner={entryBanner}
         setEntryBanner={setEntryBanner}
         handleDisband={handleDisband}
+        onJoinRoom={handleJoinRoom}
+        onUnjoinRoom={handleUnjoinRoom}
+        setSeatQueueOpen={setSeatQueueOpen}
         handleViewOtherProfile={handleViewOtherProfile}
         handleViewOwnProfile={handleViewOwnProfile}
         handleEditOwnProfile={handleEditOwnProfile}

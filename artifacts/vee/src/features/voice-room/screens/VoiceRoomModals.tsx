@@ -7,6 +7,7 @@ import { View, Text, Pressable, TextInput, Modal, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { RoomInfoModal } from '../components/RoomInfoModal';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
@@ -62,6 +63,9 @@ export interface VoiceRoomModalsProps {
   lockedSeats: Set<number>;
   roomInfoOpen: boolean;
   setRoomInfoOpen: (v: boolean) => void;
+  setSeatQueueOpen: (v: boolean) => void;
+  onJoinRoom: () => void;
+  onUnjoinRoom: () => void;
   opHistOpen: boolean;
   setOpHistOpen: (v: boolean) => void;
   settingsOpen: boolean;
@@ -139,10 +143,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         visible={p.roomInfoOpen}
         onClose={() => p.setRoomInfoOpen(false)}
         allMembers={p.allMembers}
-        weeklyEarned={p.weeklyEarned}
         description={p.roomDescription}
         roomTopic={p.roomTopic}
-        accent={p.accentColor}
         roomName={p.roomName}
         onChangeRoomName={(newName) => {
           p.setRoomName(newName);
@@ -162,8 +164,19 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         isAdmin={p.myRole === 'admin'}
         ownerId={p.ownerId}
         onDisband={p.handleDisband}
-        onLeave={() => { p.setRoomInfoOpen(false); p.setExitModalOpen(true); }}
         onVisitProfile={p.handleViewOtherProfile}
+        myUid={p.myUid}
+        myName={p.myName}
+        blockedRecs={p.blockedRecs}
+        onOpenSettings={() => p.setSettingsOpen(true)}
+        onOpenStore={() => router.push('/store')}
+        onOpenInvite={() => p.setInviteOpen(true)}
+        onOpenRequests={() => p.setSeatQueueOpen(true)}
+        onJoinRoom={p.onJoinRoom}
+        onUnjoinRoom={p.onUnjoinRoom}
+        onSetAdmin={(uid) => p.setAdminRole(uid)}
+        onBlock={(uid) => p.blockUser(uid, 'room-block')}
+        onUnblock={(uid) => p.unblockUser(uid)}
       />
       <OperationHistoryModal
         visible={p.opHistOpen}
