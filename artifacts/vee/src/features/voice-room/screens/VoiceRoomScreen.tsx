@@ -3839,7 +3839,7 @@ export default function VoiceRoomScreen() {
         onClose={() => setCustomizeOpen(false)}
         isOwnerOrAdmin={isOwnerOrAdmin}
         isHostSeat={isHostSeat}
-        nowPlayingTitle={music?.current ? music.current.title.replace(/\.[^.]+$/, '') : null}
+        nowPlayingTitle={music?.current && typeof music.current.title === 'string' ? music.current.title.replace(/\.[^.]+$/, '') : null}
         onOpenMusic={() => { setCustomizeOpen(false); setMusicOpen(true); }}
         onOpenGames={() => { setCustomizeOpen(false); setGamesOpen(true); }}
         onOpenLudu={() => { setCustomizeOpen(false); setGameNav({ kind: 'ludu', gameId: null }); }}

@@ -1,7 +1,8 @@
 /* ─────────────────────── Music formatting ─────────────────────── */
 
 /** Strip a file extension for display ("song.mp3" -> "song"). */
-export function displayTitle(title: string): string {
+export function displayTitle(title: string | undefined | null): string {
+  if (typeof title !== 'string') return '';
   return title.replace(/\.[^.]+$/, '');
 }
 
