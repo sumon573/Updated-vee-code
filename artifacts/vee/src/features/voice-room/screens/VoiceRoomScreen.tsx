@@ -3,7 +3,6 @@ import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, 
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Path, Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ref, get, onValue, update, set, serverTimestamp } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
@@ -164,32 +163,20 @@ async function removeOutboxEntry(roomId: string, id: string): Promise<void> {
   } catch { /* ignore */ }
 }
 
-// imo's share glyph (boss 2026-10-27 17:20, EXACT crop 1000225032_2_523n.jpg
-// 2026-10-27 18:02): a BOLD OUTLINE curved arrow sweeping up-right with a
-// proper pointed arrowhead — NOT Feather's multi-node "share-2", NOT the
-// earlier thin curve + ticks (that read faint on the cream theme even at
-// stroke 2.2). Same 22px box as the X. Color = themeOnBg: verified dark on
-// all 15 light themes / light on Midnight (worst WCAG contrast 7.0:1), so
-// the arrow can never blend into the theme background (standing law
-// 2026-10-27 17:55: every voice-room button visible on EVERY theme).
-function ImoShareArrow({ size = 22, color }: { size?: number; color: string }) {
+// Trio icons, EXACT-USE (boss 2026-10-27 18:28: "এগুলোই হুবহু ইউজ করতে
+// বলেছি"): sliced from the boss's own crop (1000225032_1_evo7.jpg) into
+// transparent PNGs — NOT redrawn SVGs (round 3's redraws were rejected as
+// substitutes), NOT Feather. Black glyph + transparent bg; tintColor
+// recolors per theme (dark on light themes, light on dark) so no trio
+// button ever blends into any theme background (standing law 2026-10-27
+// 17:55). Final trio spec (boss 18:31 snug + 18:32 uniform): all three
+// glyphs 24px in uniform 44px boxes, gaps 3px, right-anchored; X's right
+// edge stays exactly at the screen edge (it only grew 22->24px inward).
+import { TRIO_DOTS, TRIO_SHARE, TRIO_X } from './trioIcons';
+const TRIO_ICONS = { dots: TRIO_DOTS, share: TRIO_SHARE, x: TRIO_X };
+function TrioIcon({ kind, size, color }: { kind: 'dots' | 'share' | 'x'; size: number; color: string }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M5 20C5 12 11 5 19 5" stroke={color} strokeWidth={2.8} strokeLinecap="round" />
-      <Path d="M14 5.5L20 4L19.5 10.5" stroke={color} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-// Trio "..." per the SAME boss crop: three SMALL tight dots (Feather's
-// more-horizontal renders larger, wider-spaced dots).
-function TrioDots({ size = 22, color }: { size?: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={4.5} cy={12} r={1.6} fill={color} />
-      <Circle cx={12} cy={12} r={1.6} fill={color} />
-      <Circle cx={19.5} cy={12} r={1.6} fill={color} />
-    </Svg>
+    <Image source={{ uri: TRIO_ICONS[kind] }} style={{ width: size, height: size, tintColor: color }} resizeMode="contain" />
   );
 }
 
@@ -3210,7 +3197,7 @@ export default function VoiceRoomScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '700' }}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '700', flex: 1 }}>
                     {roomName}
                   </Text>
                 </Pressable>
@@ -3237,19 +3224,18 @@ export default function VoiceRoomScreen() {
                 action as the bottom-bar cross — which is hidden for the
                 audience view so the cross exists only here (moved, not
                 duplicated). */}
-            {/* 2026-10-27 (boss 17:48): trio gap 12 to 8 — "..." + share sit
-              slightly closer to X (compressed, not spread out). X itself is
-              untouched: right-edge padding unchanged, so X stays exactly
-              where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            {/* Trio, final spec (boss 18:31 snug + 18:32 uniform): exact crop
+              icons, all 24px glyphs in 44px boxes, 3px gaps, right-anchored;
+              X's right edge exactly where it always was. */}
+            <View style={{ flexDirection: 'row', gap: 3, alignItems: 'center', flexShrink: 0 }}>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <View style={{ padding: 11 }}>
-                  <ImoShareArrow size={22} color={themeOnBg} />
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="share" size={24} color={themeOnBg} />
                 </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <View style={{ padding: 11 }}>
-                  <Feather name="x" size={22} color={themeOnBg} />
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="x" size={24} color={themeOnBg} />
                 </View>
               </ScalePress>
             </View>
@@ -3284,7 +3270,7 @@ export default function VoiceRoomScreen() {
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '700' }}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '700', flex: 1 }}>
                   {roomName}
                 </Text>
               </Pressable>
@@ -3294,11 +3280,10 @@ export default function VoiceRoomScreen() {
                 </Text>
               )}
             </View>
-            {/* 2026-10-27 (boss 17:48): trio gap 12 to 8 — "..." + share sit
-              slightly closer to X (compressed, not spread out). X itself is
-              untouched: right-edge padding unchanged, so X stays exactly
-              where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            {/* Trio, final spec (boss 18:31 snug + 18:32 uniform): exact crop
+              icons, all 24px glyphs in 44px boxes, 3px gaps, right-anchored;
+              X's right edge exactly where it always was. */}
+            <View style={{ flexDirection: 'row', gap: 3, alignItems: 'center', flexShrink: 0 }}>
               {pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
@@ -3319,18 +3304,18 @@ export default function VoiceRoomScreen() {
                 </ScalePress>
               )}
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}>
-                <View style={{ padding: 11 }}>
-                  <TrioDots size={22} color={themeOnBg} />
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="dots" size={24} color={themeOnBg} />
                 </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <View style={{ padding: 11 }}>
-                  <ImoShareArrow size={22} color={themeOnBg} />
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="share" size={24} color={themeOnBg} />
                 </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <View style={{ padding: 11 }}>
-                  <Feather name="x" size={22} color={themeOnBg} />
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="x" size={24} color={themeOnBg} />
                 </View>
               </ScalePress>
             </View>
@@ -3356,8 +3341,8 @@ export default function VoiceRoomScreen() {
             </Pressable>
 
             {}
-            <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1 }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '900' }}>
+            <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '900', flex: 1 }}>
                 {roomName}
               </Text>
             </Pressable>
