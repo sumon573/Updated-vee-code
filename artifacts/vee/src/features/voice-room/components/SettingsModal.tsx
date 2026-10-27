@@ -165,8 +165,13 @@ export function SettingsModal({
               minHeight: 80, textAlignVertical: 'top' }}
           />
 
-          {/* Toggles — Public Room + Lock Room (Firebase-persisted on Save) */}
-          {toggleRows.map(row => (
+          {/* Toggles — Public Room + Lock Room (Firebase-persisted on Save).
+              2026-10-27 (boss): rooms that are ALREADY public don't need these
+              rows — hide both entirely when the room's persisted privacy is
+              public (roomIsPublic prop from Firebase room info). Visibility keys
+              on the persisted prop, not the draft toggle state, so the rows
+              stay put while the sheet is open. Non-public rooms keep both. */}
+          {roomIsPublic !== true && toggleRows.map(row => (
             <View key={row.label} style={{ flexDirection: 'row', alignItems: 'center',
               paddingVertical: 14, borderTopWidth: 1, borderTopColor: C.borderFaint }}>
               <View style={{ flex: 1 }}>
