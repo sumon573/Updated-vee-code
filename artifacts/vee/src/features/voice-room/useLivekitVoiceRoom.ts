@@ -39,6 +39,7 @@ import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimiz
 import { getMusicVolumeSync } from '@/src/features/voice-room/services/musicVolumeService';
 import { useTranslation } from 'react-i18next';
 import { getMicIntent } from '@/src/store/activeRoom';
+import { getMinimizedRoom } from '@/src/store/minimizedRoom';
 import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import { auth } from '@/src/config/firebase';
 import { isExpoGo, getApiBase } from '@/src/utils/platform';
@@ -533,6 +534,33 @@ async function acquireLivekitToken(roomId: string, userName: string): Promise<Li
  * guarded by try/catch — the module itself never touches native code at
  * import time.
  */
+/**
+ * 2026-10-27 mic-leak fix — bound any awaited native teardown.
+ * Returns { done: true } when the promise settled in time, { done: false }
+ * on timeout (the original promise keeps running detached and can never
+ * block the caller again). A late rejection is swallowed here so it can
+ * never surface as an unhandled rejection.
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+): Promise<{ done: boolean; value?: T }> {
+  promise.catch(() => {
+    // Detached settlement — the race below already moved on.
+  });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ done: true as const, value })),
+      new Promise<{ done: false }>((resolve) => {
+        timer = setTimeout(() => resolve({ done: false }), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 class LivekitVoiceRoomEngine implements VoiceEngine {
   readonly providerName = 'livekit' as const;
 
@@ -1184,30 +1212,76 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     this.joining = false;
     this.speakingIds.clear();
     this.participants = [];
-    // 2026-10-19 stability fix: serialize the disconnect behind any
-    // in-flight publish()/unpublish(). room.disconnect() overlapping a
-    // native setMicrophoneEnabled() is an Android SIGSEGV.
+    // Capture the room BEFORE teardownRoom() nulls it: if teardown hangs,
+    // the mic fallback below still has a participant to unpublish.
+    const roomBefore = this.room;
     try {
-      await this.enqueueNativeOp(() => this.teardownRoom());
-    } catch {
-      // non-critical
+      // 2026-10-19 stability fix: serialize the disconnect behind any
+      // in-flight publish()/unpublish(). room.disconnect() overlapping a
+      // native setMicrophoneEnabled() is an Android SIGSEGV.
+      // 2026-10-27 mic-leak fix: that serialization used to be UNBOUNDED —
+      // a hung queued op (or a hung disconnect) left leave() stuck forever
+      // BEFORE the service-stop line, so mic + "Voice room active" lived
+      // on with no room on screen. Attempt 1 goes through the queue (5s);
+      // attempt 2 is ONE bounded retry that bypasses the queue — the only
+      // useful retry when the queue itself is the hung thing (a re-queued
+      // op would wait behind the same hung op). A direct disconnect while
+      // a native op is wedged is the lesser evil versus a leaked mic.
+      let teardownDone = false;
+      try {
+        teardownDone = (
+          await withTimeout(
+            this.enqueueNativeOp(() => this.teardownRoom()),
+            5000,
+          )
+        ).done;
+      } catch {
+        teardownDone = false;
+      }
+      if (!teardownDone) {
+        try {
+          teardownDone = (await withTimeout(this.teardownRoom(), 5000)).done;
+        } catch {
+          teardownDone = false;
+        }
+      }
+      if (!teardownDone && roomBefore) {
+        // Teardown never completed: disconnect alone cannot be trusted to
+        // have unpublished the mic, so unpublish explicitly (best-effort,
+        // 2s) before anything else runs.
+        try {
+          await withTimeout(
+            roomBefore.localParticipant.setMicrophoneEnabled(false),
+            2000,
+          );
+        } catch {
+          // non-critical — the service stop below is the backstop
+        }
+      }
+      // Audio-session stop is also bounded now: a hung native call must
+      // never strand execution before the service-stop line either.
+      try {
+        const session = this.rnSdk?.AudioSession;
+        if (session) {
+          await withTimeout(session.stopAudioSession(), 3000);
+        }
+      } catch {
+        // non-critical
+      }
+    } finally {
+      // 2026-10-15 (Sumon): voice over — drop the foreground service.
+      // In finally: reachable even if a teardown step throws unexpectedly.
+      stopVoiceForegroundService();
+      // 2026-10-19 stability fix: release the audio pipeline — 1-to-1 calls
+      // are allowed again.
+      setVoiceRoomAudioActive(false);
+      this.lk = null;
+      this.rnSdk = null;
+      this.connection = 'ended';
+      this.publishing = false;
+      this.localSpeaking = false;
+      this.events = {};
     }
-    try {
-      await this.rnSdk?.AudioSession.stopAudioSession();
-    } catch {
-      // non-critical
-    }
-    // 2026-10-15 (Sumon): voice over — drop the foreground service.
-    stopVoiceForegroundService();
-    // 2026-10-19 stability fix: release the audio pipeline — 1-to-1 calls
-    // are allowed again.
-    setVoiceRoomAudioActive(false);
-    this.lk = null;
-    this.rnSdk = null;
-    this.connection = 'ended';
-    this.publishing = false;
-    this.localSpeaking = false;
-    this.events = {};
   }
 
   async publish(): Promise<void> {
@@ -1539,6 +1613,28 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // True session end (not a minimize persist — that path returns
       // before performCleanup): the session hold is released here.
       releaseSessionServiceHold();
+      // 2026-10-27 mic-leak fix (Rank 1): the unmount that lands here can
+      // ALSO be the bubble-return loading window — _isMinimized stale-true
+      // but engineRef null, so the persist branch above did not run and
+      // the minimized engine still sits in _persistedRoom with its 15s
+      // watchdog repairing it. A true unmount must kill it too, or it
+      // stays seated + publishing with no bubble and no room on screen.
+      // Deferred 250ms, with two guards, so a same-commit restore is
+      // never harmed: (1) the restore branch (or a different-room init)
+      // consumes _persistedRoom synchronously, so the identity check
+      // below sees a different object and skips; (2) a minimize tapped
+      // from the loading screen re-sets the bubble store before unmount,
+      // so a non-null store means "still wanted" and skips. A true Leave
+      // has neither — the orphan dies promptly. Failing closed (destroy)
+      // is the privacy-safe direction here.
+      const orphan = _persistedRoom;
+      if (orphan) {
+        setTimeout(() => {
+          if (_persistedRoom !== orphan) return;
+          if (getMinimizedRoom()) return;
+          destroyPersistedVoiceRoomEngine();
+        }, 250);
+      }
     }
 
     // ── Restore from minimize (reuse persisted room) ──────────────────────
