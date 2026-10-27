@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { View, Text, ScrollView, FlatList, Alert, Pressable, Modal, TextInput, Image, Animated, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, FlatList, Alert, Pressable, Modal, TextInput, Image, StyleSheet } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
@@ -14,8 +14,9 @@ import { submitRoomReport } from '@/src/services/reportService';
 import { getUser } from '@/src/services/userService';
 
 /* ─────────────────────────── Room Info Panel (imo-style, 2026-10-27) ──
- * Dark panel, exactly like the boss's imo screenshots: collapsing room
- * card, Room Details | Member tabs, member list with color role badges.
+ * Dark panel, exactly like the boss's imo screenshots: room card that
+ * scrolls away natively inside the tab content, Room Details | Member
+ * tabs, member list with color role badges.
  * HARD NO-DEMO LAW: every value comes from real data or a real flow.
  * Rows with no real source are OMITTED (Member's Group, Followers) and
  * reported — never faked. Room Level has no Vee system yet, so it shows
@@ -122,7 +123,7 @@ const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, row
   return (
     <Pressable
       onPress={() => onVisitProfile?.(m.id, m.name)}
-      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11,
+      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 20,
         borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
     >
       <View style={{ width: 44, height: 44, borderRadius: 22,
@@ -194,6 +195,20 @@ function sameJoined(a: JoinedMember[], b: JoinedMember[]): boolean {
         a[i].joinedAt !== b[i].joinedAt || (a[i].name || '') !== (b[i].name || '')) return false;
   }
   return true;
+}
+
+// Module level (was defined inside the component, so every panel render
+// remounted the tab buttons mid-scroll). Props only — no closure state.
+function TabButton({ id, label, selected, onPress }: { id: 'member' | 'details'; label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
+      <Text style={{ color: selected ? TEXT : DIM, fontSize: 17, fontWeight: selected ? '700' : '400' }}>
+        {label}
+      </Text>
+      <View style={{ height: 3, width: 28, borderRadius: 2, marginTop: 8,
+        backgroundColor: selected ? TEXT : 'transparent' }} />
+    </Pressable>
+  );
 }
 
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
@@ -286,19 +301,38 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
     return () => { cancelled = true; };
   }, [joinedMembers, ownerId]);
 
-  // Memoized: previously this IIFE rebuilt NEW Participant objects on
-  // EVERY panel render, so every row re-rendered on every state change
-  // (collapse flip, profile load, subscription emission) — mid-scroll
-  // re-renders of all rows were a prime jitter source.
+  // IDENTITY-PRESERVING members (2026-10-27 shake fix): the pipeline
+  // below rebuilds Participant objects, but a row's object is REUSED
+  // whenever its rendered fields (name, initials, color, photoURL, role)
+  // are unchanged — so a live-room voice tick (speaking/muted churn in
+  // allMembers) no longer re-renders every row mid-scroll. speaking/muted
+  // are deliberately ignored: this panel never renders them. (The old
+  // useMemo alone did NOT fix this: it still recomputed on every
+  // allMembers identity change and handed memo() fresh objects, so every
+  // row re-rendered constantly — the previous fix's diagnosis stopped
+  // one step short.)
+  const prevDisplayRef = useRef<Participant[]>([]);
   const displayMembers: Participant[] = useMemo(() => {
-    if (joinedMembers.length === 0) return allMembers;
+    const prevById = new Map(prevDisplayRef.current.map((p) => [p.id, p]));
+    const reuse = (items: Participant[]) => items.map((item) => {
+      const prev = prevById.get(item.id);
+      if (prev && prev.name === item.name && prev.initials === item.initials &&
+          prev.color === item.color && (prev.photoURL || undefined) === (item.photoURL || undefined) &&
+          prev.role === item.role) return prev;
+      return item;
+    });
+    if (joinedMembers.length === 0) {
+      const next = reuse(allMembers);
+      prevDisplayRef.current = next;
+      return next;
+    }
     const effective: JoinedMember[] = [...joinedMembers];
     if (ownerId && !effective.some((m) => m.uid === ownerId)) {
       effective.push({ uid: ownerId, role: 'owner', joinedAt: 0 });
     }
     const roleOf = (m: JoinedMember) => (ownerId && m.uid === ownerId ? 'owner' : m.role);
     const roleRank = (r: string) => r === 'owner' ? 0 : r === 'admin' ? 1 : 2;
-    return effective
+    const mapped = effective
       .sort((a, b) => {
         const rd = roleRank(roleOf(a)) - roleRank(roleOf(b));
         if (rd !== 0) return rd;
@@ -319,7 +353,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           muted: live?.muted ?? true,
           role: (roleOf(m) === 'owner' ? 'host' : roleOf(m)) as Participant['role'] } as Participant;
       });
+    const next = reuse(mapped);
+    prevDisplayRef.current = next;
+    return next;
   }, [joinedMembers, joinedProfiles, allMembers, ownerId]);
+
 
   useEffect(() => {
     const ownerInList = allMembers.find((m: Participant) => m.role === 'host');
@@ -341,7 +379,19 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
     return () => { cancelled = true; };
   }, [allMembers, ownerId]);
 
-  const liveIds = useMemo(() => new Set(allMembers.map((p) => p.id)), [allMembers]);
+  // Live-id set + row callbacks live in REFS: parent re-renders (voice
+  // ticks) hand new array/function identities every time, and any of
+  // those reaching memoized rows defeats memo() mid-scroll. Rows read
+  // the ref at render time, so their props stay referentially stable
+  // unless a row's own data actually changed.
+  const liveIdsRef = useRef<Set<string>>(new Set());
+  liveIdsRef.current = new Set(allMembers.map((p) => p.id));
+  const handlersRef = useRef({ onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember });
+  handlersRef.current = { onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember };
+  const stableVisit = useCallback((uid: string, name: string) => handlersRef.current.onVisitProfile?.(uid, name), []);
+  const stableSetAdmin = useCallback((uid: string) => handlersRef.current.onSetAdmin(uid), []);
+  const stableDismissAdmin = useCallback((uid: string) => handlersRef.current.onDismissAdmin(uid), []);
+  const stableRemoveMember = useCallback((uid: string) => handlersRef.current.onRemoveMember(uid), []);
   const isMember = isOwner === true || isAdmin === true ||
     displayMembers.some((m) => m.id === myUid);
   const viewerIsOwnerOrAdmin = isOwner === true || isAdmin === true;
@@ -390,51 +440,42 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
     setEditingName(false);
   }
 
-  // ── Panel state: tab, collapse-on-scroll, "..." menu, incremental list ──
+  // ── Panel state: tab, collapse, "..." menu, incremental list ──
+  // COLLAPSE MODEL (2026-10-27, shake fix): the room card lives INSIDE
+  // the active tab's scroll content and scrolls away with the finger on
+  // the native thread — NO height/opacity animation is driven from
+  // scroll events, so scrolling can never re-lay-out the list, resize
+  // its viewport, or re-render rows. The ONLY scroll-linked state is the
+  // collapsed flip below (guarded: at most one setState per threshold
+  // crossing), which toggles opacity/pointerEvents only — opacity never
+  // affects layout. The fixed tabs overlay + compact header appear
+  // exactly when the card has scrolled fully out (scrollY >= cardH).
   const [tab, setTab] = useState<'member' | 'details'>('member');
   const [collapsed, setCollapsed] = useState(false);
-  // Deterministic card height: 72 (cover) + 28 (vertical padding) + 8
-  // (top margin inside the animated wrapper) = 108. The old 120 fallback
-  // jumped the whole panel on first layout; 108 matches the real card, so
-  // first layout is a no-op on every normal device (onLayout below still
-  // corrects it if a device ever measures differently).
-  const [cardH, setCardH] = useState(108);
+  // Collapse threshold = measured card height (default 108 = 72 cover +
+  // 28 vertical padding + 8 top margin). Lives in a REF, not state: the
+  // measurement must never trigger a re-render (that feedback loop was
+  // part of the old shake).
+  const cardHRef = useRef(108);
   const [menuOpen, setMenuOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(30);
-  const scrollY = useRef(new Animated.Value(0)).current;
   const flatRef = useRef<FlatList<Participant>>(null);
   const scrollRef = useRef<ScrollView>(null);
-  // Collapse flip guard: the old listener called setCollapsed on EVERY
-  // scroll frame, re-rendering the whole panel (and every row) per frame
-  // while scrolling — the main cause of the shaking text. Now the state
-  // flips at most twice per scroll pass (collapsed <-> expanded).
   const collapsedRef = useRef(false);
 
   useEffect(() => {
-    const id = scrollY.addListener(({ value }: { value: number }) => {
-      const next = value > 80;
-      if (next !== collapsedRef.current) {
-        collapsedRef.current = next;
-        setCollapsed(next);
-      }
-    });
-    return () => { scrollY.removeListener(id); };
-  }, [scrollY]);
-  useEffect(() => {
-    if (visible) { setVisibleCount(30); scrollY.setValue(0); collapsedRef.current = false; setCollapsed(false); setMenuOpen(false); }
-  }, [visible, roomId, scrollY]);
-
-  const cardHeight = scrollY.interpolate({
-    inputRange: [0, cardH], outputRange: [cardH, 0], extrapolate: 'clamp' });
-  const cardOpacity = scrollY.interpolate({
-    inputRange: [0, cardH * 0.7], outputRange: [1, 0], extrapolate: 'clamp' });
+    if (visible) { setVisibleCount(30); collapsedRef.current = false; setCollapsed(false); setMenuOpen(false); }
+  }, [visible, roomId]);
 
   function onScroll(e: { nativeEvent: { contentOffset: { y: number } } }) {
-    scrollY.setValue(e.nativeEvent.contentOffset.y);
+    const next = e.nativeEvent.contentOffset.y >= cardHRef.current;
+    if (next !== collapsedRef.current) {
+      collapsedRef.current = next;
+      setCollapsed(next);
+    }
   }
   function switchTab(next: 'member' | 'details') {
     setTab(next);
-    scrollY.setValue(0);
     collapsedRef.current = false;
     setCollapsed(false);
     setMenuOpen(false);
@@ -449,18 +490,19 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   const renderMember = useCallback(({ item }: { item: Participant }) => (
     <MemberRow
       m={item}
-      live={liveIds.has(item.id)}
+      live={liveIdsRef.current.has(item.id)}
       isMe={item.id === myUid}
       isOwner={isOwner === true}
       isAdmin={isAdmin === true}
       rowIsOwner={ownerId !== undefined && item.id === ownerId}
-      onVisitProfile={onVisitProfile}
-      onSetAdmin={onSetAdmin}
-      onDismissAdmin={onDismissAdmin}
-      onRemoveMember={onRemoveMember}
+      onVisitProfile={stableVisit}
+      onSetAdmin={stableSetAdmin}
+      onDismissAdmin={stableDismissAdmin}
+      onRemoveMember={stableRemoveMember}
     />
-  ), [liveIds, myUid, isOwner, isAdmin, ownerId,
-    onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember]);
+  ), [myUid, isOwner, isAdmin, ownerId,
+    stableVisit, stableSetAdmin, stableDismissAdmin, stableRemoveMember]);
+
 
   async function copyRoomId() {
     try {
@@ -516,73 +558,30 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
     );
   }
 
-  function TabButton({ id, label }: { id: 'member' | 'details'; label: string }) {
-    const selected = tab === id;
-    return (
-      <Pressable onPress={() => switchTab(id)} style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
-        <Text style={{ color: selected ? TEXT : DIM, fontSize: 17, fontWeight: selected ? '700' : '400' }}>
-          {label}
-        </Text>
-        <View style={{ height: 3, width: 28, borderRadius: 2, marginTop: 8,
-          backgroundColor: selected ? TEXT : 'transparent' }} />
-      </Pressable>
-    );
-  }
 
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      {/* Definite height (NOT maxHeight): the flex:1 tab content and its
-          lists need a bounded parent, otherwise the list grows to full
-          content height, gets clipped at the panel edge, and cannot scroll. */}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: PANEL_BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        height: '88%' }}>
-        {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-          paddingTop: 14, paddingBottom: 6, gap: 10, height: 48 }}>
-          <Pressable onPress={onClose} hitSlop={8}>
-            <Feather name="chevron-down" size={24} color={TEXT} />
-          </Pressable>
-          {/* Always mounted: the compact header appears/disappears by
-              opacity ONLY, so the scrollY>80 flip can never shift layout
-              (no mount/unmount, no height change) mid-scroll. The block
-              holds flex:1 in both states, so gear/... never move either. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1,
-            opacity: collapsed ? 1 : 0 }}>
-            <View style={{ width: 28, height: 28, borderRadius: 6, overflow: 'hidden',
-              backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center' }}>
-              {roomImageUri
-                ? <Image source={{ uri: roomImageUri }} style={{ width: 28, height: 28 }} />
-                : <Text style={{ color: TEXT, fontSize: 12, fontWeight: '800' }}>
-                    {(roomName || '?').charAt(0).toUpperCase()}
-                  </Text>
-              }
-            </View>
-            <Text numberOfLines={1} style={{ flex: 1, color: TEXT, fontSize: 16, fontWeight: '700' }}>
-              {roomName}
-            </Text>
-          </View>
-          {viewerIsOwnerOrAdmin && (
-            <Pressable onPress={onOpenSettings} hitSlop={8}>
-              <Feather name="settings" size={24} color={TEXT} />
-            </Pressable>
-          )}
-          <Pressable onPress={() => setMenuOpen((v) => !v)} hitSlop={8}>
-            <Feather name="more-horizontal" size={24} color={TEXT} />
-          </Pressable>
-        </View>
+  // Tabs row (shared): rendered BOTH as the fixed overlay (below) and
+  // inside the active tab's scroll content. Same component, same styles,
+  // so the collapsed handoff is pixel-identical.
+  const tabsRow = (
+    <View style={{ flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}>
+      <TabButton id="details" label={t('voiceRoom.info.roomDetails', { defaultValue: 'Room Details' })} selected={tab === 'details'} onPress={() => switchTab('details')} />
+      <TabButton id="member" label={t('voiceRoom.info.memberTab', { defaultValue: 'Member' })} selected={tab === 'member'} onPress={() => switchTab('member')} />
+    </View>
+  );
 
-        {/* ── Collapsing room card (expanded state only) ── */}
-        <Animated.View style={{ height: cardHeight, opacity: cardOpacity, overflow: 'hidden' }}>
+  // Room card (rendered INSIDE the active tab's scroll content, never
+  // above it): this is what makes the collapse native — the card scrolls
+  // away with the finger instead of being shrunk by a JS-driven height
+  // animation that re-laid-out the whole panel on every scroll frame.
+  const roomCard = (
           <View
             onLayout={(e) => {
+              // Measured ONLY as the collapse threshold (compact-header
+              // + tabs-overlay flip point). It lives in a ref and never
+              // feeds layout, so measurement can never loop into a
+              // re-render: the old setCardH state was part of the shake.
               const h = e.nativeEvent.layout.height;
-              // +8: the inner view's marginTop lives inside the animated
-              // wrapper, so h alone under-measures the card (bottom padding
-              // clipped + panel shift on first layout).
-              const next = h + 8;
-              if (h > 0 && next !== cardH) setCardH(next);
+              if (h > 0) cardHRef.current = h + 8;
             }}
             style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: CARD_BG,
               borderRadius: 16, marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 }}
@@ -659,24 +658,77 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                 </Pressable>
               </View>
             </View>
-            <Pressable
-              onPress={onOpenStore}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-                backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}
-            >
-              <Feather name="shopping-bag" size={12} color={TEXT} />
-              <Text style={{ color: TEXT, fontSize: 13, fontWeight: '700' }}>
-                {t('voiceRoom.info.store', { defaultValue: 'Store' })}
-              </Text>
-            </Pressable>
           </View>
-        </Animated.View>
+  );
 
-        {/* ── Tabs (fixed under the header) ── */}
-        <View style={{ flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER,
-          marginTop: 4 }}>
-          <TabButton id="details" label={t('voiceRoom.info.roomDetails', { defaultValue: 'Room Details' })} />
-          <TabButton id="member" label={t('voiceRoom.info.memberTab', { defaultValue: 'Member' })} />
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
+      {/* Definite height (NOT maxHeight): the flex:1 tab content and its
+          lists need a bounded parent, otherwise the list grows to full
+          content height, gets clipped at the panel edge, and cannot scroll. */}
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+        backgroundColor: PANEL_BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+        height: '88%' }}>
+        {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+          paddingTop: 14, paddingBottom: 6, gap: 10, height: 48 }}>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Feather name="chevron-down" size={24} color={TEXT} />
+          </Pressable>
+          {/* Always mounted: the compact header appears/disappears by
+              opacity ONLY, so the collapsed flip can never shift layout
+              (no mount/unmount, no height change) mid-scroll. The block
+              holds flex:1 in both states, so Store/gear/... never move. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1,
+            opacity: collapsed ? 1 : 0 }}>
+            <View style={{ width: 28, height: 28, borderRadius: 6, overflow: 'hidden',
+              backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center' }}>
+              {roomImageUri
+                ? <Image source={{ uri: roomImageUri }} style={{ width: 28, height: 28 }} />
+                : <Text style={{ color: TEXT, fontSize: 12, fontWeight: '800' }}>
+                    {(roomName || '?').charAt(0).toUpperCase()}
+                  </Text>
+              }
+            </View>
+            <Text numberOfLines={1} style={{ flex: 1, color: TEXT, fontSize: 16, fontWeight: '700' }}>
+              {roomName}
+            </Text>
+          </View>
+          {/* Store moved here from the room card (boss 2026-10-27): the
+              card pill squeezed the room name; the header pill frees the
+              full card width for the name. Same route, same label. */}
+          <Pressable
+            onPress={onOpenStore}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}
+          >
+            <Feather name="shopping-bag" size={12} color={TEXT} />
+            <Text style={{ color: TEXT, fontSize: 13, fontWeight: '700' }}>
+              {t('voiceRoom.info.store', { defaultValue: 'Store' })}
+            </Text>
+          </Pressable>
+          {viewerIsOwnerOrAdmin && (
+            <Pressable onPress={onOpenSettings} hitSlop={8}>
+              <Feather name="settings" size={24} color={TEXT} />
+            </Pressable>
+          )}
+          <Pressable onPress={() => setMenuOpen((v) => !v)} hitSlop={8}>
+            <Feather name="more-horizontal" size={24} color={TEXT} />
+          </Pressable>
+        </View>
+
+        {/* ── Fixed tabs overlay: appears (opacity ONLY, never layout)
+            exactly when the card has scrolled fully out of the list, so
+            tab switching stays available while scrolled. The in-content
+            tabs row below is identical and sits at exactly this spot
+            when scrollY == cardH, so the handoff is seamless — no double
+            tabs, no jump. Absolute: takes no flow space, so the list
+            frame never moves or resizes. ── */}
+        <View pointerEvents={collapsed ? 'auto' : 'none'}
+          style={{ position: 'absolute', top: 48, left: 0, right: 0, zIndex: 5,
+            backgroundColor: PANEL_BG, opacity: collapsed ? 1 : 0 }}>
+          {tabsRow}
         </View>
 
         {/* ── Tab content ── */}
@@ -687,8 +739,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               style={{ flex: 1 }}
               onScroll={onScroll}
               scrollEventThrottle={16}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
+              contentContainerStyle={{ paddingBottom: 20 }}
             >
+              {roomCard}
+              {tabsRow}
+              <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
               {viewerIsOwnerOrAdmin && (
                 <Pressable
                   onPress={onOpenSettings}
@@ -760,6 +815,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   )}
                 </View>
               )}
+              </View>
             </ScrollView>
           ) : (
             <FlatList
@@ -776,8 +832,10 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                 offset: MEMBER_ROW_HEIGHT * index,
                 index,
               })}
-              // Live presence changes must still reach memoized rows.
-              extraData={liveIds}
+              // No extraData: live presence flows through the data prop
+              // itself (liveIds derive from allMembers, a displayMembers
+              // dep), and memoized rows re-render only when their own
+              // props change — an extraData churn would defeat that.
               showsVerticalScrollIndicator={false}
               onScroll={onScroll}
               scrollEventThrottle={16}
@@ -790,9 +848,12 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                 }
               }}
               onEndReachedThreshold={0.5}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+              contentContainerStyle={{ paddingBottom: 12 }}
               ListHeaderComponent={
                 <View>
+                  {roomCard}
+                  {tabsRow}
+                  <View style={{ paddingHorizontal: 20 }}>
                   {viewerIsOwnerOrAdmin && (
                     <Pressable
                       onPress={onOpenRequests}
@@ -825,6 +886,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                       {t('voiceRoom.info.addMembers', { defaultValue: 'Add Members' })}
                     </Text>
                   </Pressable>
+                  </View>
                 </View>
               }
               renderItem={renderMember}
