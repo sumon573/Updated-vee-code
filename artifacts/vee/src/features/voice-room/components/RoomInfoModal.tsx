@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, FlatList, Alert, Pressable, Modal, TextInput, Image, Animated } from 'react-native';
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import { View, Text, ScrollView, FlatList, Alert, Pressable, Modal, TextInput, Image, Animated, StyleSheet } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
@@ -10,7 +10,6 @@ import { Participant, BlockRecord } from '../types/room';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
-import { subscribeBadges } from '@/src/services/badgeService';
 import { submitRoomReport } from '@/src/services/reportService';
 import { getUser } from '@/src/services/userService';
 
@@ -31,31 +30,20 @@ const TEXT = '#FFFFFF';
 const SUB = '#9C9C9C';
 const DIM = '#8A8A8A';
 const DIVIDER = 'rgba(255,255,255,0.09)';
-const GOLD = '#FFB300'; // Honor
-const BLUE = '#42A5F5'; // admin (+ owner default, boss to confirm)
+const GOLD = '#FFB300'; // Room owner ONLY (boss rule 2026-10-27: never badges)
+const BLUE = '#42A5F5'; // admin
+
+// Member row height is FIXED (avatar 44 + vertical padding 22 + hairline
+// divider) so getItemLayout never re-measures and rows never shift height
+// while scrolling. Name is single-line (see MemberRow) to guarantee this.
 const GREY = '#8A8A8E'; // regular member
+const MEMBER_ROW_HEIGHT = 66 + StyleSheet.hairlineWidth;
 const GREEN = '#22C55E';
 const RED = '#FF453A';
 
-// Row-level caches: one-shot reads per uid, so scrolling back never refetches.
-const honorCache = new Map<string, boolean>();
+// Row-level cache: one-shot lastSeen reads per uid, so scrolling back never
+// refetches. (No honor cache: the role icon no longer reads badges at all.)
 const lastSeenCache = new Map<string, number | null>();
-
-/** Honor = ≥1 currently-valid granted badge (users/{uid}/badges).
- * subscribeBadges already filters expired badges at its choke point. */
-function useMemberHonor(uid: string): boolean | null {
-  const [has, setHas] = useState<boolean | null>(() => honorCache.get(uid) ?? null);
-  useEffect(() => {
-    if (honorCache.has(uid)) { setHas(honorCache.get(uid) ?? false); return; }
-    const unsub = subscribeBadges(uid, (badges) => {
-      const v = badges.length > 0;
-      honorCache.set(uid, v);
-      setHas(v);
-    });
-    return unsub;
-  }, [uid]);
-  return has;
-}
 
 /** Raw lastSeen (users/{uid}/lastSeen) — only a NUMBER counts. Anything else
  * (e.g. an unresolved server timestamp) means "unknown": no status text is
@@ -88,29 +76,37 @@ type MemberRowProps = {
   isMe: boolean;
   isOwner: boolean;
   isAdmin: boolean;
-  blockedRecs: BlockRecord[];
+  /** True when THIS row is the room owner (uid === ownerId). */
+  rowIsOwner: boolean;
+  /** Precomputed for this row so memo props stay primitive. */
+  isBlocked: boolean;
   onVisitProfile?: (uid: string, name: string) => void;
   onSetAdmin: (uid: string) => void;
   onBlock: (uid: string) => void;
   onUnblock: (uid: string) => void;
 };
 
-function MemberRow({ m, live, isMe, isOwner, isAdmin, blockedRecs,
-  onVisitProfile, onSetAdmin, onBlock, onUnblock }: MemberRowProps) {
+// Memoized: with stable item identities (see displayMembers useMemo) a panel
+// re-render (e.g. collapse flip) must NOT re-render row contents mid-scroll —
+// that re-render churn was one cause of the visible text shaking.
+const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, rowIsOwner,
+  isBlocked, onVisitProfile, onSetAdmin, onBlock, onUnblock }: MemberRowProps) {
   const { t } = useTranslation();
-  const honor = useMemberHonor(m.id);
   const lastSeen = useMemberLastSeen(m.id);
-  // Role badge = status-icon COLOR (boss rule). Owner defaults to BLUE
-  // (management color) — flagged for the boss to correct on phone check.
-  const roleColor = honor === true ? GOLD : (m.role === 'host' || m.role === 'admin' ? BLUE : GREY);
-  const isGrey = m.role === 'member' && honor !== true;
-  const isBlocked = blockedRecs.some((r) => r.id === m.id && r.isActive && r.action === 'room-block');
-  // "..." ONLY on grey rows, and ONLY where a real action exists:
-  // owner can Set as Admin; owner/admin can Block/Unblock. A plain member
-  // viewing another member gets no "..." at all (never a dead menu).
+  // Role badge = status-icon COLOR (boss rule 2026-10-27, CORRECTED):
+  // GOLD = room owner ONLY (uid === ownerId, or role 'host' from the
+  // roleOf pipeline). Badges are NEVER consulted here — noble grants
+  // landing in the badges node made every row gold, which read as
+  // "everyone shown as owner". BLUE = admin, GREY = regular member.
+  const roleColor = (rowIsOwner || m.role === 'host') ? GOLD
+    : (m.role === 'admin' ? BLUE : GREY);
+  // "..." ONLY on grey member rows, and ONLY where a real action exists:
+  // owner can Set as Admin; owner/admin can Block/Unblock. The owner row
+  // never gets "..." (as in imo); a plain member viewing another member
+  // gets no "..." at all (never a dead menu).
   const canSetAdmin = isOwner && !isMe;
   const canBlock = !isMe && (isOwner || isAdmin);
-  const showDots = isGrey && (canSetAdmin || canBlock);
+  const showDots = !rowIsOwner && m.role === 'member' && (canSetAdmin || canBlock);
 
   let status: string | null = null;
   if (live) {
@@ -123,7 +119,8 @@ function MemberRow({ m, live, isMe, isOwner, isAdmin, blockedRecs,
   return (
     <Pressable
       onPress={() => onVisitProfile?.(m.id, m.name)}
-      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11 }}
+      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
     >
       <View style={{ width: 44, height: 44, borderRadius: 22,
         backgroundColor: m.color + '33', alignItems: 'center', justifyContent: 'center',
@@ -136,7 +133,8 @@ function MemberRow({ m, live, isMe, isOwner, isAdmin, blockedRecs,
       <View style={{ flex: 1 }}>
         {/* Real nickname ONLY — "Op Assistant" / star prefixes in imo are
             nickname text, never badges; nothing is added here. */}
-        <Text style={{ color: TEXT, fontSize: 16, fontWeight: '600' }}>{m.name}</Text>
+        <Text numberOfLines={1} ellipsizeMode="tail"
+          style={{ color: TEXT, fontSize: 16, fontWeight: '600' }}>{m.name}</Text>
         {status && (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
             <Feather name="user" size={12} color={roleColor} />
@@ -167,6 +165,18 @@ function MemberRow({ m, live, isMe, isOwner, isAdmin, blockedRecs,
       )}
     </Pressable>
   );
+});
+
+/** Equality for joined-member snapshots: RTDB subscriptions emit a fresh
+ * array on any room change, but unchanged content must keep its identity
+ * or every row re-renders (jitter source). */
+function sameJoined(a: JoinedMember[], b: JoinedMember[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].uid !== b[i].uid || a[i].role !== b[i].role ||
+        a[i].joinedAt !== b[i].joinedAt || (a[i].name || '') !== (b[i].name || '')) return false;
+  }
+  return true;
 }
 
 /* ─────────────────────────── Room Info Modal ─────────────────────────── */
@@ -221,9 +231,12 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   // admin → members by join time). The panel re-presents this data only.
   const [joinedMembers, setJoinedMembers] = useState<JoinedMember[]>([]);
   const [joinedProfiles, setJoinedProfiles] = useState<Record<string, { name: string; photoURL?: string }>>({});
+  const joinedProfilesRef = useRef<Record<string, { name: string; photoURL?: string }>>({});
   useEffect(() => {
     if (!visible || !roomId) return;
-    return subscribeRoomMembers(roomId, setJoinedMembers);
+    return subscribeRoomMembers(roomId, (next) => {
+      setJoinedMembers((prev) => (sameJoined(prev, next) ? prev : next));
+    });
   }, [visible, roomId]);
   useEffect(() => {
     const uids = new Set(joinedMembers.map((m) => m.uid));
@@ -244,13 +257,24 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
       if (cancelled) return;
       const map: Record<string, { name: string; photoURL?: string }> = {};
       for (const r of results) { if (r) map[r[0]] = r[1]; }
-      setJoinedProfiles(map);
+      // Skip the setState when profiles are unchanged: a fresh map object
+      // would otherwise rebuild displayMembers and re-render every row.
+      const prevMap = joinedProfilesRef.current;
+      const prevKeys = Object.keys(prevMap);
+      const nextKeys = Object.keys(map);
+      const sameProfiles = prevKeys.length === nextKeys.length && nextKeys.every((k) =>
+        prevMap[k] && prevMap[k].name === map[k].name &&
+        (prevMap[k].photoURL || undefined) === (map[k].photoURL || undefined));
+      if (!sameProfiles) { joinedProfilesRef.current = map; setJoinedProfiles(map); }
     })();
     return () => { cancelled = true; };
   }, [joinedMembers, ownerId]);
 
-  const joinedAtByUid: Record<string, number> = {};
-  const displayMembers: Participant[] = (() => {
+  // Memoized: previously this IIFE rebuilt NEW Participant objects on
+  // EVERY panel render, so every row re-rendered on every state change
+  // (collapse flip, profile load, subscription emission) — mid-scroll
+  // re-renders of all rows were a prime jitter source.
+  const displayMembers: Participant[] = useMemo(() => {
     if (joinedMembers.length === 0) return allMembers;
     const effective: JoinedMember[] = [...joinedMembers];
     if (ownerId && !effective.some((m) => m.uid === ownerId)) {
@@ -265,7 +289,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
         return a.joinedAt - b.joinedAt;
       })
       .map((m) => {
-        joinedAtByUid[m.uid] = m.joinedAt;
         const prof = joinedProfiles[m.uid];
         const live = allMembers.find((p) => p.id === m.uid);
         const profName = prof?.name && prof.name !== 'User' ? prof.name : null;
@@ -280,7 +303,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           muted: live?.muted ?? true,
           role: (roleOf(m) === 'owner' ? 'host' : roleOf(m)) as Participant['role'] } as Participant;
       });
-  })();
+  }, [joinedMembers, joinedProfiles, allMembers, ownerId]);
 
   useEffect(() => {
     const ownerInList = allMembers.find((m: Participant) => m.role === 'host');
@@ -302,7 +325,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
     return () => { cancelled = true; };
   }, [allMembers, ownerId]);
 
-  const liveIds = new Set(allMembers.map((p) => p.id));
+  const liveIds = useMemo(() => new Set(allMembers.map((p) => p.id)), [allMembers]);
   const isMember = isOwner === true || isAdmin === true ||
     displayMembers.some((m) => m.id === myUid);
   const viewerIsOwnerOrAdmin = isOwner === true || isAdmin === true;
@@ -360,15 +383,24 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   const scrollY = useRef(new Animated.Value(0)).current;
   const flatRef = useRef<FlatList<Participant>>(null);
   const scrollRef = useRef<ScrollView>(null);
+  // Collapse flip guard: the old listener called setCollapsed on EVERY
+  // scroll frame, re-rendering the whole panel (and every row) per frame
+  // while scrolling — the main cause of the shaking text. Now the state
+  // flips at most twice per scroll pass (collapsed <-> expanded).
+  const collapsedRef = useRef(false);
 
   useEffect(() => {
     const id = scrollY.addListener(({ value }: { value: number }) => {
-      setCollapsed(value > 80);
+      const next = value > 80;
+      if (next !== collapsedRef.current) {
+        collapsedRef.current = next;
+        setCollapsed(next);
+      }
     });
     return () => { scrollY.removeListener(id); };
   }, [scrollY]);
   useEffect(() => {
-    if (visible) { setVisibleCount(30); scrollY.setValue(0); setCollapsed(false); setMenuOpen(false); }
+    if (visible) { setVisibleCount(30); scrollY.setValue(0); collapsedRef.current = false; setCollapsed(false); setMenuOpen(false); }
   }, [visible, roomId, scrollY]);
 
   const cardHeight = scrollY.interpolate({
@@ -382,11 +414,33 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   function switchTab(next: 'member' | 'details') {
     setTab(next);
     scrollY.setValue(0);
+    collapsedRef.current = false;
     setCollapsed(false);
     setMenuOpen(false);
     flatRef.current?.scrollToOffset({ offset: 0, animated: false });
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }
+
+  const visibleMembers = useMemo(
+    () => displayMembers.slice(0, visibleCount),
+    [displayMembers, visibleCount]);
+
+  const renderMember = useCallback(({ item }: { item: Participant }) => (
+    <MemberRow
+      m={item}
+      live={liveIds.has(item.id)}
+      isMe={item.id === myUid}
+      isOwner={isOwner === true}
+      isAdmin={isAdmin === true}
+      rowIsOwner={ownerId !== undefined && item.id === ownerId}
+      isBlocked={blockedRecs.some((r) => r.id === item.id && r.isActive && r.action === 'room-block')}
+      onVisitProfile={onVisitProfile}
+      onSetAdmin={onSetAdmin}
+      onBlock={onBlock}
+      onUnblock={onUnblock}
+    />
+  ), [liveIds, myUid, isOwner, isAdmin, ownerId, blockedRecs,
+    onVisitProfile, onSetAdmin, onBlock, onUnblock]);
 
   async function copyRoomId() {
     try {
@@ -553,8 +607,15 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   {roomName}
                 </Text>
               )}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
-                <Text style={{ color: SUB, fontSize: 13 }}>
+              {/* Shrink-wrapped row + single-line ID: previously the ID
+                  Text wrapped to two lines inside the full-width row, so
+                  its box spanned the whole middle column and the copy
+                  icon landed far-right at the card edge. Now the row hugs
+                  its content and the copy icon sits right after the ID,
+                  exactly like imo. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6,
+                alignSelf: 'flex-start' }}>
+                <Text numberOfLines={1} style={{ color: SUB, fontSize: 13, flexShrink: 1 }}>
                   {t('voiceRoom.info.roomId')} : {roomId}
                 </Text>
                 <Pressable onPress={copyRoomId} hitSlop={8}>
@@ -567,7 +628,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
                 backgroundColor: '#2C2C2E', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}
             >
-              <Feather name="shopping-bag" size={14} color={TEXT} />
+              <Feather name="shopping-bag" size={12} color={TEXT} />
               <Text style={{ color: TEXT, fontSize: 13, fontWeight: '700' }}>
                 {t('voiceRoom.info.store', { defaultValue: 'Store' })}
               </Text>
@@ -691,8 +752,20 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
             <FlatList
               ref={flatRef}
               style={{ flex: 1 }}
-              data={displayMembers.slice(0, visibleCount)}
+              data={visibleMembers}
               keyExtractor={(m) => m.id}
+              // Fixed row height: VirtualizedList never re-measures rows
+              // mid-scroll (re-measuring was a jitter source). Rows are
+              // guaranteed MEMBER_ROW_HEIGHT by the single-line name +
+              // fixed avatar + fixed padding (see MemberRow).
+              getItemLayout={(_data, index) => ({
+                length: MEMBER_ROW_HEIGHT,
+                offset: MEMBER_ROW_HEIGHT * index,
+                index,
+              })}
+              // Live presence changes must still reach memoized rows.
+              extraData={liveIds}
+              showsVerticalScrollIndicator={false}
               onScroll={onScroll}
               scrollEventThrottle={16}
               initialNumToRender={30}
@@ -735,20 +808,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   </Pressable>
                 </View>
               }
-              renderItem={({ item }) => (
-                <MemberRow
-                  m={item}
-                  live={liveIds.has(item.id)}
-                  isMe={item.id === myUid}
-                  isOwner={isOwner === true}
-                  isAdmin={isAdmin === true}
-                  blockedRecs={blockedRecs}
-                  onVisitProfile={onVisitProfile}
-                  onSetAdmin={onSetAdmin}
-                  onBlock={onBlock}
-                  onUnblock={onUnblock}
-                />
-              )}
+              renderItem={renderMember}
             />
           )}
         </View>
