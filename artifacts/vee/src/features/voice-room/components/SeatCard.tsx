@@ -12,6 +12,7 @@ import SeatEmojiReaction from './SeatEmojiReaction';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
+import { useActiveRipple } from '@/src/hooks/useActiveRipple';
 import { useEventEffects, getActiveEffect, effectColor } from '@/src/hooks/useEventEffects';
 import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
@@ -174,6 +175,10 @@ export const SeatCard = memo(function SeatCard({
   // in real-time. No stale seat copies, no mapping bugs. Admin changes reflect LIVE.
   // Any future frame automatically works. This is the permanent fix.
   const liveFrameId = useActiveFrame(member?.id);
+  // 2026-10-27 (boss: Use must visibly work): live equipped ripple — the
+  // old (member as any).activeRipple was a join-time snapshot, so a
+  // mid-session Use never reached the seat. This subscription is live.
+  const liveRipple = useActiveRipple(member?.id);
   // 2026-10-16 (Sumon): Store mic sticker — equipped sticker badge on the seat.
   const micSticker = useActiveMicSticker(member?.id);
   // 2026-10-26 (Event Engine v1): live event effects (vibe/ripple) — same
@@ -277,7 +282,7 @@ export const SeatCard = memo(function SeatCard({
                     photoURL={member.photoURL}
                     frameType={liveFrameId || undefined}
                     nobleRankIndex={member.nobleRankIndex}
-                    activeRipple={(member as any).activeRipple}
+                    activeRipple={liveRipple?.id} rippleColors={liveRipple?.colors}
                   />
                 ) : (
                   <View style={{
@@ -306,7 +311,7 @@ export const SeatCard = memo(function SeatCard({
                       photoURL={member.photoURL}
                       frameType={undefined}
                       nobleRankIndex={member.nobleRankIndex}
-                      activeRipple={(member as any).activeRipple}
+                      activeRipple={liveRipple?.id} rippleColors={liveRipple?.colors}
                     />
                   </View>
                 )}

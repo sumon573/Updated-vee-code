@@ -39,19 +39,22 @@ type FlowerParticle = {
   fSize: number; char: string; spin: number;
 };
 
-function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size: number; visible: boolean; nobleRankIndex?: number; activeRipple?: string }) {
+function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleColors }: { size: number; visible: boolean; nobleRankIndex?: number; activeRipple?: string; rippleColors?: string[] }) {
   // 2026-10-15 (Sumon): equipped ripple takes priority — if user equipped a
   // ripple from Decoration, use its design. Else fallback to per-rank theme.
   // Non-nobles get the default premium theme.
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
-  // TODO: When Sumon provides ripple designs, look up activeRipple in the
-  // user's ripples collection and use its custom colors/particles.
-  const mistColors = theme ? theme.rippleMist : MIST_COLORS;
+  // 2026-10-27 (boss: Use must visibly work): the equipped ripple's own
+  // colors (resolved live by useActiveRipple in SeatCard) override the
+  // theme — previously the design was never looked up (TODO), so Use
+  // changed nothing for nobles and only toggled particles for others.
+  const equippedColors = (rippleColors ?? []).filter((c): c is string => typeof c === 'string' && !!c);
+  const mistColors = equippedColors.length > 0 ? equippedColors : (theme ? theme.rippleMist : MIST_COLORS);
   const particleChars = theme ? theme.rippleParticles : FLOWER_CHARS;
   // 2026-10-19 (IMO port Phase 1): IMO brand blue #05b5fa for the default
   // speaking halo — matches IMO's VrCircledRippleImageView ripple color.
   // Noble/equipped themes keep their own wave colors (sacred).
-  const waveColor = theme ? theme.rippleWave : '#05b5fa';
+  const waveColor = equippedColors.length > 0 ? equippedColors[0] : (theme ? theme.rippleWave : '#05b5fa');
   const w1 = useRef(new Animated.Value(0)).current;
   const w2 = useRef(new Animated.Value(0)).current;
   const w3 = useRef(new Animated.Value(0)).current;
@@ -61,7 +64,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
   const themeWaveCount = theme?.rippleWaveCount ?? 2;
   // 2026-10-16 (Sumon): SIMPLE ripple for normal users — waves only.
   // Fancy particles/flowers ONLY for Nobel/equipped ripple users.
-  const isFancy = !!(theme || activeRipple);
+  const isFancy = !!(theme || activeRipple || equippedColors.length > 0);
   // 2026-10-16 (Sumon): Per-rank progression — higher rank = more beautiful, more shimmery.
   const rankIdx = nobleRankIndex ?? 0;
   // 2026-10-16 (Sumon): DISTINCT effect behavior per rank — each type moves differently.
@@ -246,18 +249,18 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple }: { size:
 // 2026-10-15 (Sumon): NO fake zoom/pulse. DP is 100% stable.
 // Speaking indicator = premium ripple (waves + mist + flowers) OUTSIDE the frame,
 // ONLY while actually speaking (voice detected).
-export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex, activeRipple }: {
+export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex, activeRipple, rippleColors }: {
   initials: string; color: string; size: number; speaking: boolean; accent: string;
-  photoURL?: string; frameType?: string; nobleRankIndex?: number; activeRipple?: string;
+  photoURL?: string; frameType?: string; nobleRankIndex?: number; activeRipple?: string; rippleColors?: string[];
 }) {
   // 2026-10-19 (IMO port Phase 1): IMO-style speaking halo — normal users get
   // the #05b5fa blue halo ring; noble/equipped-ripple users keep their theme.
-  const isFancy = nobleRankIndex != null || !!activeRipple;
+  const isFancy = nobleRankIndex != null || !!activeRipple || (rippleColors?.length ?? 0) > 0;
   const haloColor = isFancy ? C.gold : '#05b5fa';
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       {/* Ripple BEHIND the avatar — expands outward */}
-      <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} activeRipple={activeRipple} />
+      <SpeakingRipple size={size} visible={speaking} nobleRankIndex={nobleRankIndex} activeRipple={activeRipple} rippleColors={rippleColors} />
       {/* 2026-10-19 (IMO port Phase 1): IMO halo ring — static #05b5fa glow
           ring hugging the avatar while speaking (normal users only; noble
           themes have their own). Placed behind the DP so overflow stays clean. */}
