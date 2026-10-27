@@ -1,6 +1,6 @@
 import { memo, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, Animated, Alert,
+  View, Text, Pressable, Animated, Alert, Modal,
   ActionSheetIOS, Platform, Dimensions,
 } from 'react-native';
 // 2026-10-19 OOM fix: chat thumbnails use expo-image (disk cache + native
@@ -24,7 +24,7 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import VoiceMessageBubble from './VoiceMessageBubble';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
 
 // IMO bubble spec (measured from IMO v2026.09.1051 layouts av7/av3):
@@ -139,6 +139,11 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const [showReactions, setShowReactions] = useState(false);
+  // 2026-10-27 (inbox polish): anchor of the long-pressed bubble, measured
+  // in window coordinates — the reaction card is positioned from this so
+  // it can never merge into a neighbouring message (see Modal below).
+  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const bubbleRef = useRef<View>(null);
 
   const isMe = message.senderId === myUid;
 
@@ -153,7 +158,16 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
 
   const handleLongPress = () => {
     bounce();
-    setShowReactions(true);
+    const node = bubbleRef.current;
+    if (node && typeof node.measureInWindow === 'function') {
+      node.measureInWindow((x: number, y: number, w: number, h: number) => {
+        setAnchor({ x, y, w, h });
+        setShowReactions(true);
+      });
+    } else {
+      setAnchor(null);
+      setShowReactions(true);
+    }
   };
 
   // 2026-10-25 (boss order): DM long-press Copy. TEXT messages only
@@ -241,7 +255,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
   // chrome (no padding, no background, no border) — clean professional look.
   // Timestamps/ticks below media use muted colors (no bubble bg to sit on).
   const isMediaMsg = message.type === 'image' || message.type === 'video';
-  const timeColor = isMediaMsg ? C.muted : isMe ? 'rgba(255,255,255,0.75)' : C.muted;
+  // 2026-10-27 (inbox polish): my-bubble timestamp was white-on-light-blue
+  // (#bbdefb) — unreadable. Dark timestamp on both bubble colours.
+  const timeColor = isMediaMsg ? C.muted : isMe ? 'rgba(0,0,0,0.5)' : C.muted;
   const tickColor = isMediaMsg ? C.muted : C.sent;
 
   const reactions = message.reactions
@@ -253,20 +269,40 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
       )
     : [];
 
+  // 2026-10-27 (inbox polish): anchored card geometry. The card prefers
+  // above the pressed bubble, falls below it when there is no room, and
+  // is always clamped inside the screen — so it can never cover a
+  // neighbouring message or run off the screen edge.
+  const REACTION_CARD_W = Math.min(width - 32, 360);
+  const REACTION_CARD_H_EST = 212;
+  let reactionCardLeft = (width - REACTION_CARD_W) / 2;
+  let reactionCardTop = Math.max(80, (height - REACTION_CARD_H_EST) / 2);
+  if (anchor) {
+    const cx = anchor.x + anchor.w / 2;
+    reactionCardLeft = Math.min(Math.max(cx - REACTION_CARD_W / 2, 16), width - REACTION_CARD_W - 16);
+    let top = anchor.y - REACTION_CARD_H_EST - 12;
+    if (top < 70) top = anchor.y + anchor.h + 12;
+    reactionCardTop = Math.min(Math.max(top, 70), Math.max(70, height - REACTION_CARD_H_EST - 24));
+  }
+  const reactionPreviewLabel =
+    message.type === 'voice' ? '🎤 Voice message'
+    : message.type === 'call' ? '📞 Call'
+    : '📷 Media';
+
   return (
-    <View style={{ alignItems: align, marginHorizontal: 14, marginBottom: 2 }}>
+    <View style={{ alignItems: align, marginHorizontal: 14, marginBottom: 6 }}>
       <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: BUBBLE_MAX }}>
         {/* Reply preview inside bubble */}
         {message.replyTo && !message.deletedForEveryone && (
           <View style={{
-            backgroundColor: isMe ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.06)', borderRadius: 10,
+            backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 10,
             paddingHorizontal: 10, paddingVertical: 6,
             marginBottom: 4, borderLeftWidth: 3, borderLeftColor: C.seen,
           }}>
-            <Text style={{ color: isMe ? 'rgba(255,255,255,0.95)' : C.seen, fontSize: 11, fontWeight: '700', marginBottom: 2 }}>
+            <Text style={{ color: C.seen, fontSize: 11, fontWeight: '700', marginBottom: 2 }}>
               {message.replyTo.senderName}
             </Text>
-            <Text style={{ color: isMe ? 'rgba(255,255,255,0.8)' : C.muted, fontSize: 12 }} numberOfLines={1}>
+            <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
               {message.replyTo.type !== 'text'
                 ? (message.replyTo.type === 'voice' ? '🎤 Voice message' : '📷 Media')
                 : message.replyTo.preview}
@@ -276,6 +312,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
 
         {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
         <Pressable
+          ref={bubbleRef}
           onPress={() => { if (message.sendState === 'failed' && isMe && message.type === 'text') onRetry?.(message); }}
           onLongPress={handleLongPress}
           delayLongPress={200}
@@ -289,13 +326,13 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
             // IMO bubble chrome: 8dp radius, no tails, sent = #bbdefb,
             // received = #ffffff with a hairline border.
             backgroundColor: bubbleBg,
-            borderRadius: 8,
-            paddingHorizontal: 12, paddingVertical: 8,
+            borderRadius: 16,
+            paddingHorizontal: 12, paddingVertical: 10,
             borderWidth: isMe ? 0 : 1, borderColor: C.border,
           }}
         >
           {message.deletedForEveryone ? (
-            <Text style={{ color: isMe ? 'rgba(255,255,255,0.8)' : C.muted, fontSize: 13, fontStyle: 'italic' }}>
+            <Text style={{ color: isMe ? 'rgba(0,0,0,0.55)' : C.muted, fontSize: 13, fontStyle: 'italic' }}>
               {isMe ? '🗑 You deleted this message' : '🗑 This message was deleted'}
             </Text>
           ) : message.type === 'image' ? (
@@ -420,50 +457,70 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
           </View>
         )}
 
-        {/* Quick reaction picker overlay */}
-        {showReactions && (
-          <View style={{
-            position: 'absolute',
-            bottom: 48,
-            [isMe ? 'right' : 'left']: 0,
-            flexDirection: 'row',
-            backgroundColor: 'rgba(255,255,255,0.97)',
-            borderRadius: 30, paddingVertical: 8, paddingHorizontal: 12, gap: 6,
-            borderWidth: 1, borderColor: 'rgba(124,58,237,0.4)',
-            shadowColor: '#7C3AED', shadowOpacity: 0.3, shadowRadius: 12,
-            shadowOffset: { width: 0, height: 2 }, elevation: 10, zIndex: 100,
-          }}>
-            {REACTIONS.map((emoji) => (
-              <Pressable key={emoji} onPress={() => handleReaction(emoji)} style={{ padding: 4 }}>
-                <Text style={{ fontSize: 24 }}>{emoji}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => { setShowReactions(false); handleOptions(); }}
-              style={{ padding: 4, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Feather name="more-horizontal" size={20} color="#8E8E93" />
-            </Pressable>
-            {canCopy && (
-              <Pressable
-                onPress={handleCopy}
-                style={{ padding: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              >
-                <Feather name="copy" size={18} color="#8E8E93" />
-                <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.msgCopy')}</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {/* Dismiss reaction overlay if tapped outside */}
-        {showReactions && (
-          <Pressable
-            style={{ position: 'absolute', inset: -200, zIndex: 99 }}
-            onPress={() => setShowReactions(false)}
-          />
-        )}
       </Animated.View>
+      {/* 2026-10-27 (inbox polish): Telegram-style reaction card in a Modal.
+          A Modal renders outside the FlatList hierarchy, so the card can
+          never merge into, cover, or shift a neighbouring message — the
+          old inline absolute picker (bottom: 48 inside the item) did exactly
+          that on the inverted list, and its inset:-200 dismiss layer also
+          swallowed taps on adjacent messages. Backdrop tap dismisses. */}
+      {showReactions && (
+        <Modal transparent animationType="fade" onRequestClose={() => setShowReactions(false)}>
+          <View style={{ flex: 1 }}>
+            <Pressable
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' }}
+              onPress={() => setShowReactions(false)}
+            />
+            <View style={{
+              position: 'absolute', left: reactionCardLeft, top: reactionCardTop, width: REACTION_CARD_W,
+              backgroundColor: '#ffffff', borderRadius: 20, padding: 12,
+              borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+              shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16,
+              shadowOffset: { width: 0, height: 6 }, elevation: 12,
+            }}>
+              <View style={{
+                backgroundColor: isMe ? '#bbdefb' : '#F2F2F7',
+                borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10,
+              }}>
+                {message.deletedForEveryone ? (
+                  <Text style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>
+                    {isMe ? '🗑 You deleted this message' : '🗑 This message was deleted'}
+                  </Text>
+                ) : message.type === 'text' ? (
+                  <Text style={{ color: '#000000', fontSize: 14, lineHeight: 19 }} numberOfLines={3}>
+                    {message.content}
+                  </Text>
+                ) : (
+                  <Text style={{ color: C.muted, fontSize: 13 }}>{reactionPreviewLabel}</Text>
+                )}
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 2 }}>
+                {REACTIONS.map((emoji) => (
+                  <Pressable key={emoji} onPress={() => handleReaction(emoji)} hitSlop={4} style={{ padding: 6 }}>
+                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={{ height: 1, backgroundColor: '#E5E5EA', marginVertical: 10 }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                {canCopy && (
+                  <Pressable onPress={handleCopy} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}>
+                    <Feather name="copy" size={18} color="#8E8E93" />
+                    <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.msgCopy')}</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={() => { setShowReactions(false); handleOptions(); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
+                >
+                  <Feather name="more-horizontal" size={20} color="#8E8E93" />
+                  <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.messageOptions')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

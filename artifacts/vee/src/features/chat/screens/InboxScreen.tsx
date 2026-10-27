@@ -1469,7 +1469,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               {/* Send recording */}
               <Pressable onPress={handleVoiceSend} disabled={uploadingVoice} hitSlop={8}>
                 <View style={{
-                  width: 50, height: 50, borderRadius: 25,
+                  width: 48, height: 48, borderRadius: 24,
                   backgroundColor: '#009dff',
                   alignItems: 'center', justifyContent: 'center',
                   opacity: uploadingVoice ? 0.6 : 1 }}>
@@ -1487,7 +1487,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               {/* Attachment */}
               <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia}>
                 <View style={{
-                  width: 40, height: 40, borderRadius: 20,
+                  width: 48, height: 48, borderRadius: 24,
                   backgroundColor: uploadingMedia ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.18)',
                   borderWidth: 1, borderColor: 'rgba(124,58,237,0.35)',
                   alignItems: 'center', justifyContent: 'center' }}>
@@ -1500,9 +1500,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 ref={inputRef}
                 editable={blockDirection === 'none'}
                 style={{
-                  flex: 1, minHeight: 40, maxHeight: 110,
+                  flex: 1, minHeight: 48, maxHeight: 110,
                   backgroundColor: C.inputBg,
-                  borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
+                  borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10,
                   color: '#000000', fontSize: 16,
                   borderWidth: 1, borderColor: C.border }}
                 placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
@@ -1520,7 +1520,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               {inputText.trim() ? (
                 <Pressable onPress={handleSend} disabled={blockDirection !== 'none' || !user?.uid} hitSlop={8}>
                   <View style={{
-                    width: 50, height: 50, borderRadius: 25,
+                    width: 48, height: 48, borderRadius: 24,
                     backgroundColor: '#009dff',
                     alignItems: 'center', justifyContent: 'center' }}>
                     <Feather name="send" size={20} color="#fff" />
@@ -1529,7 +1529,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               ) : (
                 <Pressable onPress={handleMicPress} disabled={blockDirection !== 'none' || !user?.uid || uploadingVoice} hitSlop={8}>
                   <View style={{
-                    width: 50, height: 50, borderRadius: 25,
+                    width: 48, height: 48, borderRadius: 24,
                     backgroundColor: '#009dff',
                     alignItems: 'center', justifyContent: 'center',
                     opacity: uploadingVoice ? 0.6 : 1 }}>
