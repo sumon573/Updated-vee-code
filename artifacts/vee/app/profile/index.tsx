@@ -135,8 +135,10 @@ function MenuRow({ icon, iconBg, iconColor, label, onPress, last }: {
   );
 }
 
-// IMO card container: white, 12dp radius, 15dp side margins
-const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
+// 2026-10-27 (boss, flat imo profile): sections flow flat on the page bg —
+// no white cards, no side margins, no radius. Vertical rhythm comes from
+// SectionHeader paddingTop 14 + previous section paddingBottom 12.
+const flatSectionStyle = { paddingBottom: 12 } as const;
 
 // ─── Badge Pill (IMO style) ───
 
@@ -362,8 +364,8 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
   }, [item.isLive]);
 
   return (
-    <Pressable onPress={onPress} style={{ width: 100, marginRight: 10 }}>
-      <View style={{ width: 84, height: 84, borderRadius: 22, overflow: 'hidden', backgroundColor: C.card }}>
+    <Pressable onPress={onPress} style={{ width: 80, padding: 4, alignItems: 'center' }}>
+      <View style={{ width: 72, height: 72, borderRadius: 16, overflow: 'hidden', backgroundColor: C.card }}>
         {item.coverImageUrl ? (
           <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
@@ -1133,9 +1135,9 @@ export default function ProfileScreen({
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
 
-        {/* ─── VoiceClub Room card ─── */}
+        {/* ─── VoiceClub Room section ─── */}
         {rooms.length > 0 && (
-          <View style={[cardStyle, { paddingBottom: 12 }]}>
+          <View style={flatSectionStyle}>
             <SectionHeader title="VoiceClub Room" count={rooms.length} onPress={() => router.push(isMe ? '/profile/rooms' : `/profile/rooms?uid=${displayUid}`)} />
             <ScrollView
               horizontal
@@ -1155,18 +1157,25 @@ export default function ProfileScreen({
           </View>
         )}
 
-        {/* ─── Gifts card — 1 line: top 4 by diamond value ─── */}
+        {/* ─── Gifts section — 1 line: top 4 by diamond value ─── */}
         {giftEntries.length > 0 && (
-          <View style={[cardStyle, { paddingBottom: 12 }]}>
+          <View style={flatSectionStyle}>
             <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} />
-            <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
-              <View style={{ flexDirection: 'row', paddingHorizontal: 11 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 15 }}
+              nestedScrollEnabled
+              directionalLockEnabled
+            >
+              <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
+                <View style={{ flexDirection: 'row' }}>
                 {[...giftEntries]
                   .sort((a, b) => (GIFT_RANK_PRICE[b[0]] || 0) * b[1] - (GIFT_RANK_PRICE[a[0]] || 0) * a[1])
                   .slice(0, 4)
                   .map(([giftId, count]) => (
-                  <View key={giftId} style={{ width: '25%', padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: '100%', aspectRatio: 1, backgroundColor: C.tile, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <View key={giftId} style={{ width: 80, padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: 72, height: 72, backgroundColor: '#FFFFFF', borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                       {giftCatalog[giftId]?.thumbnailUrl ? (
                         <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
                       ) : (
@@ -1176,16 +1185,17 @@ export default function ProfileScreen({
                     <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
                   </View>
                 ))}
-              </View>
-            </Pressable>
+                </View>
+              </Pressable>
+            </ScrollView>
           </View>
         )}
 
-        {/* ─── Intimacy card — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
+        {/* ─── Intimacy section — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
             2026-10-27 (boss correction): intimacy pairs NEVER render here.
             Own card: real friends (max 5) + (+) slots filling up to 5.
             Other users' cards: real friends only, or "No friends yet". */}
-        <View style={[cardStyle, { paddingBottom: 12 }]}>
+        <View style={flatSectionStyle}>
           <SectionHeader
             title={t('profile.intimacy', { defaultValue: 'Intimacy' })}
             count={intimacyFriends.length + (intimacyCouple ? 1 : 0)}
@@ -1231,8 +1241,8 @@ export default function ProfileScreen({
           </ScrollView>
         </View>
 
-        {/* ─── Honor card — real granted badges only (sacred: official badge stays next to name) ─── */}
-        <View style={[cardStyle, { paddingBottom: 12 }]}>
+        {/* ─── Honor section — real granted badges only (sacred: official badge stays next to name) ─── */}
+        <View style={flatSectionStyle}>
           <SectionHeader
             title="Honor"
             count={grantedBadges.length}
@@ -1273,19 +1283,19 @@ export default function ProfileScreen({
           )}
         </View>
 
-        {/* ─── Decoration card ─── */}
-        <View style={[cardStyle, { paddingBottom: 12 }]}>
+        {/* ─── Decoration section ─── */}
+        <View style={flatSectionStyle}>
           <SectionHeader title="Decoration" count={grantedFrames.length} onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 11 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15 }}>
             <Pressable
               onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)}
-              style={{ width: '25%', padding: 4, alignItems: 'center' }}
+              style={{ width: 80, padding: 4, alignItems: 'center' }}
             >
               <LinearGradient
                 colors={['#8B5CF6', '#A78BFA']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={{ width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+                style={{ width: 72, height: 72, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
               >
                 <Feather name="image" size={32} color="#FFFFFF" />
               </LinearGradient>
@@ -1295,9 +1305,9 @@ export default function ProfileScreen({
           </View>
         </View>
 
-        {/* ─── Menu card (own profile): IMO-style rows → existing routes ─── */}
+        {/* ─── Menu section (own profile): IMO-style rows → existing routes ─── */}
         {isMe && (
-          <View style={[cardStyle, { paddingVertical: 4 }]}>
+          <View style={flatSectionStyle}>
             <MenuRow icon="credit-card" iconBg="#FFF8E6" iconColor="#B8860B" label={t('profile.menuWallet', 'Wallet')} onPress={() => router.push('/profile/wallet')} />
             {/* 2026-10-20 (boss): Store row sits where Top Up used to be —
                 one tap from the profile menu into the full store. */}
