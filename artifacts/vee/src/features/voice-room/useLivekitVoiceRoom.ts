@@ -141,6 +141,13 @@ type PersistedRoom = {
 let _isMinimized = false;
 /** Holds the LiveKit room when the screen is minimized so it isn't disconnected. */
 let _persistedRoom: PersistedRoom | null = null;
+/** 2026-10-27 (boss: two rooms must never play at once): the currently
+    MOUNTED voice-room engine, if any. Set on init/restore, cleared on
+    cleanup/minimize-persist. Lets an outside path (room switch) await a
+    FULL leave of a still-mounted room instead of stacking a second live
+    engine on top of it. */
+let _activeMountedEngine: LivekitVoiceRoomEngine | null = null;
+let _activeMountedRoomId: string | null = null;
 
 // ─── Minimized-room watchdog (2026-10-25, boss: mic/connection must NEVER
 // drop until mute or exit; background must never stop talk or hear) ───────
@@ -344,6 +351,37 @@ export async function destroyPersistedVoiceRoomEngineAsync(): Promise<void> {
     await engine.leave();
   } catch {
     // non-critical — teardown must never throw to callers
+  }
+}
+
+/** Room id of the currently live voice engine, mounted or minimized, else null. */
+export function getActiveVoiceRoomId(): string | null {
+  return _activeMountedRoomId ?? _persistedRoom?.roomId ?? null;
+}
+
+/**
+ * 2026-10-27 (boss: Leaderboard room switch must never play two rooms at
+ * once): await a FULL leave of the currently live engine — mounted or
+ * minimized — before any new room joins. Resolves only after the old
+ * engine's leave() (disconnect + audio-session stop, internally bounded)
+ * completes, so the new room's join can never overlap the old session.
+ * Never throws. Unregisters the mounted engine FIRST so the old screen's
+ * auto-retry can never resurrect it (see the retryConnection guard).
+ */
+export async function leaveActiveVoiceRoomEngineAsync(): Promise<void> {
+  if (_activeMountedEngine) {
+    const engine = _activeMountedEngine;
+    _activeMountedEngine = null;
+    _activeMountedRoomId = null;
+    try {
+      await engine.leave();
+    } catch {
+      // non-critical — teardown must never throw to callers
+    }
+    return;
+  }
+  if (_persistedRoom) {
+    await destroyPersistedVoiceRoomEngineAsync();
   }
 }
 
@@ -1669,6 +1707,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       if (isCleaningUpRef.current) return;
       isCleaningUpRef.current = true;
       mountedRef.current = false;
+      _activeMountedEngine = null;
+      _activeMountedRoomId = null;
 
       const engine = engineRef.current;
       engineRef.current = null;
@@ -1752,6 +1792,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       acquireSessionServiceHold();
 
       engineRef.current = persisted.engine;
+      _activeMountedEngine = persisted.engine;
+      _activeMountedRoomId = roomID;
       // Re-attach handlers with fresh closures on this component instance
       attachHandlers(persisted.engine);
       const s = persisted.engine.getLocalState();
@@ -1793,6 +1835,24 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // real roomID arrives and the restore branch above reuses it.
         // (Same for userID 'anonymous': AuthContext starts with null.)
         if (!roomID || userID === 'anonymous') return;
+
+        // 2026-10-27 (boss: two rooms must never play at once): a still-
+        // MOUNTED engine for a DIFFERENT room (a room screen stacked below
+        // this one after a Leaderboard/profile/invite tap) would keep
+        // playing under the new room. Tear it down first — awaited, like
+        // the persisted stale teardown below — then join fresh. Same-room
+        // stacked duplicates are untouched (restore/identity owns them).
+        if (_activeMountedEngine && _activeMountedRoomId !== roomID) {
+          const staleMounted = _activeMountedEngine;
+          _activeMountedEngine = null;
+          _activeMountedRoomId = null;
+          try {
+            await staleMounted.leave();
+          } catch {
+            // non-critical — stale room teardown
+          }
+          if (!mountedRef.current) return;
+        }
 
         // 2026-10-26 (mic intent seed): same-room minimize-time intent,
         // captured before the teardown below destroys it.
@@ -1875,6 +1935,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         }
         attachHandlers(engine);
         engineRef.current = engine;
+        _activeMountedEngine = engine;
+        _activeMountedRoomId = roomID;
         await engine.join(roomID, { userId: userID, userName });
         // engine.join() never throws — failures surface via onLocalStateChange
       })().catch(() => {
@@ -1917,6 +1979,8 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         };
         engineRef.current = null;
         mountedRef.current = false;
+        _activeMountedEngine = null;
+        _activeMountedRoomId = null;
         // 2026-10-25 (boss: connection must never drop while minimized):
         // start the watchdog so a dead engine is repaired in the
         // background instead of surfacing as a fresh entry on return.
@@ -1973,6 +2037,9 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const retryConnection = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
+    // 2026-10-27 (room switch): if this engine is no longer the registered
+    // active engine, it was deliberately left — never resurrect it.
+    if (_activeMountedEngine !== engine) return;
     const { roomID, userID, userName } = identityRef.current;
     if (!roomID || !userID) return;
     (async () => {

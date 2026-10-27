@@ -13,17 +13,20 @@
  * Light mode. Rankings update live via Firebase subscriptions.
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image } from 'react-native';
+import { View, Text, Modal, Pressable, FlatList, TouchableOpacity, Image, Alert } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { ref, query, orderByChild, limitToLast, startAfter, onValue, get } from 'firebase/database';
 import { auth, database } from '@/src/config/firebase';
-import { subscribeActiveRooms, type RoomInfo } from '../services/firebaseRoomService';
+import { subscribeActiveRooms, removeSeat, leaveAudience, type RoomInfo } from '../services/firebaseRoomService';
+import { getActiveVoiceRoomId, leaveActiveVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
+import { getCurrentRoom, getMinimizedRoom, clearCurrentRoom, setMinimizedRoom } from '@/src/store/minimizedRoom';
+import { getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import { getCurrentWeekId } from '@/src/utils/weekId';
 import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 
 // ─── Light premium palette ───────────────────────────────────────────────────
 
@@ -158,6 +161,107 @@ export function LeaderboardModal({
     [visible, weekOffset],
   );
   const myUid = auth.currentUser?.uid ?? null;
+  const pathname = usePathname();
+  // 2026-10-27 (boss: tapping a room while inside another played BOTH
+  // rooms at once): room-switch gate. Tapping the room you are already
+  // in does nothing; tapping a room while not in any room enters
+  // directly as before; tapping a DIFFERENT room while inside one asks
+  // first, and on OK exits the current room FULLY (awaited) before the
+  // target room is entered — so dual audio is impossible on this path.
+  const switchingRef = useRef(false);
+
+  const performSwitch = async (targetId: string, currentId: string) => {
+    // 1. FULL leave of the current room — awaited BEFORE any new join.
+    //    engine.leave() is internally bounded, so this cannot hang.
+    await leaveActiveVoiceRoomEngineAsync();
+    // 2. Presence cleanup (mirror of the normal exit path). Seat removal
+    //    is occupancy-verified: removeSeat() blindly removes its index,
+    //    so NEVER call it with a possibly-stale tracker index — only the
+    //    seat actually holding this user is removed.
+    try {
+      const seatsSnap = await get(ref(database, `rooms/${currentId}/seats`));
+      const seatsVal = seatsSnap.val() as Record<string, { userId?: string }> | null;
+      if (seatsVal && myUid) {
+        for (const [idx, seat] of Object.entries(seatsVal)) {
+          if (seat && seat.userId === myUid) {
+            await removeSeat(currentId, Number(idx)).catch(() => {});
+          }
+        }
+      }
+    } catch { /* best-effort */ }
+    try { if (myUid) await leaveAudience(currentId, myUid); } catch { /* best-effort */ }
+    try { await clearPersistedActiveRoom(); } catch { /* best-effort */ }
+    try { clearCurrentRoom(); } catch { /* best-effort */ }
+    try { setMinimizedRoom(null); } catch { /* best-effort */ }
+    // 3. Enter the target room: replace a mounted room screen (it
+    //    unmounts; its cleanup then runs as a harmless no-op), push
+    //    over home when the old room was only a minimized bubble.
+    if (pathname === '/voice-room') {
+      router.replace({ pathname: '/voice-room', params: { roomId: targetId } } as never);
+    } else {
+      router.push({ pathname: '/voice-room', params: { roomId: targetId } } as never);
+    }
+  };
+
+  const handleRoomPress = async (item: { id: string; name: string }) => {
+    if (switchingRef.current) return;
+    // Current-room detection: live engine first, then in-memory
+    // trackers, then the durable store.
+    let currentId: string | null = getActiveVoiceRoomId();
+    if (!currentId) {
+      currentId = getCurrentRoom()?.id ?? getMinimizedRoom()?.id ?? null;
+    }
+    if (!currentId) {
+      try {
+        const persisted = await getPersistedActiveRoom();
+        if (persisted) currentId = persisted.roomId;
+      } catch { /* best-effort */ }
+    }
+    if (!currentId) {
+      // Not in any room: direct entry exactly as today.
+      onClose();
+      router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never);
+      return;
+    }
+    if (currentId === item.id) {
+      // Already in this room: no popup, no action.
+      return;
+    }
+    // Different room while inside one: confirmation popup first.
+    let currentName: string | null =
+      rooms.find((r) => r.id === currentId)?.name ?? getMinimizedRoom()?.name ?? null;
+    if (!currentName) {
+      try {
+        const snap = await get(ref(database, `rooms/${currentId}/info`));
+        const v = snap.val() as { name?: string } | null;
+        if (v?.name) currentName = v.name;
+      } catch { /* best-effort */ }
+    }
+    const displayCurrent = currentName ?? 'your current room';
+    const leavingId: string = currentId;
+    Alert.alert(
+      t('leaderboard.switchRoomTitle', { defaultValue: 'Switch room?' }),
+      t('leaderboard.switchRoomMessage', {
+        defaultValue: 'You are currently in {{current}}. Do you really want to leave and join {{target}}?',
+        current: displayCurrent,
+        target: item.name,
+      }),
+      [
+        { text: t('leaderboard.switchCancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        {
+          text: t('leaderboard.switchConfirm', { defaultValue: 'Switch' }),
+          onPress: () => {
+            if (switchingRef.current) return;
+            switchingRef.current = true;
+            onClose();
+            void performSwitch(item.id, leavingId).finally(() => {
+              switchingRef.current = false;
+            });
+          },
+        },
+      ],
+    );
+  };
 
   // ── Top Rooms (live subscription) ──────────────────────────────────────────
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
@@ -684,10 +788,7 @@ export function LeaderboardModal({
     const isMine = item.ownerId === myUid;
     return (
       <Pressable
-        onPress={() => {
-          onClose();
-          router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never);
-        }}
+        onPress={() => void handleRoomPress(item)}
         style={{
         flexDirection: 'row', alignItems: 'center',
         paddingVertical: top3 ? 14 : 12, paddingHorizontal: top3 ? 12 : 0,
@@ -739,10 +840,7 @@ export function LeaderboardModal({
     const isMine = item.ownerId === myUid;
     return (
       <Pressable
-        onPress={() => {
-          onClose();
-          router.push({ pathname: '/voice-room', params: { roomId: item.id } } as never);
-        }}
+        onPress={() => void handleRoomPress(item)}
         style={{
         flexDirection: 'row', alignItems: 'center',
         paddingVertical: top3 ? 14 : 12, paddingHorizontal: top3 ? 12 : 0,
