@@ -68,7 +68,7 @@
  * proves it). Preview-page chrome (DEMO banner/balance, yellow
  * header, "preview-তে bet নেই" notes) is NEVER copied here.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   View,
@@ -170,6 +170,122 @@ function tileRect(foodId: DeliciousFoodId): { left: number; top: number; cx: num
   return { left, top, cx: left + TILE_W / 2, cy: top + TILE_H / 2 };
 }
 
+// Tile rects are constants (wheel geometry never changes at runtime),
+// so memoized tiles can take a stable rect prop and skip tick renders.
+const TILE_RECTS = Object.fromEntries(
+  DELICIOUS_FOODS.map((f) => [f.id, tileRect(f.id)]),
+) as Record<DeliciousFoodId, { left: number; top: number; cx: number; cy: number }>;
+
+/** F6: memoized spoke — pure function of foodId, never re-renders on ticks. */
+const SpokeView = memo(function SpokeView({ foodId }: { foodId: DeliciousFoodId }) {
+  const r = TILE_RECTS[foodId];
+  const cx = HUB_FRAC.x * WHEEL_W;
+  const cy = HUB_FRAC.y * WHEEL_H;
+  const dx = r.cx - cx;
+  const dy = r.cy - cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 0) return null;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const ex = cx + ux * (CIRCLE / 2 + 2);
+  const ey = cy + uy * (CIRCLE / 2 + 2);
+  const len = Math.hypot(r.cx - ex, r.cy - ey);
+  const angle = (Math.atan2(r.cy - ey, r.cx - ex) * 180) / Math.PI;
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: (r.cx + ex) / 2 - len / 2,
+        top: (r.cy + ey) / 2 - 1,
+        width: len,
+        height: 2,
+        backgroundColor: '#FF5A3C',
+        opacity: 0.4,
+        transform: [{ rotate: `${angle}deg` }],
+      }}
+    />
+  );
+});
+
+/** F6: memoized food tile — all props are primitives or stable refs, so
+    500ms/130ms ticks skip it; it re-renders only when its own state
+    changes (winner, spin highlight, own bet, own pending). The chip
+    shows the paid + pending total; a still-unresolved tap adds the
+    F1 "confirming…" line below the pill. */
+const FoodTileView = memo(function FoodTileView(props: {
+  food: DeliciousFood;
+  rect: { left: number; top: number; cx: number; cy: number };
+  isWinner: boolean;
+  isSpinning: boolean;
+  spinActive: boolean;
+  resultDimmed: boolean;
+  myBet: number;
+  myPending: number;
+  onBet: (kind: 'food' | 'side', target: DeliciousFoodId | DeliciousSideId) => void;
+}) {
+  const { food, rect: r, isWinner, isSpinning, spinActive, resultDimmed, myBet, myPending, onBet } = props;
+  const spinDimmed = spinActive && !isSpinning;
+  const dimmed = resultDimmed || spinDimmed;
+  const tileStyle: ViewStyle = {
+    position: 'absolute',
+    left: r.left,
+    top: r.top,
+    width: TILE_W,
+    height: TILE_H,
+    borderRadius: TILE_W * 0.18,
+    overflow: 'hidden',
+    backgroundColor: '#F59E0B',
+    opacity: dimmed ? 0.45 : 1,
+    borderWidth: isSpinning ? 5 : isWinner ? 3 : 0,
+    borderColor: isSpinning ? '#FFF3B0' : isWinner ? '#FFD43B' : 'transparent',
+    ...(isSpinning ? {
+      transform: [{ scale: 1.12 }],
+      zIndex: 2,
+      shadowColor: '#FFD43B',
+      shadowOpacity: 0.9,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 8,
+    } : null),
+  };
+  return (
+    <Pressable
+      onPress={() => onBet('food', food.id)}
+      style={tileStyle}
+    >
+      <Image source={food.image} style={{ width: TILE_W, height: TILE_H }} resizeMode="cover" />
+      <View style={{ position: 'absolute', bottom: TILE_H * 0.05, left: -TILE_W * 0.06, right: -TILE_W * 0.06, alignItems: 'center' }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 13, fontWeight: '800', textShadowColor: '#B34A00', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>Win {food.multiplier} Times</Text>
+      </View>
+      {isSpinning && (
+        <View style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center' }}>
+          <View style={{
+            backgroundColor: '#3D0A0A', borderWidth: 1.5, borderColor: '#FFD43B',
+            borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3,
+          }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800' }}>{food.multiplier}x</Text>
+          </View>
+        </View>
+      )}
+      {myBet > 0 && (
+        <View style={{ position: 'absolute', top: TILE_H * 0.44, left: 0, right: 0, alignItems: 'center' }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B',
+            borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
+          }}>
+            <DiamondIcon size={11} />
+            <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 12, fontWeight: '800', marginLeft: 3 }}>{formatNum(myBet)}</Text>
+          </View>
+          {myPending > 0 && (
+            <Text style={{ color: '#FFD43B', fontSize: 10, fontWeight: '800', marginTop: 2 }}>confirming…</Text>
+          )}
+        </View>
+      )}
+    </Pressable>
+  );
+});
+
 function formatNum(n: number): string {
   return n.toLocaleString('en-US');
 }
@@ -191,7 +307,7 @@ const RANK_COLORS = ['#FFD43B', '#C0C0C0', '#CD7F32'];
 /** Top-3 winner avatar (FIX 9b, imo-type row): avatar circle with a
     rank badge, name + diamond win below. Missing/failed avatar ->
     plain initial circle — never a broken image, never a fake name. */
-function WinnerAvatar({ winner, rank }: { winner: DeliciousBiggestWinner; rank: number }) {
+const WinnerAvatar = memo(function WinnerAvatar({ winner, rank }: { winner: DeliciousBiggestWinner; rank: number }) {
   const [imgFailed, setImgFailed] = useState(false);
   const color = RANK_COLORS[rank - 1] ?? '#FFD43B';
   const initial = (winner.name || '?').trim().charAt(0).toUpperCase() || '?';
@@ -216,7 +332,7 @@ function WinnerAvatar({ winner, rank }: { winner: DeliciousBiggestWinner; rank: 
       </View>
     </View>
   );
-}
+});
 
 const TOP10_RANK_STYLE: Record<number, { bg: string; fg: string; border: string }> = {
   1: { bg: '#FFD43B', fg: '#1F2937', border: '#FFD43B' },
@@ -230,7 +346,7 @@ const TOP10_RANK_STYLE: Record<number, { bg: string; fg: string; border: string 
     3 bronze, 4-10 plain dark). Photo from the strip profile cache;
     missing/failed photo -> plain initial circle — never a broken
     image, never a fake name. */
-function Top10Card({ rank, name, photo, total }: {
+const Top10Card = memo(function Top10Card({ rank, name, photo, total }: {
   rank: number;
   name: string | null;
   photo: string | null;
@@ -260,7 +376,7 @@ function Top10Card({ rank, name, photo, total }: {
       </View>
     </View>
   );
-}
+});
 
 export function DeliciousGameSheet({ visible, myUid, onClose }: {
   visible: boolean;
@@ -284,6 +400,10 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [now, setNow] = useState<number>(Date.now());
   const [dismissedRound, setDismissedRound] = useState<number | null>(null);
   const [placing, setPlacing] = useState(false);
+  // F1 rejection notice: a bot-rejected tap used to vanish silently
+  // (the optimistic chip just dropped). Any NEW rejection in the
+  // current round shows a brief banner below (auto-dismisses).
+  const [rejectNotice, setRejectNotice] = useState<string | null>(null);
   const [configRaw, setConfigRaw] = useState<DeliciousConfigRaw | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyWins, setHistoryWins] = useState<Record<number, number | null>>({});
@@ -367,6 +487,36 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   useEffect(() => {
     setDismissedRound(null);
   }, [roundN]);
+
+  // F1: watch for NEW rejections in the current round. The first
+  // snapshot per round only seeds the seen set (no stale notice on
+  // open); later snapshots diff against it. 'late' -> the too-late
+  // wording; other reasons (insufficient/invalid/max-boxes) -> the
+  // generic wording. Never implies a rejected tap was charged.
+  const rejectSeenRef = useRef<{ n: number | null; ids: Set<string>; init: boolean }>({ n: null, ids: new Set(), init: false });
+  useEffect(() => {
+    if (roundN == null) return;
+    if (rejectSeenRef.current.n !== roundN) {
+      rejectSeenRef.current = { n: roundN, ids: new Set(), init: false };
+    }
+    const rejected = Object.entries(myBets).filter(([, b]) => b.status === 'rejected');
+    if (!rejectSeenRef.current.init) {
+      rejected.forEach(([id]) => rejectSeenRef.current.ids.add(id));
+      rejectSeenRef.current.init = true;
+      return;
+    }
+    const fresh = rejected.filter(([id]) => !rejectSeenRef.current.ids.has(id));
+    if (fresh.length > 0) {
+      fresh.forEach(([id]) => rejectSeenRef.current.ids.add(id));
+      const anyLate = fresh.some(([, b]) => (b.reason ?? '').toLowerCase().includes('late'));
+      setRejectNotice(anyLate ? 'Bet missed — too late, not charged' : 'Bet missed — not charged');
+    }
+  }, [myBets, roundN]);
+  useEffect(() => {
+    if (rejectNotice == null) return;
+    const t = setTimeout(() => setRejectNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [rejectNotice]);
 
   // Effective rules: server config over today's hardcoded values.
   const config = useMemo(() => mergeDeliciousConfig(configRaw), [configRaw]);
@@ -553,13 +703,34 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   // bets) until the bot's count phase starts — typically under a second.
   const bettingOverrun = phase === 'betting' && round != null && now >= round.endsAt;
   const bettingActive = bettingOpen && !bettingOverrun;
+  // F1 (2026-10-27, round 849): intake closes 2s before the server
+  // window ends (phone time). Taps in that margin look open on the
+  // countdown but can still miss the bot's settle read, so they are
+  // refused visibly in onBetTarget instead of silently dropping the
+  // chip. bettingActive is deliberately NOT changed: the countdown
+  // keeps showing the server clock (2s/1s) and the Hot badge keeps
+  // its own gate; only intake is gated.
+  const bettingIntakeClosed = phase === 'betting' && round != null && round.endsAt - now <= 2000;
   const secondsLeft = round ? Math.max(0, Math.ceil((round.endsAt - now) / 1000)) : 0;
-  const countDigit = phase === 'count' ? Math.min(3, Math.max(1, secondsLeft)) : null;
+  // F4 (2026-10-27, boss: no extra second after the 3s count):
+  // the digit may reach 0 (3,2,1,0) instead of sticking at 1 while
+  // the server flips count -> result. The overlay gate is
+  // `countDigit != null`, so 0 still renders (it is not null).
+  const countDigit = phase === 'count' ? Math.min(3, Math.max(0, secondsLeft)) : null;
   // The pop-up lives only inside its result window: once endsAt passes
   // it closes on its own (and the result joins the strip, below), so a
   // stalled bot can never leave a stale pop-up on screen.
   const resultWindowOver = phase === 'result' && round != null && now >= round.endsAt;
-  const showResult = phase === 'result' && round && dismissedRound !== round.n && !resultWindowOver;
+  // F4: the result is already written at settle (bot: phase -> count
+  // only after settle, with a fresh count endsAt; count -> result
+  // refreshes endsAt again), so the pop-up can show the moment the
+  // count window ends instead of waiting ~0.5-1.5s for the server's
+  // count -> result flip — that wait was the "extra second". The
+  // pop-up then stays through the result window (fresh endsAt) and
+  // still auto-closes at its end; dismissing during count-end keeps
+  // it dismissed when the phase flips.
+  const countEnded = phase === 'count' && round != null && now >= round.endsAt;
+  const showResult = (phase === 'result' || countEnded) && round && dismissedRound !== round.n && !resultWindowOver;
   const result = round ? results[String(round.n)] : undefined;
   const biggestWinners = result?.biggest ?? [];
 
@@ -708,8 +879,18 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     }
   }
 
-  async function onBetTarget(kind: 'food' | 'side', target: DeliciousFoodId | DeliciousSideId) {
-    if (!round || !bettingOpen || bettingOverrun || placing) return;
+  // F1: once-per-round throttle for the closed-intake alert, so a
+  // mashing finger cannot stack dialogs.
+  const bettingClosedAlertRef = useRef<{ n: number | null; shown: boolean }>({ n: null, shown: false });
+  const onBetTarget = useCallback(async (kind: 'food' | 'side', target: DeliciousFoodId | DeliciousSideId) => {
+    if (!round || !bettingOpen || placing) return;
+    if (bettingIntakeClosed) {
+      if (bettingClosedAlertRef.current.n !== round.n || !bettingClosedAlertRef.current.shown) {
+        bettingClosedAlertRef.current = { n: round.n, shown: true };
+        Alert.alert('Betting closed', 'Too late for this round — not charged.');
+      }
+      return;
+    }
     // MAX-6-BOXES RULE (boss 2026-10-26 02:06): at most 6 DISTINCT
     // boxes per round (8 foods + 2 sides). Distinct targets among the
     // user's paid bets PLUS optimistic pending taps (so rapid taps
@@ -771,135 +952,31 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     } finally {
       setPlacing(false);
     }
-  }
+  }, [round, bettingOpen, bettingIntakeClosed, placing, displayBetByTarget, myBetByTarget, myRejectedByTarget, selectedAmount, balance, myUid]);
 
   // PREVIEW SPOKES: thin lines from the hub centre to each tile
   // centre, preview style (#FF5A3C at 0.4 opacity). Rendered BEFORE
   // the tiles and the hub, so both cover the spoke ends and only the
   // hub-edge-to-tile-edge segment shows — exactly like the preview.
   function renderSpoke(foodId: DeliciousFoodId) {
-    const r = tileRect(foodId);
-    const cx = HUB_FRAC.x * WHEEL_W;
-    const cy = HUB_FRAC.y * WHEEL_H;
-    const dx = r.cx - cx;
-    const dy = r.cy - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist <= 0) return null;
-    const ux = dx / dist;
-    const uy = dy / dist;
-    const ex = cx + ux * (CIRCLE / 2 + 2);
-    const ey = cy + uy * (CIRCLE / 2 + 2);
-    const len = Math.hypot(r.cx - ex, r.cy - ey);
-    const angle = (Math.atan2(r.cy - ey, r.cx - ex) * 180) / Math.PI;
-    return (
-      <View
-        key={`spoke-${foodId}`}
-        style={{
-          position: 'absolute',
-          left: (r.cx + ex) / 2 - len / 2,
-          top: (r.cy + ey) / 2 - 1,
-          width: len,
-          height: 2,
-          backgroundColor: '#FF5A3C',
-          opacity: 0.4,
-          transform: [{ rotate: `${angle}deg` }],
-        }}
-      />
-    );
+    return <SpokeView key={`spoke-${foodId}`} foodId={foodId} />;
   }
 
   function renderFoodTile(foodId: DeliciousFoodId) {
     const food = effFoodMap[foodId];
-    const r = tileRect(foodId);
-    const isWinner = phase === 'result' && round?.winningFood === foodId;
-    const isSpinning = spinHighlight === foodId;
-    const myFoodBet = displayBetByTarget[`food:${foodId}`] ?? 0;
-    // UNMISSABLE SPIN HIGHLIGHT: during spinning phases the active tile
-    // pops (thick white-gold border + glow + scale) while every other
-    // tile dims to 0.45 — the old thin 3px gold border on the amber tile
-    // was nearly invisible on a phone, so the roulette read as nothing
-    // happening. spinHighlight is null during betting/result, so this
-    // can never dim tiles outside a spin. Result winner rendering is
-    // unchanged (3px gold border, no scale, no dim change beyond today).
-    const spinDimmed = spinHighlight != null && !isSpinning;
-    const dimmed = (phase === 'result' && round?.winningFood !== foodId) || spinDimmed;
-    const tileStyle: ViewStyle = {
-      position: 'absolute',
-      left: r.left,
-      top: r.top,
-      width: TILE_W,
-      height: TILE_H,
-      borderRadius: TILE_W * 0.18,
-      overflow: 'hidden',
-      backgroundColor: '#F59E0B',
-      opacity: dimmed ? 0.45 : 1,
-      borderWidth: isSpinning ? 5 : isWinner ? 3 : 0,
-      borderColor: isSpinning ? '#FFF3B0' : isWinner ? '#FFD43B' : 'transparent',
-      ...(isSpinning ? {
-        transform: [{ scale: 1.12 }],
-        zIndex: 2,
-        shadowColor: '#FFD43B',
-        shadowOpacity: 0.9,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 0 },
-        elevation: 8,
-      } : null),
-    };
     return (
-      <Pressable
+      <FoodTileView
         key={foodId}
-        onPress={() => onBetTarget('food', foodId)}
-        style={tileStyle}
-      >
-        <Image source={food.image} style={{ width: TILE_W, height: TILE_H }} resizeMode="cover" />
-        {/* PREVIEW LABEL: "Win N Times" over the image (preview style:
-            bottom 5%, full-bleed overhang, white bold with warm shadow,
-            no dark bar) — replaces the old "Win N" bar. */}
-        <View style={{ position: 'absolute', bottom: TILE_H * 0.05, left: -TILE_W * 0.06, right: -TILE_W * 0.06, alignItems: 'center' }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 13, fontWeight: '800', textShadowColor: '#B34A00', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>Win {food.multiplier} Times</Text>
-        </View>
-        {/* SPIN BADGE: during a spin the active tile carries its own
-            multiplier ON the tile itself (e.g. "45x") — the eye never
-            has to guess which box the spin is on or what it pays.
-            Gated on isSpinning (spinHighlight non-null), so it can
-            never appear during betting/result; it follows spinHighlight
-            automatically as the spin advances, and holds on the winner
-            during count landing. Top edge, so it never covers the food
-            art or the "Win N Times" label below. */}
-        {isSpinning && (
-          <View style={{ position: 'absolute', top: 4, left: 0, right: 0, alignItems: 'center' }}>
-            <View style={{
-              backgroundColor: '#3D0A0A', borderWidth: 1.5, borderColor: '#FFD43B',
-              borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3,
-            }}>
-              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 16, fontWeight: '800' }}>{food.multiplier}x</Text>
-            </View>
-          </View>
-        )}
-        {/* BET CHIP (boss 01:34): the user's OWN total bet on this tile,
-            ON the tile itself — visible during betting AND during the
-            spin, so he always sees his money on his own boxes. Middle
-            band (top 44% of the tile): clear of the spin badge above
-            (top 4) and the "Win N Times" label below (bottom 5%) on the
-            boss phone; shows whenever the paid + optimistic total > 0,
-            in every phase (betting, settling, overrun, count, result).
-            During a spin, non-active tiles dim to 0.45, so their chips
-            dim with them but stay readable; the active tile's chip is
-            full-bright. NOT the removed You overlay — a clean
-            diamond + amount pill, nothing else. */}
-        {myFoodBet > 0 && (
-          <View style={{ position: 'absolute', top: TILE_H * 0.44, left: 0, right: 0, alignItems: 'center' }}>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center',
-              backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B',
-              borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2,
-            }}>
-              <DiamondIcon size={11} />
-              <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 12, fontWeight: '800', marginLeft: 3 }}>{formatNum(myFoodBet)}</Text>
-            </View>
-          </View>
-        )}
-      </Pressable>
+        food={food}
+        rect={TILE_RECTS[foodId]}
+        isWinner={phase === 'result' && round?.winningFood === foodId}
+        isSpinning={spinHighlight === foodId}
+        spinActive={spinHighlight != null}
+        resultDimmed={phase === 'result' && round?.winningFood !== foodId}
+        myBet={displayBetByTarget[`food:${foodId}`] ?? 0}
+        myPending={Math.max(0, (displayBetByTarget[`food:${foodId}`] ?? 0) - (myBetByTarget[`food:${foodId}`] ?? 0))}
+        onBet={onBetTarget}
+      />
     );
   }
 
@@ -935,6 +1012,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     const isWinner = phase === 'result' && round?.winningSide === sideId;
     const dimmed = phase === 'result' && round?.winningSide !== sideId;
     const mySideBet = displayBetByTarget[`side:${sideId}`] ?? 0;
+    const mySidePending = Math.max(0, mySideBet - (myBetByTarget[`side:${sideId}`] ?? 0));
     return (
       <Pressable
         onPress={() => onBetTarget('side', sideId)}
@@ -965,6 +1043,9 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
         </View>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 2 }}>{side.name}</Text>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFD43B', fontSize: 12, fontWeight: '800' }}>{side.multiplier}×</Text>
+        {mySidePending > 0 && (
+          <Text style={{ color: '#FFD43B', fontSize: 10, fontWeight: '800', marginTop: 1 }}>confirming…</Text>
+        )}
       </Pressable>
     );
   }
@@ -1006,6 +1087,15 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '800', marginLeft: 6 }}>{formatNum(balance)}</Text>
           </View>
         </View>
+
+        {/* F1 rejection notice: brief, non-blocking, auto-dismisses. */}
+        {rejectNotice != null && (
+          <View pointerEvents="none" style={{ position: 'absolute', top: 52, left: 0, right: 0, alignItems: 'center', zIndex: 5 }}>
+            <View style={{ backgroundColor: '#3D0A0A', borderWidth: 1, borderColor: '#FFD43B', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+              <Text style={{ color: '#FFD43B', fontSize: 12, fontWeight: '800' }}>{rejectNotice}</Text>
+            </View>
+          </View>
+        )}
 
         {/* Wheel: spokes (behind) + tiles + Hot badge + centre circle (hub).
             overflow visible so the Hot badge can sit above a top-row tile. */}
@@ -1289,7 +1379,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 </View>
               )}
               {result && biggestWinners.length === 0 && (
-                <Text style={{ color: '#FFD9D9', fontSize: 13, marginTop: 12 }}>No bets this round</Text>
+                <Text style={{ color: '#FFD9D9', fontSize: 13, marginTop: 12 }}>No winners this round</Text>
               )}
             </View>
           </View>
