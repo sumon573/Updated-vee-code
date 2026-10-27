@@ -105,7 +105,7 @@ export function MusicFlowModal(props: MusicFlowModalProps) {
               onOpenPlaylist={() => setView('playlist')}
             />
           </View>
-          <View style={[styles.viewWrap, { display: view === 'playlist' ? 'flex' : 'none' }]}>
+          <View style={[styles.viewWrap, styles.viewWrapFill, { display: view === 'playlist' ? 'flex' : 'none' }]}>
             <MusicPlaylistPage
               active={visible && view === 'playlist'}
               library={library}
@@ -118,7 +118,7 @@ export function MusicFlowModal(props: MusicFlowModalProps) {
               onAdd={() => setView('add')}
             />
           </View>
-          <View style={[styles.viewWrap, { display: view === 'add' ? 'flex' : 'none' }]}>
+          <View style={[styles.viewWrap, styles.viewWrapFill, { display: view === 'add' ? 'flex' : 'none' }]}>
             <MusicAddPage
               active={visible && view === 'add'}
               uid={uid}
@@ -138,5 +138,11 @@ const styles = StyleSheet.create({
   sheet: { width: '100%', borderTopLeftRadius: 26, borderTopRightRadius: 26, maxHeight: '88%' },
   sheetAuto: {},
   sheetTall: { height: '88%' },
-  viewWrap: { flex: 1 },
+  // 2026-10-27 (boss: Music tap showed dim but no sheet): the player
+  // wrapper must NOT flex — flex:1 inside the auto-height player sheet
+  // collapses to 0 (sheet has only a percentage maxHeight, no definite
+  // height), so the sheet vanished and only the dim rendered. Playlist/
+  // add keep the fill because their sheet has a definite 88% height.
+  viewWrap: {},
+  viewWrapFill: { flex: 1 },
 });
