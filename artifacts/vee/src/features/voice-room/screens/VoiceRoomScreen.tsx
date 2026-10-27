@@ -3820,6 +3820,7 @@ export default function VoiceRoomScreen() {
       />
       <VoiceRoomBottomBar
         keyboardOpen={keyboardOpen}
+        isSeated={mySeatIdx >= 0}
         bottomPad={bottomPad}
         themeOnBg={themeOnBg}
         isDarkTheme={isDarkTheme}

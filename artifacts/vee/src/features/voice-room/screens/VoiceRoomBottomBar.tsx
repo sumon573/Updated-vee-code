@@ -36,8 +36,9 @@
  *     red mic-off / grey volume-x states are gone; mute state still shows
  *     on the user's own seat mic icon.
  * Round 5 (boss 2026-10-27 19:06): NO background strip — the row floats
- * directly on the user's room theme. Bare glyphs (calendar, speaker) are
- * black glyphs recolored per theme via tintColor; the Say pill stays dark
+ * directly on the user's room theme. Bare glyph (calendar) is a black
+ * glyph recolored per theme via tintColor (speaker: see the 19:41
+ * white-on-dark-circle note below); the Say pill stays dark
  * with a theme-aware border so it separates on every theme.
  * Round 5b (boss 2026-10-27 19:27): comment pill slightly SMALLER so the
  * other buttons get a bit more space and grow slightly bigger — one small
@@ -45,20 +46,50 @@
  * speaker hit boxes 48→52 with glyphs scaled proportionally, smiley 26→28).
  * Pill stays flex:1 height 48, "Say..." 16px, so it shrinks only relatively
  * and stays readable; no fixed pill width (small screens safe).
+ * imo-balanced (boss 2026-10-27 19:39): step-2's 62dp buttons squeezed the
+ * pill on real phones, so the row is rebalanced to imo's own proportions,
+ * measured from the boss's 19:11 crop (1080x240, row span x36-1044):
+ * mic circle 120px (11.9%), Say pill 318px (31.5%), calendar glyph 61px
+ * (6.1%), clover span 81px (8.0%), flower circle 120px (11.9%), gift
+ * circle 122px (12.1%). Applied: circles 42dp (~imo 43-44), gamepad 46dp
+ * wide, bare-glyph boxes 38dp, row chrome tightened (gap 8, side pad 10),
+ * pill inner padding trimmed (10/4). "Say..." need at 16px is ~89dp
+ * (10 pad + ~42.5 text measured + 28 smiley + 4 smiley pad + 4 pad);
+ * pill widths: 360dp -> 94dp (fits, +5 margin), 390dp -> 124dp,
+ * 437dp -> 171dp. Buttons do NOT grow further in this version.
+ * Speaker (boss 2026-10-27 19:41, folded in before push): WHITE glyph
+ * (#FFFFFF, same white as the mute/join/event buttons) on a #252525
+ * dark circle on ALL themes — #252525 sampled from the mic-circle
+ * slice itself, so it is the same dark-circle family as mic+gear.
+ * Never gold #D0A010, never theme-dark: a bare white glyph would
+ * vanish on light themes, the dark circle keeps it visible everywhere.
+ * The 42dp circle (vs the 38dp box) costs 4dp of pill room, so the
+ * row gap is 7dp (not 8dp) to hold the pill fit: chrome = 20 side
+ * + 35 gaps = 55; buttons = 42+42+46+38+42 = 210; pill widths now
+ * 360dp -> 95dp (fits, +6 margin over the ~89dp need), 390dp -> 125dp,
+ * 437dp -> 172dp.
+ * Two-mode mic button (boss 2026-10-27 19:43, folded in before push):
+ * seated -> mic+gear (MUTE), unseated -> BOTTOM_JOIN dark circle +
+ * white '+' (JOIN); Screen passes isSeated={mySeatIdx >= 0} (mySeatIdx
+ * is -1 when unseated — NOT null — so the prop uses >= 0).
  */
 import React from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
 import {
-  BOTTOM_MIC_GEAR, BOTTOM_SMILEY, BOTTOM_CALENDAR,
+  BOTTOM_MIC_GEAR, BOTTOM_JOIN, BOTTOM_SMILEY, BOTTOM_CALENDAR,
   BOTTOM_SPEAKER, BOTTOM_GAMEPAD, BOTTOM_GIFT,
 } from './bottomIcons';
 
 export interface VoiceRoomBottomBarProps {
   keyboardOpen: boolean;
+  /** True when the user is seated (mySeatIdx >= 0 in the Screen) — the mic
+      button shows the mic+gear MUTE icon. False (audience) — it shows the
+      dark-circle white-'+' JOIN icon instead. Action unchanged. */
+  isSeated: boolean;
   /** Text/icon color on the room theme bg (dark on light themes, light on
-      Midnight) — used as tintColor for the bare calendar/speaker glyphs. */
+      Midnight) — used as tintColor for the bare calendar glyph. */
   themeOnBg: string;
   /** True only for dark room themes (bg luminance < 0.4) — drives the Say
       pill border + the speaker's gold tint. */
@@ -78,7 +109,7 @@ export interface VoiceRoomBottomBarProps {
 
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const {
-    keyboardOpen, bottomPad, themeOnBg, isDarkTheme, handleMicBarPress,
+    keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, handleMicBarPress,
     toggleSpeaker,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen,
     onSayPress, onSmileyPress,
@@ -93,12 +124,15 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         pointerEvents={keyboardOpen ? 'none' : 'auto'}
         style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
-        flexDirection: 'row', alignItems: 'center', gap: 10,
-        paddingHorizontal: 12, paddingTop: 10, paddingBottom: bottomPad,
+        flexDirection: 'row', alignItems: 'center', gap: 7,
+        paddingHorizontal: 10, paddingTop: 10, paddingBottom: bottomPad,
         opacity: keyboardOpen ? 0 : 1 }}>
-        {/* Mic + gear — target's composite icon, sliced exactly. */}
+        {/* Mic button — TWO MODES (boss 19:43): seated -> mic+gear MUTE icon;
+            unseated/audience -> dark-circle white-'+' JOIN icon. Action
+            (handleMicBarPress: mute when seated, join first free seat when
+            unseated) is unchanged — only the icon shows the current mode. */}
         <ScalePress onPress={handleMicBarPress}>
-          <Image source={{ uri: BOTTOM_MIC_GEAR }} style={{ width: 62, height: 62 }} />
+          <Image source={{ uri: isSeated ? BOTTOM_MIC_GEAR : BOTTOM_JOIN }} style={{ width: 42, height: 42 }} />
         </ScalePress>
 
         {/* Say pill — dark pill + "Say..." + smiley inside (target). */}
@@ -108,7 +142,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           borderWidth: 1,
           borderColor: isDarkTheme ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.12)',
           flexDirection: 'row', alignItems: 'center',
-          paddingLeft: 12, paddingRight: 6 }}>
+          paddingLeft: 10, paddingRight: 4 }}>
           <Pressable onPress={onSayPress} style={{ flex: 1 }}>
             <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
               Say...
@@ -121,26 +155,27 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 
         {/* Calendar — Task Center (existing modal). */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
-          <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 34, height: 33, tintColor: themeOnBg }} />
+          <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 23, height: 22, tintColor: themeOnBg }} />
           </View>
         </ScalePress>
 
-        {/* Speaker — voice-output toggle (existing handler). */}
+        {/* Speaker — voice-output toggle (existing handler). Boss 19:41:
+            WHITE glyph on a dark circle (mic-circle family) on ALL themes. */}
         <ScalePress onPress={toggleSpeaker}>
-          <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 34, height: 26, tintColor: isDarkTheme ? '#D0A010' : themeOnBg }} />
+          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 23, height: 18, tintColor: '#FFFFFF' }} />
           </View>
         </ScalePress>
 
         {/* Games hub — existing RoomGamesModal. */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
-          <Image source={{ uri: BOTTOM_GAMEPAD }} style={{ width: 66, height: 59 }} />
+          <Image source={{ uri: BOTTOM_GAMEPAD }} style={{ width: 46, height: 41 }} />
         </ScalePress>
 
         {/* Gift panel — existing GiftsModal. */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
-          <Image source={{ uri: BOTTOM_GIFT }} style={{ width: 62, height: 62 }} />
+          <Image source={{ uri: BOTTOM_GIFT }} style={{ width: 42, height: 42 }} />
         </ScalePress>
       </View>
     </>
