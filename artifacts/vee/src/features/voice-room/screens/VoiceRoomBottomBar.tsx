@@ -98,7 +98,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         opacity: keyboardOpen ? 0 : 1 }}>
         {/* Mic + gear — target's composite icon, sliced exactly. */}
         <ScalePress onPress={handleMicBarPress}>
-          <Image source={{ uri: BOTTOM_MIC_GEAR }} style={{ width: 58, height: 58 }} />
+          <Image source={{ uri: BOTTOM_MIC_GEAR }} style={{ width: 62, height: 62 }} />
         </ScalePress>
 
         {/* Say pill — dark pill + "Say..." + smiley inside (target). */}
@@ -108,39 +108,39 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           borderWidth: 1,
           borderColor: isDarkTheme ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.12)',
           flexDirection: 'row', alignItems: 'center',
-          paddingLeft: 16, paddingRight: 8 }}>
+          paddingLeft: 12, paddingRight: 6 }}>
           <Pressable onPress={onSayPress} style={{ flex: 1 }}>
             <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
               Say...
             </Text>
           </Pressable>
-          <ScalePress onPress={onSmileyPress} style={{ padding: 4 }}>
+          <ScalePress onPress={onSmileyPress} style={{ padding: 2 }}>
             <Image source={{ uri: BOTTOM_SMILEY }} style={{ width: 28, height: 28 }} />
           </ScalePress>
         </View>
 
         {/* Calendar — Task Center (existing modal). */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
-          <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 32, height: 31, tintColor: themeOnBg }} />
+          <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 34, height: 33, tintColor: themeOnBg }} />
           </View>
         </ScalePress>
 
         {/* Speaker — voice-output toggle (existing handler). */}
         <ScalePress onPress={toggleSpeaker}>
-          <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 32, height: 24, tintColor: isDarkTheme ? '#D0A010' : themeOnBg }} />
+          <View style={{ width: 56, height: 56, alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 34, height: 26, tintColor: isDarkTheme ? '#D0A010' : themeOnBg }} />
           </View>
         </ScalePress>
 
         {/* Games hub — existing RoomGamesModal. */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGamesOpen(true); }}>
-          <Image source={{ uri: BOTTOM_GAMEPAD }} style={{ width: 62, height: 55 }} />
+          <Image source={{ uri: BOTTOM_GAMEPAD }} style={{ width: 66, height: 59 }} />
         </ScalePress>
 
         {/* Gift panel — existing GiftsModal. */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setGiftsOpen(true); }}>
-          <Image source={{ uri: BOTTOM_GIFT }} style={{ width: 58, height: 58 }} />
+          <Image source={{ uri: BOTTOM_GIFT }} style={{ width: 62, height: 62 }} />
         </ScalePress>
       </View>
     </>
