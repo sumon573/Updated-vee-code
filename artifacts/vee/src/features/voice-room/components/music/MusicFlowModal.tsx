@@ -26,12 +26,14 @@ import { MusicAddPage } from './MusicAddPage';
  * Up next / + Add" sheet and the old "My songs / From phone" Add page
  * are gone — there is exactly one music flow.
  *
- * Gating (existing rules, preserved):
- * - Entry: the Customize panel (and its three-dot button) is
- *   host-seat-only, so in practice only a host-seated owner/admin
- *   opens this flow. The sheet itself does not add a second gate:
- *   playing state is visible to every opener.
- * - Transport/power/play-row-tap/add: canControl (isOwnerOrAdmin).
+ * Gating (2026-10-27, boss correction):
+ * - Entry: the floating music icon opens this flow for EVERYONE in
+ *   the room while music plays/pauses. Playing state is visible to
+ *   every opener; the sheet's maintain actions are gated below.
+ * - Transport/power/play-row-tap/playlist/add: canControl = isHostSeat
+ *   (host role OR seat 0, set by the caller). An owner/admin NOT in
+ *   the host seat gets the member view: song + real player name +
+ *   own local volume only, no maintain buttons at all.
  * - Local volume: ungated (this phone only).
  * - Delete: removes from the OPENER's own library only.
  *

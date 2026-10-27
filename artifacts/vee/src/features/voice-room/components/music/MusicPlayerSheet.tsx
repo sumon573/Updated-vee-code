@@ -29,8 +29,10 @@ import { displayTitle, fmtDur } from './musicFormat';
  *   never implies scrubbing.
  * - The disc does not spin: the reference frame is static and no
  *   rotation was specified.
- * - Transport buttons (prev/play/next/power) are hidden for viewers
- *   who cannot control (canControl false); volume + playlist stay.
+ * - Transport buttons (prev/play/next/power) AND the playlist button
+ *   are hidden for viewers who cannot control (canControl false) —
+ *   playlist leads to track change / Add, so it is maintain, not view.
+ *   Volume (mute + level row) stays: it is local to this phone only.
  */
 
 interface PlayerSheetProps {
@@ -175,9 +177,11 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
             <Feather name="skip-forward" size={24} color={palette.text} />
           </Pressable>
         ) : null}
-        <Pressable onPress={onOpenPlaylist} hitSlop={8} style={styles.ctl}>
-          <Feather name="list" size={24} color={palette.text} />
-        </Pressable>
+        {canControl ? (
+          <Pressable onPress={onOpenPlaylist} hitSlop={8} style={styles.ctl}>
+            <Feather name="list" size={24} color={palette.text} />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Volume LEVEL (2026-10-27, boss: speaker was mute-only) — local to
