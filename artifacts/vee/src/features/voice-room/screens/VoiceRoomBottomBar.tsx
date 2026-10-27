@@ -32,9 +32,16 @@
  *   - No invite (person+) button in the target: header share still opens
  *     the invite sheet for owner/admin/audience; plain members lose the
  *     bottom invite entry.
- *   - The static target icons carry no mute/speaker state: the old bar's
- *     red mic-off / grey volume-x states are gone; mute state still shows
- *     on the user's own seat mic icon.
+ *   - Two-state buttons (boss 2026-10-27 20:10): the seated mic shows
+ *     MUTED (mic+gear + red slash) vs UNMUTED (plain mic+gear), and the
+ *     speaker shows OFF (dimmed glyph + red slash) vs ON (plain white
+ *     glyph) — both driven by the REAL engine booleans (isMuted,
+ *     speakerOn props from the Screen), never invented state. The red
+ *     slash is the same marker on both buttons, drawn in code and clipped
+ *     to the 42dp circle, so OFF reads at a glance on light + dark + all
+ *     16 room themes (the circles are dark on every theme, the slash is
+ *     #FF453A). Unseated JOIN icon is never slashed. Sizes, positions,
+ *     tap actions, row fit (265dp fixed + pill) and tap hygiene unchanged.
  * Round 5 (boss 2026-10-27 19:06): NO background strip — the row floats
  * directly on the user's room theme. Bare glyph (calendar) is a black
  * glyph recolored per theme via tintColor (speaker: see the 19:41
@@ -106,6 +113,15 @@ export interface VoiceRoomBottomBarProps {
       button shows the mic+gear MUTE icon. False (audience) — it shows the
       dark-circle white-'+' JOIN icon instead. Action unchanged. */
   isSeated: boolean;
+  /** Effective self-mute for the seated mic button (Screen passes
+      mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? muted) : false — the
+      same effective value Screen already uses for micMuted elsewhere;
+      engine `muted` is the single source of truth the tap flips, the seat
+      flag is its persisted mirror). Unseated: unused (JOIN shows). */
+  isMuted: boolean;
+  /** LiveKit speaker output state (Screen passes speakerOn from
+      useLivekitVoiceRoom — the boolean toggleSpeaker flips). */
+  speakerOn: boolean;
   /** Text/icon color on the room theme bg (dark on light themes, light on
       Midnight) — used as tintColor for the bare calendar glyph. */
   themeOnBg: string;
@@ -125,10 +141,27 @@ export interface VoiceRoomBottomBarProps {
   onSmileyPress: () => void;
 }
 
+/**
+ * Red diagonal slash marking an OFF state (muted mic / speaker off) — the
+ * SAME marker on both buttons, so OFF reads at a glance on any theme.
+ * Drawn in code (not a new PNG slice) so it stays crisp at any density;
+ * clipped to the 42dp circle by the wrapper's overflow:'hidden'.
+ * pointerEvents none: the slash never steals or blocks the tap.
+ */
+function OffSlash() {
+  return (
+    <View pointerEvents="none" style={{
+      position: 'absolute', left: -7, top: 19.5, width: 56, height: 3,
+      borderRadius: 1.5, backgroundColor: '#FF453A',
+      transform: [{ rotate: '-45deg' }],
+    }} />
+  );
+}
+
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const {
-    keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, handleMicBarPress,
-    toggleSpeaker,
+    keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, isMuted, speakerOn,
+    handleMicBarPress, toggleSpeaker,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen,
     onSayPress, onSmileyPress,
   } = props;
@@ -145,12 +178,16 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         flexDirection: 'row', alignItems: 'center', gap: 7,
         paddingHorizontal: 10, paddingTop: 10, paddingBottom: bottomPad,
         opacity: keyboardOpen ? 0 : 1 }}>
-        {/* Mic button — TWO MODES (boss 19:43): seated -> mic+gear MUTE icon;
-            unseated/audience -> dark-circle white-'+' JOIN icon. Action
-            (handleMicBarPress: mute when seated, join first free seat when
-            unseated) is unchanged — only the icon shows the current mode. */}
+        {/* Mic button — TWO MODES (boss 19:43) + TWO STATES (boss 20:10):
+            seated -> mic+gear; unseated/audience -> dark-circle white-'+'
+            JOIN icon (never slashed — it is not a mute control). Seated:
+            UNMUTED = plain mic+gear, MUTED = mic+gear + red slash, driven
+            by the real isMuted prop. Action (handleMicBarPress) unchanged. */}
         <ScalePress onPress={handleMicBarPress}>
-          <Image source={{ uri: isSeated ? BOTTOM_MIC_GEAR : BOTTOM_JOIN }} style={{ width: 42, height: 42 }} />
+          <View style={{ width: 42, height: 42, borderRadius: 21, overflow: 'hidden' }}>
+            <Image source={{ uri: isSeated ? BOTTOM_MIC_GEAR : BOTTOM_JOIN }} style={{ width: 42, height: 42 }} />
+            {isSeated && isMuted && <OffSlash />}
+          </View>
         </ScalePress>
 
         {/* Say pill — dark pill + "Say..." + smiley inside (target). */}
@@ -179,10 +216,13 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         </ScalePress>
 
         {/* Speaker — voice-output toggle (existing handler). Boss 19:41:
-            WHITE glyph on a dark circle (mic-circle family) on ALL themes. */}
+            WHITE glyph on a dark circle (mic-circle family) on ALL themes.
+            TWO STATES (boss 20:10): ON = plain white glyph, OFF = dimmed
+            glyph + red slash, driven by the real speakerOn prop. */}
         <ScalePress onPress={toggleSpeaker}>
-          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 23, height: 18, tintColor: '#FFFFFF' }} />
+          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 23, height: 18, tintColor: '#FFFFFF', opacity: speakerOn ? 1 : 0.6 }} />
+            {!speakerOn && <OffSlash />}
           </View>
         </ScalePress>
 

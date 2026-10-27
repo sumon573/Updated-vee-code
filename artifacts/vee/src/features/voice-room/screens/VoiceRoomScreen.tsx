@@ -3821,6 +3821,8 @@ export default function VoiceRoomScreen() {
       <VoiceRoomBottomBar
         keyboardOpen={keyboardOpen}
         isSeated={mySeatIdx >= 0}
+        isMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? muted) : false}
+        speakerOn={speakerOn}
         bottomPad={bottomPad}
         themeOnBg={themeOnBg}
         isDarkTheme={isDarkTheme}
