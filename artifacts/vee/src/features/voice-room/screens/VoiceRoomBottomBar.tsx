@@ -32,16 +32,17 @@
  *   - No invite (person+) button in the target: header share still opens
  *     the invite sheet for owner/admin/audience; plain members lose the
  *     bottom invite entry.
- *   - Two-state buttons (boss 2026-10-27 20:10): the seated mic shows
- *     MUTED (mic+gear + red slash) vs UNMUTED (plain mic+gear), and the
- *     speaker shows OFF (dimmed glyph + red slash) vs ON (plain white
- *     glyph) — both driven by the REAL engine booleans (isMuted,
- *     speakerOn props from the Screen), never invented state. The red
- *     slash is the same marker on both buttons, drawn in code and clipped
- *     to the 42dp circle, so OFF reads at a glance on light + dark + all
- *     16 room themes (the circles are dark on every theme, the slash is
- *     #FF453A). Unseated JOIN icon is never slashed. Sizes, positions,
- *     tap actions, row fit (265dp fixed + pill) and tap hygiene unchanged.
+ *   - Two-state buttons (boss 2026-10-27 20:10, REDESIGNED boss 20:17 —
+ *     the red slash is GONE: a lone red line looked cheap/demo). OFF
+ *     states are now properly DESIGNED glyphs (bottomIcons.ts): MUTED =
+ *     mic+gear with a white slash integrated through the mic glyph only
+ *     (never the gear, never the circle edge); speaker OFF = cone with
+ *     waves removed + a diagonal cut gap, tinted soft grey #C9C9C9.
+ *     Both driven by the REAL engine booleans (isMuted, speakerOn props
+ *     from the Screen), never invented state, so OFF still reads at a
+ *     glance on light + dark + all 16 room themes. Unseated JOIN icon
+ *     never shows an off-state. Sizes, positions, tap actions, row fit
+ *     (265dp fixed + pill) and tap hygiene unchanged. ZERO red anywhere.
  * Round 5 (boss 2026-10-27 19:06): NO background strip — the row floats
  * directly on the user's room theme. Bare glyph (calendar) is a black
  * glyph recolored per theme via tintColor (speaker: see the 19:41
@@ -103,8 +104,8 @@ import { View, Text, Image, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
 import {
-  BOTTOM_MIC_GEAR, BOTTOM_JOIN, BOTTOM_SMILEY, BOTTOM_CALENDAR,
-  BOTTOM_SPEAKER, BOTTOM_GAMEPAD, BOTTOM_GIFT,
+  BOTTOM_MIC_GEAR, BOTTOM_MIC_MUTED, BOTTOM_JOIN, BOTTOM_SMILEY, BOTTOM_CALENDAR,
+  BOTTOM_SPEAKER, BOTTOM_SPEAKER_OFF, BOTTOM_GAMEPAD, BOTTOM_GIFT,
 } from './bottomIcons';
 
 export interface VoiceRoomBottomBarProps {
@@ -141,23 +142,6 @@ export interface VoiceRoomBottomBarProps {
   onSmileyPress: () => void;
 }
 
-/**
- * Red diagonal slash marking an OFF state (muted mic / speaker off) — the
- * SAME marker on both buttons, so OFF reads at a glance on any theme.
- * Drawn in code (not a new PNG slice) so it stays crisp at any density;
- * clipped to the 42dp circle by the wrapper's overflow:'hidden'.
- * pointerEvents none: the slash never steals or blocks the tap.
- */
-function OffSlash() {
-  return (
-    <View pointerEvents="none" style={{
-      position: 'absolute', left: -7, top: 19.5, width: 56, height: 3,
-      borderRadius: 1.5, backgroundColor: '#FF453A',
-      transform: [{ rotate: '-45deg' }],
-    }} />
-  );
-}
-
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const {
     keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, isMuted, speakerOn,
@@ -178,15 +162,16 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         flexDirection: 'row', alignItems: 'center', gap: 7,
         paddingHorizontal: 10, paddingTop: 10, paddingBottom: bottomPad,
         opacity: keyboardOpen ? 0 : 1 }}>
-        {/* Mic button — TWO MODES (boss 19:43) + TWO STATES (boss 20:10):
-            seated -> mic+gear; unseated/audience -> dark-circle white-'+'
-            JOIN icon (never slashed — it is not a mute control). Seated:
-            UNMUTED = plain mic+gear, MUTED = mic+gear + red slash, driven
-            by the real isMuted prop. Action (handleMicBarPress) unchanged. */}
+        {/* Mic button — TWO MODES (boss 19:43) + TWO STATES (boss 20:10,
+            redesigned 20:17, no red slash): seated -> mic+gear; unseated /
+            audience -> dark-circle white-'+' JOIN icon (never an off-state
+            — it is not a mute control). Seated: UNMUTED = plain mic+gear,
+            MUTED = designed mic-off glyph (white slash integrated through
+            the mic only), driven by the real isMuted prop. Action
+            (handleMicBarPress) unchanged. */}
         <ScalePress onPress={handleMicBarPress}>
           <View style={{ width: 42, height: 42, borderRadius: 21, overflow: 'hidden' }}>
-            <Image source={{ uri: isSeated ? BOTTOM_MIC_GEAR : BOTTOM_JOIN }} style={{ width: 42, height: 42 }} />
-            {isSeated && isMuted && <OffSlash />}
+            <Image source={{ uri: isSeated ? (isMuted ? BOTTOM_MIC_MUTED : BOTTOM_MIC_GEAR) : BOTTOM_JOIN }} style={{ width: 42, height: 42 }} />
           </View>
         </ScalePress>
 
@@ -217,12 +202,13 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
 
         {/* Speaker — voice-output toggle (existing handler). Boss 19:41:
             WHITE glyph on a dark circle (mic-circle family) on ALL themes.
-            TWO STATES (boss 20:10): ON = plain white glyph, OFF = dimmed
-            glyph + red slash, driven by the real speakerOn prop. */}
+            TWO STATES (boss 20:10, redesigned 20:17, no red slash): ON =
+            white cone+waves, OFF = designed volume-off glyph (cone, waves
+            removed, diagonal cut gap) tinted soft grey #C9C9C9, driven by
+            the real speakerOn prop. */}
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 23, height: 18, tintColor: '#FFFFFF', opacity: speakerOn ? 1 : 0.6 }} />
-            {!speakerOn && <OffSlash />}
+            <Image source={{ uri: speakerOn ? BOTTOM_SPEAKER : BOTTOM_SPEAKER_OFF }} style={{ width: 23, height: 18, tintColor: speakerOn ? '#FFFFFF' : '#C9C9C9' }} />
           </View>
         </ScalePress>
 
