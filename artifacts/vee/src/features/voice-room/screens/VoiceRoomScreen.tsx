@@ -621,11 +621,6 @@ export default function VoiceRoomScreen() {
     [activeThemeId],
   );
   
-  const themeSurface = useMemo(
-    () => getActiveThemes().find((th) => th.id === activeThemeId)?.surface ?? C.card,
-    [activeThemeId],
-  );
-
   // 2026-10-21 (boss): text colors for elements sitting directly on the
   // themed background (room title, seat names, bottom-bar labels) — light
   // on the one black theme, dark on every light theme.
@@ -1016,6 +1011,9 @@ export default function VoiceRoomScreen() {
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
   const [membersOpen,     setMembersOpen]     = useState(false);
   const [giftsOpen,       setGiftsOpen]       = useState(false);
+  // 2026-10-27 (boss, bottom rebuild): the composer bar is hidden until the
+  // user taps the Say pill — the chat area above expands while it is closed.
+  const [composerOpen,    setComposerOpen]    = useState(false);
   const [giftsRecipient,  setGiftsRecipient]  = useState<Participant | null>(null);
   // 2026-10-19 (IMO port): waiting queue + games + ranking + props
   const [seatQueueOpen,   setSeatQueueOpen]   = useState(false);
@@ -3059,10 +3057,12 @@ export default function VoiceRoomScreen() {
   );
 
   
-  const bottomPad  = Math.max(insets.bottom, Platform.OS === 'web' ? 20 : 8) + 14;
-  // 2026-10-22 (Sumon): bottom-bar labels removed → bar content is now
-  // 50dp (was 68 with the label row); the freed ~18dp goes to chat/seats.
-  const BOTTOM_BAR_H = bottomPad + 4 + 50;
+  // 2026-10-27 (boss, bottom rebuild): the target row is pinned flush to
+  // the very bottom edge — padding below it is the system safe-area inset
+  // ONLY, no extra gap, so the chat area above grows bigger. Row height =
+  // 10 (top pad) + 52 (tallest button) + safe-area inset.
+  const bottomPad  = insets.bottom;
+  const BOTTOM_BAR_H = 62 + insets.bottom;
 
   
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -3076,6 +3076,12 @@ export default function VoiceRoomScreen() {
     const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
     return () => { onShow.remove(); onHide.remove(); };
   }, []);
+
+  // 2026-10-27 (boss, bottom rebuild): the composer bar lives only while
+  // typing — keyboard close hides it again (chat area re-expands). Reply
+  // opens it too, so the reply strip is never stranded without its input.
+  useEffect(() => { if (!keyboardOpen) setComposerOpen(false); }, [keyboardOpen]);
+  useEffect(() => { if (replyingTo) setComposerOpen(true); }, [replyingTo]);
 
   
   if (banCheckDone && voiceBan) {
@@ -3398,6 +3404,14 @@ export default function VoiceRoomScreen() {
                   <Feather name="more-horizontal" size={22} color={C.sub} />
                 </ScalePress>
               )}
+              {/* 2026-10-27 (boss, bottom rebuild): the target bottom row
+                  has no X, so the plain-member header gains one (same
+                  ExitModal) — otherwise members would lose their exit. */}
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
+                <View style={{ padding: 10 }}>
+                  <TrioIcon kind="x" size={24} color={themeOnBg} />
+                </View>
+              </ScalePress>
             </View>
           </View>
           )}
@@ -3579,11 +3593,12 @@ export default function VoiceRoomScreen() {
         </View>
 
         {}
-        <View style={{
-          flex: 1, borderRadius: 16,
-          backgroundColor: themeSurface + '55',
-          borderWidth: 1, borderColor: accentColor + '22',
-          overflow: 'hidden' }}>
+        {/* 2026-10-27 (boss): the rectangular box around the chat/comments
+            area is REMOVED — no border, no card background, no boxy
+            container. Messages, join lines, banners and the announcement
+            strip render directly on the room background; only this
+            container chrome is gone, content is unchanged. */}
+        <View style={{ flex: 1 }}>
           {/* 2026-10-23 (boss): the room announcement pins as a slim,
               lightly highlighted strip at the TOP of the comment box —
               fixed above the message list (never scrolls away, never
@@ -3619,12 +3634,15 @@ export default function VoiceRoomScreen() {
               onPress={() => setGameNav({ kind: 'ludu', gameId: luduLobby.id })}
             />
           )}
+          {/* 2026-10-27 (boss): box frame gone — comments breathe on the
+              open background: a touch more vertical air, balanced sides
+              (content padding 14 + 4 here). */}
           <FlatList<ChatMsg>
             ref={chatRef}
             data={messages}
             keyExtractor={(item: ChatMsg) => item.id}
             renderItem={renderChatMessage}
-            contentContainerStyle={{ padding: 8 }}
+            contentContainerStyle={{ paddingHorizontal: 4, paddingVertical: 12 }}
             showsVerticalScrollIndicator={false}
             onScroll={(e: any) => {
               const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
@@ -3716,8 +3734,9 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {}
-        {replyingTo && (
+        {composerOpen && (
+          <>
+          {replyingTo && (
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: C.card,
@@ -3732,66 +3751,52 @@ export default function VoiceRoomScreen() {
           </View>
         )}
 
-        {}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: 10,
-          marginTop: 0, marginBottom: 0,
-          paddingHorizontal: 4, paddingVertical: 8,
-          backgroundColor: 'transparent' }}>
-          <ScalePress onPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }} style={{ padding: 8 }}>
-            <Feather name="smile" size={26} color={C.sub} />
-          </ScalePress>
+          {/* 2026-10-27 (boss, bottom rebuild): dark composer bar, full
+              width, directly above the keyboard — "Say something..."
+              placeholder, send circle muted dark blue-grey when empty,
+              deep bright blue with text. Sends via the existing chat send
+              path. No smiley/@ buttons here (screenshots): @-mention still
+              works by typing @ (same dropdown); smiley lives in the bottom
+              row (reactions). */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            marginHorizontal: -14,
+            paddingHorizontal: 14, paddingVertical: 10,
+            backgroundColor: '#000000' }}>
+            <TextInput
+              autoFocus
+              style={{
+                flex: 1, color: '#FFFFFF', fontSize: 16,
+                backgroundColor: 'transparent',
+                paddingHorizontal: 4, paddingVertical: 8 }}
+              value={chatInput}
+              onChangeText={handleChatInput}
+              placeholder={amChatBlocked
+                ? t('voiceRoom.screen.commentBlockedPlaceholder')
+                : t('voiceRoom.screen.saySomethingPlaceholder', { defaultValue: 'Say something...' })}
+              placeholderTextColor={amChatBlocked ? '#EF4444' : '#8A8A8A'}
+              onSubmitEditing={sendMessage}
+              blurOnSubmit={false}
+              returnKeyType="send"
+              editable={!amChatBlocked}
+              maxLength={500}
+            />
 
-          {}
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setChatInput((prev: string) => prev + '@');
-              setMentionQuery('');
-            }}
-            hitSlop={8}
-            style={{
-              width: 38, height: 38, borderRadius: 19,
-              backgroundColor: accentColor + '22',
-              borderWidth: 1, borderColor: accentColor + '44',
-              alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ color: accentColor, fontSize: 16, fontWeight: '900' }}>@</Text>
-          </Pressable>
-
-          <TextInput
-            style={{
-              flex: 1, color: C.text, fontSize: 15,
-              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.08)' : C.card, borderRadius: 24,
-              paddingHorizontal: 18, paddingVertical: 12,
-              borderWidth: 1, borderColor: amChatBlocked ? 'rgba(239,68,68,0.45)' : C.borderFaint,
-              minHeight: 46 }}
-            value={chatInput}
-            onChangeText={handleChatInput}
-            placeholder={amChatBlocked
-              ? t('voiceRoom.screen.commentBlockedPlaceholder')
-              : t('voiceRoom.screen.messagePlaceholder')}
-            placeholderTextColor={amChatBlocked ? '#EF4444' : C.muted}
-            onSubmitEditing={sendMessage}
-            blurOnSubmit={false}
-            returnKeyType="send"
-            editable={!amChatBlocked}
-            maxLength={500}
-          />
-
-          <Pressable
-            onPress={sendMessage}
-            disabled={amChatBlocked}
-            hitSlop={8}
-            style={{
-              width: 46, height: 46, borderRadius: 23,
-              backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? accentColor : C.muted),
-              alignItems: 'center', justifyContent: 'center',
-              opacity: amChatBlocked ? 0.5 : 1 }}
-          >
-            <Feather name={amChatBlocked ? 'slash' : 'send'} size={18} color="#fff" />
-          </Pressable>
-        </View>
+            <Pressable
+              onPress={sendMessage}
+              disabled={amChatBlocked}
+              hitSlop={8}
+              style={{
+                width: 46, height: 46, borderRadius: 23,
+                backgroundColor: amChatBlocked ? 'rgba(239,68,68,0.35)' : (chatInput.trim() ? '#009DFE' : '#00304F'),
+                alignItems: 'center', justifyContent: 'center',
+                opacity: amChatBlocked ? 0.5 : 1 }}
+            >
+              <Feather name={amChatBlocked ? 'slash' : 'send'} size={18} color={(chatInput.trim() && !amChatBlocked) ? '#FFFFFF' : '#7A8A99'} />
+            </Pressable>
+          </View>
+        </>
+        )}
       </View>
 
       {}
@@ -3805,19 +3810,12 @@ export default function VoiceRoomScreen() {
         keyboardOpen={keyboardOpen}
         bottomPad={bottomPad}
         handleMicBarPress={handleMicBarPress}
-        mySeatIdx={mySeatIdx}
-        muted={muted}
-        accentColor={accentColor}
-        onBg={themeOnBg}
-        onBgSub={themeOnBgSub}
         toggleSpeaker={toggleSpeaker}
-        speakerOn={speakerOn}
         setTaskCenterOpen={setTaskCenterOpen}
         setGiftsOpen={setGiftsOpen}
         setGamesOpen={setGamesOpen}
-        setInviteOpen={setInviteOpen}
-        setExitModalOpen={setExitModalOpen}
-        hideExit={showJoinBanner}
+        onSayPress={() => setComposerOpen(true)}
+        onSmileyPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }}
       />
       {/* 2026-10-23 (Sumon): message action sheet — long-press a user TEXT
           message → Copy Text / Reply. Gift cards and system messages never
