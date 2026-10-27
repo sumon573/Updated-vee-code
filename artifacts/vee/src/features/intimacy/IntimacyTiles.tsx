@@ -23,6 +23,9 @@ const C = {
   pinkTile: '#FFF5F7',
   pinkBorder: '#F472B6',
   pink: '#EC4899',
+  blueTile: '#EAF6FF',
+  blueBorder: '#4FC3F7',
+  blue: '#1E88E5',
   red: '#F43F5E',
 } as const;
 
@@ -155,10 +158,11 @@ export function IntimacyFriendTile({
 }
 
 /**
- * Empty friend slot (2026-10-27, boss correction): the Friend tiles
- * start EMPTY like the Couple (+) slot — a light-pink tile with a
- * pink-outlined circle + plus, label "Friend". Rendered only for the
- * viewer's own card, up to MAX_FRIENDS slots total (friends + slots).
+ * Empty friend slot (2026-10-27, boss correction; color 2026-10-27:
+ * boss order — Couple stays pink ONLY, friendship gets its own color):
+ * a light-BLUE tile with a blue-outlined circle + plus, label "Friend".
+ * Rendered only for the viewer's own card, up to MAX_FRIENDS slots total
+ * (friends + slots).
  */
 export function FriendPlusTile({ onPress }: { onPress?: () => void }) {
   const { t } = useTranslation();
@@ -166,17 +170,17 @@ export function FriendPlusTile({ onPress }: { onPress?: () => void }) {
     <View style={{ width: 80, padding: 4, alignItems: 'center' }}>
       <View
         style={{
-          width: 72, height: 72, borderRadius: 16, backgroundColor: C.pinkTile,
+          width: 72, height: 72, borderRadius: 16, backgroundColor: C.blueTile,
           alignItems: 'center', justifyContent: 'center',
         }}
       >
         <View
           style={{
             width: 56, height: 56, borderRadius: 28, borderWidth: 2,
-            borderColor: C.pinkBorder, alignItems: 'center', justifyContent: 'center',
+            borderColor: C.blueBorder, alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Text style={{ fontSize: 30, fontWeight: '300', color: C.pink, lineHeight: 34 }}>+</Text>
+          <Text style={{ fontSize: 30, fontWeight: '300', color: C.blue, lineHeight: 34 }}>+</Text>
         </View>
       </View>
       <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>
