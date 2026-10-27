@@ -109,7 +109,7 @@ import {
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents,
-  leaveRoomCompletely } from '../services/firebaseRoomService';
+  leaveRoomCompletely, removeMemberFromRoom } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
@@ -2533,6 +2533,22 @@ export default function VoiceRoomScreen() {
       );
     });
   }, [seats, audience, roomId, t]);
+  /** Remove a member from the room (panel "..." menu, boss spec 2026-10-27):
+   * membership + audience + seat + stale admin-registry entry. Errors
+   * surface (never a false success) — e.g. a rules denial before the
+   * userRooms admin-delete patch lands. */
+  const removeMember = useCallback((memberId: string) => {
+    removeMemberFromRoom(roomId, memberId).then(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(t('voiceRoom.info.removeSuccess', { defaultValue: 'Member removed from the room.' }));
+    }).catch((e: unknown) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        t('voiceRoom.screen.error'),
+        t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+      );
+    });
+  }, [roomId, t]);
 
   /** SVIP kick-out privilege state (checked once per room session). */
   const [canSvipKickOut, setCanSvipKickOut] = useState(false);
@@ -3789,6 +3805,7 @@ export default function VoiceRoomScreen() {
         muteToggleMember={muteToggleMember}
         setAdminRole={setAdminRole}
         dismissAdmin={dismissAdmin}
+        removeMember={removeMember}
         blockUser={blockUser}
         unblockUser={unblockUser}
         svipKickOut={svipKickOut}

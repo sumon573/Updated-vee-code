@@ -497,6 +497,41 @@ export async function leaveRoomCompletely(
 }
 
 /**
+ * Remove ANOTHER member from a room (owner/admin panel action, 2026-10-27).
+ * Deletes the membership itself (roomMembers + userRooms), the audience
+ * record, and the seat if the target is seated — so no seated-non-member
+ * remains. Membership deletes propagate errors (a rules denial must surface
+ * in the UI, never a false success); audience / admin-registry cleanup is
+ * best-effort. NOTE: the seat is cleared with plain removeSeat (no
+ * demoteUid) — the demote path rewrites roomMembers/{uid}/role back to
+ * 'member', which would resurrect the membership record just deleted.
+ */
+export async function removeMemberFromRoom(
+  roomId: string,
+  targetUid: string,
+): Promise<void> {
+  const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`)).catch(() => null);
+  const seatsVal = seatsSnap?.val();
+  if (seatsVal && typeof seatsVal === 'object') {
+    for (const [idx, seat] of Object.entries(seatsVal as Record<string, unknown>)) {
+      const rec = seat as { userId?: unknown } | null;
+      if (rec && rec.userId === targetUid) {
+        await removeSeat(roomId, Number(idx));
+        break;
+      }
+    }
+  }
+  await Promise.all([
+    remove(ref(database, `roomMembers/${roomId}/${targetUid}`)),
+    remove(ref(database, `userRooms/${targetUid}/${roomId}`)),
+  ]);
+  await Promise.all([
+    removeAudienceMember(roomId, targetUid).catch(() => {}),
+    revokeRoomAdmin(roomId, targetUid).catch(() => {}),
+  ]);
+}
+
+/**
  * Subscribe to rooms created by the given user (My Rooms).
  * Uses orderByChild + equalTo for efficiency.
  */

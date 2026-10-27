@@ -123,6 +123,7 @@ export interface VoiceRoomModalsProps {
   muteToggleMember: (uid: string) => void;
   setAdminRole: (uid: string) => void;
   dismissAdmin: (uid: string) => void;
+  removeMember: (uid: string) => void;
   blockUser: (uid: string, action: "room-block" | "comment-block") => void;
   unblockUser: (uid: string) => void;
   /** SVIP kick-out (spends points). */
@@ -167,7 +168,6 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onVisitProfile={p.handleViewOtherProfile}
         myUid={p.myUid}
         myName={p.myName}
-        blockedRecs={p.blockedRecs}
         onOpenSettings={() => p.setSettingsOpen(true)}
         onOpenStore={() => router.push('/store')}
         onOpenInvite={() => p.setInviteOpen(true)}
@@ -175,8 +175,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         onJoinRoom={p.onJoinRoom}
         onUnjoinRoom={p.onUnjoinRoom}
         onSetAdmin={(uid) => p.setAdminRole(uid)}
-        onBlock={(uid) => p.blockUser(uid, 'room-block')}
-        onUnblock={(uid) => p.unblockUser(uid)}
+        onDismissAdmin={(uid) => p.dismissAdmin(uid)}
+        onRemoveMember={(uid) => p.removeMember(uid)}
       />
       <OperationHistoryModal
         visible={p.opHistOpen}

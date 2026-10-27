@@ -6,7 +6,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { Participant, BlockRecord } from '../types/room';
+import { Participant } from '../types/room';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
@@ -78,19 +78,17 @@ type MemberRowProps = {
   isAdmin: boolean;
   /** True when THIS row is the room owner (uid === ownerId). */
   rowIsOwner: boolean;
-  /** Precomputed for this row so memo props stay primitive. */
-  isBlocked: boolean;
   onVisitProfile?: (uid: string, name: string) => void;
   onSetAdmin: (uid: string) => void;
-  onBlock: (uid: string) => void;
-  onUnblock: (uid: string) => void;
+  onDismissAdmin: (uid: string) => void;
+  onRemoveMember: (uid: string) => void;
 };
 
 // Memoized: with stable item identities (see displayMembers useMemo) a panel
 // re-render (e.g. collapse flip) must NOT re-render row contents mid-scroll —
 // that re-render churn was one cause of the visible text shaking.
 const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, rowIsOwner,
-  isBlocked, onVisitProfile, onSetAdmin, onBlock, onUnblock }: MemberRowProps) {
+  onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember }: MemberRowProps) {
   const { t } = useTranslation();
   const lastSeen = useMemberLastSeen(m.id);
   // Role badge = status-icon COLOR (boss rule 2026-10-27, CORRECTED):
@@ -100,13 +98,18 @@ const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, row
   // "everyone shown as owner". BLUE = admin, GREY = regular member.
   const roleColor = (rowIsOwner || m.role === 'host') ? GOLD
     : (m.role === 'admin' ? BLUE : GREY);
-  // "..." ONLY on grey member rows, and ONLY where a real action exists:
-  // owner can Set as Admin; owner/admin can Block/Unblock. The owner row
-  // never gets "..." (as in imo); a plain member viewing another member
-  // gets no "..." at all (never a dead menu).
-  const canSetAdmin = isOwner && !isMe;
-  const canBlock = !isMe && (isOwner || isAdmin);
-  const showDots = !rowIsOwner && m.role === 'member' && (canSetAdmin || canBlock);
+  // "..." menu matrix (boss spec 2026-10-27 — SUPERSEDES the grey-only rule):
+  // viewer OWNER: "..." on every non-owner row — admin row: Dismiss Admin
+  //   only; member row: Remove from room + Set as admin. Viewer ADMIN:
+  //   "..." ONLY on member rows, Remove from room only. Viewer MEMBER: no
+  //   "..." anywhere. Nobody gets "..." on their own row or the owner row.
+  // Room Block/Unblock was REMOVED from this menu (replaced by Remove
+  // from room); seat-sheet Block for seated users is untouched.
+  const isTargetOwner = rowIsOwner || m.role === 'host';
+  const isTargetAdmin = !isTargetOwner && m.role === 'admin';
+  const isTargetMember = !isTargetOwner && !isTargetAdmin;
+  const showDots = !isMe && !isTargetOwner
+    && ((isOwner && (isTargetAdmin || isTargetMember)) || (isAdmin && isTargetMember));
 
   let status: string | null = null;
   if (live) {
@@ -147,15 +150,29 @@ const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, row
           hitSlop={10}
           onPress={() => {
             const buttons: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
-            if (canSetAdmin) {
-              buttons.push({ text: t('voiceRoom.info.setAdmin', { defaultValue: 'Set as Admin' }),
-                onPress: () => onSetAdmin(m.id) });
+            const askRemove = () => {
+              Alert.alert(
+                t('voiceRoom.info.removeTitle', { defaultValue: 'Remove from room' }),
+                t('voiceRoom.info.removeMsg', { defaultValue: 'Remove this member from the room? They can join again anytime.' }),
+                [
+                  { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+                  { text: t('voiceRoom.info.removeFromRoom', { defaultValue: 'Remove from room' }),
+                    style: 'destructive', onPress: () => onRemoveMember(m.id) },
+                ],
+              );
+            };
+            if (isOwner && isTargetAdmin) {
+              buttons.push({ text: t('voiceRoom.info.dismissAdmin', { defaultValue: 'Dismiss Admin' }),
+                onPress: () => onDismissAdmin(m.id) });
             }
-            buttons.push(isBlocked
-              ? { text: t('voiceRoom.info.unblock', { defaultValue: 'Unblock' }),
-                  onPress: () => onUnblock(m.id) }
-              : { text: t('voiceRoom.info.roomBlock', { defaultValue: 'Room Block' }),
-                  style: 'destructive', onPress: () => onBlock(m.id) });
+            if (isTargetMember) {
+              buttons.push({ text: t('voiceRoom.info.removeFromRoom', { defaultValue: 'Remove from room' }),
+                style: 'destructive', onPress: askRemove });
+              if (isOwner) {
+                buttons.push({ text: t('voiceRoom.info.setAdmin', { defaultValue: 'Set as Admin' }),
+                  onPress: () => onSetAdmin(m.id) });
+              }
+            }
             buttons.push({ text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' });
             Alert.alert(m.name, undefined, buttons);
           }}
@@ -183,9 +200,9 @@ function sameJoined(a: JoinedMember[], b: JoinedMember[]): boolean {
 export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   roomName, onChangeRoomName, roomImageUri, onChangeRoomImage, roomId, description,
   isOwner, isAdmin, ownerId, onDisband, onVisitProfile,
-  myUid, myName, blockedRecs,
+  myUid, myName,
   onOpenSettings, onOpenStore, onOpenInvite, onOpenRequests, onJoinRoom, onUnjoinRoom,
-  onSetAdmin, onBlock, onUnblock }: {
+  onSetAdmin, onDismissAdmin, onRemoveMember }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
   /** Room description text (may be empty). */
@@ -207,7 +224,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   /** Called when a member row is tapped — navigates to their profile. */
   onVisitProfile?: (uid: string, name: string) => void;
   myUid: string; myName: string;
-  blockedRecs: BlockRecord[];
   /** Opens the existing Room Settings modal (gear / Management Center / Edit). */
   onOpenSettings: () => void;
   /** Opens the existing Store route. */
@@ -221,8 +237,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   /** Existing full-leave handler (membership removal + session exit). */
   onUnjoinRoom: () => void;
   onSetAdmin: (uid: string) => void;
-  onBlock: (uid: string) => void;
-  onUnblock: (uid: string) => void;
+  onDismissAdmin: (uid: string) => void;
+  onRemoveMember: (uid: string) => void;
 }) {
   const { t } = useTranslation();
   const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
@@ -377,7 +393,12 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   // ── Panel state: tab, collapse-on-scroll, "..." menu, incremental list ──
   const [tab, setTab] = useState<'member' | 'details'>('member');
   const [collapsed, setCollapsed] = useState(false);
-  const [cardH, setCardH] = useState(120);
+  // Deterministic card height: 72 (cover) + 28 (vertical padding) + 8
+  // (top margin inside the animated wrapper) = 108. The old 120 fallback
+  // jumped the whole panel on first layout; 108 matches the real card, so
+  // first layout is a no-op on every normal device (onLayout below still
+  // corrects it if a device ever measures differently).
+  const [cardH, setCardH] = useState(108);
   const [menuOpen, setMenuOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(30);
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -433,14 +454,13 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
       isOwner={isOwner === true}
       isAdmin={isAdmin === true}
       rowIsOwner={ownerId !== undefined && item.id === ownerId}
-      isBlocked={blockedRecs.some((r) => r.id === item.id && r.isActive && r.action === 'room-block')}
       onVisitProfile={onVisitProfile}
       onSetAdmin={onSetAdmin}
-      onBlock={onBlock}
-      onUnblock={onUnblock}
+      onDismissAdmin={onDismissAdmin}
+      onRemoveMember={onRemoveMember}
     />
-  ), [liveIds, myUid, isOwner, isAdmin, ownerId, blockedRecs,
-    onVisitProfile, onSetAdmin, onBlock, onUnblock]);
+  ), [liveIds, myUid, isOwner, isAdmin, ownerId,
+    onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember]);
 
   async function copyRoomId() {
     try {
@@ -459,6 +479,18 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
         { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
         { text: t('voiceRoom.info.unjoin', { defaultValue: 'Unjoin' }), style: 'destructive',
           onPress: () => onUnjoinRoom() },
+      ],
+    );
+  }
+
+  function askDisband() {
+    Alert.alert(
+      t('voiceRoom.info.disbandTitle', { defaultValue: 'Disband Room' }),
+      t('voiceRoom.info.disbandMsg', { defaultValue: 'This will permanently delete the room for everyone. Are you sure?' }),
+      [
+        { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
+        { text: t('voiceRoom.info.disbandConfirm', { defaultValue: 'Disband' }),
+          style: 'destructive', onPress: () => { onClose(); onDisband?.(); } },
       ],
     );
   }
@@ -508,27 +540,29 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
         height: '88%' }}>
         {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-          paddingTop: 14, paddingBottom: 6, gap: 10 }}>
+          paddingTop: 14, paddingBottom: 6, gap: 10, height: 48 }}>
           <Pressable onPress={onClose} hitSlop={8}>
             <Feather name="chevron-down" size={24} color={TEXT} />
           </Pressable>
-          {collapsed && (
-            <>
-              <View style={{ width: 28, height: 28, borderRadius: 6, overflow: 'hidden',
-                backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center' }}>
-                {roomImageUri
-                  ? <Image source={{ uri: roomImageUri }} style={{ width: 28, height: 28 }} />
-                  : <Text style={{ color: TEXT, fontSize: 12, fontWeight: '800' }}>
-                      {(roomName || '?').charAt(0).toUpperCase()}
-                    </Text>
-                }
-              </View>
-              <Text numberOfLines={1} style={{ flex: 1, color: TEXT, fontSize: 16, fontWeight: '700' }}>
-                {roomName}
-              </Text>
-            </>
-          )}
-          {!collapsed && <View style={{ flex: 1 }} />}
+          {/* Always mounted: the compact header appears/disappears by
+              opacity ONLY, so the scrollY>80 flip can never shift layout
+              (no mount/unmount, no height change) mid-scroll. The block
+              holds flex:1 in both states, so gear/... never move either. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1,
+            opacity: collapsed ? 1 : 0 }}>
+            <View style={{ width: 28, height: 28, borderRadius: 6, overflow: 'hidden',
+              backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center' }}>
+              {roomImageUri
+                ? <Image source={{ uri: roomImageUri }} style={{ width: 28, height: 28 }} />
+                : <Text style={{ color: TEXT, fontSize: 12, fontWeight: '800' }}>
+                    {(roomName || '?').charAt(0).toUpperCase()}
+                  </Text>
+              }
+            </View>
+            <Text numberOfLines={1} style={{ flex: 1, color: TEXT, fontSize: 16, fontWeight: '700' }}>
+              {roomName}
+            </Text>
+          </View>
           {viewerIsOwnerOrAdmin && (
             <Pressable onPress={onOpenSettings} hitSlop={8}>
               <Feather name="settings" size={24} color={TEXT} />
@@ -544,7 +578,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           <View
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height;
-              if (h > 0 && h !== cardH) setCardH(h);
+              // +8: the inner view's marginTop lives inside the animated
+              // wrapper, so h alone under-measures the card (bottom padding
+              // clipped + panel shift on first layout).
+              const next = h + 8;
+              if (h > 0 && next !== cardH) setCardH(next);
             }}
             style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: CARD_BG,
               borderRadius: 16, marginHorizontal: 16, marginTop: 8, padding: 14, gap: 12 }}
@@ -597,25 +635,23 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   onPress={() => { setNameInput(roomName); setEditingName(true); }}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
                 >
-                  <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800' }}>
+                  <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800', flexShrink: 1 }}>
                     {roomName}
                   </Text>
                   <Feather name="chevron-right" size={18} color={DIM} />
                 </Pressable>
               ) : (
-                <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800' }}>
+                <Text numberOfLines={1} style={{ color: TEXT, fontSize: 18, fontWeight: '800', flexShrink: 1 }}>
                   {roomName}
                 </Text>
               )}
-              {/* Shrink-wrapped row + single-line ID: previously the ID
-                  Text wrapped to two lines inside the full-width row, so
-                  its box spanned the whole middle column and the copy
-                  icon landed far-right at the card edge. Now the row hugs
-                  its content and the copy icon sits right after the ID,
-                  exactly like imo. */}
+              {/* ID NEVER truncates (boss 2026-10-27): flexShrink 0, so
+                  the full numeric ID + copy icon always show (imo shows
+                  its full VoiceClub ID); the room NAME truncates instead
+                  (flexShrink 1 above). Copy icon sits right after the ID. */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6,
                 alignSelf: 'flex-start' }}>
-                <Text numberOfLines={1} style={{ color: SUB, fontSize: 13, flexShrink: 1 }}>
+                <Text numberOfLines={1} style={{ color: SUB, fontSize: 13, flexShrink: 0 }}>
                   {t('voiceRoom.info.roomId')} : {roomId}
                 </Text>
                 <Pressable onPress={copyRoomId} hitSlop={8}>
@@ -637,7 +673,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
         </Animated.View>
 
         {/* ── Tabs (fixed under the header) ── */}
-        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: DIVIDER,
+        <View style={{ flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER,
           marginTop: 4 }}>
           <TabButton id="details" label={t('voiceRoom.info.roomDetails', { defaultValue: 'Room Details' })} />
           <TabButton id="member" label={t('voiceRoom.info.memberTab', { defaultValue: 'Member' })} />
@@ -656,7 +692,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               {viewerIsOwnerOrAdmin && (
                 <Pressable
                   onPress={onOpenSettings}
-                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
+                    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
                 >
                   <Text style={{ flex: 1, color: TEXT, fontSize: 17 }}>
                     {t('voiceRoom.info.managementCenter', { defaultValue: 'Room Management Center' })}
@@ -723,30 +760,6 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   )}
                 </View>
               )}
-              {/* Owner-only Disband (deliberate deviation, reported): the
-                  old panel's Disband button was the ONLY disband path;
-                  imo's screenshots show none, but deleting the capability
-                  would break owner functionality. */}
-              {isOwner === true && (
-                <Pressable
-                  onPress={() => {
-                    Alert.alert(
-                      t('voiceRoom.info.disbandTitle', { defaultValue: 'Disband Room' }),
-                      t('voiceRoom.info.disbandMsg', { defaultValue: 'This will permanently delete the room for everyone. Are you sure?' }),
-                      [
-                        { text: t('voiceRoom.info.cancel', { defaultValue: 'Cancel' }), style: 'cancel' },
-                        { text: t('voiceRoom.info.disbandConfirm', { defaultValue: 'Disband' }),
-                          style: 'destructive', onPress: () => { onClose(); onDisband?.(); } },
-                      ],
-                    );
-                  }}
-                  style={{ paddingVertical: 14 }}
-                >
-                  <Text style={{ color: RED, fontSize: 16, fontWeight: '700' }}>
-                    {t('voiceRoom.info.disbandRoom', { defaultValue: 'Disband Room' })}
-                  </Text>
-                </Pressable>
-              )}
             </ScrollView>
           ) : (
             <FlatList
@@ -784,9 +797,15 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                     <Pressable
                       onPress={onOpenRequests}
                       style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
-                        borderBottomWidth: 1, borderBottomColor: DIVIDER }}
+                        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
                     >
-                      <Feather name="users" size={20} color={TEXT} style={{ marginRight: 14 }} />
+                      <View style={{ width: 28, marginRight: 14, alignItems: 'center', justifyContent: 'center' }}>
+                        <Feather name="users" size={20} color={TEXT} />
+                        <View style={{ position: 'absolute', right: 0, bottom: 0, width: 14, height: 14,
+                          borderRadius: 7, backgroundColor: PANEL_BG, alignItems: 'center', justifyContent: 'center' }}>
+                          <Feather name="plus" size={10} color={TEXT} />
+                        </View>
+                      </View>
                       <Text style={{ flex: 1, color: TEXT, fontSize: 16 }}>
                         {t('voiceRoom.info.memberRequest', { defaultValue: 'Member request' })}
                       </Text>
@@ -796,7 +815,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   <Pressable
                     onPress={onOpenInvite}
                     style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14,
-                      borderBottomWidth: 1, borderBottomColor: DIVIDER }}
+                      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
                   >
                     <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 1.5,
                       borderColor: TEXT, alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
@@ -827,13 +846,16 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               </Text>
             </Pressable>
           ) : isOwner === true ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              gap: 8, borderWidth: 1, borderColor: '#444444', borderRadius: 14, paddingVertical: 14 }}>
-              <Feather name="user" size={18} color={TEXT} />
-              <Text style={{ color: TEXT, fontSize: 16, fontWeight: '700' }}>
-                {t('voiceRoom.info.joined', { defaultValue: 'Joined' })}
+            <Pressable
+              onPress={askDisband}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                gap: 8, borderWidth: 1, borderColor: RED, borderRadius: 14, paddingVertical: 14 }}
+            >
+              <Feather name="trash-2" size={18} color={RED} />
+              <Text style={{ color: RED, fontSize: 16, fontWeight: '700' }}>
+                {t('voiceRoom.info.disband', { defaultValue: 'Disband' })}
               </Text>
-            </View>
+            </Pressable>
           ) : (
             <Pressable
               onPress={askUnjoin}
@@ -857,7 +879,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
             />
             <View style={{ position: 'absolute', top: 52, right: 12, width: 200,
               backgroundColor: CARD_BG, borderRadius: 14, paddingVertical: 6, zIndex: 21,
-              shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 12, elevation: 8 }}>
+              borderWidth: StyleSheet.hairlineWidth, borderColor: DIVIDER }}>
               <Pressable onPress={askReport}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16 }}>
                 <Feather name="alert-triangle" size={20} color={TEXT} />
@@ -868,7 +890,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               {isMember && isOwner !== true && (
                 <Pressable onPress={askUnjoin}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13,
-                    paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: DIVIDER }}>
+                    paddingHorizontal: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: DIVIDER }}>
                   <Feather name="log-out" size={20} color={TEXT} />
                   <Text style={{ color: TEXT, fontSize: 16 }}>
                     {t('voiceRoom.info.unjoin', { defaultValue: 'Unjoin' })}
