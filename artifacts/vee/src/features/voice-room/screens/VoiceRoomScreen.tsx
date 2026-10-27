@@ -41,6 +41,7 @@ import { subscribePairHandshake } from '../services/micHandshakeService';
 import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
 import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
+import GrabTopPill from '../components/GrabTopPill';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
@@ -2158,9 +2159,9 @@ export default function VoiceRoomScreen() {
   // until the first snapshot lands (the line renders only once counted).
   const [joinedMemberCount, setJoinedMemberCount] = useState<number | null>(null);
   useEffect(() => {
-    if (!showJoinBanner || !roomId) { setJoinedMemberCount(null); return; }
+    if ((!showJoinBanner && !isOwnerOrAdmin) || !roomId) { setJoinedMemberCount(null); return; }
     return subscribeRoomMembers(roomId, (members) => setJoinedMemberCount(members.length));
-  }, [showJoinBanner, roomId]);
+  }, [showJoinBanner, isOwnerOrAdmin, roomId]);
 
   const seatActionMember = seatActionIdx >= 0 ? seats[seatActionIdx] ?? null : null;
 
@@ -3215,6 +3216,77 @@ export default function VoiceRoomScreen() {
               </ScalePress>
             </View>
           </View>
+          ) : isOwnerOrAdmin ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* 2026-10-27 (boss, imo owner/admin header, hubahu): DP + name +
+                Members count below the name; top-right trio "..." + share +
+                X; NO gear in the room header (gear lives in the Room Info
+                panel). The "..." runs the EXISTING customize action
+                (setCustomizeOpen) — shown here for all owner/admin viewers
+                rather than only host-seated ones, so the trio matches the
+                reference; the panel it opens is unchanged. Share opens the
+                EXISTING invite sheet; X runs the SAME ExitModal action as
+                the audience header X. Bottom-bar cross is KEPT for
+                owner/admin (unlike audience, where it moved to the header). */}
+            <Pressable onPress={() => setRoomInfoOpen(true)}>
+              <View style={{
+                width: 36, height: 36, borderRadius: 18,
+                overflow: 'hidden',
+                borderWidth: 1.5, borderColor: accentColor + '66',
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: accentColor + '22' }}>
+                {roomImageUri ? (
+                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
+                ) : (
+                  <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
+                    {(roomName || '?').charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+            </Pressable>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
+                  {roomName}
+                </Text>
+              </Pressable>
+              {joinedMemberCount !== null && (
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '600', marginTop: 1 }}>
+                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+              {pendingRequests.length > 0 && (
+                <ScalePress
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setSeatQueueOpen(true);
+                  }}
+                >
+                  <View style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 4,
+                    backgroundColor: accentColor + '22', borderRadius: 999,
+                    paddingHorizontal: 10, paddingVertical: 5,
+                    borderWidth: 1, borderColor: accentColor + '55' }}>
+                    <Feather name="mic" size={13} color={accentColor} />
+                    <Text style={{ color: accentColor, fontSize: 12, fontWeight: '800' }}>
+                      {pendingRequests.length}
+                    </Text>
+                  </View>
+                </ScalePress>
+              )}
+              <ScalePress onPress={() => setCustomizeOpen(true)}>
+                <Feather name="more-vertical" size={26} color={themeOnBg} />
+              </ScalePress>
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
+                <Feather name="share-2" size={26} color={themeOnBg} />
+              </ScalePress>
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
+                <Feather name="x" size={28} color={themeOnBg} />
+              </ScalePress>
+            </View>
+          </View>
           ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {}
@@ -3323,6 +3395,9 @@ export default function VoiceRoomScreen() {
             {/* 2026-10-22 (Sumon): Intimacy pill REMOVED from the header on
                 his order. IntimacyModal/state stay wired (harmless); the
                 header entry point is gone. */}
+            {isOwnerOrAdmin ? (
+              <GrabTopPill roomId={roomId} />
+            ) : (
             <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBackpackOpen(true); }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -3334,6 +3409,7 @@ export default function VoiceRoomScreen() {
                 </Text>
               </View>
             </ScalePress>
+            )}
             {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>
