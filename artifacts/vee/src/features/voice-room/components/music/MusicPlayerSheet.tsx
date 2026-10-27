@@ -1,7 +1,7 @@
 /* ─────────────────────── Music player sheet ─────────────────────── */
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, StyleSheet, PanResponder } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { get, ref } from 'firebase/database';
@@ -24,11 +24,19 @@ import { displayTitle, fmtDur } from './musicFormat';
  * - Top-right hand + equalizer icons are NOT rendered: no matching
  *   engine action exists for either (no raise-hand music action, no
  *   equalizer settings). Power IS wired (stop room music).
- * - The seek bar is DISPLAY-ONLY: the engine has no seek action
- *   (no setPosition anywhere). It shows real position/duration and
- *   never implies scrubbing.
  * - The disc does not spin: the reference frame is static and no
  *   rotation was specified.
+ * 2026-10-27: the seek bar is REAL now (bot seekSec intent, consumed
+ * before the bot's pause handling; seek while paused stays paused).
+ * Scrubbing is a PanResponder on the existing View bar — no native
+ * slider module. While scrubbing, the dot/fill/time show the scrub
+ * position and the 1s elapsed tick never overrides it; on release the
+ * target second is written. Members (canControl false) get the bar as
+ * display-only: the responder refuses the gesture, so nothing pretends
+ * to scrub. Next is sequential (queue first, else library order, wrap)
+ * and greys ONLY when queue AND library are both empty. Echo is a
+ * host-seat-only room-wide effect toggle, default OFF — never sold as
+ * a clarity improvement (echo smears timing by design).
  * - Transport buttons (prev/play/next/power) AND the playlist button
  *   are hidden for viewers who cannot control (canControl false) —
  *   playlist leads to track change / Add, so it is maintain, not view.
@@ -54,6 +62,58 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
 
   const [elapsed, setElapsed] = useState(0);
 
+  // Scrub state (2026-10-27): fraction while the user drags, null when
+  // not scrubbing. The ref mirrors the state synchronously — the
+  // release handler must read the FINAL drag position, and setState
+  // from the last move event may not have flushed yet when release
+  // fires. trackWidthRef is the hit-area width from onLayout.
+  const [scrubFrac, setScrubFrac] = useState<number | null>(null);
+  const scrubFracRef = useRef<number | null>(null);
+  const trackWidthRef = useRef(0);
+  const setScrub = (f: number | null) => {
+    scrubFracRef.current = f;
+    setScrubFrac(f);
+  };
+  // Gate mirror: the responder is created ONCE (useRef) but must read
+  // CURRENT values — the first render often has current=null (the
+  // subscription has not delivered yet), and a closure over that would
+  // refuse every scrub forever. The mirror is rewritten each render.
+  const scrubGateRef = useRef({ canControl, hasCurrent: false, duration: null as number | null });
+  // Rewritten after every render (effect, not render body) so the
+  // responder always sees the latest gate values.
+  useEffect(() => {
+    scrubGateRef.current = { canControl, hasCurrent: !!current, duration };
+  });
+  const scrubResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => {
+        const g = scrubGateRef.current;
+        return g.canControl && g.hasCurrent && g.duration != null && g.duration > 0;
+      },
+      onMoveShouldSetPanResponder: () => {
+        const g = scrubGateRef.current;
+        return g.canControl && g.hasCurrent && g.duration != null && g.duration > 0;
+      },
+      onPanResponderGrant: (evt) => {
+        const w = trackWidthRef.current;
+        setScrub(w > 0 ? Math.min(1, Math.max(0, evt.nativeEvent.locationX / w)) : 0);
+      },
+      onPanResponderMove: (evt) => {
+        const w = trackWidthRef.current;
+        setScrub(w > 0 ? Math.min(1, Math.max(0, evt.nativeEvent.locationX / w)) : 0);
+      },
+      onPanResponderRelease: () => {
+        const f = scrubFracRef.current;
+        const d = scrubGateRef.current.duration;
+        setScrub(null);
+        if (f != null && d != null && d > 0) controls.seekTo(f * d);
+      },
+      onPanResponderTerminate: () => {
+        setScrub(null);
+      },
+    }),
+  ).current;
+
   useEffect(() => {
     if (active) controls.syncVolume();
   }, [active, controls]);
@@ -70,7 +130,9 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
     return () => clearInterval(t);
   }, [playing, duration]);
 
-  const progress = duration != null && duration > 0 ? Math.min(elapsed / duration, 1) : 0;
+  // While scrubbing, the bar shows the scrub position, never the tick.
+  const displayElapsed = scrubFrac != null && duration != null ? scrubFrac * duration : elapsed;
+  const progress = duration != null && duration > 0 ? Math.min(displayElapsed / duration, 1) : 0;
   const title = current ? displayTitle(current.title) : 'No music yet';
   // Player name (2026-10-27, boss: sheet showed "undefined is playing
   // music"): the bot-written current node does not always carry
@@ -130,15 +192,23 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
       </View>
 
       <View style={styles.seekRow}>
-        <Text style={[styles.time, { color: palette.sub }]}>{fmtDur(elapsed)}</Text>
-        <View style={[styles.track, { backgroundColor: palette.faint }]}>
-          <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: palette.blue }]} />
-          <View
-            style={[
-              styles.dot,
-              { left: `${progress * 100}%`, backgroundColor: '#FFFFFF', borderColor: palette.border },
-            ]}
-          />
+        <Text style={[styles.time, { color: palette.sub }]}>{fmtDur(displayElapsed)}</Text>
+        <View
+          style={styles.trackHit}
+          {...scrubResponder.panHandlers}
+          onLayout={(e) => {
+            trackWidthRef.current = e.nativeEvent.layout.width;
+          }}
+        >
+          <View style={[styles.track, { backgroundColor: palette.faint }]}>
+            <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: palette.blue }]} />
+            <View
+              style={[
+                styles.dot,
+                { left: `${progress * 100}%`, backgroundColor: '#FFFFFF', borderColor: palette.border },
+              ]}
+            />
+          </View>
         </View>
         <Text style={[styles.time, { color: palette.sub }]}>{fmtDur(duration)}</Text>
       </View>
@@ -169,10 +239,10 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
         ) : null}
         {canControl ? (
           <Pressable
-            onPress={controls.nextRoom}
+            onPress={controls.nextSequential}
             hitSlop={8}
-            style={[styles.ctl, !controls.hasQueued() && styles.dim]}
-            disabled={!controls.hasQueued()}
+            style={[styles.ctl, !controls.hasNext() && styles.dim]}
+            disabled={!controls.hasNext()}
           >
             <Feather name="skip-forward" size={24} color={palette.text} />
           </Pressable>
@@ -214,6 +284,36 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
         </Pressable>
         <Text style={[styles.volPct, { color: palette.sub }]}>{Math.round(controls.volume * 100)}%</Text>
       </View>
+
+      {/* Echo (2026-10-27, boss: echo if possible) — host-seat only,
+          room-wide by construction (one publisher track). Default OFF;
+          an opt-in effect, never labelled a clarity improvement. */}
+      {canControl ? (
+        <View style={styles.echoRow}>
+          <Text style={[styles.echoLabel, { color: palette.text }]}>Echo</Text>
+          <Pressable
+            onPress={controls.toggleEcho}
+            hitSlop={8}
+            style={[
+              styles.echoToggle,
+              {
+                borderColor: palette.border,
+                backgroundColor: music?.echo === true ? palette.blue : 'transparent',
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.echoToggleText,
+                { color: music?.echo === true ? '#FFFFFF' : palette.sub },
+              ]}
+            >
+              {music?.echo === true ? 'ON' : 'OFF'}
+            </Text>
+          </Pressable>
+          <Text style={[styles.echoNote, { color: palette.sub }]}>Room-wide effect</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -229,7 +329,8 @@ const styles = StyleSheet.create({
   power: { padding: 4 },
   seekRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
   time: { fontSize: 12, width: 40, textAlign: 'center' },
-  track: { flex: 1, height: 4, borderRadius: 2, marginHorizontal: 8, position: 'relative' },
+  trackHit: { flex: 1, marginHorizontal: 8, paddingVertical: 10, justifyContent: 'center' },
+  track: { height: 4, borderRadius: 2, position: 'relative' },
   fill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 2 },
   dot: { position: 'absolute', top: -4, width: 12, height: 12, borderRadius: 6, marginLeft: -6, borderWidth: 1 },
   controls: {
@@ -246,5 +347,10 @@ const styles = StyleSheet.create({
   volSeg: { height: 6, borderRadius: 3 },
   volPct: { fontSize: 12, fontWeight: '800', width: 36, textAlign: 'right' },
   playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  echoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 10 },
+  echoLabel: { fontSize: 13, fontWeight: '700' },
+  echoToggle: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4 },
+  echoToggleText: { fontSize: 12, fontWeight: '800' },
+  echoNote: { fontSize: 12, flex: 1 },
   dim: { opacity: 0.35 },
 });

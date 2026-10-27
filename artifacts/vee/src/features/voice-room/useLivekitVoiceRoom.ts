@@ -1369,6 +1369,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const autoRetryAttemptsRef = useRef(0);
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryConnectionRef = useRef<() => void>(() => {});
+  /** True while the plain-background session watchdog (below) is
+   * mid-repair — the AppState return handler must not start a second
+   * leave + join on top of it (double teardown = the mic dip). */
+  const sessionWatchdogRepairingRef = useRef(false);
   /** Wall-clock time the app last left the foreground (in-place path). */
   const backgroundedAtRef = useRef(0);
 
@@ -1513,7 +1517,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       } catch {
         conn = '';
       }
-      if (conn !== 'connected' && conn !== 'reconnecting') {
+      if (conn !== 'connected' && conn !== 'reconnecting' && !sessionWatchdogRepairingRef.current) {
         retryConnectionRef.current();
       }
     };
@@ -1823,6 +1827,92 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   }, []);
   // Kept fresh for the silent auto-recovery scheduler above.
   useEffect(() => { retryConnectionRef.current = retryConnection; }, [retryConnection]);
+
+  /* ══════════════════════════════════════════════
+     PLAIN-BACKGROUND SESSION WATCHDOG (2026-10-27, boss: mic must NEVER
+     drop, background talk + listen UNLIMITED)
+     ──────────────────────────────────────────────────────────────
+     The minimized watchdog above heals ONLY _isMinimized sessions. A
+     plain-background session (app left via Home/recents, NO bubble)
+     had NO background repair: the socket starved, the server dropped
+     the participant, and return found a dead engine — so return ran
+     leave + fresh join (full track teardown) and the user felt the mic
+     release and re-enable, while voice-dependent buttons sat dead
+     until the fresh join (token fetch + audio session + connect, up to
+     tens of seconds) finished. That return window IS the reported
+     "buttons don't work until a long load finishes".
+     This session-level watchdog closes it: while the screen is mounted
+     and the app is NOT foreground, it checks the engine every 15 s and
+     heals a dead connection in the background (leave + re-attach
+     handlers + fresh join, exactly as retryConnection orders it),
+     re-applying the EXISTING muted/published/speaker intent only —
+     the same pattern as the minimized watchdog tick. No duration cap,
+     no teardown of a healthy/reconnecting engine, no giving up while
+     the session is alive — so return finds a 'connected' engine, no
+     teardown, no fresh join, and buttons respond immediately.
+     It is CONNECTION repair, not mic logic: muted/published/speakerOn
+     refs are READ, never computed anew; the read-back after repair
+     mirrors the minimized tick (onLocalStateChange also syncs React
+     state). It never runs while _isMinimized (the persisted watchdog
+     owns that case), never while AppState is 'active' (the return
+     handler + auto-retry own the foreground), and never while an
+     auto-retry timer is pending (no double repair).
+     HONEST LIMIT (do not hide it): if the OS fully freezes JS (Doze /
+     OEM force-freeze), no JS interval can tick until JS runs again —
+     the watchdog heals the moment JS runs, and the session foreground-
+     service hold + battery exemption are what keep JS running. If the
+     OS kills the process outright, that is a cold start, not a
+     watchdog case — return then IS a full load, and no app code
+     removes that; the hold + exemption minimize how often it happens.
+  ══════════════════════════════════════════════ */
+  useEffect(() => {
+    const tick = () => {
+      void (async () => {
+        if (!mountedRef.current) return;
+        if (_isMinimized) return;
+        if (AppState.currentState === 'active') return;
+        if (autoRetryTimerRef.current) return;
+        const engine = engineRef.current;
+        if (!engine) return;
+        let conn: string = '';
+        try {
+          conn = engine.getLocalState().connection;
+        } catch {
+          conn = '';
+        }
+        if (conn === 'connected' || conn === 'reconnecting' || conn === 'connecting') return;
+        if (sessionWatchdogRepairingRef.current) return;
+        sessionWatchdogRepairingRef.current = true;
+        try {
+          await engine.leave();
+          if (!mountedRef.current || engineRef.current !== engine) return;
+          // leave() wipes handlers — re-attach before join, or state
+          // updates never reach React after the repair.
+          attachRef.current(engine);
+          const id = identityRef.current;
+          if (!id.roomID || id.userID === 'anonymous') return;
+          await engine.join(id.roomID, { userId: id.userID, userName: id.userName });
+          if (!mountedRef.current || engineRef.current !== engine) return;
+          // Re-apply EXISTING intent only (minimized-watchdog pattern).
+          await engine.setMuted(mutedRef.current);
+          if (publishedRef.current) {
+            await engine.publish();
+          }
+          try {
+            await engine.setSpeakerOn(speakerOnRef.current);
+          } catch {
+            // non-critical — routing defaults apply
+          }
+        } catch {
+          // Next tick retries — repair never gives up while alive.
+        } finally {
+          sessionWatchdogRepairingRef.current = false;
+        }
+      })();
+    };
+    const timer = setInterval(tick, 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
   /* ══════════════════════════════════════════════
      MIC / SPEAKER

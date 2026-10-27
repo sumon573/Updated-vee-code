@@ -6,9 +6,12 @@ import * as Haptics from 'expo-haptics';
 import {
   setMusicState,
   setPlayQueueId,
+  setMusicSeek,
+  setMusicEcho,
   addMusicTrack,
   getRoomMusicOnce,
   type RoomMusic,
+  type MusicLibraryEntry,
   type MusicState,
 } from '../../services/roomMusicService';
 import {
@@ -21,9 +24,13 @@ import {
  * Wraps the existing VeeMusic engine (roomMusic node + bot) with the
  * control-confirmation pattern from the old player: write the intent,
  * wait up to 8s for bot-side confirmation, retry ONCE, then show a
- * visible error (never a silent no-op). The engine has NO seek action
- * and NO previous-track history — see restartCurrent for how prev is
- * mapped, and the build report for the full gap list.
+ * visible error (never a silent no-op). The engine has NO
+ * previous-track history — see restartCurrent for how prev is mapped.
+ * 2026-10-27 additions: REAL seek (seekSec intent, bot-consumed; seek
+ * while paused stays paused), SEQUENTIAL Next (room queue first, else
+ * the next song in the host's library in playlist-page order — newest
+ * first — wrapping to the first after the last), and a host-seat-only
+ * room-wide echo toggle (default OFF, never a clarity claim).
  */
 
 type Target = 'playing' | 'paused' | 'next' | 'stopped';
@@ -35,10 +42,13 @@ interface ControlsArgs {
   myName: string;
   getMusic: () => RoomMusic | null;
   onVolumeChange: (v: number) => void;
+  /** The opener's library in playlist-page order (newest first, the
+   * modal's subscription order) — used ONLY by nextSequential. */
+  library?: MusicLibraryEntry[];
 }
 
 export function useMusicControls(args: ControlsArgs) {
-  const { roomId, canControl, uid, myName, getMusic, onVolumeChange } = args;
+  const { roomId, canControl, uid, myName, getMusic, onVolumeChange, library } = args;
   const mountedRef = useRef(true);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmSeqRef = useRef(0);
@@ -154,6 +164,8 @@ export function useMusicControls(args: ControlsArgs) {
     return (m?.queue ?? []).length > 0;
   }, [getMusic]);
 
+
+
   const playLibrarySong = useCallback(
     (entry: { mediaId: string; title: string; url: string; duration: number | null }) => {
       if (!canControl) return;
@@ -177,6 +189,71 @@ export function useMusicControls(args: ControlsArgs) {
     },
     [canControl, getMusic, uid, roomId, myName, playTrack],
   );
+
+  // 2026-10-27 (boss: Next must step songs one by one, never grey out
+  // just because the room queue is empty). Queue first (existing bot
+  // 'next' path); otherwise the next song in the host's library in
+  // playlist-page order (newest first — the modal subscription order,
+  // NOT the playlist page's current sort selection), wrapping to the
+  // first library song after the last. Each click = one song forward,
+  // played immediately via the existing add/play paths (no bot change).
+  const nextSequential = useCallback(() => {
+    if (!canControl) return;
+    const m = getMusic();
+    if ((m?.queue ?? []).length > 0) {
+      control('next');
+      return;
+    }
+    const lib = library ?? [];
+    if (lib.length === 0) {
+      Alert.alert('No songs to play next', 'Add a song first, then Next will step through your songs.');
+      return;
+    }
+    const curId = m?.current?.mediaId ?? null;
+    const idx = curId ? lib.findIndex((e) => e.mediaId === curId) : -1;
+    const next = idx >= 0 ? lib[(idx + 1) % lib.length] : lib[0];
+    playLibrarySong(next);
+  }, [canControl, getMusic, control, library, playLibrarySong]);
+
+  /** Next is available whenever a queue song OR a library song exists —
+   * grey ONLY when there is genuinely nothing to play next. */
+  const hasNext = useCallback(() => {
+    if ((getMusic()?.queue ?? []).length > 0) return true;
+    return (library ?? []).length > 0;
+  }, [getMusic, library]);
+
+  // 2026-10-27 (boss: scrub to any position, play from there). Writes
+  // the seekSec intent; the bot consumes it and moves current/
+  // positionSec, which the subscription delivers (no confirm timer —
+  // the sheet's elapsed effect already follows positionSec). Clamped
+  // client-side to [0, duration-1] when duration is known. Seek while
+  // paused stays paused: the bot changes no state on a seek.
+  const seekTo = useCallback(
+    (seconds: number) => {
+      if (!canControl) return;
+      const m = getMusic();
+      if (!m?.current) return;
+      let target = Math.floor(seconds);
+      if (target < 0) target = 0;
+      const dur = m.current.durationSec;
+      if (dur != null && dur > 0) target = Math.min(target, Math.floor(dur) - 1);
+      if (target < 0) target = 0;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setMusicSeek(roomId, target).catch(() => {});
+    },
+    [canControl, getMusic, roomId],
+  );
+
+  // 2026-10-27 (boss: echo, if possible). Room-wide effect switch —
+  // one publisher track, so it can never be per-listener and is never
+  // labelled as one. Default OFF is enforced by absent = false on both
+  // the client (here) and the bot.
+  const toggleEcho = useCallback(() => {
+    if (!canControl) return;
+    const on = !(getMusic()?.echo ?? false);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMusicEcho(roomId, on).catch(() => {});
+  }, [canControl, getMusic, roomId]);
 
   const restartCurrent = useCallback(() => {
     // Prev: the engine keeps NO previous-track history, so prev restarts
@@ -255,6 +332,10 @@ export function useMusicControls(args: ControlsArgs) {
     playTrack,
     playMine,
     nextRoom,
+    nextSequential,
+    hasNext,
+    seekTo,
+    toggleEcho,
     hasQueued,
     playLibrarySong,
     restartCurrent,

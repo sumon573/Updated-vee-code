@@ -69,7 +69,7 @@ import {
   subscribeAnnouncement, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
 import {
-  subscribeRoomMusic, type RoomMusic,
+  subscribeRoomMusic, setMusicState, type RoomMusic,
 } from '../services/roomMusicService';
 import {
   subscribeRoomPk, acceptPk, removePk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
@@ -1477,6 +1477,32 @@ export default function VoiceRoomScreen() {
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
   }, [roomId, mySeatIdx, myUid]);
+
+  // 2026-10-27 (boss: host-seat leave stops music completely, new host
+  // sees NO music and must play anew). The TRIGGER is mySeatIdx === 0
+  // specifically — NOT isHostSeat (which is also true for the room
+  // owner in any seat; repeating that trap would leave the owner
+  // controlling music from seat 3). On a CONFIRMED transition away
+  // from seat 0 (to another seat, or to unseated/audience) while music
+  // plays/pauses, write state 'stopped' at once. The mount-transient
+  // -1 never fires: the first render carries the -2 sentinel (prev is
+  // never 0), and seatsLoadedRef (the same confirmed-snapshot guard
+  // the mic sync uses) must be true. The bot's seat-0 watcher finishes
+  // the clear (current + queue removed, state idle) so nothing of the
+  // old track renders for the next host; it also covers the cases
+  // this effect cannot see (app closed, process death). This effect
+  // writes ONLY the music state — it never touches the mic.
+  const prevHostSeatRef = useRef(-2); // -2 = unknown (first render)
+  const musicState = music?.state;
+  useEffect(() => {
+    const prev = prevHostSeatRef.current;
+    prevHostSeatRef.current = mySeatIdx;
+    if (prev !== 0) return;
+    if (mySeatIdx === 0) return;
+    if (!seatsLoadedRef.current) return;
+    if (musicState !== 'playing' && musicState !== 'paused') return;
+    setMusicState(roomId, 'stopped').catch(() => {});
+  }, [mySeatIdx, musicState, roomId]);
   // 2026-10-20 (boss): audience heartbeat while inside the room — keeps my
   // audience entry provably live; if the app dies, the entry ages out in
   // 5 min and gets swept instead of showing a phantom member forever.
@@ -2077,8 +2103,11 @@ export default function VoiceRoomScreen() {
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
   // 2026-10-27 (boss, correction): the floating music icon is visible to
   // EVERYONE in the room while music plays/pauses. Only the sheet's
-  // maintain actions are host-seat gated (canControl = isHostSeat);
-  // an owner/admin NOT in the host seat gets the member view.
+  // maintain actions are host-seat gated — STRICT seat 0 (mySeatIdx
+  // === 0, used at the MusicFlowModal below), NOT isHostSeat: isHostSeat
+  // is also true for the room owner in any seat, and an owner in the
+  // audience must get the member view. isHostSeat stays for the
+  // customize panel (a separate feature, untouched).
   const isHostSeat = myRole === 'host' || mySeatIdx === 0;
   // 2026-10-25 (boss): the three-dot button itself is host-seat-only —
   // only an admin/owner SEATED in the host seat (seat 1) sees it.
@@ -3797,14 +3826,16 @@ export default function VoiceRoomScreen() {
         }}
       />
       {/* 2026-10-27 (boss, correction): music maintain is HOST-SEAT ONLY.
-          canControl = isHostSeat (host role OR seat 0). An owner/admin
-          NOT in the host seat opens the same sheet but gets the member
-          view: song + real player name + own volume only, no maintain. */}
+          canControl = STRICT seat 0 (mySeatIdx === 0, NOT isHostSeat —
+          isHostSeat is also true for the room owner in any seat). An
+          owner/admin NOT in the host seat opens the same sheet but gets
+          the member view: song + real player name + own volume only,
+          no maintain. */}
       <MusicFlowModal
         visible={musicOpen}
         onClose={() => setMusicOpen(false)}
         roomId={roomId}
-        canControl={isHostSeat}
+        canControl={mySeatIdx === 0}
         myName={myName}
         onVolumeChange={setMusicVolume}
         activeThemeId={activeThemeId}

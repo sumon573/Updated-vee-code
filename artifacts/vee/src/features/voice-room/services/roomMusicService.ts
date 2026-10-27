@@ -18,6 +18,12 @@
  *   playQueueId: queueId (client writes; BOT consumes it FIRST in
  *     reconcile — plays that queued song directly, then clears it.
  *     Needs its own live-rules entry; see the deploy report.)
+ *   seekSec: number (client writes; BOT consumes it in reconcile right
+ *     after playQueueId — new command id, bot position moves with it.
+ *     Needs its own live-rules entry.)
+ *   echo: boolean (client writes, host-seat only; BOT carries it in
+ *     every command and issues an 'fx' command on change. Absent = OFF.
+ *     Needs its own live-rules entry.)
  * The bot reconciles (state, current, queue): 'playing' starts/resumes,
  * 'paused' stops at the saved position, 'next' advances, 'stopped' keeps
  * the song (positionSec reset to 0) so Play restarts it from the start.
@@ -59,6 +65,9 @@ export interface RoomMusic {
   queue: MusicTrack[];
   state: MusicState;
   current: MusicCurrent | null;
+  /** Room-wide echo effect switch (2026-10-27): absent in RTDB = OFF.
+   * Never per-listener — one publisher track, so everyone hears it. */
+  echo?: boolean;
 }
 
 function musicRef(roomId: string) {
@@ -88,6 +97,7 @@ export function subscribeRoomMusic(
       queue,
       state: rawState === 'next' ? 'playing' : rawState,
       current: (v.current as MusicCurrent) || null,
+      echo: v.echo === true,
     });
   });
 }
@@ -119,6 +129,25 @@ export async function addMusicTrack(
  */
 export async function setPlayQueueId(roomId: string, queueId: string): Promise<void> {
   await set(ref(database, `roomMusic/${roomId}/playQueueId`), queueId);
+}
+
+/**
+ * Scrub intent (2026-10-27): the sheet's drag writes the target second;
+ * the bot consumes it (new command id, bot position moves with it) and
+ * clears it. Seek while paused STAYS paused (bot changes no state).
+ * Host-seat/owner/admin write per the live rules seekSec entry.
+ */
+export async function setMusicSeek(roomId: string, seconds: number): Promise<void> {
+  await set(ref(database, `roomMusic/${roomId}/seekSec`), Math.floor(seconds));
+}
+
+/**
+ * Echo toggle (2026-10-27): room-wide effect switch, host-seat only.
+ * Absent = OFF. The bot carries it in every command; it is an opt-in
+ * effect, never a clarity claim — echo smears timing by design.
+ */
+export async function setMusicEcho(roomId: string, on: boolean): Promise<void> {
+  await set(ref(database, `roomMusic/${roomId}/echo`), on);
 }
 
 /** Drive playback: 'playing' | 'paused' | 'next' | 'stopped'. */

@@ -30,9 +30,10 @@ import { MusicAddPage } from './MusicAddPage';
  * - Entry: the floating music icon opens this flow for EVERYONE in
  *   the room while music plays/pauses. Playing state is visible to
  *   every opener; the sheet's maintain actions are gated below.
- * - Transport/power/play-row-tap/playlist/add: canControl = isHostSeat
- *   (host role OR seat 0, set by the caller). An owner/admin NOT in
- *   the host seat gets the member view: song + real player name +
+ * - Transport/power/play-row-tap/playlist/add: canControl = STRICT
+ *   seat 0 (mySeatIdx === 0, set by the caller — NOT isHostSeat, which
+ *   is also true for the room owner in any seat). An owner/admin NOT
+ *   in the host seat gets the member view: song + real player name +
  *   own local volume only, no maintain buttons at all.
  * - Local volume: ungated (this phone only).
  * - Delete: removes from the OPENER's own library only.
@@ -67,7 +68,7 @@ export function MusicFlowModal(props: MusicFlowModalProps) {
 
   const getMusic = useCallback(() => musicRef.current, []);
 
-  const controls = useMusicControls({ roomId, canControl, uid, myName, getMusic, onVolumeChange });
+  const controls = useMusicControls({ roomId, canControl, uid, myName, getMusic, onVolumeChange, library });
 
   useEffect(() => {
     if (!visible) {
