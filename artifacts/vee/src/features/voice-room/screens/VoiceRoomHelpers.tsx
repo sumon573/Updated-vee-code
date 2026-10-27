@@ -116,9 +116,11 @@ export function fbChatToMsg(m: RoomChatMsg): ChatMsg {
 // tap opens the full Live Audience page. DP is the exact real profile photo
 // of the first live person (initials avatar if they have no photo — never demo).
 export function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: () => void; person?: Participant }) {
+  // 2026-10-27 (boss, imo format): exact number below 1000 (e.g. 103,
+  // never "1+"/"2+"); 1000+ shows "{floor(n/1000)}k+" (1500 -> "1k+").
   const formatCount = (n: number): string => {
-    if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.0', '')}k+`;
-    return `${n}+`;
+    if (n >= 1000) return `${Math.floor(n / 1000)}k+`;
+    return `${n}`;
   };
   const photoURL = person?.photoURL;
   return (

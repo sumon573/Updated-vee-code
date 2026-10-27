@@ -3,6 +3,7 @@ import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, 
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ref, get, onValue, update, set, serverTimestamp } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
@@ -161,6 +162,17 @@ async function removeOutboxEntry(roomId: string, id: string): Promise<void> {
     map[roomId] = (map[roomId] ?? []).filter((e) => e.id !== id);
     await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
+}
+
+// imo's share glyph (boss 2026-10-27 17:20): a THIN CURVED ARROW pointing
+// up-right — not Feather's multi-node "share-2". Same size as the X (22).
+function ImoShareArrow({ size = 22, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 19C5 11 11 5 19 5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M14 5H19V10" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
 }
 
 export default function VoiceRoomScreen() {
@@ -3190,9 +3202,9 @@ export default function VoiceRoomScreen() {
                 <ScalePress onPress={handleJoinRoom}>
                   <View style={{
                     backgroundColor: '#007AFF', borderRadius: 16,
-                    paddingHorizontal: 14, paddingVertical: 3,
+                    paddingHorizontal: 12, paddingVertical: 4,
                     alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Text style={{ color: '#fff', fontSize: 20, fontWeight: '900', lineHeight: 24 }}>+</Text>
+                    <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900', lineHeight: 20 }}>+</Text>
                   </View>
                 </ScalePress>
               </View>
@@ -3209,10 +3221,14 @@ export default function VoiceRoomScreen() {
                 duplicated). */}
             <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center', flexShrink: 0 }}>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <Feather name="share-2" size={22} color={themeOnBg} />
+                <View style={{ padding: 11 }}>
+                  <ImoShareArrow size={22} color={themeOnBg} />
+                </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <Feather name="x" size={22} color={themeOnBg} />
+                <View style={{ padding: 11 }}>
+                  <Feather name="x" size={22} color={themeOnBg} />
+                </View>
               </ScalePress>
             </View>
           </View>
@@ -3276,14 +3292,20 @@ export default function VoiceRoomScreen() {
                   </View>
                 </ScalePress>
               )}
-              <ScalePress onPress={() => setCustomizeOpen(true)}>
-                <Feather name="more-horizontal" size={22} color={themeOnBg} />
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}>
+                <View style={{ padding: 11 }}>
+                  <Feather name="more-horizontal" size={22} color={themeOnBg} />
+                </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
-                <Feather name="share-2" size={22} color={themeOnBg} />
+                <View style={{ padding: 11 }}>
+                  <ImoShareArrow size={22} color={themeOnBg} />
+                </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
-                <Feather name="x" size={22} color={themeOnBg} />
+                <View style={{ padding: 11 }}>
+                  <Feather name="x" size={22} color={themeOnBg} />
+                </View>
               </ScalePress>
             </View>
           </View>
@@ -3395,21 +3417,14 @@ export default function VoiceRoomScreen() {
             {/* 2026-10-22 (Sumon): Intimacy pill REMOVED from the header on
                 his order. IntimacyModal/state stay wired (harmless); the
                 header entry point is gone. */}
-            {isOwnerOrAdmin ? (
-              <GrabTopPill roomId={roomId} />
-            ) : (
-            <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setBackpackOpen(true); }}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 5,
-                backgroundColor: C.card,
-                borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 }}>
-                <Text style={{ fontSize: 13 }}>🎒</Text>
-                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
-                  {t('voiceRoom.backpack.title')}
-                </Text>
-              </View>
-            </ScalePress>
-            )}
+            {/* 2026-10-27 (boss): Props Backpack pill REMOVED from the header
+                pills row — the right slot is now the Grab the Top pill
+                (two-state: highlight when rank data exists, "Grab the Top"
+                + chair label otherwise) for ALL headers. The Backpack
+                feature code itself is NOT deleted, but its header pill was
+                its ONLY opener, so PropsBackpackModal is now unreachable
+                from the room screen until a new entry point is ordered. */}
+            <GrabTopPill roomId={roomId} />
             {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>
