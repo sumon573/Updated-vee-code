@@ -446,9 +446,12 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
+      {/* Definite height (NOT maxHeight): the flex:1 tab content and its
+          lists need a bounded parent, otherwise the list grows to full
+          content height, gets clipped at the panel edge, and cannot scroll. */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: PANEL_BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        maxHeight: '88%' }}>
+        height: '88%' }}>
         {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
           paddingTop: 14, paddingBottom: 6, gap: 10 }}>
@@ -584,6 +587,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           {tab === 'details' ? (
             <ScrollView
               ref={scrollRef}
+              style={{ flex: 1 }}
               onScroll={onScroll}
               scrollEventThrottle={16}
               contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 }}
@@ -686,6 +690,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
           ) : (
             <FlatList
               ref={flatRef}
+              style={{ flex: 1 }}
               data={displayMembers.slice(0, visibleCount)}
               keyExtractor={(m) => m.id}
               onScroll={onScroll}
