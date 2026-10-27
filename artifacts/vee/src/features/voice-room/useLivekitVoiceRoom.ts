@@ -578,6 +578,16 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   private leaveInitiated = false;
 
   /**
+   * 2026-10-27 audio-leak fix — true while a teardownRoom() disconnect()
+   * is outstanding. teardownRoom() nulls this.room BEFORE awaiting
+   * disconnect(), so a null room alone cannot prove teardown finished: a
+   * second teardownRoom() call must report "not done" while a disconnect
+   * is still hung, or leave() would declare teardown done vacuously and
+   * skip the mic fallback while the native Room stays connected.
+   */
+  private disconnectPending = false;
+
+  /**
    * 2026-10-19 stability fix — native-op serialization.
    * All native WebRTC mutations (setMicrophoneEnabled / room.disconnect) are
    * funneled through this promise chain. On Android, overlapping a
@@ -959,14 +969,62 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     }
   }
 
-  private async teardownRoom(): Promise<void> {
+  /**
+   * 2026-10-27 audio-leak fix — silence ALL inbound audio on a Room,
+   * synchronously and best-effort. Unsubscribing tells the server to stop
+   * forwarding; stopping the track silences playback locally even if the
+   * server message never gets out (e.g. the disconnect itself is hung).
+   * Deliberately does NOT call refreshParticipants(): the engine is dying
+   * and no stale state may be emitted. Never called on the minimize path
+   * (minimize must KEEP audio by design) — only from teardownRoom() and
+   * the leave() fallback below.
+   */
+  private stopAllRemoteAudio(room: Room): void {
+    try {
+      room.remoteParticipants.forEach((p: RemoteParticipant) => {
+        try {
+          p.audioTrackPublications.forEach((pub) => {
+            const rp = pub as RemoteTrackPublication;
+            try {
+              rp.setSubscribed(false);
+            } catch {
+              // non-critical — the track stop below is the local backstop
+            }
+            try {
+              const track = rp.track;
+              if (track) track.stop();
+            } catch {
+              // non-critical
+            }
+          });
+        } catch {
+          // non-critical — next participant
+        }
+      });
+    } catch {
+      // non-critical — leave must never throw
+    }
+  }
+
+  /**
+   * Returns true only when a disconnect was actually performed and settled
+   * (or there was never a room to tear down). Returns false when a previous
+   * call nulled this.room while its disconnect() is still outstanding —
+   * that is a HUNG teardown, not a completed one, and leave() must run its
+   * fallbacks instead of declaring success.
+   */
+  private async teardownRoom(): Promise<boolean> {
     this.stopNoiseGate();
     // 2026-10-19 perf fix: drop any pending throttled refresh — leave paths
     // set their own final state; a trailing emit would be stale work.
     this.clearRefreshTimer();
     const room = this.room;
     this.room = null;
-    if (!room) return;
+    if (!room) return !this.disconnectPending;
+    // 2026-10-27 audio-leak fix — kill inbound audio BEFORE disconnect:
+    // if disconnect() hangs, the native Room stays connected and remote
+    // tracks would otherwise keep playing with no bubble/notification.
+    this.stopAllRemoteAudio(room);
     try {
       room.removeAllListeners();
     } catch {
@@ -977,11 +1035,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     } catch {
       // non-critical
     }
+    this.disconnectPending = true;
     try {
       await room.disconnect();
     } catch {
       // non-critical
+    } finally {
+      this.disconnectPending = false;
     }
+    return true;
   }
 
   /* ── VoiceEngine interface ── */
@@ -1246,9 +1308,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         }
       }
       if (!teardownDone && roomBefore) {
-        // Teardown never completed: disconnect alone cannot be trusted to
-        // have unpublished the mic, so unpublish explicitly (best-effort,
-        // 2s) before anything else runs.
+        // Teardown never completed: the native Room may still be connected
+        // (hung disconnect), so silence inbound audio explicitly first —
+        // synchronous, best-effort, idempotent with teardownRoom's stop.
+        this.stopAllRemoteAudio(roomBefore);
+        // Disconnect alone cannot be trusted to have unpublished the mic,
+        // so unpublish explicitly (best-effort, 2s) before anything else
+        // runs. (Pre-2026-10-27 this fallback was skipped in exactly the
+        // disconnect-hang case, because teardownDone read vacuously true —
+        // teardownRoom() now reports that case honestly as not done.)
         try {
           await withTimeout(
             roomBefore.localParticipant.setMicrophoneEnabled(false),
