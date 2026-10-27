@@ -1,7 +1,7 @@
 /**
  * VoiceRoomBottomBar — boss target 2026-10-27 18:44 (1000225055_4_i70l.png):
  * the bottom is EXACTLY that image — icons and everything the same.
- * Single dark row, pinned flush to the very bottom edge (boss 18:45: no
+ * Single floating row (no background box), pinned flush to the very bottom edge (boss 18:45: no
  * padding/gap below beyond the system safe-area inset, so the chat area
  * above grows bigger). This REPLACES the old two-row bottom area (the
  * separate message row above + the old floating-button row).
@@ -35,8 +35,10 @@
  *   - The static target icons carry no mute/speaker state: the old bar's
  *     red mic-off / grey volume-x states are gone; mute state still shows
  *     on the user's own seat mic icon.
- * The row is its own dark strip (#101010) on ALL 16 room themes, so every
- * button stays clearly visible on light and dark themes alike.
+ * Round 5 (boss 2026-10-27 19:06): NO background strip — the row floats
+ * directly on the user's room theme. Bare glyphs (calendar, speaker) are
+ * black glyphs recolored per theme via tintColor; the Say pill stays dark
+ * with a theme-aware border so it separates on every theme.
  */
 import React from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
@@ -49,6 +51,12 @@ import {
 
 export interface VoiceRoomBottomBarProps {
   keyboardOpen: boolean;
+  /** Text/icon color on the room theme bg (dark on light themes, light on
+      Midnight) — used as tintColor for the bare calendar/speaker glyphs. */
+  themeOnBg: string;
+  /** True only for dark room themes (bg luminance < 0.4) — drives the Say
+      pill border + the speaker's gold tint. */
+  isDarkTheme: boolean;
   /** Safe-area inset ONLY (boss 18:45: no extra padding below the row). */
   bottomPad: number;
   handleMicBarPress: () => void;
@@ -64,7 +72,7 @@ export interface VoiceRoomBottomBarProps {
 
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
   const {
-    keyboardOpen, bottomPad, handleMicBarPress,
+    keyboardOpen, bottomPad, themeOnBg, isDarkTheme, handleMicBarPress,
     toggleSpeaker,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen,
     onSayPress, onSmileyPress,
@@ -81,8 +89,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row', alignItems: 'center', gap: 10,
         paddingHorizontal: 12, paddingTop: 10, paddingBottom: bottomPad,
-        opacity: keyboardOpen ? 0 : 1,
-        backgroundColor: '#101010' }}>
+        opacity: keyboardOpen ? 0 : 1 }}>
         {/* Mic + gear — target's composite icon, sliced exactly. */}
         <ScalePress onPress={handleMicBarPress}>
           <Image source={{ uri: BOTTOM_MIC_GEAR }} style={{ width: 52, height: 52 }} />
@@ -91,11 +98,13 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Say pill — dark pill + "Say..." + smiley inside (target). */}
         <View style={{
           flex: 1, height: 48, borderRadius: 24,
-          backgroundColor: '#262626',
+          backgroundColor: isDarkTheme ? '#2E2E2E' : '#262626',
+          borderWidth: 1,
+          borderColor: isDarkTheme ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.12)',
           flexDirection: 'row', alignItems: 'center',
           paddingLeft: 16, paddingRight: 8 }}>
           <Pressable onPress={onSayPress} style={{ flex: 1 }}>
-            <Text style={{ color: '#8A8A8A', fontSize: 16 }}>
+            <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
               Say...
             </Text>
           </Pressable>
@@ -107,14 +116,14 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         {/* Calendar — Task Center (existing modal). */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>
           <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 30, height: 29 }} />
+            <Image source={{ uri: BOTTOM_CALENDAR }} style={{ width: 30, height: 29, tintColor: themeOnBg }} />
           </View>
         </ScalePress>
 
         {/* Speaker — voice-output toggle (existing handler). */}
         <ScalePress onPress={toggleSpeaker}>
           <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 30, height: 22 }} />
+            <Image source={{ uri: BOTTOM_SPEAKER }} style={{ width: 30, height: 22, tintColor: isDarkTheme ? '#D0A010' : themeOnBg }} />
           </View>
         </ScalePress>
 

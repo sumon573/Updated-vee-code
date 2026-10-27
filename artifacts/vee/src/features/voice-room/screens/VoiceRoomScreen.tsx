@@ -620,6 +620,18 @@ export default function VoiceRoomScreen() {
     () => getActiveThemes().find((th) => th.id === activeThemeId)?.bg ?? C.bg,
     [activeThemeId],
   );
+
+  // Round 5 (boss 2026-10-27 19:06): dark-theme flag for the floating bottom
+  // row — derived from the theme bg luminance so server-driven themes work
+  // too (only Midnight is dark today: bg #050506 -> lum ~0.02).
+  const isDarkTheme = useMemo(() => {
+    const hex = (themeBg || '').replace('#', '');
+    if (hex.length !== 6) return false;
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.4;
+  }, [themeBg]);
   
   // 2026-10-21 (boss): text colors for elements sitting directly on the
   // themed background (room title, seat names, bottom-bar labels) — light
@@ -3203,7 +3215,7 @@ export default function VoiceRoomScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '700', flex: 1 }}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '700', flex: 1 }}>
                     {roomName}
                   </Text>
                 </Pressable>
@@ -3220,7 +3232,7 @@ export default function VoiceRoomScreen() {
                 </ScalePress>
               </View>
               {joinedMemberCount !== null && (
-                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 11, fontWeight: '500', marginTop: 1 }}>
                   {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {formatMembersCount(joinedMemberCount)}
                 </Text>
               )}
@@ -3276,12 +3288,12 @@ export default function VoiceRoomScreen() {
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '700', flex: 1 }}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '700', flex: 1 }}>
                   {roomName}
                 </Text>
               </Pressable>
               {joinedMemberCount !== null && (
-                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 11, fontWeight: '500', marginTop: 1 }}>
                   {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {formatMembersCount(joinedMemberCount)}
                 </Text>
               )}
@@ -3348,7 +3360,7 @@ export default function VoiceRoomScreen() {
 
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 20, fontWeight: '900', flex: 1 }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 16, fontWeight: '900', flex: 1 }}>
                 {roomName}
               </Text>
             </Pressable>
@@ -3809,6 +3821,8 @@ export default function VoiceRoomScreen() {
       <VoiceRoomBottomBar
         keyboardOpen={keyboardOpen}
         bottomPad={bottomPad}
+        themeOnBg={themeOnBg}
+        isDarkTheme={isDarkTheme}
         handleMicBarPress={handleMicBarPress}
         toggleSpeaker={toggleSpeaker}
         setTaskCenterOpen={setTaskCenterOpen}
