@@ -32,11 +32,11 @@
  *   - No invite (person+) button in the target: header share still opens
  *     the invite sheet for owner/admin/audience; plain members lose the
  *     bottom invite entry.
- *   - Two-state buttons (boss 2026-10-27 20:10, REDESIGNED boss 20:17 —
- *     the red slash is GONE: a lone red line looked cheap/demo). OFF
- *     states are now properly DESIGNED glyphs (bottomIcons.ts): MUTED =
- *     mic+gear with a white slash integrated through the mic glyph only
- *     (never the gear, never the circle edge); speaker OFF = cone with
+ *   - Two-state buttons (boss 2026-10-27 20:10, REDESIGNED boss 20:17,
+ *     mic REFINED boss 20:40 — approved). OFF states are properly DESIGNED
+ *     glyphs (bottomIcons.ts): MUTED = faded (ঝাপসা) grey mic with the gear
+ *     erased and a crisp white × exactly where the gear was (single ×,
+ *     no corner badge, no red, no slash across the mic); speaker OFF = cone with
  *     waves removed + a diagonal cut gap, tinted soft grey #C9C9C9.
  *     Both driven by the REAL engine booleans (isMuted, speakerOn props
  *     from the Screen), never invented state, so OFF still reads at a
@@ -163,11 +163,11 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         paddingHorizontal: 10, paddingTop: 10, paddingBottom: bottomPad,
         opacity: keyboardOpen ? 0 : 1 }}>
         {/* Mic button — TWO MODES (boss 19:43) + TWO STATES (boss 20:10,
-            redesigned 20:17, no red slash): seated -> mic+gear; unseated /
+            refined 20:40 (boss-approved, no red, no slash): seated -> mic+gear; unseated /
             audience -> dark-circle white-'+' JOIN icon (never an off-state
             — it is not a mute control). Seated: UNMUTED = plain mic+gear,
-            MUTED = designed mic-off glyph (white slash integrated through
-            the mic only), driven by the real isMuted prop. Action
+            MUTED = refined glyph (faded mic + white × at the gear's spot,
+            gear erased), driven by the real isMuted prop. Action
             (handleMicBarPress) unchanged. */}
         <ScalePress onPress={handleMicBarPress}>
           <View style={{ width: 42, height: 42, borderRadius: 21, overflow: 'hidden' }}>
