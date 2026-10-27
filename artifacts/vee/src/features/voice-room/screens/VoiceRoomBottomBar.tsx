@@ -72,6 +72,24 @@
  * seated -> mic+gear (MUTE), unseated -> BOTTOM_JOIN dark circle +
  * white '+' (JOIN); Screen passes isSeated={mySeatIdx >= 0} (mySeatIdx
  * is -1 when unseated — NOT null — so the prop uses >= 0).
+ * Tap hygiene audit (boss 2026-10-27 19:50, verified in code, no overlap):
+ * ScalePress adds NO hitSlop (Pressable with no own style; hit = child
+ * size) and its scale animation only SHRINKS (0.95) on press, so a press
+ * can never spill into a neighbour. Hit boxes, exactly: mic/join 42x42,
+ * Say Pressable = pill minus smiley zone, smiley 32x32 (28 image + 2 pad,
+ * inside the 48-high pill with 8dp vertical clearance, last child, so it
+ * cannot overlap the Say text pressable), calendar box 38x38, speaker
+ * circle 42x42, gamepad 46x41, gift 42x42 — laid out by flexbox with 7dp
+ * gaps and 10dp side padding, so every hit box is separated from its
+ * neighbours; taps in gaps fall through the non-pressable row container
+ * to the chat below and trigger nothing. No hitSlop/padding change was
+ * needed — the audit found zero spills.
+ * Premium game icon (boss 2026-10-27 19:50): BOTTOM_GAMEPAD is now the
+ * luxury icon (dark disc + gold-trimmed glossy controller, gold D-pad and
+ * buttons) at the same 46x41dp footprint; games-hub action unchanged.
+ * Fit (fixed row = 20 side + 35 gaps + 210 buttons = 265dp): 360dp ->
+ * pill 95dp, 390dp -> 125dp, 437dp -> 172dp; pill need ~89dp, so the row
+ * fits on ALL phones with no overflow and no crowding (standing law).
  */
 import React from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
