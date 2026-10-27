@@ -127,25 +127,17 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
           )}
         </View>
 
-        {/* Topic label + topic text — 2026-10-22 (Sumon): the "Topic" label
-            was big and loud while the actual topic looked plain. Label is
-            now small and soft; the TOPIC TEXT itself carries a light
-            highlight so the real topic is what the eye catches. */}
+        {/* Topic text ONLY — 2026-10-27 (boss): the extra "Topic" label
+            chip is gone; the freed width goes to the actual topic, one
+            line, slightly bigger. (The top My Rooms strip still uses
+            RoomCard's label chip — untouched.) */}
         {!!room.topic && (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 3,
-              backgroundColor: 'rgba(249,115,22,0.13)', borderRadius: 999,
-              paddingHorizontal: 7, paddingVertical: 2.5,
-            }}>
-              <Text style={{ fontSize: 9 }}>💬</Text>
-              <Text style={{ color: '#EA580C', fontSize: 9.5, fontWeight: '800' }}>{t('voiceRoom.card.topic')}</Text>
-            </View>
             <View style={{
               backgroundColor: 'rgba(249,115,22,0.10)', borderRadius: 8,
               paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1,
             }}>
-              <Text numberOfLines={1} style={{ color: '#9A3412', fontSize: 12.5, fontWeight: '600' }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: '#9A3412', fontSize: 14, fontWeight: '600' }}>
                 {room.topic}
               </Text>
             </View>
