@@ -166,11 +166,14 @@ async function removeOutboxEntry(roomId: string, id: string): Promise<void> {
 
 // imo's share glyph (boss 2026-10-27 17:20): a THIN CURVED ARROW pointing
 // up-right — not Feather's multi-node "share-2". Same size as the X (22).
+// 2026-10-27 17:48: stroke 1.8 -> 2.2 (shape + color unchanged) — the thin
+// arrow was faint on light themes; thicker stroke stays clearly visible
+// on light AND dark backgrounds.
 function ImoShareArrow({ size = 22, color }: { size?: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M5 19C5 11 11 5 19 5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-      <Path d="M14 5H19V10" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M5 19C5 11 11 5 19 5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Path d="M14 5H19V10" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -3192,7 +3195,7 @@ export default function VoiceRoomScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '700' }}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '700' }}>
                     {roomName}
                   </Text>
                 </Pressable>
@@ -3219,7 +3222,11 @@ export default function VoiceRoomScreen() {
                 action as the bottom-bar cross — which is hidden for the
                 audience view so the cross exists only here (moved, not
                 duplicated). */}
-            <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center', flexShrink: 0 }}>
+            {/* 2026-10-27 (boss 17:48): trio gap 18 to 12 — "..." + share sit
+              slightly closer to X (compressed, not spread out). X itself is
+              untouched: right-edge padding unchanged, so X stays exactly
+              where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
+            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexShrink: 0 }}>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
                 <View style={{ padding: 11 }}>
                   <ImoShareArrow size={22} color={themeOnBg} />
@@ -3262,7 +3269,7 @@ export default function VoiceRoomScreen() {
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '700' }}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '700' }}>
                   {roomName}
                 </Text>
               </Pressable>
@@ -3272,7 +3279,11 @@ export default function VoiceRoomScreen() {
                 </Text>
               )}
             </View>
-            <View style={{ flexDirection: 'row', gap: 18, alignItems: 'center', flexShrink: 0 }}>
+            {/* 2026-10-27 (boss 17:48): trio gap 18 to 12 — "..." + share sit
+              slightly closer to X (compressed, not spread out). X itself is
+              untouched: right-edge padding unchanged, so X stays exactly
+              where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
+            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexShrink: 0 }}>
               {pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
@@ -3331,7 +3342,7 @@ export default function VoiceRoomScreen() {
 
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '900' }}>
                 {roomName}
               </Text>
             </Pressable>
@@ -3424,7 +3435,8 @@ export default function VoiceRoomScreen() {
                 feature code itself is NOT deleted, but its header pill was
                 its ONLY opener, so PropsBackpackModal is now unreachable
                 from the room screen until a new entry point is ordered. */}
-            <GrabTopPill roomId={roomId} />
+            {/* 2026-10-27 (boss 17:48): Grab pill pressed slightly right (+6). */}
+            <View style={{ marginLeft: 6 }}><GrabTopPill roomId={roomId} /></View>
             {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>
