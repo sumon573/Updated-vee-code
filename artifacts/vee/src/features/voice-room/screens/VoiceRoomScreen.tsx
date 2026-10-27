@@ -3,7 +3,7 @@ import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, 
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ref, get, onValue, update, set, serverTimestamp } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
@@ -117,7 +117,7 @@ import {
   type RoomChatMsg } from '../services/firebaseRoomChatService';
 
 
-import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker } from './VoiceRoomHelpers';
+import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker, formatMembersCount } from './VoiceRoomHelpers';
 import { VoiceRoomBottomBar } from './VoiceRoomBottomBar';
 import { VoiceRoomModals } from './VoiceRoomModals';
 
@@ -164,16 +164,31 @@ async function removeOutboxEntry(roomId: string, id: string): Promise<void> {
   } catch { /* ignore */ }
 }
 
-// imo's share glyph (boss 2026-10-27 17:20): a THIN CURVED ARROW pointing
-// up-right — not Feather's multi-node "share-2". Same size as the X (22).
-// 2026-10-27 17:48: stroke 1.8 -> 2.2 (shape + color unchanged) — the thin
-// arrow was faint on light themes; thicker stroke stays clearly visible
-// on light AND dark backgrounds.
+// imo's share glyph (boss 2026-10-27 17:20, EXACT crop 1000225032_2_523n.jpg
+// 2026-10-27 18:02): a BOLD OUTLINE curved arrow sweeping up-right with a
+// proper pointed arrowhead — NOT Feather's multi-node "share-2", NOT the
+// earlier thin curve + ticks (that read faint on the cream theme even at
+// stroke 2.2). Same 22px box as the X. Color = themeOnBg: verified dark on
+// all 15 light themes / light on Midnight (worst WCAG contrast 7.0:1), so
+// the arrow can never blend into the theme background (standing law
+// 2026-10-27 17:55: every voice-room button visible on EVERY theme).
 function ImoShareArrow({ size = 22, color }: { size?: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M5 19C5 11 11 5 19 5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
-      <Path d="M14 5H19V10" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M5 20C5 12 11 5 19 5" stroke={color} strokeWidth={2.8} strokeLinecap="round" />
+      <Path d="M14 5.5L20 4L19.5 10.5" stroke={color} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Trio "..." per the SAME boss crop: three SMALL tight dots (Feather's
+// more-horizontal renders larger, wider-spaced dots).
+function TrioDots({ size = 22, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={4.5} cy={12} r={1.6} fill={color} />
+      <Circle cx={12} cy={12} r={1.6} fill={color} />
+      <Circle cx={19.5} cy={12} r={1.6} fill={color} />
     </Svg>
   );
 }
@@ -3194,8 +3209,8 @@ export default function VoiceRoomScreen() {
             {/* Name + Members count below it; name tap → panel (unchanged). */}
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '700' }}>
+                <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '700' }}>
                     {roomName}
                   </Text>
                 </Pressable>
@@ -3213,7 +3228,7 @@ export default function VoiceRoomScreen() {
               </View>
               {joinedMemberCount !== null && (
                 <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
-                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
+                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {formatMembersCount(joinedMemberCount)}
                 </Text>
               )}
             </View>
@@ -3222,11 +3237,11 @@ export default function VoiceRoomScreen() {
                 action as the bottom-bar cross — which is hidden for the
                 audience view so the cross exists only here (moved, not
                 duplicated). */}
-            {/* 2026-10-27 (boss 17:48): trio gap 18 to 12 — "..." + share sit
+            {/* 2026-10-27 (boss 17:48): trio gap 12 to 8 — "..." + share sit
               slightly closer to X (compressed, not spread out). X itself is
               untouched: right-edge padding unchanged, so X stays exactly
               where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
-            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
                 <View style={{ padding: 11 }}>
                   <ImoShareArrow size={22} color={themeOnBg} />
@@ -3268,22 +3283,22 @@ export default function VoiceRoomScreen() {
               </View>
             </Pressable>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '700' }}>
+              <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '700' }}>
                   {roomName}
                 </Text>
               </Pressable>
               {joinedMemberCount !== null && (
                 <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '500', marginTop: 1 }}>
-                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
+                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {formatMembersCount(joinedMemberCount)}
                 </Text>
               )}
             </View>
-            {/* 2026-10-27 (boss 17:48): trio gap 18 to 12 — "..." + share sit
+            {/* 2026-10-27 (boss 17:48): trio gap 12 to 8 — "..." + share sit
               slightly closer to X (compressed, not spread out). X itself is
               untouched: right-edge padding unchanged, so X stays exactly
               where it was. 44px tap targets kept (padding 11 + 22 glyph). */}
-            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               {pendingRequests.length > 0 && (
                 <ScalePress
                   onPress={() => {
@@ -3305,7 +3320,7 @@ export default function VoiceRoomScreen() {
               )}
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}>
                 <View style={{ padding: 11 }}>
-                  <Feather name="more-horizontal" size={22} color={themeOnBg} />
+                  <TrioDots size={22} color={themeOnBg} />
                 </View>
               </ScalePress>
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
@@ -3342,7 +3357,7 @@ export default function VoiceRoomScreen() {
 
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flex: 1 }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 17, fontWeight: '900' }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: themeOnBg, fontSize: 18, fontWeight: '900' }}>
                 {roomName}
               </Text>
             </Pressable>
@@ -3435,8 +3450,8 @@ export default function VoiceRoomScreen() {
                 feature code itself is NOT deleted, but its header pill was
                 its ONLY opener, so PropsBackpackModal is now unreachable
                 from the room screen until a new entry point is ordered. */}
-            {/* 2026-10-27 (boss 17:48): Grab pill pressed slightly right (+6). */}
-            <View style={{ marginLeft: 6 }}><GrabTopPill roomId={roomId} /></View>
+            {/* 2026-10-27 (boss 18:01): Grab pill right-aligned with the X button: marginLeft auto absorbs the free space, so the pill right edge lands exactly on the content right edge (X + seat-5 column) without ever overflowing past it. */}
+            <View style={{ marginLeft: 'auto' }}><GrabTopPill roomId={roomId} /></View>
             {/* 2026-10-19 (IMO waiting queue): waiter sees position, taps to manage */}
             {myQueuePosition !== null && (
               <ScalePress onPress={() => setSeatQueueOpen(true)}>

@@ -115,6 +115,24 @@ export function fbChatToMsg(m: RoomChatMsg): ChatMsg {
 // 2026-10-15 (Sumon): counts EVERYONE live in the room (seated + audience),
 // tap opens the full Live Audience page. DP is the exact real profile photo
 // of the first live person (initials avatar if they have no photo — never demo).
+// 2026-10-27 (boss): compact Members count, ONE DECIMAL, ".0" dropped,
+// NO "+" suffix. Used by the "Members: N" lines (owner + audience headers)
+// and the Room Info panel Members row. Deliberately DIFFERENT from the
+// audience pill's rule (exact <1000, "1k+" >=1000) — that number keeps its
+// own rule and is NOT touched by this.
+export function formatMembersCount(n: number): string {
+  if (n < 1000) return `${n}`;
+  let div = 1000;
+  let suf = 'k';
+  if (n >= 1_000_000_000) { div = 1_000_000_000; suf = 'b'; }
+  else if (n >= 1_000_000) { div = 1_000_000; suf = 'm'; }
+  let v = Math.round((n / div) * 10) / 10;
+  if (v >= 1000 && suf === 'k') { div = 1_000_000; suf = 'm'; v = Math.round((n / div) * 10) / 10; }
+  if (v >= 1000 && suf === 'm') { div = 1_000_000_000; suf = 'b'; v = Math.round((n / div) * 10) / 10; }
+  const s = v.toFixed(1);
+  return `${s.endsWith('.0') ? s.slice(0, -2) : s}${suf}`;
+}
+
 export function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: () => void; person?: Participant }) {
   // 2026-10-27 (boss, imo format): exact number below 1000 (e.g. 103,
   // never "1+"/"2+"); 1000+ shows "{floor(n/1000)}k+" (1500 -> "1k+").

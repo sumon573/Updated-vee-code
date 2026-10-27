@@ -10,6 +10,7 @@ import { Participant } from '../types/room';
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
+import { formatMembersCount } from '../screens/VoiceRoomHelpers';
 import { submitRoomReport } from '@/src/services/reportService';
 import { getUser } from '@/src/services/userService';
 
@@ -770,7 +771,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
                   {t('voiceRoom.info.members')}
                 </Text>
                 <Text style={{ color: TEXT, fontSize: 34, fontWeight: '700' }}>
-                  {displayMembers.length}
+                  {formatMembersCount(displayMembers.length)}
                 </Text>
               </View>
               {(!!roomTopic || isOwner === true) && (
