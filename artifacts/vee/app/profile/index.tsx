@@ -117,23 +117,6 @@ function SectionHeader({ title, count, onPress }: { title: string; count?: numbe
   );
 }
 
-// ─── IMO menu row (BIUIItemView): ~56dp, 30dp rounded icon, 16sp label, chevron ───
-
-function MenuRow({ icon, iconBg, iconColor, label, onPress, last }: {
-  icon: string; iconBg: string; iconColor: string; label: string; onPress: () => void; last?: boolean }) {
-  return (
-    <View>
-      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 15 }}>
-        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name={icon as never} size={16} color={iconColor} />
-        </View>
-        <Text style={{ flex: 1, fontSize: 16, color: C.text, marginLeft: 12 }} numberOfLines={1}>{label}</Text>
-        <Feather name="chevron-right" size={18} color={C.mutedLight} />
-      </Pressable>
-      {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
-    </View>
-  );
-}
 
 // 2026-10-27 (boss, flat imo profile): sections flow flat on the page bg —
 // no white cards, no side margins, no radius. Vertical rhythm comes from
@@ -1305,19 +1288,8 @@ export default function ProfileScreen({
           </View>
         </View>
 
-        {/* ─── Menu section (own profile): IMO-style rows → existing routes ─── */}
-        {isMe && (
-          <View style={flatSectionStyle}>
-            <MenuRow icon="credit-card" iconBg="#FFF8E6" iconColor="#B8860B" label={t('profile.menuWallet', 'Wallet')} onPress={() => router.push('/profile/wallet')} />
-            {/* 2026-10-20 (boss): Store row sits where Top Up used to be —
-                one tap from the profile menu into the full store. */}
-            <MenuRow icon="shopping-bag" iconBg="#FCE7F3" iconColor="#DB2777" label={t('profile.menuStore', 'Store')} onPress={() => router.push('/store' as any)} />
-            <MenuRow icon="bell" iconBg="#EDE9FE" iconColor="#8B5CF6" label={t('profile.menuNotifications', 'Notifications')} onPress={() => router.push('/profile/notifications')} />
-            <MenuRow icon="lock" iconBg="#F4F5F5" iconColor="#788187" label={t('profile.menuPrivacy', 'Privacy')} onPress={() => router.push('/profile/privacy')} />
-            <MenuRow icon="help-circle" iconBg="#E8F5E9" iconColor="#34C759" label={t('profile.menuHelp', 'Help & Feedback')} onPress={() => router.push('/profile/help')} />
-            <MenuRow icon="info" iconBg="#F4F5F5" iconColor="#788187" label={t('profile.menuAbout', 'About')} onPress={() => router.push('/profile/about')} last />
-          </View>
-        )}
+        {/* 2026-10-27 (boss): Wallet/Store/Notifications/Privacy/Help/About rows REMOVED from
+            profile — they already live in Settings (gear screen). No placeholder left. */}
       </ScrollView>
 
       {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
