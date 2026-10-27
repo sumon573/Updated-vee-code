@@ -1,15 +1,45 @@
-import type { ComponentProps } from 'react';
-import { View, Text, Image, Pressable, Modal, Platform } from 'react-native';
+import type { ComponentProps, ReactElement } from 'react';
+import { View, Text, Image, Pressable, Modal, Platform, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../types/room';
 
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
+/* Thin white outline line-icons matching imo's seat-menu glyphs (never emoji). */
+function ImoSeatIcon() {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
+      <Path d="M4 11a2 2 0 0 1 2 2v1h12v-1a2 2 0 0 1 2-2" />
+      <Path d="M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" />
+      <Path d="M7 19v1M17 19v1" />
+    </Svg>
+  );
+}
+function ImoInviteIcon() {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx="9" cy="8" r="3.5" />
+      <Path d="M3.5 19c.6-3 2.9-4.5 5.5-4.5S14 16 14.5 19" />
+      <Path d="M16 4.5v5M13.5 7h5" />
+    </Svg>
+  );
+}
+function ImoLockIcon() {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <Path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+      <Circle cx="12" cy="15.5" r="1.4" />
+    </Svg>
+  );
+}
 export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel, myId, locked, audience, onClose,
   onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onUnblock, onMention, accent,
-  isRoomBlocked, onKickOut, canKickOut }: {
+  isRoomBlocked, onKickOut, canKickOut, anchor }: {
   visible: boolean; seatIdx: number; member?: Participant | null;
   myRole: Role; myRoleLevel?: number; myId: string; locked: boolean; audience: Participant[];
   onClose: () => void;
@@ -28,6 +58,10 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   onKickOut?: () => void;
   /** True when the viewer holds the SVIP kick-out privilege. */
   canKickOut?: boolean;
+  /** 2026-10-27 imo popup: window rect of the tapped seat cell, measured
+   *  in VoiceRoomScreen before opening. Null = measure unavailable (fallback
+   *  to a centered popup near the top). Occupied seats ignore it. */
+  anchor?: { x: number; y: number; width: number; height: number } | null;
 }) {
   const { t } = useTranslation();
   const isOwner = myRole === 'host';
@@ -192,6 +226,61 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
           ? t('voiceRoom.seatAction.roleAdmin')
           : t('voiceRoom.seatAction.roleMember'))
     : '';
+
+  // ── 2026-10-27 imo popup (EMPTY seats only) ──────────────────────────
+  // Boss: the empty-seat menu must look exactly like imo's — a small dark
+  // dropdown anchored under the tapped seat, never the white bottom sheet.
+  // Occupied seats fall through to the existing sheet below, untouched.
+  // Host seat (seatIdx 0) NEVER gets a Lock/Unlock row: the host seat is
+  // admin/owner-only by takeSeat rules, so locking it is meaningless.
+  if (!occupied) {
+    const imoRows: { label: string; icon: ReactElement; onPress: () => void }[] = [
+      { label: t('voiceRoom.seatAction.takeMic', { defaultValue: 'Take Mic' }), icon: <ImoSeatIcon />, onPress: onJoin },
+    ];
+    if (audience.length > 0) {
+      imoRows.push({ label: t('voiceRoom.seatAction.inviteSpeaker', { defaultValue: 'Invite Speaker' }), icon: <ImoInviteIcon />, onPress: onInvite });
+    }
+    if (seatIdx !== 0) {
+      if (locked) {
+        imoRows.push({ label: t('voiceRoom.seatAction.unlockMic', { defaultValue: 'Unlock Mic' }), icon: <ImoLockIcon />, onPress: onUnlock });
+      } else {
+        imoRows.push({ label: t('voiceRoom.seatAction.lockMic', { defaultValue: 'Lock Mic' }), icon: <ImoLockIcon />, onPress: onLock });
+      }
+    }
+    const POPUP_WIDTH = 300;
+    const ROW_HEIGHT = 56;
+    const popupHeight = imoRows.length * ROW_HEIGHT + 12;
+    const win = Dimensions.get('window');
+    let popupLeft = (win.width - POPUP_WIDTH) / 2;
+    let popupTop = 180;
+    if (anchor) {
+      popupLeft = anchor.x + anchor.width / 2 - POPUP_WIDTH / 2;
+      popupLeft = Math.min(Math.max(popupLeft, 12), Math.max(12, win.width - POPUP_WIDTH - 12));
+      popupTop = anchor.y + anchor.height + 8;
+      if (popupTop + popupHeight > win.height - 12) {
+        popupTop = anchor.y - popupHeight - 8;
+      }
+      if (popupTop < 12) popupTop = 12;
+    }
+    return (
+      <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
+        <View style={{ position: 'absolute', left: popupLeft, top: popupTop, width: POPUP_WIDTH,
+          backgroundColor: '#1e1e20', borderRadius: 16, paddingVertical: 6,
+          shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
+          elevation: 12 }}>
+          {imoRows.map((r, i) => (
+            <Pressable key={r.label} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); r.onPress(); }}
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 22, gap: 16,
+                borderTopWidth: i === 0 ? 0 : 1, borderTopColor: 'rgba(255,255,255,0.09)' }}>
+              {r.icon}
+              <Text style={{ color: '#FFFFFF', fontSize: 18 }}>{r.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Modal>
+    );
+  }
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>

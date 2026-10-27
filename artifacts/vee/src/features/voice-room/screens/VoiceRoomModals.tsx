@@ -70,6 +70,7 @@ export interface VoiceRoomModalsProps {
   setSeatActionOpen: (v: boolean) => void;
   seatActionIdx: number;
   seatActionMember: Participant | null;
+  seatActionAnchor: { x: number; y: number; width: number; height: number } | null;
   mySeatIdx: number;
   invToSeatOpen: boolean;
   setInvToSeatOpen: (v: boolean) => void;
@@ -212,6 +213,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         myId={p.myUid}
         locked={p.seatActionIdx >= 0 && p.lockedSeats.has(p.seatActionIdx)}
         audience={p.audience}
+        anchor={p.seatActionAnchor}
         onClose={() => p.setSeatActionOpen(false)}
         onDown={() => { p.downFromSeat(p.seatActionIdx); p.setSeatActionOpen(false); }}
         onJoin={() => { p.joinSeat(p.seatActionIdx); p.setSeatActionOpen(false); }}

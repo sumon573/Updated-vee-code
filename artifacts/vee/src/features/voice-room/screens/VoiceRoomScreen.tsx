@@ -898,6 +898,9 @@ export default function VoiceRoomScreen() {
   
   const giftFlyRef = useRef<GiftFlyHandle>(null);
   const seatViewRefs = useRef<Record<string, View | null>>({});
+  // 2026-10-27 imo popup: window refs of the seat-grid cells, by seat index
+  // (seatViewRefs above is keyed by member id and skips empty seats).
+  const seatCellRefs = useRef<(View | null)[]>([]);
 
   // ── Mic Handshake pair links (2026-10-20, Sumon) ──────────────────────
   // Adjacent seated pairs who share a diamond-sending intimacy relation
@@ -986,6 +989,7 @@ export default function VoiceRoomScreen() {
   const [settingsOpen,    setSettingsOpen]    = useState(false);
   const [seatActionOpen,  setSeatActionOpen]  = useState(false);
   const [seatActionIdx,   setSeatActionIdx]   = useState(-1);
+  const [seatActionAnchor, setSeatActionAnchor] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [invToSeatOpen,   setInvToSeatOpen]   = useState(false);
   const [invToSeatIdx,    setInvToSeatIdx]    = useState(-1);
   const [inviteOpen,      setInviteOpen]      = useState(false);
@@ -2274,7 +2278,19 @@ export default function VoiceRoomScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSeatActionIdx(seatIdx);
-    setSeatActionOpen(true);
+    // 2026-10-27 imo popup: measure the tapped cell in window coordinates
+    // first, so the menu anchors under that seat (clamped/flipped in the
+    // sheet). Without a measure, the sheet falls back to a centered popup.
+    const cell = seatCellRefs.current[seatIdx];
+    if (cell) {
+      cell.measureInWindow((x, y, w, h) => {
+        setSeatActionAnchor({ x, y, width: w, height: h });
+        setSeatActionOpen(true);
+      });
+    } else {
+      setSeatActionAnchor(null);
+      setSeatActionOpen(true);
+    }
   }, [isOwnerOrAdmin, myUid, lockedSeats, roomId, myName, myInitials, myColor, ownerId, t]);
 
   const seatPressHandlers = useMemo(() => {
@@ -3337,6 +3353,7 @@ export default function VoiceRoomScreen() {
               collapsable={false}
               style={{ width: '20%', alignItems: 'center', paddingVertical: 6 }}
               ref={(v) => {
+                seatCellRefs.current[idx] = v;
                 const id = member?.id;
                 if (!id) return;
                 if (v) seatViewRefs.current[id] = v;
@@ -3713,6 +3730,7 @@ export default function VoiceRoomScreen() {
         setSeatActionOpen={setSeatActionOpen}
         seatActionIdx={seatActionIdx}
         seatActionMember={seatActionMember}
+        seatActionAnchor={seatActionAnchor}
         mySeatIdx={mySeatIdx}
         invToSeatOpen={invToSeatOpen}
         setInvToSeatOpen={setInvToSeatOpen}
