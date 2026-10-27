@@ -32,6 +32,10 @@ export interface VoiceRoomBottomBarProps {
   setGamesOpen: (v: boolean) => void;
   setInviteOpen: (v: boolean) => void;
   setExitModalOpen: (v: boolean) => void;
+  /** 2026-10-27 (boss, imo audience header): audience view shows the
+      exit X in the header instead — hide the below-screen cross so it
+      exists only once (moved, not duplicated). */
+  hideExit?: boolean;
 }
 
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
@@ -39,6 +43,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
     keyboardOpen, bottomPad, handleMicBarPress, mySeatIdx, muted, accentColor,
     toggleSpeaker, speakerOn,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen, setInviteOpen, setExitModalOpen,
+    hideExit,
   } = props;
   return (
     <>
@@ -141,7 +146,8 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
         </ScalePress>
         </View>
 
-        {/* Exit Room — uniform circle */}
+        {/* Exit Room — uniform circle (hidden for audience: header X instead) */}
+        {!hideExit && (
         <View style={{ flex: 1, alignItems: 'center' }}>
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
           <View style={{ alignItems: 'center' }}>
@@ -152,6 +158,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           </View>
         </ScalePress>
         </View>
+        )}
       </View>
 
       {/* ═══ MODALS ═══ */}

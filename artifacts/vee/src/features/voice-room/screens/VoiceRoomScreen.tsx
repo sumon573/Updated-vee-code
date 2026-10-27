@@ -109,7 +109,7 @@ import {
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents,
-  leaveRoomCompletely, removeMemberFromRoom } from '../services/firebaseRoomService';
+  leaveRoomCompletely, removeMemberFromRoom, subscribeRoomMembers } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
@@ -2152,6 +2152,16 @@ export default function VoiceRoomScreen() {
 
   const showJoinBanner = !isRoomMember && !hasJoined && !isOwnerOrAdmin && mySeatIdx < 0;
 
+  // 2026-10-27 (boss, imo audience header): 'Members: N' uses the SAME
+  // roomMembers index the Room Info panel subscribes to (never a fake
+  // number). Subscribed only while the audience header is shown; null
+  // until the first snapshot lands (the line renders only once counted).
+  const [joinedMemberCount, setJoinedMemberCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!showJoinBanner || !roomId) { setJoinedMemberCount(null); return; }
+    return subscribeRoomMembers(roomId, (members) => setJoinedMemberCount(members.length));
+  }, [showJoinBanner, roomId]);
+
   const seatActionMember = seatActionIdx >= 0 ? seats[seatActionIdx] ?? null : null;
 
   
@@ -3145,6 +3155,67 @@ export default function VoiceRoomScreen() {
       <SafeAreaView edges={['top']}>
         {}
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 2 }}>
+          {showJoinBanner ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* 2026-10-27 (boss, imo audience header): DP — same control as
+                today (tap opens the Room Info panel). */}
+            <Pressable onPress={() => setRoomInfoOpen(true)}>
+              <View style={{
+                width: 36, height: 36, borderRadius: 18,
+                overflow: 'hidden',
+                borderWidth: 1.5, borderColor: accentColor + '66',
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: accentColor + '22' }}>
+                {roomImageUri ? (
+                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
+                ) : (
+                  <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
+                    {(roomName || '?').charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+            </Pressable>
+            {/* Name + Members count below it; name tap → panel (unchanged). */}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable onPress={() => setRoomInfoOpen(true)} style={{ flexShrink: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ color: themeOnBg, fontSize: 16, fontWeight: '900' }}>
+                    {roomName}
+                  </Text>
+                </Pressable>
+                {/* Blue "+" right after the name = the EXISTING audience→member
+                    join action (handleJoinRoom), restyled from today's green
+                    circle to imo's blue pill button. */}
+                <ScalePress onPress={handleJoinRoom}>
+                  <View style={{
+                    backgroundColor: '#007AFF', borderRadius: 16,
+                    paddingHorizontal: 14, paddingVertical: 3,
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Text style={{ color: '#fff', fontSize: 20, fontWeight: '900', lineHeight: 24 }}>+</Text>
+                  </View>
+                </ScalePress>
+              </View>
+              {joinedMemberCount !== null && (
+                <Text numberOfLines={1} style={{ color: themeOnBgSub, fontSize: 12, fontWeight: '600', marginTop: 1 }}>
+                  {t('voiceRoom.info.members', { defaultValue: 'Members' })}: {joinedMemberCount}
+                </Text>
+              )}
+            </View>
+            {/* Top-right: share + X. Share opens the EXISTING invite sheet
+                (its Share-room-link action). X runs the SAME ExitModal
+                action as the bottom-bar cross — which is hidden for the
+                audience view so the cross exists only here (moved, not
+                duplicated). */}
+            <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', flexShrink: 0 }}>
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
+                <Feather name="share-2" size={26} color={themeOnBg} />
+              </ScalePress>
+              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setExitModalOpen(true); }}>
+                <Feather name="x" size={28} color={themeOnBg} />
+              </ScalePress>
+            </View>
+          </View>
+          ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {}
             <Pressable onPress={() => setRoomInfoOpen(true)}>
@@ -3224,6 +3295,7 @@ export default function VoiceRoomScreen() {
               )}
             </View>
           </View>
+          )}
           {}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 8 }}>
             {}
@@ -3642,6 +3714,7 @@ export default function VoiceRoomScreen() {
         setGamesOpen={setGamesOpen}
         setInviteOpen={setInviteOpen}
         setExitModalOpen={setExitModalOpen}
+        hideExit={showJoinBanner}
       />
       {/* 2026-10-23 (Sumon): message action sheet — long-press a user TEXT
           message → Copy Text / Reply. Gift cards and system messages never
