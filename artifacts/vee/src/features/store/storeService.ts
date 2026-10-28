@@ -25,9 +25,10 @@
  * on grant. Expired items cannot be equipped.
  */
 
-import { ref, get, set, remove, runTransaction } from 'firebase/database';
+import { ref, get, set, remove } from 'firebase/database';
 import { database } from '@/src/config/firebase';
-import { debitOwnWallet, InsufficientFundsError } from '@/src/features/wallet/walletService';
+import { authedWalletFetch } from '@/src/features/wallet/walletService';
+import * as Crypto from 'expo-crypto';
 import { intimacyPairKey } from '@/src/features/voice-room/services/intimacyService';
 import type { StoreCatalogItem, StoreItemType } from './storeCatalog';
 
@@ -101,19 +102,185 @@ async function getServerCatalogItem(itemId: string): Promise<{
 }
 
 /**
- * Refund safety net (2026-10-16 deep verification): if a grant write fails
- * AFTER a successful debit, credit the diamonds back so the user is never
- * charged without receiving the item. Best-effort — never throws.
+ * Endpoint refund (2026-10-29 store routing): if a grant write fails AFTER
+ * a confirmed debit, refund through the wallet service so the user is never
+ * charged without receiving the item. Best-effort — never throws. Returns
+ * true only when the service confirms refunded:true (already-refunded
+ * replays count — the money is back either way). A granted purchase can
+ * never be refunded (server returns already_granted).
  */
-async function refundOnGrantFailure(uid: string, amount: number): Promise<void> {
+async function refundStorePurchase(key: string): Promise<boolean> {
   try {
-    await runTransaction(ref(database, `wallets/${uid}/balance`), (cur: any) => {
-      const n = typeof cur === 'number' ? cur : 0;
-      return n + amount;
+    const res = await authedWalletFetch('/wallet/store/refund', {
+      method: 'POST',
+      body: { idempotencyKey: key },
+      timeoutMs: 6000,
     });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => ({}))) as { refunded?: boolean };
+    return data.refunded === true;
   } catch {
-    // best-effort only
+    return false;
   }
+}
+
+/**
+ * Grant-complete notify (2026-10-29 store routing): fire-and-forget with
+ * one retry. Tells the wallet service the grant landed (records grantNode
+ * for import dedup). Failure is SAFE — the row stays ungranted and the
+ * next purchase attempt resumes it via resume-first. Never throws.
+ */
+async function notifyGrantComplete(key: string, grantNode: string): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await authedWalletFetch('/wallet/store/grant-complete', {
+        method: 'POST',
+        body: { idempotencyKey: key, grantNode, purchasedAt: Date.now() },
+        timeoutMs: 6000,
+      });
+      if (res.ok) return;
+    } catch {
+      // Retry once, then give up — resume-first covers it.
+    }
+  }
+}
+
+/**
+ * Ledger probe (2026-10-29 store routing): after a timeout/abort or a 5xx,
+ * the purchase outcome is UNKNOWN — the wallet service may have committed
+ * the debit while its response was lost. The probe reads the Postgres
+ * ledger directly for this idempotency key (sender-scoped). A landed,
+ * unrefunded row proves the debit — the app must NOT re-send with a fresh
+ * key. Returns the stored price when confirmed, null after ~4 s.
+ * NEVER falls back to a direct Firebase wallet write.
+ */
+async function confirmStoreLanded(
+  key: string,
+): Promise<{ price: number } | null> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await authedWalletFetch(
+        `/wallet/store/status?idempotencyKey=${encodeURIComponent(key)}`,
+        { method: 'GET', timeoutMs: 5000 },
+      );
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          landed?: boolean;
+          refunded?: boolean;
+          price?: number;
+        };
+        if (data.landed && !data.refunded) {
+          return { price: typeof data.price === 'number' ? data.price : 0 };
+        }
+      }
+    } catch {
+      // Probe failed — keep polling briefly.
+    }
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
+
+type StoreDebitOutcome =
+  | { status: 'ok'; key: string; price: number }
+  | { status: 'insufficient' }
+  | { status: 'unknown_item' }
+  | { status: 'not_room_owner' }
+  | { status: 'payment_failed' };
+
+/**
+ * Store debit via the wallet service (2026-10-29 store routing).
+ * ONE HTTPS round trip on the success path. Server-side price from
+ * store_catalog; the response price wins for the grant record. Unknown
+ * outcomes (timeout / 5xx) are probed, then retried with the SAME key
+ * (up to 3 attempts) — never a fresh key, never a Firebase fallback.
+ * A resumed row (crash recovery) returns its own key — the caller MUST
+ * use the returned key for grant-complete / refund, not the fresh key.
+ */
+async function purchaseDebit(
+  itemId: string,
+  context: { roomId?: string; peerUid?: string },
+): Promise<StoreDebitOutcome> {
+  const key = Crypto.randomUUID();
+  const attemptPurchase = async (): Promise<Response | null> => {
+    try {
+      return await authedWalletFetch('/wallet/store/purchase', {
+        method: 'POST',
+        body: {
+          itemId,
+          idempotencyKey: key,
+          ...(context.roomId ? { roomId: context.roomId } : {}),
+          ...(context.peerUid ? { peerUid: context.peerUid } : {}),
+        },
+        // Same 6 s cap as gifts — a hung service must never freeze the UI.
+        timeoutMs: 6000,
+      });
+    } catch (e) {
+      console.warn('[store] wallet store purchase failed', key, (e as Error)?.message ?? String(e));
+      return null;
+    }
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await attemptPurchase();
+    if (res) {
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          price?: number;
+          code?: string;
+          key?: string;
+        };
+        if (data.ok) {
+          return {
+            status: 'ok',
+            key: typeof data.key === 'string' && data.key ? data.key : key,
+            price: typeof data.price === 'number' ? data.price : 0,
+          };
+        }
+        if (data.code === 'insufficient') return { status: 'insufficient' };
+        if (data.code === 'unknown_item') return { status: 'unknown_item' };
+        if (data.code === 'not_room_owner') return { status: 'not_room_owner' };
+        if (typeof data.code === 'string' && data.code.length > 0) {
+          return { status: 'payment_failed' }; // known rejection — final
+        }
+        // 200 with an unrecognized body: outcome unknown → probe below.
+      } else if (res.status < 500) {
+        // 400 malformed, 401/403 auth, 404, 429 rate limit: final — the
+        // service wrote nothing (a re-tap retries).
+        return { status: 'payment_failed' };
+      }
+      // 5xx → unknown outcome → probe below.
+    }
+    const landed = await confirmStoreLanded(key).catch(() => null);
+    if (landed) return { status: 'ok', key, price: landed.price };
+  }
+  return { status: 'payment_failed' };
+}
+
+/**
+ * Grant with confirm (2026-10-29 store routing): run the grant write
+ * (retry once), then confirm by re-reading the node(s). A set that landed
+ * but reported a throw still counts via the confirm read — the
+ * ambiguous-write edge is closed: present grant = success, never a
+ * refund. Returns true when the grant is confirmed present.
+ */
+async function grantWithConfirm(
+  grant: () => Promise<void>,
+  confirm: () => Promise<boolean>,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await grant();
+    } catch {
+      // Fall through to the confirm read — the set may have landed.
+    }
+    try {
+      if (await confirm()) return true;
+    } catch {
+      // Confirm read failed — retry the grant once more.
+    }
+  }
+  return false;
 }
 
 export function isExpired(item: { expiresAt?: number } | null | undefined): boolean {
@@ -220,7 +387,7 @@ export type PurchaseResult = { success: boolean; error?: string };
 
 /**
  * Buy a PERSONAL store item with diamonds.
- * 1. Debit wallet atomically (InsufficientFundsError when short).
+ * 1. Debit via the wallet service endpoint (InsufficientFundsError when short).
  * 2. Grant into the type's inventory node (existing shape per type).
  * Does NOT auto-equip — the preview sheet offers Use after purchase.
  */
@@ -237,33 +404,50 @@ export async function purchaseStoreItem(
     if (!serverItem.type || serverItem.type !== item.type) {
       return { success: false, error: 'Item not available' };
     }
-    const price = serverItem.price;
     // Idempotent: already owned and not expired → success.
     const ownedSnap = await get(ref(database, `users/${uid}/${node}/${item.id}`));
     if (ownedSnap.exists()) {
       const owned = ownedSnap.val() as any;
       if (!isExpired(owned)) return { success: true };
     }
-    try {
-      await debitOwnWallet(uid, price);
-    } catch (e) {
-      if (e instanceof InsufficientFundsError) {
-        return { success: false, error: 'Not enough diamonds' };
-      }
+    const debit = await purchaseDebit(item.id, {});
+    if (debit.status === 'insufficient') {
+      return { success: false, error: 'Not enough diamonds' };
+    }
+    if (debit.status === 'unknown_item') {
+      return { success: false, error: 'Item not available' };
+    }
+    if (debit.status !== 'ok') {
       return { success: false, error: 'Payment failed. Try again.' };
     }
-    try {
-      await set(ref(database, `users/${uid}/${node}/${item.id}`), buildGrantRecord({
+    // Endpoint price wins for the grant record (catalog may have moved
+    // between the app's read and the debit).
+    const price = debit.price;
+    const grantNode = `users/${uid}/${node}/${item.id}`;
+    const granted = await grantWithConfirm(
+      () => set(ref(database, grantNode), buildGrantRecord({
         ...item,
         price,
         validityDays: serverItem.validityDays,
         name: serverItem.name || item.name,
         imageUrl: serverItem.imageUrl || item.imageUrl,
-      }));
-    } catch {
-      await refundOnGrantFailure(uid, price);
-      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
+      })),
+      async () => {
+        try {
+          const snap = await get(ref(database, grantNode));
+          return snap.exists();
+        } catch {
+          return false;
+        }
+      },
+    );
+    if (!granted) {
+      const refunded = await refundStorePurchase(debit.key);
+      return refunded
+        ? { success: false, error: 'Purchase failed. Your diamonds were refunded.' }
+        : { success: false, error: 'Payment failed. Try again.' };
     }
+    void notifyGrantComplete(debit.key, grantNode);
     return { success: true };
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };
@@ -289,19 +473,21 @@ export async function purchaseHandshakeForPair(
     if (!serverItem || serverItem.type !== 'micHandshake') {
       return { success: false, error: 'Item not available' };
     }
-    const price = serverItem.price;
-    try {
-      await debitOwnWallet(uid, price);
-    } catch (e) {
-      if (e instanceof InsufficientFundsError) {
-        return { success: false, error: 'Not enough diamonds' };
-      }
+    const debit = await purchaseDebit(item.id, { peerUid });
+    if (debit.status === 'insufficient') {
+      return { success: false, error: 'Not enough diamonds' };
+    }
+    if (debit.status === 'unknown_item') {
+      return { success: false, error: 'Item not available' };
+    }
+    if (debit.status !== 'ok') {
       return { success: false, error: 'Payment failed. Try again.' };
     }
     const now = Date.now();
     const pairKey = intimacyPairKey(uid, peerUid);
-    try {
-      await set(ref(database, `micHandshakes/${pairKey}`), {
+    const grantNode = `micHandshakes/${pairKey}`;
+    const granted = await grantWithConfirm(
+      () => set(ref(database, grantNode), {
         designKey: item.id,
         itemId: item.id,
         buyerUid: uid,
@@ -309,11 +495,24 @@ export async function purchaseHandshakeForPair(
         expiresAt: serverItem.validityDays > 0
           ? now + serverItem.validityDays * 86400000
           : 4102444800000, // 2100-01-01 — permanent
-      });
-    } catch {
-      await refundOnGrantFailure(uid, price);
-      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
+      }),
+      async () => {
+        try {
+          const snap = await get(ref(database, grantNode));
+          const v = snap.val() as any;
+          return !!v && v.buyerUid === uid && (v.designKey === item.id || v.itemId === item.id);
+        } catch {
+          return false;
+        }
+      },
+    );
+    if (!granted) {
+      const refunded = await refundStorePurchase(debit.key);
+      return refunded
+        ? { success: false, error: 'Purchase failed. Your diamonds were refunded.' }
+        : { success: false, error: 'Payment failed. Try again.' };
     }
+    void notifyGrantComplete(debit.key, grantNode);
     return { success: true };
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };
@@ -475,56 +674,89 @@ export async function purchaseRoomStoreItem(
   // SECURITY: use the SERVER price, never the client-provided one.
   const serverItem = await getServerCatalogItem(item.id);
   if (!serverItem) return { success: false, error: 'Item not available' };
-  const price = serverItem.price;
+  // Unknown type is a client routing error — it must NEVER debit first
+  // (the old code debited, then returned here with no grant and no refund).
+  if (item.type !== 'roomBackground' && item.type !== 'micDecor') {
+    return { success: false, error: 'Unknown room item type' };
+  }
   const validityDays = serverItem.validityDays;
   const srvName = serverItem.name || item.name;
   const srvImageUrl = serverItem.imageUrl || item.imageUrl;
   try {
-    try {
-      await debitOwnWallet(uid, price);
-    } catch (e) {
-      if (e instanceof InsufficientFundsError) {
-        return { success: false, error: 'Not enough diamonds' };
-      }
+    const debit = await purchaseDebit(item.id, { roomId });
+    if (debit.status === 'insufficient') {
+      return { success: false, error: 'Not enough diamonds' };
+    }
+    if (debit.status === 'unknown_item') {
+      return { success: false, error: 'Item not available' };
+    }
+    if (debit.status === 'not_room_owner') {
+      return { success: false, error: 'You can only buy this for your own room' };
+    }
+    if (debit.status !== 'ok') {
       return { success: false, error: 'Payment failed. Try again.' };
     }
     const expiresAt = validityDays > 0 ? Date.now() + validityDays * 86400_000 : undefined;
     const validity: 'permanent' | number = validityDays > 0 ? validityDays : 'permanent';
-    try {
-      if (item.type === 'roomBackground') {
-        await set(ref(database, `rooms/${roomId}/storeBackground`), {
-          itemId: item.id,
-          name: srvName,
-          imageUrl: srvImageUrl,
-          purchasedAt: Date.now(),
-          validity,
-          ...(expiresAt ? { expiresAt } : {}),
-        });
-      } else if (item.type === 'micDecor') {
-        const record = {
-          id: item.id,
-          name: srvName,
-          icon: srvImageUrl,
-          obtainedAt: Date.now(),
-          validity,
-          source: 'store',
-          ...(expiresAt ? { expiresAt } : {}),
-        };
-        await set(ref(database, `rooms/${roomId}/micDecors/${item.id}`), record);
-        await set(ref(database, `rooms/${roomId}/activeMicDecor`), {
-          itemId: item.id,
-          imageUrl: srvImageUrl,
-          name: srvName,
-          ...(expiresAt ? { expiresAt } : {}),
-        });
-      } else {
-        return { success: false, error: 'Unknown room item type' };
-      }
-    } catch {
-      // Charged but grant failed → refund so the user never loses diamonds.
-      await refundOnGrantFailure(uid, price);
-      return { success: false, error: 'Purchase failed. Your diamonds were refunded.' };
+    const isBg = item.type === 'roomBackground';
+    const grantNode = isBg
+      ? `rooms/${roomId}/storeBackground`
+      : `rooms/${roomId}/micDecors/${item.id}`;
+    const granted = await grantWithConfirm(
+      async () => {
+        if (isBg) {
+          await set(ref(database, `rooms/${roomId}/storeBackground`), {
+            itemId: item.id,
+            name: srvName,
+            imageUrl: srvImageUrl,
+            purchasedAt: Date.now(),
+            validity,
+            ...(expiresAt ? { expiresAt } : {}),
+          });
+        } else {
+          const record = {
+            id: item.id,
+            name: srvName,
+            icon: srvImageUrl,
+            obtainedAt: Date.now(),
+            validity,
+            source: 'store',
+            ...(expiresAt ? { expiresAt } : {}),
+          };
+          await set(ref(database, `rooms/${roomId}/micDecors/${item.id}`), record);
+          await set(ref(database, `rooms/${roomId}/activeMicDecor`), {
+            itemId: item.id,
+            imageUrl: srvImageUrl,
+            name: srvName,
+            ...(expiresAt ? { expiresAt } : {}),
+          });
+        }
+      },
+      async () => {
+        try {
+          if (isBg) {
+            const snap = await get(ref(database, `rooms/${roomId}/storeBackground`));
+            const v = snap.val() as any;
+            return !!v && v.itemId === item.id;
+          }
+          const [dSnap, aSnap] = await Promise.all([
+            get(ref(database, `rooms/${roomId}/micDecors/${item.id}`)),
+            get(ref(database, `rooms/${roomId}/activeMicDecor`)),
+          ]);
+          const a = aSnap.val() as any;
+          return dSnap.exists() && !!a && a.itemId === item.id;
+        } catch {
+          return false;
+        }
+      },
+    );
+    if (!granted) {
+      const refunded = await refundStorePurchase(debit.key);
+      return refunded
+        ? { success: false, error: 'Purchase failed. Your diamonds were refunded.' }
+        : { success: false, error: 'Payment failed. Try again.' };
     }
+    void notifyGrantComplete(debit.key, grantNode);
     return { success: true };
   } catch {
     return { success: false, error: 'Purchase failed. Try again.' };

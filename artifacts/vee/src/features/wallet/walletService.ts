@@ -90,7 +90,7 @@ async function authedFetch(
   return res;
 }
 
-async function authedWalletFetch(
+export async function authedWalletFetch(
   path: string,
   opts?: { method?: 'GET' | 'POST'; body?: unknown; timeoutMs?: number },
 ): Promise<Response> {
@@ -918,21 +918,4 @@ export function subscribeTransactionHistory(
   );
 }
 
-/**
- * Debit diamonds from own wallet via Firebase transaction (for self-gifts).
- * Uses a transaction for atomicity. Throws InsufficientFundsError if balance
- * is too low.
- */
-export async function debitOwnWallet(uid: string, amount: number): Promise<number> {
-  if (!uid || amount <= 0) throw new Error('Invalid debit parameters');
-  const balRef = ref(database, `wallets/${uid}/balance`);
-  const result = await runTransaction(balRef, (current) => {
-    const bal = typeof current === 'number' ? current : 0;
-    if (bal < amount) return; // abort transaction
-    return bal - amount;
-  });
-  if (!result.committed) {
-    throw new InsufficientFundsError('Insufficient diamonds');
-  }
-  return result.snapshot.val() as number;
-}
+
