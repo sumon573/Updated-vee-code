@@ -14,6 +14,7 @@
 
 import { ref, push, set, get, query, limitToLast, onChildAdded, onChildChanged, onChildRemoved } from 'firebase/database';
 import { database } from '@/src/config/firebase';
+import { subscribeEdgeRoomChat } from './edgeRoomChatService';
 
 export type RoomChatGift = {
   giftId: string;
@@ -95,12 +96,30 @@ export function subscribeRoomChat(
     if (snap.key) byId.delete(snap.key);
     schedule();
   });
+  // Cutover v1 (dormant until flagged): when the server flag is on for
+  // this room, ALSO merge edge-delivered messages through the same byId
+  // map. Same ids dedup; Firebase stays on as fallback, so the edge path
+  // can never lose a message. Flag unreadable -> edge stays off.
+  let edgeUnsub: (() => void) | null = null;
+  void (async () => {
+    try {
+      const [globalSnap, roomSnap] = await Promise.all([
+        get(ref(database, 'edge_config/enabled')),
+        get(ref(database, `edge_config/rooms/${roomId}`)),
+      ]);
+      if (globalSnap.val() !== true || roomSnap.val() !== true) return;
+      edgeUnsub = subscribeEdgeRoomChat(roomId, (msg) => upsert(msg.id, msg));
+    } catch (e) {
+      // Flag unreadable -> edge stays off. Firebase covers everything.
+    }
+  })();
   // Empty room: no child events ever fire — deliver [] once so the UI
   // doesn't sit in its initial state forever (onValue did this too).
   const emptyTimer = setTimeout(() => { if (!delivered) callback([]); }, 1200);
   return () => {
     if (flushTimer !== null) clearTimeout(flushTimer);
     clearTimeout(emptyTimer);
+    if (edgeUnsub) edgeUnsub();
     unsubAdd();
     unsubChange();
     unsubRemove();
