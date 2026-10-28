@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   subscribeWalletBalance,
   subscribeTransactionHistory,
@@ -118,6 +119,14 @@ function TransactionItem({ tx, last }: { tx: WalletTransaction; last?: boolean }
   );
 }
 
+// 2026-10-28 (boss: app-wide instant-load law) — cached-first wallet.
+// The balance + history render from the last-known values instantly; the
+// live subscriptions overwrite them when they deliver. The cache is
+// DISPLAY-ONLY: no spending decision anywhere reads this screen's state —
+// money truth stays Firebase via walletService.
+const walletBalanceCacheKey = (uid: string) => `vee_wallet_balance_v1:${uid}`;
+const walletTxsCacheKey = (uid: string) => `vee_wallet_txs_v1:${uid}`;
+
 export default function WalletScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -127,12 +136,23 @@ export default function WalletScreen() {
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [loadingTxs, setLoadingTxs] = useState(true);
 
-  // Subscribe to real-time balance
+  // Subscribe to real-time balance (cached-first: last-known balance
+  // renders instantly, live value overwrites it when it arrives).
   useEffect(() => {
     if (!user?.uid) return;
+    const key = walletBalanceCacheKey(user.uid);
+    AsyncStorage.getItem(key).then((raw) => {
+      if (raw == null) return;
+      const n = Number(raw);
+      if (!Number.isNaN(n)) {
+        setBalance(n);
+        setLoadingBalance(false);
+      }
+    }).catch(() => {});
     const unsub = subscribeWalletBalance(user.uid, (bal) => {
       setBalance(bal);
       setLoadingBalance(false);
+      AsyncStorage.setItem(key, String(bal)).catch(() => {});
     });
     // Offline safety: never spin the inline loader forever on a cold,
     // offline start. Same 3s timeout pattern as app/chat/index.tsx.
@@ -140,12 +160,24 @@ export default function WalletScreen() {
     return () => { clearTimeout(timeout); unsub(); };
   }, [user?.uid]);
 
-  // Subscribe to transaction history
+  // Subscribe to transaction history (cached-first, same pattern).
   useEffect(() => {
     if (!user?.uid) return;
+    const key = walletTxsCacheKey(user.uid);
+    AsyncStorage.getItem(key).then((raw) => {
+      if (raw == null) return;
+      try {
+        const parsed = JSON.parse(raw) as WalletTransaction[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTransactions(parsed);
+          setLoadingTxs(false);
+        }
+      } catch { /* cache best-effort */ }
+    }).catch(() => {});
     const unsub = subscribeTransactionHistory(user.uid, (txs) => {
       setTransactions(txs);
       setLoadingTxs(false);
+      AsyncStorage.setItem(key, JSON.stringify(txs.slice(0, 50))).catch(() => {});
     });
     // Offline safety: never spin the inline loader forever on a cold,
     // offline start. Same 3s timeout pattern as app/chat/index.tsx.

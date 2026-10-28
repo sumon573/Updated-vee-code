@@ -24,6 +24,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/src/context/AuthContext';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
@@ -803,6 +804,13 @@ function RoomAndKindPicker({
 }
 
 /* ═══════════ Main screen ═══════════ */
+// 2026-10-28 (boss: app-wide instant-load law) — cached-first store shelves.
+// Last-known catalog renders instantly; the fresh fetch overwrites it.
+// A failed fetch returns [] — that must NEVER wipe a good cache (an error
+// is not an empty shop). Ownership still loads live, per type, progressively
+// — one slow type no longer holds the whole screen hostage.
+const STORE_CATALOG_CACHE_KEY = 'vee_store_catalog_v1';
+
 export function ImoStoreScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
@@ -828,22 +836,42 @@ export function ImoStoreScreen() {
     if (!uid) return;
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      let shownItems: StoreCatalogItem[] = [];
+      // Cached-first: last-known shelves render instantly, no blank spinner.
+      try {
+        const raw = await AsyncStorage.getItem(STORE_CATALOG_CACHE_KEY);
+        if (!cancelled && raw) {
+          const parsed = JSON.parse(raw) as StoreCatalogItem[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            shownItems = parsed;
+            setCatalog(parsed);
+            setLoading(false);
+          }
+        }
+      } catch { /* cache best-effort */ }
+      if (shownItems.length === 0) setLoading(true);
       const items = await fetchStoreCatalog();
       if (cancelled) return;
-      setCatalog(items);
-      // Load ownership for personal types present in the catalog
-      const types = [...new Set(items.filter((i) => i.tab === 'personal').map((i) => i.type))];
-      const owned: Record<string, Record<string, OwnedStoreItem>> = {};
-      const equipped: Record<string, EquippedItem | null> = {};
+      if (items.length > 0) {
+        shownItems = items;
+        setCatalog(items);
+        AsyncStorage.setItem(STORE_CATALOG_CACHE_KEY, JSON.stringify(items)).catch(() => {});
+      } else if (shownItems.length === 0) {
+        // No cache and nothing fresh: honestly empty (not an error mask).
+        setCatalog([]);
+      }
+      // Ownership for the SHOWN shelves, per type, progressively — each
+      // type lands on its own and a single failure never blocks the rest.
+      const types = [...new Set(shownItems.filter((i) => i.tab === 'personal').map((i) => i.type))];
       await Promise.all(types.map(async (t) => {
-        const [o, e] = await Promise.all([getOwnedItems(uid, t as StoreItemType), getEquippedItem(uid, t as StoreItemType)]);
-        owned[t] = o;
-        equipped[t] = e;
+        try {
+          const [o, e] = await Promise.all([getOwnedItems(uid, t as StoreItemType), getEquippedItem(uid, t as StoreItemType)]);
+          if (cancelled) return;
+          setOwnedMap((prev) => ({ ...prev, [t]: o }));
+          setEquippedMap((prev) => ({ ...prev, [t]: e }));
+        } catch { /* one type failing must not block the others */ }
       }));
       if (cancelled) return;
-      setOwnedMap(owned);
-      setEquippedMap(equipped);
       setLoading(false);
     })();
     return () => { cancelled = true; };
