@@ -770,7 +770,6 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const winnerFood = round?.winningFood ?? (roundN != null ? results[String(roundN)]?.winningFood : undefined);
   // Seconds since betting closed (betting end is in the past during
   // overrun + settling, so this counts UP for the whole wait).
-  const overrunElapsed = round ? Math.max(0, Math.floor((now - round.endsAt) / 1000)) : 0;
   // HOT BADGE (boss 2026-10-26 02:12 + timing 02:15): the food with the
   // HIGHEST total confirmed bets in delicious/totals for THIS round —
   // a crowd signal so users can roughly guess, NEVER the drawn winner
@@ -1106,8 +1105,8 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
           {/* Centre circle: pizza + Round + countdown (preview hub:
               33% of wheel width at 50%/46% of the wheel box). The
               second line is NEVER a static '…': betting shows the
-              countdown, overrun/settling show a spinning ring + live
-              elapsed seconds counting UP, count shows the digit,
+              countdown, overrun/settling show a spinning ring only (no elapsed
+              seconds), count shows the digit,
               result shows "Result". */}
           <View style={{
             position: 'absolute', left: HUB_FRAC.x * WHEEL_W - CIRCLE / 2, top: HUB_FRAC.y * WHEEL_H - CIRCLE / 2,
@@ -1124,7 +1123,6 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 ) : phase === 'settling' || bettingOverrun ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#FFD43B', transform: [{ rotate: `${(spinTick * 27) % 360}deg` }] }} />
-                    <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginLeft: 6 }}>+{overrunElapsed}s</Text>
                   </View>
                 ) : phase === 'count' ? (
                   <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}>{countDigit}</Text>
@@ -1133,7 +1131,6 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#FFD43B', transform: [{ rotate: `${(spinTick * 27) % 360}deg` }] }} />
-                    <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontSize: 18, fontWeight: '800', marginLeft: 6 }}>+{overrunElapsed}s</Text>
                   </View>
                 )}
               </View>
@@ -1148,7 +1145,7 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
               "coming" text is removed everywhere). During the count
               the tile highlight decelerates and lands on the winner
               (see spinHighlight); the settling phase shows the
-              spinner + elapsed timer in the centre instead. */}
+              spinner in the centre instead (no elapsed timer). */}
           {countDigit != null && (
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: '#FFF', fontSize: 72, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 8 }}> {countDigit} </Text>
