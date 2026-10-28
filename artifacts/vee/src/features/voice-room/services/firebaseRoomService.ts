@@ -684,6 +684,36 @@ export function subscribeActiveRooms(
   });
 }
 
+/** Subscribe to private active rooms only (CDN-directory companion:
+ * the edge directory serves public rooms; private rooms still come from
+ * Firebase so they never touch a public CDN cache). */
+export function subscribePrivateActiveRooms(
+  callback: (rooms: RoomInfo[]) => void,
+  onError?: () => void,
+): () => void {
+  const privateRoomsQuery = query(
+    ref(database, 'rooms'),
+    orderByChild('info/isPublic'),
+    equalTo(false),
+  );
+  return onValue(privateRoomsQuery, (snap) => {
+    if (!snap.exists()) { callback([]); return; }
+    const rooms: RoomInfo[] = [];
+    snap.forEach((child) => {
+      const infoSnap = child.child('info');
+      if (infoSnap.exists()) {
+        const info = infoSnap.val() as RoomInfo;
+        if (info.active) rooms.push(info);
+      }
+    });
+    rooms.sort((a, b) => b.createdAt - a.createdAt);
+    callback(rooms);
+  }, () => {
+    if (onError) onError();
+    else callback([]);
+  });
+}
+
 /** Subscribe to a room's info. */
 export function subscribeRoomInfo(
   roomId: string,

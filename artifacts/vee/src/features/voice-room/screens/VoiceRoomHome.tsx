@@ -30,6 +30,7 @@ import { LeaderboardModal } from './LeaderboardModal';
 import {
   subscribeActiveRooms,
   subscribeMyRoomsCombined,
+  subscribePrivateActiveRooms,
   verifyRoomPin,
   setPinVerifiedForSession,
   type RoomInfo } from '../services/firebaseRoomService';
@@ -236,10 +237,56 @@ export default function VoiceRoomHome({
   const [allRooms,  setAllRooms]  = useState<RoomInfo[]>(() => cachedSeed?.allRooms ?? []);
   const [recLoading, setRecLoading] = useState(() => !cachedSeed);
 
+  // Phase D (CDN room directory, 2026-10-28): public rooms come from the
+  // edge (3s edge cache, 60s tier cache) instead of a full Firebase rooms
+  // query + 2 live subscriptions per room. Private rooms NEVER touch the
+  // public CDN — they still come from Firebase below. If the directory
+  // fails, the Firebase all-rooms feed is the fallback (directoryFailed
+  // flips the gate). Later poll failures keep the last good list.
+  const DIRECTORY_URL = 'https://vee-edge.sumon118858.workers.dev/rooms/directory';
+  const [directoryOk, setDirectoryOk] = useState(false);
+  const [directoryFailed, setDirectoryFailed] = useState(false);
+  const directoryRoomsRef = useRef<RoomInfo[]>([]);
+  const privateRoomsRef = useRef<RoomInfo[]>([]);
+  const directoryIdsRef = useRef<Set<string>>(new Set());
+  const directoryEverOkRef = useRef(false);
+  const mergeDirectoryRooms = useCallback((pub: RoomInfo[], priv: RoomInfo[]): RoomInfo[] => {
+    const seen = new Set<string>();
+    const merged: RoomInfo[] = [];
+    for (const r of [...pub, ...priv]) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      merged.push(r);
+    }
+    merged.sort((a, b) => b.createdAt - a.createdAt);
+    return merged;
+  }, []);
+  const normalizeDirectoryRoom = useCallback((raw: any): RoomInfo | null => {
+    if (!raw || typeof raw.id !== 'string') return null;
+    return {
+      ...(raw as RoomInfo),
+      id: raw.id,
+      memberPreviews: Array.isArray(raw.memberPreviews) ? raw.memberPreviews : [],
+      tags: Array.isArray(raw.tags) ? raw.tags : [],
+      memberCount: typeof raw.memberCount === 'number' ? raw.memberCount : 0,
+      listenerCount: typeof raw.listenerCount === 'number' ? raw.listenerCount : 0,
+      liveCount: typeof raw.liveCount === 'number' ? raw.liveCount : 0,
+      createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0,
+    } as RoomInfo;
+  }, []);
+  // Live-count subscriptions skip directory rooms: their info counts
+  // (memberCount + listenerCount = liveCount by sync-counts construction)
+  // are the displayed value via liveAudienceOf's fallback below.
+  const countRoomIds = useMemo(() => {
+    const dirIds = directoryIdsRef.current;
+    const rooms = directoryOk ? allRooms.filter((r) => !dirIds.has(r.id)) : allRooms;
+    return [...rooms, ...myRooms].map((r) => r.id);
+  }, [allRooms, myRooms, directoryOk]);
+
   // REAL-TIME live audience (2026-10-11 Issue #1): cached info counts can go
   // stale, so compute the true live count from actual seats+audience nodes.
   // Entering the room counts — seat NOT required.
-  const liveCounts = useLiveAudienceCounts([...allRooms, ...myRooms].map(r => r.id));
+  const liveCounts = useLiveAudienceCounts(countRoomIds);
   const liveAudienceOf = useCallback((r: RoomInfo): number => {
     const real = liveCounts[r.id];
     if (real !== undefined) return real;
@@ -444,8 +491,62 @@ export default function VoiceRoomHome({
     return unsub;
   }, [user?.uid, refreshTick]);
 
-  // Subscribe to all active public rooms
+  // Directory feed: public rooms from the edge. Polls every 30s; the
+  // tier serves its 60s cache, so origin load stays ~1 refresh/min no
+  // matter how many phones poll.
   useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const load = async () => {
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 5000);
+        const res = await fetch(DIRECTORY_URL, { signal: ctrl.signal });
+        clearTimeout(to);
+        if (!res.ok) throw new Error('directory ' + res.status);
+        const json = await res.json();
+        if (cancelled || !Array.isArray((json as any)?.rooms)) return;
+        const mapped = ((json as any).rooms as any[]).map(normalizeDirectoryRoom).filter((r): r is RoomInfo => r !== null);
+        mapped.sort((a, b) => b.createdAt - a.createdAt);
+        directoryRoomsRef.current = mapped;
+        directoryIdsRef.current = new Set(mapped.map((r) => r.id));
+        directoryEverOkRef.current = true;
+        const merged = mergeDirectoryRooms(mapped, privateRoomsRef.current);
+        recLiveRef.current = true;
+        setAllRooms(merged);
+        setRecLoading(false);
+        setDirectoryOk(true);
+        cacheRooms(user?.uid ?? '', myRoomsRef.current, merged);
+        finishRefresh();
+      } catch {
+        if (!cancelled && !directoryEverOkRef.current) setDirectoryFailed(true);
+      }
+    };
+    load();
+    timer = setInterval(load, 30000);
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
+
+  // Private rooms in directory mode (never on the public CDN).
+  useEffect(() => {
+    if (!directoryOk) return;
+    const unsub = subscribePrivateActiveRooms((rooms) => {
+      privateRoomsRef.current = rooms;
+      const merged = mergeDirectoryRooms(directoryRoomsRef.current, rooms);
+      setAllRooms(merged);
+      cacheRooms(user?.uid ?? '', myRoomsRef.current, merged);
+    }, () => {
+      // Feed error: keep the last list, never wipe.
+    });
+    return unsub;
+  }, [directoryOk]);
+
+  // Subscribe to all active public rooms (fallback: runs only while the
+  // directory has neither succeeded nor failed yet — i.e. never once the
+  // directory is up, and always when it is down).
+  useEffect(() => {
+    if (directoryOk || !directoryFailed) return;
     const unsub = subscribeActiveRooms((rooms) => {
       recLiveRef.current = true;
       setAllRooms(rooms);
@@ -459,7 +560,7 @@ export default function VoiceRoomHome({
       finishRefresh();
     });
     return unsub;
-  }, [refreshTick]);
+  }, [refreshTick, directoryOk, directoryFailed]);
 
   // Fix 6: Request location permission when "Nearby" tab is selected
   useEffect(() => {
