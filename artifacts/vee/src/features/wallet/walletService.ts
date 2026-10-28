@@ -1,13 +1,21 @@
 /**
- * Wallet Service — Firebase Realtime Database (reads) + api-server (writes)
+ * Wallet Service — Firebase Realtime Database (reads) + VPS services (writes)
  *
- * Server contracts (api-server):
+ * Server contracts (api-server, /api prefix via authedFetch):
  *   POST /api/wallet/init       → { ok, balance, created }
  *     (uid is derived from the ID token — always inits the caller's own wallet)
- *   POST /api/wallet/send-gift  → { ok, newBalance, receipt }
- *     body: { toUid, giftId, idempotencyKey }
- *     400 (insufficient) → { ok: false, error }
  *   GET  /api/wallet/balance    → { balance }
+ * Server contracts (dedicated wallet service, /wallet prefix via
+ * authedWalletFetch — exposed publicly only through the Caddy /wallet/*
+ * route; the service itself is loopback-only on the VPS):
+ *   POST /wallet/gift/send      → { ok, newBalance, price, ... }
+ *     body: { toUid, giftId, idempotencyKey } — NO client price; the
+ *     service looks the price up from gift_catalog server-side.
+ *     200 business outcomes: applied, replayed, insufficient,
+ *     unknown_gift, self_gift_denied. 400 malformed, 401 bad token,
+ *     429 rate limit, 5xx server faults only.
+ *   GET  /wallet/gift/status?idempotencyKey=… → { landed, newBalance }
+ *     (sender-scoped: only the caller's own rows are ever reported)
  * Auth: Authorization: Bearer <firebase id token>, base URL from
  * getApiBase() in src/utils/platform.ts.
  *
@@ -19,9 +27,13 @@
  *
  * SECURITY: balance/weeklyEarned/transactions can no longer be written
  * directly by the client — Firebase rules reject those writes outright.
- * All mutations go through the api-server (/wallet/init, /wallet/send-gift),
- * which verifies the caller's Firebase ID token and uses the Admin SDK to
- * make the change. This prevents a client from ever setting its own balance.
+ * All mutations go through VPS services that verify the caller's Firebase
+ * ID token server-side. Gift sends go to the dedicated wallet service
+ * (Postgres ledger, one tx per gift) — NEVER to Firebase directly.
+ * The old Firebase-direct gift fallback was DELETED 2026-10-29: it broke
+ * the one-writer law by design (Postgres vs Firebase balances diverged
+ * on every gift-active wallet). This prevents a client from ever setting
+ * its own balance.
  */
 
 import * as Crypto from 'expo-crypto';
@@ -69,6 +81,46 @@ async function authedFetch(
   let res = await doFetch(false);
   if (res.status === 401 || res.status === 403) {
     // Token was stale — force refresh and retry once
+    try {
+      res = await doFetch(true);
+    } catch {
+      // Retry failed — return the original 401/403 response
+    }
+  }
+  return res;
+}
+
+async function authedWalletFetch(
+  path: string,
+  opts?: { method?: 'GET' | 'POST'; body?: unknown; timeoutMs?: number },
+): Promise<Response> {
+  // 2026-10-29 (gift routing): same ID-token auth + 401-refresh retry as
+  // authedFetch, but against the DEDICATED wallet service (Caddy /wallet/*
+  // route) instead of the :3001 api-server (/api prefix). The wallet
+  // service must never share the general API's deploy/failure blast radius.
+  const user = auth.currentUser;
+  if (!user) throw new GiftError('Not signed in');
+  const doFetch = async (forceRefresh: boolean): Promise<Response> => {
+    const idToken = await user.getIdToken(forceRefresh);
+    const timeoutMs = opts?.timeoutMs ?? 15000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(`${getApiBase()}${path}`, {
+        method: opts?.method ?? 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  let res = await doFetch(false);
+  if (res.status === 401 || res.status === 403) {
     try {
       res = await doFetch(true);
     } catch {
@@ -183,7 +235,9 @@ export type SendGiftArgs = {
   toName?: string;
   /** Recipient's photo URL (for the weekly leaderboard; optional) */
   toPhotoURL?: string;
-  /** Price in diamonds (from server catalog) — server is source of truth */
+  /** Price in diamonds the user saw (from server catalog) — used ONLY
+   * for local bookkeeping; the wallet service looks up the authoritative
+   * price server-side and never accepts this value. */
   price?: number;
   /** Room the gift was sent in (for the weekly Top Rooms board; optional) */
   roomId?: string;
@@ -323,9 +377,12 @@ export function subscribeWalletBalance(
  *
  * Gift prices: 1=10, 2=25, 3=50, 4=100, 5=200, 6=500, 7=1000, 8=2000
  */
-/** Gift catalog prices (diamonds). Module-level so both the Firebase
- * fallback and the server-ok path in sendGift() can resolve the price
- * (P1-1, 2026-10-12: Noble XP must accrue on the server gift path too). */
+/** Gift catalog prices (diamonds). Module-level so sendGift() bookkeeping
+ * (noble/level XP, leaderboards) can resolve the price when the server
+ * response carries none (probe-landed path). The wallet service's price
+ * is authoritative — this map is only a bookkeeping fallback, never a
+ * charge amount. (P1-1, 2026-10-12: Noble XP must accrue on the server
+ * gift path too). */
 // 2026-10-16 (Sumon): Premium + Luxury gifts added
 const GIFT_PRICES: Record<string, number> = {
   '1': 10, '2': 25, '3': 50, '4': 100,
@@ -542,351 +599,36 @@ export async function healGiftCounts(uid: string): Promise<void> {
   }
 }
 
-async function sendGiftViaFirebase(
-  toUid: string,
-  giftId: string,
-  idempotencyKey: string,
-  toName?: string,
-  toPhotoURL?: string,
-  priceOverride?: number,
-  roomId?: string,
-  seatedSender?: boolean,
-): Promise<SendGiftResult> {
-  const { auth } = await import('@/src/config/firebase');
-  const { ref, runTransaction, push, set, update, serverTimestamp, get, increment } = await import('firebase/database');
-  const { database } = await import('@/src/config/firebase');
-
-  const fromUid = auth.currentUser?.uid;
-  if (!fromUid) throw new GiftError('Not authenticated');
-
-  // 2026-10-17 (Sumon): Force-refresh auth token before gift transaction.
-  // Expired tokens cause "Wallet access denied" — refresh proactively.
-  try {
-    await auth.currentUser?.getIdToken(true);
-  } catch {
-    // Non-critical: proceed with existing token, transaction will fail clearly if invalid
-  }
-
-  // 2026-10-16 (Sumon): PERMANENT — use server-provided price for server-driven gifts.
-  // Falls back to hardcoded GIFT_PRICES for legacy gifts. This enables unlimited
-  // server-driven gifts without app builds.
-  const price = priceOverride ?? GIFT_PRICES[giftId];
-  if (!price) throw new GiftError('Invalid gift');
-
-  // PLATFORM COMMISSION: 60% platform fee on gifts (raised from 30% by
-  // Sumon's order 2026-10-24 — recipient 40% / platform 60%, matching the
-  // api-server's split). Sender pays full price; recipient receives 40%.
-  // Example: 10 diamond gift → recipient gets 4, platform keeps 6.
-  const PLATFORM_COMMISSION_RATE = 0.60;
-  const recipientAmount = Math.floor(price * (1 - PLATFORM_COMMISSION_RATE));
-  const platformCommission = price - recipientAmount;
-
-  const coerceBalance = (current: unknown): number => {
-    if (typeof current === 'number') return current;
-    if (typeof current === 'string') return parseFloat(current) || 0;
-    return 0;
-  };
-
-  // Step 0: Idempotency — ATOMICALLY claim this key BEFORE debiting.
-  // 2026-10-12 audit fix (CRITICAL): the old code only READ the claim here
-  // and WROTE it at Step 3 (after debit). Two concurrent invocations could
-  // both pass the read → both debit → double-charge. Now: runTransaction
-  // claims the key atomically; if already claimed, return the replayed result.
-  const claimRef = ref(database, `giftFallbackTx/${idempotencyKey}`);
-  const claimResult = await runTransaction(claimRef, (current) => {
-    if (current !== null) return; // Already claimed — abort, replay below
-    // Claim it: mark as in-progress. newBalance filled at Step 3.
-    return { fromUid, toUid, giftId, price, status: 'processing', ts: Date.now() };
-  }).catch(() => null);
-  if (claimResult && !claimResult.committed) {
-    // Key was already claimed — fetch the record and replay.
-    try {
-      const existing = await get(claimRef);
-      if (existing.exists()) {
-        const rec = existing.val() as { fromUid?: string; newBalance?: number; status?: string };
-        if (rec.fromUid === fromUid) {
-          return {
-            ok: true,
-            newBalance: typeof rec.newBalance === 'number' ? rec.newBalance : 0,
-            receipt: { via: 'firebase-direct', giftId, price, replayed: true },
-          };
-        }
-      }
-    } catch {
-      // Read failed — fall through to GiftError below
-    }
-    throw new GiftError('Gift already processing');
-  }
-  if (!claimResult) {
-    // Transaction itself failed (offline?) — cannot safely proceed.
-    throw new GiftError('Cannot verify gift status, please retry');
-  }
-
-  // Step 1: Decrement sender's balance (atomic, validated by rules:
-  // own balance may only DECREASE by a valid gift price).
-  const senderBalRef = ref(database, `wallets/${fromUid}/balance`);
-  const attemptDebit = () =>
-    runTransaction(senderBalRef, (current) => {
-      const bal = coerceBalance(current);
-      if (bal < price) return; // Abort — insufficient funds
-      return bal - price;
-    });
-  let senderResult;
-  try {
-    senderResult = await attemptDebit();
-  } catch (e) {
-    // 2026-10-12 audit fix (M3): distinguish transport/permission failures
-    // from true insufficient funds. If the debit may have committed
-    // server-side but the client saw a network error, a blind retry could
-    // double-charge (C1 is fixed, but the UX must not lie).
-    const msg = e instanceof Error ? e.message : '';
-    if (/permission|denied/i.test(msg)) {
-      // 2026-10-24 PERMANENT FIX (boss: never again): a permission denial
-      // here is almost never "not logged in" — it is a stale RTDB auth
-      // token race (or, before the 2026-10-24 rules patch, a gift price
-      // the rules didn't list). A permission rejection commits NOTHING,
-      // so retrying cannot double-charge. Refresh + settle (RTDB re-auth)
-      // + retry once. If it still denies, say so truthfully — never tell
-      // a signed-in user to "re-login" for a rules/transient failure.
-      try {
-        await auth.currentUser?.getIdToken(true);
-        await new Promise((r) => setTimeout(r, 500));
-        senderResult = await attemptDebit();
-      } catch (e2) {
-        const msg2 = e2 instanceof Error ? e2.message : '';
-        if (/permission|denied/i.test(msg2)) {
-          throw new GiftError('Gift failed — please try again');
-        }
-        if (/network|timeout|unavailable|offline/i.test(msg2)) {
-          throw new GiftError('Network error — check your balance before retrying');
-        }
-        throw new InsufficientFundsError('Not enough diamonds');
-      }
-    } else if (/network|timeout|unavailable|offline/i.test(msg)) {
-      throw new GiftError('Network error — check your balance before retrying');
-    } else {
-      throw new InsufficientFundsError('Not enough diamonds');
-    }
-  }
-  if (!senderResult.committed) {
-    throw new InsufficientFundsError('Not enough diamonds');
-  }
-  const newBalance = coerceBalance(senderResult.snapshot.val());
-
-  // Step 2: Increment recipient's balance (skip for self-gifts, net-zero).
-  // FIX (2026-10-10): Use server-side increment() instead of runTransaction.
-  // runTransaction must READ the current value first, but wallets/$uid/.read
-  // is owner-only → cross-user gifts always failed with PERMISSION_DENIED
-  // ("Could not send gift"), while self-gifts worked (own wallet readable).
-  // increment() is applied server-side: no read permission needed, atomic
-  // under concurrency, and validated by the existing .write rule (existing
-  // balance must grow by exactly a gift price; missing balance is created
-  // with exactly the gift price).
-  // 2026-10-24 PERMANENT FIX: skip a zero-credit (price-1 gifts floor to
-  // 40% = 0; increment(0) is rejected by the rules' increase branch, which
-  // would falsely fail the gift and break the refund).
-  if (toUid !== fromUid && recipientAmount > 0) {
-    const recipientBalRef = ref(database, `wallets/${toUid}/balance`);
-    try {
-      // Recipient receives 40% (platform keeps 60% commission)
-      await set(recipientBalRef, increment(recipientAmount));
-    } catch {
-      // Recipient credit failed — refund sender (best effort)
-      await runTransaction(senderBalRef, (current) => {
-        return coerceBalance(current) + price;
-      }).catch(() => {});
-      throw new GiftError('Failed to credit recipient');
-    }
-    // Record platform commission (best effort — gift already completed)
-    try {
-      const commissionRef = ref(database, `platformRevenue/giftCommission`);
-      await set(commissionRef, increment(platformCommission));
-    } catch {
-      // Commission tracking failed — gift stands; revenue record lost
-    }
-  } else {
-    // Self-gift (admin-only since 2026-10-24) returns the recipient share
-    // (40%; commission deducted). Net loss = the 60% commission.
-    try {
-      await set(senderBalRef, increment(recipientAmount));
-    } catch {
-      // Self-credit failed — the debit stands; user lost full price.
-      // Log but don't throw (gift was "sent" to self).
-    }
-    // Record platform commission on self-gifts too
-    try {
-      const commissionRef = ref(database, `platformRevenue/giftCommission`);
-      await set(commissionRef, increment(platformCommission));
-    } catch {
-      // Non-critical
-    }
-  }
-
-  // Step 3: Finalize idempotency record (claim was written at Step 0).
-  try {
-    await set(claimRef, {
-      fromUid, toUid, giftId, price,
-      status: 'completed',
-      ts: Date.now(),
-      createdAt: serverTimestamp(),
-      newBalance,
-    });
-  } catch {
-    // Non-critical — the gift completed; a retry will replay via Step 0.
-  }
-
-  // Step 3b (NOTE 10, 2026-10-11): Nobel XP — diamonds sent as gifts count
-  // toward the sender's noble rank. Self-gifts are EXCLUDED (anti-farming).
-  // Idempotent: replayed gifts return early at Step 0, so this runs exactly
-  // once per idempotency key. Atomic under concurrency (runTransaction in
-  // recordNobleXP). Non-critical — the gift itself already completed.
-  // 2026-10-19 perf: FIRE-AND-FORGET — the gift already completed; XP writes
-  // must not serialize behind (or block) the gift UI's return.
-  if (toUid !== fromUid) {
-    import('@/src/services/nobleService').then(({ recordNobleXP }) =>
-      recordNobleXP(fromUid, price).catch(() => {
-        // XP write failed — gift stands; noble progress for this gift is lost.
-      }),
-    ).catch(() => {});
-    // 2026-10-16 (Sumon): Record level XP (permanent, server-stored).
-    // 1 XP per diamond sent. Very slow progression; Gold slowest.
-    import('@/src/services/levelService').then(({ recordLevelXP }) =>
-      recordLevelXP(fromUid, price).catch(() => {
-        // Level XP failed — non-critical.
-      }),
-    ).catch(() => {});
-  }
-
-  // Step 4: Write transaction history (best effort, fire-and-forget).
-  // 2026-10-19 perf: one atomic multi-path update instead of two sequential
-  // sets, and not awaited — history must never block the gift UI.
-  {
-    const timestamp = Date.now();
-    const senderTxKey = push(ref(database, `wallets/${fromUid}/transactions`)).key ?? `tx_${timestamp}`;
-    const historyUpdates: Record<string, unknown> = {
-      [`wallets/${fromUid}/transactions/${senderTxKey}`]: {
-        type: 'gift_sent',
-        diamonds: -price,
-        toUid,
-        giftId,
-        timestamp,
-        createdAt: serverTimestamp(),
-      },
-    };
-    if (toUid !== fromUid) {
-      const recipientTxKey = push(ref(database, `wallets/${toUid}/transactions`)).key ?? `tx_${timestamp}_r`;
-      historyUpdates[`wallets/${toUid}/transactions/${recipientTxKey}`] = {
-        type: 'gift_received',
-        diamonds: recipientAmount,
-        fromUid,
-        giftId,
-        timestamp,
-        createdAt: serverTimestamp(),
-        // Platform commission info (for transparency)
-        originalPrice: price,
-        platformCommission,
-      };
-    }
-    update(ref(database), historyUpdates).catch(() => {
-      // History write failed — gift already completed, don't fail
-    });
-    // 2026-10-15 (Sumon): permanent lifetime gift count (self-gifts excluded).
-    if (toUid !== fromUid) {
-      recordGiftReceivedCount(toUid, giftId).catch(() => {});
-    }
-  }
-
-  // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
-  // 2026-10-19 perf: not awaited — must not block the gift UI.
-  {
-    const me = auth.currentUser;
-    if (me && toUid !== fromUid) {
-      recordWeeklyLeaderboardStats({
-        fromUid,
-        toUid,
-        price,
-        recipientAmount,
-        senderName: me.displayName,
-        senderPhotoURL: me.photoURL,
-        receiverName: toName,
-        receiverPhotoURL: toPhotoURL,
-      }).catch(() => {
-        // Non-critical
-      });
-    }
-  }
-
-  // Weekly Top Rooms stat (fallback path) — self-gifts count for rooms.
-  if (roomId) {
-    recordWeeklyRoomGiftStat({ roomId, price: price ?? 0 }).catch(() => {});
-  }
-
-  // 2026-10-19 (IMO intimacy port): fire-and-forget intimacy on the fallback
-  // path too. Self-gifts excluded (anti-farming).
-  {
-    const me = auth.currentUser;
-    if (me && toUid !== fromUid && price > 0) {
-      import('@/src/features/voice-room/services/intimacyService').then(({ recordIntimacy }) =>
-        recordIntimacy(fromUid, toUid, price).catch(() => {}),
-      ).catch(() => {});
-    }
-  }
-
-  // Builder D (2026-10-26): couple hearts, fallback path — beside
-  // recordIntimacy above, so exactly one path bumps per gift (replayed
-  // gifts return early at the Step 0 claim, before reaching here).
-  // Fire-and-forget; seatedSender === true required, same as server path.
-  {
-    const me = auth.currentUser;
-    if (me && toUid !== fromUid && price > 0 && seatedSender === true) {
-      import('@/src/features/intimacy/coupleService').then(({ bumpCoupleHeartsForGift }) =>
-        bumpCoupleHeartsForGift({
-          senderUid: fromUid, recipientUid: toUid,
-          diamonds: price, seatedSender: true,
-        }).catch(() => {}),
-      ).catch(() => {});
-    }
-  }
-
-  return { ok: true, newBalance, receipt: { via: 'firebase-direct', giftId, price } };
-}
-
 /**
- * Double-debit guard (2026-10-22 audit): after a timeout/abort or a 5xx,
- * the server outcome is UNKNOWN — it may have committed the debit while
- * its response was lost. The api-server pushes the sender transaction
- * (carrying this idempotencyKey) only AFTER the debit commits, and the
- * sender can read their own wallet history. Finding that entry proves the
- * charge landed — the Firebase fallback must NOT run. Returns the
- * post-charge balance when confirmed, null when no trace appears within
- * ~4 s (server never got there → fallback is safe).
+ * Ledger probe (2026-10-29 gift routing): after a timeout/abort or a 5xx,
+ * the gift outcome is UNKNOWN — the wallet service may have committed the
+ * charge while its response was lost. The service's probe endpoint reads
+ * the Postgres ledger directly for this idempotency key (sender-scoped:
+ * it only reports rows belonging to the caller's own uid). Finding a
+ * landed row proves the charge — the app must NOT re-send with a fresh
+ * key. Returns the post-charge balance when confirmed, null when no row
+ * appears within ~4 s. NEVER falls back to a direct Firebase wallet write.
  */
-async function confirmServerGiftLanded(
+async function confirmGiftLanded(
   idempotencyKey: string,
 ): Promise<{ newBalance: number } | null> {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return null;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const snap = await get(
-        query(ref(database, `wallets/${uid}/transactions`), orderByKey(), limitToLast(25)),
+      const res = await authedWalletFetch(
+        `/wallet/gift/status?idempotencyKey=${encodeURIComponent(idempotencyKey)}`,
+        { method: 'GET', timeoutMs: 5000 },
       );
-      let found = false;
-      if (snap.exists()) {
-        snap.forEach((child) => {
-          const tx = child.val() as { type?: string; idempotencyKey?: string } | null;
-          if (tx?.type === 'gift_sent' && tx?.idempotencyKey === idempotencyKey) {
-            found = true;
-          }
-        });
-      }
-      if (found) {
-        const balSnap = await get(ref(database, `wallets/${uid}/balance`));
-        const bal = balSnap.val();
-        return { newBalance: typeof bal === 'number' ? bal : 0 };
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          landed?: boolean;
+          newBalance?: number;
+        };
+        if (data.landed) {
+          return { newBalance: typeof data.newBalance === 'number' ? data.newBalance : 0 };
+        }
       }
     } catch {
-      // Read failed (offline/rules) — keep polling briefly; a miss after
+      // Probe failed (offline/timeout) — keep polling briefly; a miss after
       // the full window is treated as "not landed" by the caller.
     }
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1000));
@@ -943,13 +685,13 @@ export async function sendGift({
   // XP, gift counts, weekly boards, intimacy) — runs exactly once per gift,
   // whether the success came back in the HTTP response or was confirmed
   // afterwards by the double-debit guard.
-  const handleServerSuccess = (newBalance: number, receipt: unknown): SendGiftResult => {
+  const handleServerSuccess = (newBalance: number, receipt: unknown, priceOverride?: number): SendGiftResult => {
     // P1-1 (2026-10-12): Noble XP on the PRIMARY (VPS) gift path too.
     // The fallback path is mutually exclusive, so this runs exactly once
     // per gift. Self-gifts excluded (anti-farming), mirroring the fallback.
     const serverFromUid = auth.currentUser?.uid;
     // 2026-10-16 (Sumon): PERMANENT — use actual price (server-driven) for XP, not hardcoded map
-    const serverPrice = price ?? GIFT_PRICES[giftId];
+    const serverPrice = priceOverride ?? price ?? GIFT_PRICES[giftId];
     if (serverFromUid && serverPrice && toUid !== serverFromUid) {
       // 2026-10-19 perf: FIRE-AND-FORGET bookkeeping — the gift already
       // completed on the server; XP/leaderboard writes must not serialize
@@ -1017,89 +759,80 @@ export async function sendGift({
   };
 
 
-  // PRIMARY: VPS api-server (secure, atomic, server-authoritative catalog).
-  // On ANY failure the Firebase-direct fallback below takes over — the server
-  // is known-unreliable (no auto-deploy, reboot-fragile), so a narrow
-  // fallback trigger silently dropped real gifts.
-  // EXCEPTION: HTTP 202 "still processing" is never fallen back on — the
-  // server may still complete the charge and a fallback would double-debit.
-  let res: Response | null = null;
-  try {
-    const serverBody: Record<string, unknown> = { toUid, giftId, idempotencyKey: key };
-    // 2026-10-16 (Sumon): Server catalog is source of truth for price.
-    // Pass the server price so VPS charges exactly what user saw.
-    if (price !== undefined) serverBody.price = price;
-    res = await authedFetch('/wallet/send-gift', {
-      method: 'POST',
-      body: serverBody,
-      // 2026-10-21: the api-server's send-gift has a record of hanging —
-      // cap the wait at 6 s, then the Firebase fallback below takes over
-      // (protected by the same idempotency key), instead of the gift
-      // sitting frozen for the OS network timeout.
-      timeoutMs: 6000,
-    });
-  } catch (e) {
-    // Network failure / 6s abort — res stays null. The outcome is UNKNOWN
-    // (the server may still commit the charge), so the guard below checks
-    // for a landed debit before any fallback. Log the real cause with the
-    // idempotency key — never swallow it silently.
-    console.warn(
-      '[wallet] send-gift primary failed',
-      key,
-      (e as Error)?.name ?? '',
-      (e as Error)?.message ?? String(e),
-    );
-  }
-
-  if (res && res.status === 202) {
-    // Server is still processing a claimed key — do NOT fall back.
-    // (Checked before res.ok because Response.ok is true for 202.)
-    throw new GiftError('Gift still processing, please retry');
-  }
-  if (res && res.ok) {
-    const data = (await res.json().catch(() => ({}))) as {
-      ok?: boolean;
-      newBalance?: number;
-      receipt?: unknown;
-    };
-    if (data.ok) {
-      return handleServerSuccess(
-        typeof data.newBalance === 'number' ? data.newBalance : 0,
-        data.receipt,
+  // GIFT ROUTING (2026-10-29): the ONLY money path is the dedicated wallet
+  // service (Postgres ledger, one tx per gift). The old Firebase-direct
+  // fallback is DELETED — it broke the one-writer law (H1) by design.
+  // Unknown outcomes (network failure/abort → res null, 5xx, or a 200 with
+  // an unrecognized body) are resolved by probing the ledger with the SAME
+  // key, then retrying the POST with the SAME key (up to 2 more attempts,
+  // each followed by a probe). A committed gift is visible to the probe
+  // immediately, so a re-tap after all retries fail is safe — the probe
+  // proved the key never landed. FINAL outcomes (insufficient /
+  // unknown_gift / self_gift_denied / malformed / auth) are never retried:
+  // the tx rolled back and wrote no rows.
+  const attemptSend = async (): Promise<Response | null> => {
+    try {
+      return await authedWalletFetch('/wallet/gift/send', {
+        method: 'POST',
+        body: { toUid, giftId, idempotencyKey: key },
+        // 2026-10-21: cap the wait at 6 s (unchanged from the old primary) —
+        // a hung service must never freeze the gift UI.
+        timeoutMs: 6000,
+      });
+    } catch (e) {
+      console.warn(
+        '[wallet] wallet gift send failed',
+        key,
+        (e as Error)?.name ?? '',
+        (e as Error)?.message ?? String(e),
       );
+      return null;
     }
-    // 200-but-not-ok: the server PROCESSED the request (charged or rejected).
-    // 2026-10-12 audit fix (HIGH): do NOT fall through to Firebase fallback —
-    // the server may have charged already; fallback would double-charge.
-    // Surface the server's failure instead.
-    throw new GiftError('Gift failed on server, please retry');
-  }
-  // DOUBLE-DEBIT GUARD (2026-10-22 audit): when the primary outcome is
-  // UNKNOWN (network failure/abort → res null, or a 5xx), first confirm
-  // the server did NOT already land the debit. If its sender-transaction
-  // record is found, the gift succeeded server-side — run the normal
-  // success bookkeeping and return WITHOUT the fallback debit.
-  if (res === null || res.status >= 500) {
-    const landed = await confirmServerGiftLanded(key).catch(() => null);
+  };
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await attemptSend();
+    if (res) {
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          newBalance?: number;
+          price?: number;
+          code?: string;
+          error?: string;
+        };
+        if (data.ok) {
+          return handleServerSuccess(
+            typeof data.newBalance === 'number' ? data.newBalance : 0,
+            { via: 'wallet-service', giftId, price: data.price },
+            typeof data.price === 'number' ? data.price : undefined,
+          );
+        }
+        if (data.code === 'insufficient') throw new InsufficientFundsError('Insufficient diamonds');
+        if (typeof data.code === 'string' && data.code.length > 0) {
+          // Known business rejection — final, nothing was charged.
+          throw new GiftError(data.error ?? 'Gift failed on server, please retry');
+        }
+        // 200 with an unrecognized body: outcome unknown → probe below.
+      } else if (res.status === 429) {
+        throw new GiftError('Sending too fast — please wait a moment and try again');
+      } else if (res.status < 500) {
+        // Decided rejections (400 malformed, 401/403 auth, 404): final,
+        // the service wrote nothing.
+        throw new GiftError('Gift failed on server, please retry');
+      }
+      // 5xx → unknown outcome → probe below.
+    }
+    // Unknown outcome (null res, 5xx, or unrecognized 200 body): probe the
+    // ledger before any retry. A landed row means the gift succeeded.
+    const landed = await confirmGiftLanded(key).catch(() => null);
     if (landed) {
-      console.warn('[wallet] send-gift confirmed landed server-side after unknown outcome', key);
-      return handleServerSuccess(landed.newBalance, { via: 'server', giftId, price });
+      console.warn('[wallet] gift confirmed landed after unknown outcome', key);
+      return handleServerSuccess(landed.newBalance, { via: 'wallet-service', giftId, price });
     }
+    // Not landed — loop retries the POST with the SAME key.
   }
-  // Server rejected (4xx) or confirmed-not-landed → Firebase fallback is
-  // safe (a 4xx is decided before any claim/charge; the guard above found
-  // no landed debit for the unknown cases).
-  // InsufficientFundsError vs GiftError distinction is preserved: the
-  // fallback throws InsufficientFundsError when the balance is truly low.
-  try {
-    const fbResult = await sendGiftViaFirebase(toUid, giftId, key, toName, toPhotoURL, price, roomId, seatedSender);
-    if (fbResult.ok) return fbResult;
-  } catch (e) {
-    // Firebase fallback also failed — surface the meaningful error.
-    if (e instanceof InsufficientFundsError || e instanceof GiftError) throw e;
-    throw new GiftError(e instanceof Error ? e.message : 'Gift send failed');
-  }
-  throw new GiftError('Gift send failed');
+  throw new NetworkError('Gift status unknown — check your balance before retrying');
 }
 
 /**

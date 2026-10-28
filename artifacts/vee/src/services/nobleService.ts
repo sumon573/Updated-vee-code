@@ -2,7 +2,7 @@
  * Noble (Nobel) service — NOTE 10 (2026-10-11).
  *
  * Noble XP grows ONLY from real diamonds sent as gifts in voice rooms
- * (hooked in walletService.sendGiftViaFirebase). Self-gifts do NOT count
+ * (hooked in walletService.sendGift). Self-gifts do NOT count
  * (anti-farming).
  *
  * Data model — users/{uid}/noble (single node, updated in ONE atomic
