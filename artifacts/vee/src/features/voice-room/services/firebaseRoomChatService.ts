@@ -99,15 +99,19 @@ export function subscribeRoomChat(
   // Cutover v1 (dormant until flagged): when the server flag is on for
   // this room, ALSO merge edge-delivered messages through the same byId
   // map. Same ids dedup; Firebase stays on as fallback, so the edge path
-  // can never lose a message. Flag unreadable -> edge stays off.
+  // can never lose a message. Flags come from the VPS tier (which reads
+  // edge_config via Admin SDK) — NOT from RTDB, so no live-rules change
+  // is needed. Flag unreadable -> edge stays off.
   let edgeUnsub: (() => void) | null = null;
   void (async () => {
     try {
-      const [globalSnap, roomSnap] = await Promise.all([
-        get(ref(database, 'edge_config/enabled')),
-        get(ref(database, `edge_config/rooms/${roomId}`)),
-      ]);
-      if (globalSnap.val() !== true || roomSnap.val() !== true) return;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(`https://vee-club.duckdns.org/ws-state/room/${encodeURIComponent(roomId)}/edge-flag`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return;
+      const flag = (await res.json()) as { enabled?: unknown; room?: unknown };
+      if (flag.enabled !== true || flag.room !== true) return;
       edgeUnsub = subscribeEdgeRoomChat(roomId, (msg) => upsert(msg.id, msg));
     } catch (e) {
       // Flag unreadable -> edge stays off. Firebase covers everything.
