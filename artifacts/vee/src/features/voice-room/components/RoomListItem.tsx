@@ -5,7 +5,7 @@
  * VoiceRoomHome is light — room name and topic were invisible (white on
  * white). All colors below are verified visible on light backgrounds.
  *
- * Shows: cover tile, room name (readable), LIVE badge, topic, live member
+ * Shows: cover tile, room name (readable), topic, live member
  * count, and up to 6 real member DPs (photoURL, falling back to initials).
  */
 
@@ -42,7 +42,10 @@ function formatDistance(km: number): string {
 }
 
 // Perf (2026-10-22 audit): memoized — see RoomCard note.
-export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, hideLiveBadge }: Props) {
+// Fix #30 effect (boss 2026-10-30 01:16): LIVE badge removed —
+// hideLiveBadge stays in Props so existing call sites type-check,
+// but it is now a no-op (badge JSX deleted below).
+export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
   // 2026-10-26 (weak network): same failed-cover fallback as RoomCard.
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
@@ -114,17 +117,14 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
             </View>
           </View>
 
-          {room.isLive && !hideLiveBadge && (
-            <View style={{
-              backgroundColor: 'rgba(239,68,68,0.12)',
-              borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
-              borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)',
-            }}>
-              <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '900' }}>
-                ● {t('voiceRoom.listItem.live')}
-              </Text>
-            </View>
-          )}
+          {/* Fix #30 effect (boss 2026-10-30 01:16): LIVE badge REMOVED
+              from Recommended cards. The held VoiceRoomHome call site already
+              passes hideLiveBadge, but the phone never received it — deleting
+              the pill here delivers the removal now. NOTE: RoomListItem's only
+              other usage is the room-ID search list, which also loses the badge
+              (no per-site signal exists without the held file); restore via
+              the prop if the boss wants search badges back. Members count,
+              topic, avatars untouched. */}
         </View>
 
         {/* Topic text ONLY — 2026-10-27 (boss): the extra "Topic" label
