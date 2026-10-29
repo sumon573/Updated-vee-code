@@ -12,6 +12,13 @@
 import { View, Image, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatTabIcon } from '@/src/components/ChatTabIcon';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 interface IMOTopBarProps {
   profilePhotoURL?: string | null;
@@ -20,6 +27,11 @@ interface IMOTopBarProps {
   // renders the bar with no active underline (never a wrong highlight).
   activeTab: 'chat' | 'voice' | 'contacts' | 'none';
   chatBadgeCount?: number;
+  // 2026-10-30 (boss: page-swipe): shared pager position (0 = chat,
+  // 1 = voice, 2 = contacts; negative while dragging toward Profile).
+  // When set, the underline below slides WITH the drag instead of
+  // jumping at settle. Absent -> old discrete underlines, untouched.
+  pagerProgress?: SharedValue<number>;
   onProfilePress: () => void;
   onTabPress: (tab: 'chat' | 'voice' | 'contacts') => void;
 }
@@ -29,9 +41,43 @@ export default function IMOTopBar({
   profileInitials = '?',
   activeTab,
   chatBadgeCount = 0,
+  pagerProgress,
   onProfilePress,
   onTabPress,
 }: IMOTopBarProps) {
+  // 2026-10-30 (boss: page-swipe): tab centers measured exactly via
+  // onLayout (space-around + uneven icon widths make estimates visibly
+  // off-center). DP center relative to the tabs row is a constant:
+  // bar padding 16 + DP 40 + row marginLeft 16 -> row starts at x=72;
+  // DP center at 16+20=36 -> -36 relative to the row.
+  const DP_CENTER_REL = -36;
+  const tabCenters = useSharedValue<[number, number, number]>([0, 0, 0]);
+  const rowWidth = useSharedValue(0);
+  const setTabCenter = (i: number, x: number, w: number) => {
+    const cur = [...tabCenters.value];
+    cur[i] = x + w / 2;
+    tabCenters.value = cur as [number, number, number];
+  };
+  const underlineStyle = useAnimatedStyle(() => {
+    if (!pagerProgress) return { opacity: 0 };
+    const p = pagerProgress.value;
+    const w = rowWidth.value;
+    const [c0, c1, c2] = tabCenters.value;
+    // Until measured (first frame), fall back to the space-around estimate.
+    const e0 = c0 || w / 6;
+    const e1 = c1 || w / 2;
+    const e2 = c2 || (5 * w) / 6;
+    const center = interpolate(
+      p,
+      [-1, 0, 1, 2],
+      [DP_CENTER_REL, e0, e1, e2],
+      { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP },
+    );
+    return {
+      transform: [{ translateX: center - 16 }],
+      opacity: activeTab === 'none' ? 0 : 1,
+    };
+  });
   return (
     <View
       style={{
@@ -70,7 +116,10 @@ export default function IMOTopBar({
       </TouchableOpacity>
 
       {/* Tabs */}
-      <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 16 }}>
+      <View
+        style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 16 }}
+        onLayout={(e) => { rowWidth.value = e.nativeEvent.layout.width; }}
+      >
         {/* Chat tab */}
         <TouchableOpacity
           onPress={() => onTabPress('chat')}
@@ -78,6 +127,7 @@ export default function IMOTopBar({
           // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
           hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
           style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+          onLayout={(e) => setTabCenter(0, e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
         >
           <View>
             <ChatTabIcon
@@ -105,7 +155,11 @@ export default function IMOTopBar({
               </View>
             )}
           </View>
-          {activeTab === 'chat' && (
+          {pagerProgress ? (
+            // Spacer keeps the button exactly as tall as before; the
+            // animated underline below carries the active mark.
+            <View style={{ marginTop: 4, height: 3, width: 32 }} />
+          ) : activeTab === 'chat' ? (
             <View
               style={{
                 marginTop: 4,
@@ -115,7 +169,7 @@ export default function IMOTopBar({
                 borderRadius: 2,
               }}
             />
-          )}
+          ) : null}
         </TouchableOpacity>
 
         {/* Voice tab */}
@@ -125,6 +179,7 @@ export default function IMOTopBar({
           // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
           hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
           style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+          onLayout={(e) => setTabCenter(1, e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
         >
           {/* 2026-10-13 (Sumon): custom voice icon — তাঁর দেওয়া design হুবহু */}
           <Image
@@ -137,7 +192,9 @@ export default function IMOTopBar({
             }}
             resizeMode="contain"
           />
-          {activeTab === 'voice' && (
+          {pagerProgress ? (
+            <View style={{ marginTop: 4, height: 3, width: 32 }} />
+          ) : activeTab === 'voice' ? (
             <View
               style={{
                 marginTop: 4,
@@ -147,7 +204,7 @@ export default function IMOTopBar({
                 borderRadius: 2,
               }}
             />
-          )}
+          ) : null}
         </TouchableOpacity>
 
         {/* Contacts tab */}
@@ -157,13 +214,16 @@ export default function IMOTopBar({
           // NOTE (2026-10-11): enlarged touch target x2 — Sumon reported taps still missing.
           hitSlop={{ top: 22, bottom: 22, left: 32, right: 32 }}
           style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
+          onLayout={(e) => setTabCenter(2, e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
         >
           <Ionicons
             name="people"
             size={28}
             color={activeTab === 'contacts' ? '#2196F3' : '#9E9E9E'}
           />
-          {activeTab === 'contacts' && (
+          {pagerProgress ? (
+            <View style={{ marginTop: 4, height: 3, width: 32 }} />
+          ) : activeTab === 'contacts' ? (
             <View
               style={{
                 marginTop: 4,
@@ -173,8 +233,26 @@ export default function IMOTopBar({
                 borderRadius: 2,
               }}
             />
-          )}
+          ) : null}
         </TouchableOpacity>
+        {/* 2026-10-30 (boss: page-swipe): the single sliding indicator.
+            bottom: 10 matches the discrete underline's old spot (button
+            bottom padding); translateX comes from the pager progress. */}
+        {pagerProgress && (
+          <Animated.View
+            style={[
+              {
+                position: 'absolute',
+                bottom: 10,
+                width: 32,
+                height: 3,
+                backgroundColor: '#2196F3',
+                borderRadius: 2,
+              },
+              underlineStyle,
+            ]}
+          />
+        )}
       </View>
     </View>
   );

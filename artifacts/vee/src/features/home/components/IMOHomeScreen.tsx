@@ -42,6 +42,8 @@ import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu'
 import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
 import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
+import HomePager from '@/src/features/home/components/HomePager';
+import { useSharedValue } from 'react-native-reanimated';
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
@@ -335,14 +337,37 @@ export default function IMOHomeScreen() {
 
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
+  // 2026-10-30 (boss: home page-swipe, super smooth): pager state.
+  // Page order left→right: Profile (route edge) | Chat | Voice | Contacts.
+  // Pager indices: chats=0, voice=1, contacts=2. Profile is NOT a mounted
+  // pager page (its screen lives in app/profile/index.tsx, owned by
+  // another builder, and embedding it would double the header and break
+  // its back button) — swiping from Chat toward Profile pushes /profile
+  // (the same destination as the DP tap) on release past threshold.
+  const [pagerIndex, setPagerIndex] = useState(0);
+  const pagerProgress = useSharedValue(0);
+  const goToTab = useCallback((tab: ContentTab) => {
+    setActiveTab(tab);
+    if (tab === 'chats') setPagerIndex(0);
+    else if (tab === 'voice') setPagerIndex(1);
+    else if (tab === 'contacts') setPagerIndex(2);
+  }, []);
+  const handlePagerIndexChange = useCallback((i: number) => {
+    setPagerIndex(i);
+    setActiveTab(i === 0 ? 'chats' : i === 1 ? 'voice' : 'contacts');
+  }, []);
+  const handleProfileEdge = useCallback(() => {
+    router.push('/profile' as any);
+  }, [router]);
+
   // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
   // Chat → chats, Voice → rooms tab (inline, bars stay), Contacts → contacts, DP → profile
   // (same destinations the old text tab bar offered — nothing lost).
   const handleTopBarTab = useCallback((tab: 'chat' | 'voice' | 'contacts') => {
-    if (tab === 'chat') setActiveTab('chats');
-    else if (tab === 'voice') setActiveTab('voice');
-    else setActiveTab('contacts');
-  }, []);
+    if (tab === 'chat') goToTab('chats');
+    else if (tab === 'voice') goToTab('voice');
+    else goToTab('contacts');
+  }, [goToTab]);
 
   const handleStoryPress = useCallback((storyId: string) => {
     // Planet special case — TikTok-style public feed
@@ -402,6 +427,72 @@ export default function IMOHomeScreen() {
     startCall(entry.remoteUid, entry.remoteName || 'Vee User', entry.remotePhotoURL);
   }, [startCall]);
 
+  // 2026-10-30 (boss: home page-swipe): chat page node for the pager.
+  // Content UNCHANGED — moved out of the conditional so the pager can
+  // keep it mounted beside the voice/contacts pages.
+  const chatsPage = (
+    <View key="pager-chats" style={{ flex: 1 }}>
+      <IMOStoryRow
+        stories={imoStories}
+        onAddStory={handleAddStory}
+        onStoryPress={handleStoryPress}
+      />
+      <FlatList
+        data={imoChats}
+        keyExtractor={(item) => item.id}
+        getItemLayout={getRowLayout}
+        windowSize={11}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        removeClippedSubviews={Platform.OS === 'android'}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        // 2026-10-19 polish: empty state — only after the first load so the
+        // cached/live fetch doesn't flash "no chats" while loading.
+        ListEmptyComponent={chatsReady ? (
+          <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 52, marginBottom: 14 }}>💬</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#111111' }}>
+              No chats yet
+            </Text>
+            <Text style={{ fontSize: 13, color: '#666666', marginTop: 6, textAlign: 'center' }}>
+              Start a conversation from the Contacts tab
+            </Text>
+          </View>
+        ) : null}
+        renderItem={({ item }) => (
+          <IMOChatListItem
+            chat={item}
+            onPress={handleChatPress}
+            onLongPress={handleLongPress}
+            onCallPress={handleCallPress}
+          />
+        )}
+        style={{ flex: 1 }}
+      />
+      {/* Long-press context menu (2026-10-11 Issue #6) */}
+      <ChatLongPressMenu
+        visible={!!menuChat}
+        chatName={menuChat?.name ?? ''}
+        isPinned={menuChat?.isPinned ?? false}
+        isMuted={menuChat?.isMuted ?? false}
+        isHidden={false}
+        onPin={() => runMenuAction(() =>
+          (menuChat?.isPinned ? unpinChat(user!.uid, menuChat!.id) : pinChat(user!.uid, menuChat!.id))
+        )}
+        onMute={() => runMenuAction(() =>
+          (menuChat?.isMuted ? unmuteChat(user!.uid, menuChat!.id) : muteChat(user!.uid, menuChat!.id))
+        )}
+        onHide={() => runMenuAction(() => hideChat(user!.uid, menuChat!.id))}
+        onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
+        onClose={closeMenu}
+      />
+      {/* 2026-10-20 (boss): voice FAB removed — Rooms now lives in the
+          bottom tab bar (Chats · Rooms · Contacts · DP). */}
+    </View>
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       {/* 2026-10-24 (boss: no more builds): server-driven content surface.
@@ -415,82 +506,23 @@ export default function IMOHomeScreen() {
         profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
         activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : 'none'}
         chatBadgeCount={totalUnread}
+        pagerProgress={pagerProgress}
         onProfilePress={() => router.push('/profile' as any)}
         onTabPress={handleTopBarTab}
       />
-      {activeTab === 'chats' && (
-        <View style={{ flex: 1 }}>
-          <IMOStoryRow
-            stories={imoStories}
-            onAddStory={handleAddStory}
-            onStoryPress={handleStoryPress}
-          />
-          <FlatList
-            data={imoChats}
-            keyExtractor={(item) => item.id}
-            getItemLayout={getRowLayout}
-            windowSize={11}
-            initialNumToRender={15}
-            maxToRenderPerBatch={10}
-            removeClippedSubviews={Platform.OS === 'android'}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-            }
-            // 2026-10-19 polish: empty state — only after the first load so the
-            // cached/live fetch doesn't flash "no chats" while loading.
-            ListEmptyComponent={chatsReady ? (
-              <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>
-                <Text style={{ fontSize: 52, marginBottom: 14 }}>💬</Text>
-                <Text style={{ fontSize: 17, fontWeight: '700', color: '#111111' }}>
-                  No chats yet
-                </Text>
-                <Text style={{ fontSize: 13, color: '#666666', marginTop: 6, textAlign: 'center' }}>
-                  Start a conversation from the Contacts tab
-                </Text>
-              </View>
-            ) : null}
-            renderItem={({ item }) => (
-              <IMOChatListItem
-                chat={item}
-                onPress={handleChatPress}
-                onLongPress={handleLongPress}
-                onCallPress={handleCallPress}
-              />
-            )}
-            style={{ flex: 1 }}
-          />
-          {/* Long-press context menu (2026-10-11 Issue #6) */}
-          <ChatLongPressMenu
-            visible={!!menuChat}
-            chatName={menuChat?.name ?? ''}
-            isPinned={menuChat?.isPinned ?? false}
-            isMuted={menuChat?.isMuted ?? false}
-            isHidden={false}
-            onPin={() => runMenuAction(() =>
-              (menuChat?.isPinned ? unpinChat(user!.uid, menuChat!.id) : pinChat(user!.uid, menuChat!.id))
-            )}
-            onMute={() => runMenuAction(() =>
-              (menuChat?.isMuted ? unmuteChat(user!.uid, menuChat!.id) : muteChat(user!.uid, menuChat!.id))
-            )}
-            onHide={() => runMenuAction(() => hideChat(user!.uid, menuChat!.id))}
-            onDeleteHistory={() => runMenuAction(() => clearChat(menuChat!.id, user!.uid))}
-            onClose={closeMenu}
-          />
-          {/* 2026-10-20 (boss): voice FAB removed — Rooms now lives in the
-              bottom tab bar (Chats · Rooms · Contacts · DP). */}
-        </View>
+      {/* 2026-10-30 (boss: page-swipe): the three inline pages live in
+          the pager (top bar + bottom bar persist above/below it). Voice
+          still renders inline with no onClose → no header ✕, same as
+          before; switching tabs is the navigation. */}
+      {(activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts') && (
+        <HomePager
+          index={pagerIndex}
+          progress={pagerProgress}
+          onIndexChange={handlePagerIndexChange}
+          onProfileEdge={handleProfileEdge}
+          pages={[chatsPage, <VoiceRoomHome key="pager-voice" />, <ContactsScreen key="pager-contacts" />]}
+        />
       )}
-
-      {activeTab === 'voice' && (
-        // 2026-10-26 (boss: tab form, not a separate page): rooms render
-        // inline between the top bar and bottom bar. No onClose → the
-        // header ✕ is hidden (imo's rooms tab has no close button;
-        // switching tabs is the navigation). The minimized-room bar is
-        // the root-layout instance (visible again now that no modal
-        // covers it) — no second instance needed.
-        <VoiceRoomHome />
-      )}
-      {activeTab === 'contacts' && <ContactsScreen />}
 
       {activeTab === 'stories' && (
         <StoriesTabScreen
@@ -541,7 +573,7 @@ export default function IMOHomeScreen() {
           overlay is gone — connection status now lives IN this bar
           ("Connecting..." center + green dot on "+"). */}
       <IMOBottomBar
-        onAddPress={() => setActiveTab('contacts')}
+        onAddPress={() => goToTab('contacts')}
         onSearchPress={() => router.push('/search' as any)}
       />
     </SafeAreaView>
