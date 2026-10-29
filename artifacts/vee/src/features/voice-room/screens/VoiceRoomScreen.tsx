@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScalePress from '@/components/ScalePress';
-import { database } from '@/src/config/firebase';
+import { database, auth } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { getRoomChatSession, setRoomChatSession, clearRoomChatSession } from '@/src/store/roomChatSession';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
@@ -101,7 +101,7 @@ import {
   type SeatRequest,
   blockUserInRoom, unblockUserInRoom, subscribeRoomBlocks, isUserBlockedInRoom,
   type RoomBlockRecord,
-  type RoomSeat, type RoomAudienceMember,
+  type RoomSeat, type RoomAudienceMember, type RoomInfo,
   verifyRoomPin,
   sendSeatInvite, subscribeSeatInvites, removeSeatInvite, type SeatInvite,
   sendRoomEmojiReaction, subscribeRoomEmojiReactions,
@@ -115,6 +115,8 @@ import {
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
+import { fetchWatcherFlag, subscribeWatcherPoll, type WatcherPollApi, type WatcherFlag } from '../services/watcherPollService';
+import { subscribeEdgeRoomChat } from '../services/edgeRoomChatService';
 
 
 import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker, formatMembersCount } from './VoiceRoomHelpers';
@@ -608,6 +610,9 @@ export default function VoiceRoomScreen() {
   const activeThemeIdRef = useRef('imo-light');
   
   const [roomIsPublic,  setRoomIsPublic]  = useState(true);
+  const [roomInfoLoaded, setRoomInfoLoaded] = useState(false);
+  const [watcherFlag, setWatcherFlag] = useState<WatcherFlag | null>(null);
+  const pollApiRef = useRef<WatcherPollApi | null>(null);
   
   const [roomIsLocked,  setRoomIsLocked]  = useState(false);
   
@@ -1154,94 +1159,98 @@ export default function VoiceRoomScreen() {
 
   
 
-  useEffect(() => {
-    return subscribeRoomInfo(roomId, (info) => {
-      if (!info || info.active === false) {
-        if (!hasLeftRef.current) {
-          hasLeftRef.current = true;
-          router.back();
-          Alert.alert(
-            t('voiceRoom.screen.roomClosed'),
-            t('voiceRoom.screen.roomClosedMsg'),
-          );
-        }
-        return;
+  const handleRoomInfo = (info: RoomInfo | null) => {
+    setRoomInfoLoaded(true);
+    if (!info || info.active === false) {
+      if (!hasLeftRef.current) {
+        hasLeftRef.current = true;
+        router.back();
+        Alert.alert(
+          t('voiceRoom.screen.roomClosed'),
+          t('voiceRoom.screen.roomClosedMsg'),
+        );
       }
-      if (typeof info.name === 'string' && info.name) setRoomName(info.name);
-      setRoomTopic(info.topic);
-      setOwnerId(info.ownerId);
-      pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0, isLocked: info.isLocked };
-      const curPinVer = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
-      if (
-        pinGateRef.current === 'passed' &&
+      return;
+    }
+    if (typeof info.name === 'string' && info.name) setRoomName(info.name);
+    setRoomTopic(info.topic);
+    setOwnerId(info.ownerId);
+    pinInfoRef.current = { isPublic: info.isPublic, ownerId: info.ownerId, pinVersion: typeof info.pinVersion === 'number' ? info.pinVersion : 0, isLocked: info.isLocked };
+    const curPinVer = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
+    if (
+      pinGateRef.current === 'passed' &&
+      info.isPublic !== true &&
+      info.ownerId !== myUidRef.current &&
+      !isPinVerified(myUidRef.current, roomId, curPinVer)
+    ) {
+      pinGateRef.current = 'open';
+      setPinGate('open');
+      setPinInput('');
+      setPinError('');
+    }
+    if (pinEvaluatedForRef.current !== roomId && myUidRef.current) {
+      pinEvaluatedForRef.current = roomId;
+      const pinVersion = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
+      const needsPin =
         info.isPublic !== true &&
         info.ownerId !== myUidRef.current &&
-        !isPinVerified(myUidRef.current, roomId, curPinVer)
-      ) {
-        pinGateRef.current = 'open';
-        setPinGate('open');
-        setPinInput('');
-        setPinError('');
+        !isPinVerified(myUidRef.current, roomId, pinVersion);
+      const nextGate = needsPin ? 'open' : 'passed';
+      pinGateRef.current = nextGate;
+      setPinGate(nextGate);
+    }
+    if (info.ownerId && info.ownerId === myUidRef.current) {
+      const mySeatIdxNow = seatsRef.current.findIndex(
+        (s: Participant | null) => s?.id === myUidRef.current,
+      );
+      const mySeatNow = mySeatIdxNow >= 0 ? seatsRef.current[mySeatIdxNow] : null;
+      if (mySeatNow && mySeatNow.role !== 'host') {
+        setSeatRole(roomId, mySeatIdxNow, 'host').catch(() => {});
       }
-      if (pinEvaluatedForRef.current !== roomId && myUidRef.current) {
-        pinEvaluatedForRef.current = roomId;
-        const pinVersion = typeof info.pinVersion === 'number' ? info.pinVersion : 0;
-        const needsPin =
-          info.isPublic !== true &&
-          info.ownerId !== myUidRef.current &&
-          !isPinVerified(myUidRef.current, roomId, pinVersion);
-        const nextGate = needsPin ? 'open' : 'passed';
-        pinGateRef.current = nextGate;
-        setPinGate(nextGate);
-      }
-      if (info.ownerId && info.ownerId === myUidRef.current) {
-        const mySeatIdxNow = seatsRef.current.findIndex(
-          (s: Participant | null) => s?.id === myUidRef.current,
-        );
-        const mySeatNow = mySeatIdxNow >= 0 ? seatsRef.current[mySeatIdxNow] : null;
-        if (mySeatNow && mySeatNow.role !== 'host') {
-          setSeatRole(roomId, mySeatIdxNow, 'host').catch(() => {});
+      try {
+        const adminIds = new Set<string>();
+        for (const s of seatsRef.current) {
+          if (s && s.role === 'admin' && s.id !== myUidRef.current) adminIds.add(s.id);
         }
-        try {
-          const adminIds = new Set<string>();
-          for (const s of seatsRef.current) {
-            if (s && s.role === 'admin' && s.id !== myUidRef.current) adminIds.add(s.id);
-          }
-          for (const m of audienceRef.current) {
-            if (m.role === 'admin' && m.id !== myUidRef.current) adminIds.add(m.id);
-          }
-          if (adminIds.size > 0) {
-            get(ref(database, `rooms/${roomId}/admins`)).then((snap) => {
-              const existing = new Set<string>(snap.exists() ? Object.keys(snap.val() ?? {}) : []);
-              const missing = [...adminIds].filter((id) => !existing.has(id));
-              if (missing.length === 0) return;
-              const updates: Record<string, true> = {};
-              for (const id of missing) updates[id] = true;
-              update(ref(database, `rooms/${roomId}/admins`), updates).catch(() => {
-              });
-            }).catch(() => {});
-          }
-        } catch {
+        for (const m of audienceRef.current) {
+          if (m.role === 'admin' && m.id !== myUidRef.current) adminIds.add(m.id);
         }
+        if (adminIds.size > 0) {
+          get(ref(database, `rooms/${roomId}/admins`)).then((snap) => {
+            const existing = new Set<string>(snap.exists() ? Object.keys(snap.val() ?? {}) : []);
+            const missing = [...adminIds].filter((id) => !existing.has(id));
+            if (missing.length === 0) return;
+            const updates: Record<string, true> = {};
+            for (const id of missing) updates[id] = true;
+            update(ref(database, `rooms/${roomId}/admins`), updates).catch(() => {
+            });
+          }).catch(() => {});
+        }
+      } catch {
       }
-      setRoomImageUri(info.coverImageUrl ?? null);
-      setRoomIsPublic(info.isPublic);
-      setRoomIsLocked(info.isLocked ?? false);
-      setRoomDescription(info.description ?? '');
-      // 2026-10-21 (boss): the room's saved theme APPLIES on entry —
-      // themes are real color schemes now (exactly one black, the rest
-      // light), so a chosen theme sticks. Unknown/removed ids fall back
-      // to IMO Light. (Supersedes the 2026-10-20 force-light, which
-      // existed only because every other theme was near-black.)
-      if (info.themeId && info.themeId !== activeThemeIdRef.current) {
-        const known = getActiveThemes().some((th) => th.id === info.themeId);
-        const next = known ? info.themeId : 'imo-light';
-        activeThemeIdRef.current = next;
-        setActiveThemeId(next);
-      }
-      if (pinGateRef.current === 'passed') handleRoomInfoOk();
-    });
-  }, [roomId]);
+    }
+    setRoomImageUri(info.coverImageUrl ?? null);
+    setRoomIsPublic(info.isPublic);
+    setRoomIsLocked(info.isLocked ?? false);
+    setRoomDescription(info.description ?? '');
+    // 2026-10-21 (boss): the room's saved theme APPLIES on entry —
+    // themes are real color schemes now (exactly one black, the rest
+    // light), so a chosen theme sticks. Unknown/removed ids fall back
+    // to IMO Light. (Supersedes the 2026-10-20 force-light, which
+    // existed only because every other theme was near-black.)
+    if (info.themeId && info.themeId !== activeThemeIdRef.current) {
+      const known = getActiveThemes().some((th) => th.id === info.themeId);
+      const next = known ? info.themeId : 'imo-light';
+      activeThemeIdRef.current = next;
+      setActiveThemeId(next);
+    }
+    if (pinGateRef.current === 'passed') handleRoomInfoOk();
+  };
+
+  useEffect(() => {
+    if (watcherPollActive) return;
+    return subscribeRoomInfo(roomId, handleRoomInfo);
+  }, [roomId, watcherPollActive]);
 
   const forceLeftRef = useRef(false);
   useEffect(() => {
@@ -1277,51 +1286,60 @@ export default function VoiceRoomScreen() {
   }, [roomId]);
 
   useEffect(() => {
+    if (watcherPollActive) return;
     return subscribeSeatRequests(roomId, setPendingRequests);
-  }, [roomId]);
+  }, [roomId, watcherPollActive]);
 
   // 2026-10-25 (boss: mic drops + re-enables on minimize→return): the
   // seat-sync stop below must NOT fire on a merely not-yet-loaded seats
   // snapshot. Set false when the subscription (re)starts, true on the
   // first snapshot of any kind (even a sig-identical one).
   const seatsLoadedRef = useRef(false);
+  const handleSeats = (fbSeats: Array<RoomSeat | null>) => {
+    seatsLoadedRef.current = true;
+    const mapped = fbSeats.map(seat =>
+      seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
+    );
+    // Perf guard (2026-10-22): heartbeat-only snapshots (60s seatTs
+    // refreshes from every seated user) map to identical visible state —
+    // skip the setState so the whole room screen doesn't re-render.
+    const sig = mapped.map(s => (s
+      ? `${s.id}|${s.role}|${s.muted ? 1 : 0}|${s.hostMuted ? 1 : 0}|${s.speaking ? 1 : 0}|${s.activeFrame ?? ''}|${s.name}|${s.photoURL ?? ''}|${s.nobleRankIndex ?? ''}`
+      : '-')).join(';');
+    if (sig === seatsSigRef.current) return;
+    seatsSigRef.current = sig;
+    setSeats(mapped);
+  };
+
   useEffect(() => {
     seatsLoadedRef.current = false;
-    return subscribeSeats(roomId, (fbSeats) => {
-      seatsLoadedRef.current = true;
-      const mapped = fbSeats.map(seat =>
-        seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
-      );
-      // Perf guard (2026-10-22): heartbeat-only snapshots (60s seatTs
-      // refreshes from every seated user) map to identical visible state —
-      // skip the setState so the whole room screen doesn't re-render.
-      const sig = mapped.map(s => (s
-        ? `${s.id}|${s.role}|${s.muted ? 1 : 0}|${s.hostMuted ? 1 : 0}|${s.speaking ? 1 : 0}|${s.activeFrame ?? ''}|${s.name}|${s.photoURL ?? ''}|${s.nobleRankIndex ?? ''}`
-        : '-')).join(';');
-      if (sig === seatsSigRef.current) return;
-      seatsSigRef.current = sig;
-      setSeats(mapped);
-    });
-  }, [roomId]);
+    if (watcherPollActive) return;
+    return subscribeSeats(roomId, handleSeats);
+  }, [roomId, watcherPollActive]);
+
+  const handleAudience = (fbAudience: RoomAudienceMember[]) => {
+    const participants = fbAudience.map(fbAudToParticipant);
+    // Perf guard (2026-10-22): same heartbeat-skip as seats above.
+    const sig = participants.map(m =>
+      `${m.id}|${m.role}|${m.name}|${m.photoURL ?? ''}|${m.activeFrame ?? ''}|${m.nobleRankIndex ?? ''}`,
+    ).join(';');
+    if (sig === audienceSigRef.current) return;
+    audienceSigRef.current = sig;
+    setAudience(participants);
+  };
 
   useEffect(() => {
-    return subscribeAudience(roomId, (fbAudience) => {
-      const participants = fbAudience.map(fbAudToParticipant);
-      // Perf guard (2026-10-22): same heartbeat-skip as seats above.
-      const sig = participants.map(m =>
-        `${m.id}|${m.role}|${m.name}|${m.photoURL ?? ''}|${m.activeFrame ?? ''}|${m.nobleRankIndex ?? ''}`,
-      ).join(';');
-      if (sig === audienceSigRef.current) return;
-      audienceSigRef.current = sig;
-      setAudience(participants);
-    });
-  }, [roomId]);
+    if (watcherPollActive) return;
+    return subscribeAudience(roomId, handleAudience);
+  }, [roomId, watcherPollActive]);
 
   useEffect(() => {
+    if (watcherPollActive) return;
     return subscribeRoomAdmins(roomId, setRoomAdminUids);
-  }, [roomId]);
+  }, [roomId, watcherPollActive]);
 
   useEffect(() => {
+    if (watcherPollActive) return;
     if (!roomId || !myUid) {
       setIsRoomMember(false);
       return;
@@ -1334,7 +1352,7 @@ export default function VoiceRoomScreen() {
       setIsRoomMember(false);
     });
     return () => unsub();
-  }, [roomId, myUid]);
+  }, [roomId, myUid, watcherPollActive]);
 
   // 2026-10-26 (boss: room chat = session + last 30): the chat view starts
   // fresh on every entry. A stored session survives minimize-return (the
@@ -1430,35 +1448,103 @@ export default function VoiceRoomScreen() {
     })();
   }, [roomId, myUid, markEchoSendState]);
 
+  const handleChat = (fbMsgs: RoomChatMsg[]) => {
+    // 2026-10-26 (boss: session + last 30): only this stay's messages,
+    // capped at the last 30 — pre-join messages and anything older than
+    // the window never render. There is no Load earlier anymore: the
+    // window IS the history.
+    const joinTs = chatSessionJoinTsRef.current;
+    const visible = (joinTs > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= joinTs) : fbMsgs).slice(-30);
+    const deliveredMsgs = visible.map(fbChatToMsg);
+    // 2026-10-23: optimistic echoes — drop the ones this snapshot now
+    // contains (same push key, so the delivered copy replaces them in
+    // place) and keep the still-in-flight ones appended at the end.
+    if (pendingEchoesRef.current.length > 0) {
+      const deliveredIds = new Set(deliveredMsgs.map((m) => m.id));
+      pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => !deliveredIds.has(e.id));
+    }
+    const pending = pendingEchoesRef.current;
+    setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
+    // 2026-10-26 (typing-jitter fix): auto-scroll ONLY when already at
+    // the bottom — a scrolled-up reader must never be yanked by a new
+    // message; the scroll button brings them back on tap.
+    if (!chatAtBottomRef.current) return;
+    if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      scrollTimerRef.current = null;
+      chatRef.current?.scrollToEnd({ animated: false });
+    }, 80);
+  };
+
   useEffect(() => {
-    return subscribeRoomChat(roomId, myUid, (fbMsgs) => {
-      // 2026-10-26 (boss: session + last 30): only this stay's messages,
-      // capped at the last 30 — pre-join messages and anything older than
-      // the window never render. There is no Load earlier anymore: the
-      // window IS the history.
-      const joinTs = chatSessionJoinTsRef.current;
-      const visible = (joinTs > 0 ? fbMsgs.filter(m => (m.ts ?? 0) >= joinTs) : fbMsgs).slice(-30);
-      const deliveredMsgs = visible.map(fbChatToMsg);
-      // 2026-10-23: optimistic echoes — drop the ones this snapshot now
-      // contains (same push key, so the delivered copy replaces them in
-      // place) and keep the still-in-flight ones appended at the end.
-      if (pendingEchoesRef.current.length > 0) {
-        const deliveredIds = new Set(deliveredMsgs.map((m) => m.id));
-        pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => !deliveredIds.has(e.id));
-      }
-      const pending = pendingEchoesRef.current;
-      setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
-      // 2026-10-26 (typing-jitter fix): auto-scroll ONLY when already at
-      // the bottom — a scrolled-up reader must never be yanked by a new
-      // message; the scroll button brings them back on tap.
-      if (!chatAtBottomRef.current) return;
-      if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = setTimeout(() => {
-        scrollTimerRef.current = null;
-        chatRef.current?.scrollToEnd({ animated: false });
-      }, 80);
+    if (watcherPollActive) return;
+    return subscribeRoomChat(roomId, myUid, handleChat);
+  }, [roomId, myUid, watcherPollActive]);
+
+
+  // Watcher-path cutover flag (fail-closed: fetch failure leaves
+  // watcherFlag null, so watcherPollActive stays false).
+  useEffect(() => {
+    let cancelled = false;
+    fetchWatcherFlag(roomId).then((f) => {
+      if (!cancelled) setWatcherFlag(f);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [roomId]);
+
+  // Watcher poll (audience + public + flag on): the poll hook reuses the
+  // exact handlers above, so mapping, guards, session filter, and echo
+  // handling are identical to the Firebase path. Fallback re-enables
+  // Firebase by switching the flag off for this stay.
+  useEffect(() => {
+    if (!watcherPollActive) return;
+    const api = subscribeWatcherPoll(roomId, {
+      myUid,
+      profile: {
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+      },
+      getToken: async () => {
+        try {
+          const t = await auth.currentUser?.getIdToken();
+          return t ?? null;
+        } catch {
+          return null;
+        }
+      },
+    }, {
+      onInfo: handleRoomInfo,
+      onSeats: handleSeats,
+      onAudience: handleAudience,
+      onAdmins: (uids) => setRoomAdminUids(uids),
+      onSeatRequests: (reqs) => setPendingRequests(reqs),
+      onMember: (isMember) => {
+        setIsRoomMember(isMember);
+        if (isMember) setHasJoined(true);
+      },
+      onChat: handleChat,
+      onFallback: () => setWatcherFlag({ poll: false, live: false }),
     });
-  }, [roomId, myUid]);
+    pollApiRef.current = api;
+    return () => {
+      api.unsubscribe();
+      if (pollApiRef.current === api) pollApiRef.current = null;
+    };
+  }, [watcherPollActive, roomId, myUid, myName, myInitials, myColor, myPhotoURL]);
+
+  // Live push upgrade for poll clients (flag.live only, default off): edge
+  // messages merge into the poll hook's chat window (dedup by id), exactly
+  // like today's Firebase+edge merge. Poll keeps covering if WS drops.
+  useEffect(() => {
+    if (!watcherPollActive || !watcherFlag?.live) return;
+    const api = pollApiRef.current;
+    if (!api) return;
+    return subscribeEdgeRoomChat(roomId, (msg) => api.injectEdgeMsg(msg));
+  }, [watcherPollActive, watcherFlag, roomId]);
 
   useEffect(() => {
     // 2026-10-26 (boss: every genuine entry must show its join line):
@@ -1498,6 +1584,19 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     mySeatIdxRef.current = mySeatIdx;
   }, [mySeatIdx]);
+
+  // 2026-10-29 (watcher path, Phase 2 — inert until the server cutover flag
+  // is on): audience clients in public rooms poll the VPS poller instead of
+  // holding Firebase listeners. Seated users, the owner, and private rooms
+  // always stay on today's Firebase path. Flag unreadable -> watcherFlag
+  // null -> poll off (fail-closed).
+  const watcherPollActive =
+    watcherFlag?.poll === true &&
+    roomInfoLoaded &&
+    roomIsPublic === true &&
+    mySeatIdx < 0 &&
+    ownerId !== myUid &&
+    myUid !== 'anonymous';
 
   useEffect(() => {
     sweepStaleSeats(roomId).catch(() => {});
