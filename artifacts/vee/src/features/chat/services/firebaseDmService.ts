@@ -256,9 +256,10 @@ export async function sendMessage(
       ...meta,
       unreadCount: 0,
       isHidden: false,
+      participantId: participantUid,
     }),
     // Participant's entry: increment unread, unhide if it was hidden
-    incrementUnread(participantUid, chatId, { ...meta, isHidden: false }),
+    incrementUnread(participantUid, chatId, { ...meta, isHidden: false, participantId: myUid }),
   ]);
 
   // Fire-and-forget push — never blocks message delivery.
@@ -324,6 +325,13 @@ export async function logCallToChat(
     // chat, exactly like sendMessage does (isHidden:false).
     myUpdate.isHidden = false;
     participantUpdate.isHidden = false;
+    // Fix #34c: stamp participantId on both entries (same convention as
+    // sendMessage / createOrGetChat: each entry's participantId is the OTHER
+    // party's uid) so a call-logged-first entry is repair-eligible via the
+    // existing repair worker in subscribeUserChats. update() merges, so this
+    // never overwrites name/avatar/unread on existing entries.
+    myUpdate.participantId = participantUid;
+    participantUpdate.participantId = myUid;
     if (shouldIncrementUnread) {
       participantUpdate.unreadCount = increment(1);
     }
@@ -366,6 +374,7 @@ type ChatMetaUpdate = {
   lastMessageTime: number;
   unreadCount: number;
   isHidden?: boolean;
+  participantId?: string;
 };
 
 async function incrementUnread(

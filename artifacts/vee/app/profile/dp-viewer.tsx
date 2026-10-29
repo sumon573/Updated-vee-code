@@ -3,6 +3,10 @@
  * Route: /profile/dp-viewer?uid=xxx
  * 2026-10-13 (Sumon): Converted from Modal to dedicated route —
  * Modal was showing 404 on other users' profiles.
+ * 2026-10-29 (boss, cover viewer): ?kind=cover shows the COVER photo in
+ * this SAME viewer (same black bg, X close, same Change pill below) —
+ * the cover tap mirrors the DP tap exactly. Change in cover mode runs
+ * the cover-change flow (16:9 pick -> uploadCoverPhoto -> coverImageUrl).
  */
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Image } from 'react-native';
@@ -13,13 +17,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, updateUser } from '@/src/services/userService';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadProfilePhoto } from '@/src/services/cloudinaryService';
+import { uploadProfilePhoto, uploadCoverPhoto } from '@/src/services/cloudinaryService';
 
 export default function DpViewerScreen() {
   const { user } = useAuth();
-  const { uid } = useLocalSearchParams<{ uid?: string }>();
+  const { uid, kind } = useLocalSearchParams<{ uid?: string; kind?: string }>();
   const targetUid = uid ?? user?.uid;
   const isMe = !uid || uid === user?.uid;
+  // 2026-10-29 (boss, cover viewer): kind=cover reuses this viewer for the
+  // cover photo — same screen, same Change pill, only the image + the
+  // change flow differ (cover = 16:9, uploadCoverPhoto, coverImageUrl).
+  const isCover = kind === 'cover';
 
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('User');
@@ -32,12 +40,12 @@ export default function DpViewerScreen() {
   useEffect(() => {
     if (!targetUid) { setLoading(false); return; }
     getUser(targetUid).then((u) => {
-      setPhotoURL(u?.photoURL || null);
+      setPhotoURL(isCover ? (u?.coverImageUrl || null) : (u?.photoURL || null));
       setDisplayName(u?.name || 'User');
       setImageError(false);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [targetUid]);
+  }, [targetUid, isCover]);
 
   const handleChangeDp = async () => {
     if (!isMe || !user?.uid) return;
@@ -45,12 +53,14 @@ export default function DpViewerScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8 });
+        aspect: isCover ? [16, 9] : [1, 1],
+        quality: isCover ? 0.85 : 0.8 });
       if (result.canceled || !result.assets?.[0]?.uri) return;
       setUploading(true);
-      const upload = await uploadProfilePhoto(result.assets[0].uri);
-      await updateUser(user.uid, { photoURL: upload.url });
+      const upload = isCover
+        ? await uploadCoverPhoto(result.assets[0].uri)
+        : await uploadProfilePhoto(result.assets[0].uri);
+      await updateUser(user.uid, isCover ? { coverImageUrl: upload.url } : { photoURL: upload.url });
       setPhotoURL(upload.url);
       setImageError(false);
     } catch {
@@ -76,7 +86,7 @@ export default function DpViewerScreen() {
         ) : photoURL && !imageError ? (
           <Image
             source={{ uri: photoURL }}
-            style={{ width: '100%', aspectRatio: 1, maxHeight: '70%' }}
+            style={{ width: '100%', aspectRatio: isCover ? 16 / 9 : 1, maxHeight: '70%' }}
             resizeMode="contain"
             onError={() => setImageError(true)}
           />

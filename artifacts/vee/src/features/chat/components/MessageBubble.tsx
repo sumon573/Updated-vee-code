@@ -46,13 +46,22 @@ const C = {
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
 
 function formatMsgTime(ts: number): string {
-  // 2026-10-19 polish: malformed timestamps rendered as "NaN:NaN PM".
+  // Fix #31 (imo-exact, 2026-10-29): imo shows 24-hour times ("18:17",
+  // "13:19") — the old 12-hour "2:30 PM" format is gone.
   if (!Number.isFinite(ts)) return '';
   const d = new Date(ts);
-  const h = d.getHours();
+  const h = String(d.getHours()).padStart(2, '0');
   const m = d.getMinutes().toString().padStart(2, '0');
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 || 12}:${m} ${ampm}`;
+  return `${h}:${m}`;
+}
+
+// Fix #31 (imo-exact call durations): "2 min 6 sec" / "44 sec".
+function formatCallDuration(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  if (s < 60) return `${s} sec`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r === 0 ? `${m} min` : `${m} min ${r} sec`;
 }
 
 type Props = {
@@ -62,6 +71,11 @@ type Props = {
   onReply: (msg: DmMessage) => void;
   onRetry?: (msg: DmMessage) => void;
   onMediaPress?: (uri: string, type: 'image' | 'video') => void;
+  // Fix #31 (imo-exact rows): DPs beside bubbles + tap-to-call-back.
+  peerPhotoURL?: string | null;
+  myPhotoURL?: string | null;
+  isPeerOnline?: boolean;
+  onCallBack?: () => void;
 };
 
 /**
@@ -135,7 +149,7 @@ export async function saveRemoteMediaToGallery(
 }
 
 // Memoized: the DM thread FlatList renders one of these per message.
-function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress }: Props) {
+function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack }: Props) {
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const [showReactions, setShowReactions] = useState(false);
@@ -255,10 +269,33 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
   // chrome (no padding, no background, no border) — clean professional look.
   // Timestamps/ticks below media use muted colors (no bubble bg to sit on).
   const isMediaMsg = message.type === 'image' || message.type === 'video';
+  const isCallMsg = message.type === 'call';
+  const isStickerMsg = message.type === 'sticker';
+  const noChrome = isMediaMsg || isStickerMsg;
   // 2026-10-27 (inbox polish): my-bubble timestamp was white-on-light-blue
   // (#bbdefb) — unreadable. Dark timestamp on both bubble colours.
   const timeColor = isMediaMsg ? C.muted : isMe ? 'rgba(0,0,0,0.5)' : C.muted;
   const tickColor = isMediaMsg ? C.muted : C.sent;
+
+  // Fix #31 (imo-exact call card copy): missed → "Missed Audio Call" +
+  // "Tap to call back"; canceled (outgoing) → "Canceled" + "Tap to call
+  // again"; completed → "Audio call" + duration ("2 min 6 sec" / "44 sec").
+  const callResult = message.callInfo?.result;
+  const callOutgoing = message.callInfo?.direction === 'outgoing';
+  const callTitle = callResult === 'missed' ? 'Missed Audio Call'
+    : callResult === 'cancelled' ? 'Canceled'
+    : callResult === 'rejected' ? 'Declined Audio Call'
+    : 'Audio call';
+  const callSubtitle = callResult === 'completed'
+    ? formatCallDuration(message.callInfo?.durationSec ?? 0)
+    : callResult === 'missed'
+      ? 'Tap to call back'
+      : callOutgoing
+        ? 'Tap to call again'
+        : 'Tap to call back';
+  const callIconName = callResult === 'missed' ? 'phone-missed'
+    : callOutgoing ? 'phone-outgoing' : 'phone-incoming';
+  const callIconColor = callResult === 'missed' ? '#FF3B30' : '#000000';
 
   const reactions = message.reactions
     ? Object.entries(
@@ -287,11 +324,38 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
   const reactionPreviewLabel =
     message.type === 'voice' ? '🎤 Voice message'
     : message.type === 'call' ? '📞 Call'
+    : message.type === 'sticker' ? '😊 Sticker'
     : '📷 Media';
 
+  // Fix #31 (imo-exact thread rows): peer DP at the left of incoming
+  // rows (green dot when online), own DP at the right of outgoing rows.
+  const avatar = (photo: string | null | undefined, onlineDot: boolean) => (
+    <View style={{
+      width: 36, height: 36, borderRadius: 18,
+      backgroundColor: '#D9D9DE', overflow: 'hidden',
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      {photo ? (
+        <Image source={{ uri: photo }} style={{ width: 36, height: 36, borderRadius: 18 }} contentFit="cover" cachePolicy="disk" />
+      ) : (
+        <Feather name="user" size={18} color="#fff" />
+      )}
+      {onlineDot && (
+        <View style={{
+          position: 'absolute', bottom: 0, right: 0,
+          width: 11, height: 11, borderRadius: 6,
+          backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#fff' }} />
+      )}
+    </View>
+  );
+
   return (
-    <View style={{ alignItems: align, marginHorizontal: 14, marginBottom: 6 }}>
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: BUBBLE_MAX }}>
+    <View style={{
+      flexDirection: 'row', alignItems: 'flex-end',
+      justifyContent: align,
+      marginHorizontal: 12, marginBottom: 8, gap: 8 }}>
+      {!isMe && avatar(peerPhotoURL, !!isPeerOnline)}
+      <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg ? width * 0.78 : BUBBLE_MAX }}>
         {/* Reply preview inside bubble */}
         {message.replyTo && !message.deletedForEveryone && (
           <View style={{
@@ -313,22 +377,43 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
         {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
         <Pressable
           ref={bubbleRef}
-          onPress={() => { if (message.sendState === 'failed' && isMe && message.type === 'text') onRetry?.(message); }}
+          onPress={() => {
+            if (message.sendState === 'failed' && isMe && message.type === 'text') onRetry?.(message);
+            // Fix #31: missed/canceled call cards tap to call back/again.
+            else if (isCallMsg && message.callInfo?.result !== 'completed') onCallBack?.();
+          }}
           onLongPress={handleLongPress}
           delayLongPress={200}
-          style={isMediaMsg ? {
+          style={noChrome ? {
             backgroundColor: 'transparent',
             borderRadius: 16,
             paddingHorizontal: 0, paddingVertical: 0,
             borderWidth: 0,
             overflow: 'hidden',
-          } : {
-            // IMO bubble chrome: 8dp radius, no tails, sent = #bbdefb,
-            // received = #ffffff with a hairline border.
+          } : isCallMsg ? {
+            // Fix #31 (imo-exact call card): wide rounded card, no border,
+            // soft shadow on incoming; tail notch added as first child.
             backgroundColor: bubbleBg,
-            borderRadius: 16,
-            paddingHorizontal: 12, paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 14, paddingVertical: 12,
+            borderWidth: 0,
+            overflow: 'visible',
+            ...(isMe ? {} : {
+              shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6,
+              shadowOffset: { width: 0, height: 2 }, elevation: 2,
+            }),
+          } : {
+            // Fix #31 (imo-exact text bubble): 20dp radius, no tails,
+            // sent = #bbdefb, received = #ffffff with hairline border +
+            // soft shadow.
+            backgroundColor: bubbleBg,
+            borderRadius: 20,
+            paddingHorizontal: 14, paddingVertical: 11,
             borderWidth: isMe ? 0 : 1, borderColor: C.border,
+            ...(isMe ? {} : {
+              shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4,
+              shadowOffset: { width: 0, height: 2 }, elevation: 1,
+            }),
           }}
         >
           {message.deletedForEveryone ? (
@@ -359,29 +444,34 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
               </Text>
             </Pressable>
           ) : message.type === 'call' ? (
-            // CALL LOG (2026-10-09): IMO-style call entry in chat
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+            // Fix #31 (imo-exact call card): tail notch + white 56dp icon
+            // circle + bold title + grey action/duration subtitle. The
+            // outer Pressable handles tap-to-call (see onPress above).
+            <View>
               <View style={{
-                width: 38, height: 38, borderRadius: 19,
-                backgroundColor: message.callInfo?.result === 'missed' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Feather
-                  name="phone"
-                  size={18}
-                  color={message.callInfo?.result === 'missed' ? '#EF4444' : '#22C55E'}
-                />
-              </View>
-              <View>
-                <Text style={{ color: textColor, fontSize: 14, fontWeight: '600' }}>
-                  {message.callInfo?.result === 'missed' ? 'Missed Audio Call'
-                    : message.callInfo?.result === 'rejected' ? 'Declined Audio Call'
-                    : message.callInfo?.result === 'cancelled' ? 'Cancelled Audio Call'
-                    : `Audio Call (${Math.floor((message.callInfo?.durationSec ?? 0) / 60)}:${String((message.callInfo?.durationSec ?? 0) % 60).padStart(2, '0')})`}
-                </Text>
-                <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-                  {message.callInfo?.direction === 'outgoing' ? 'Outgoing' : 'Incoming'}
-                </Text>
+                position: 'absolute', top: 12,
+                ...(isMe ? { right: -6 } : { left: -6 }),
+                width: 14, height: 14, backgroundColor: bubbleBg,
+                transform: [{ rotate: '45deg' }],
+              }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 56, height: 56, borderRadius: 28,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
+                  shadowOffset: { width: 0, height: 2 }, elevation: 2,
+                }}>
+                  <Feather name={callIconName} size={26} color={callIconColor} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: textColor, fontSize: 18, fontWeight: '700' }}>
+                    {callTitle}
+                  </Text>
+                  <Text style={{ color: C.muted, fontSize: 16, marginTop: 2 }}>
+                    {callSubtitle}
+                  </Text>
+                </View>
               </View>
             </View>
           ) : message.type === 'voice' ? (
@@ -392,6 +482,21 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
               durationSec={message.durationSec}
               isMe={isMe}
             />
+          ) : message.type === 'sticker' ? (
+            // Fix #31 (imo-exact sticker): large, no bubble chrome; the
+            // grey time pill below comes from the timestamp block.
+            /^https?:\/\//i.test(message.content) ? (
+              <Image
+                source={{ uri: message.content }}
+                style={{ width: 160, height: 160 }}
+                contentFit="contain"
+                cachePolicy="disk"
+              />
+            ) : (
+              <Text style={{ fontSize: 72, lineHeight: 84 }}>
+                {message.content}
+              </Text>
+            )
           ) : (
             // IMO: 16sp message text.
             <Text style={{ color: textColor, fontSize: 16, lineHeight: 22 }}>
@@ -399,28 +504,39 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
             </Text>
           )}
 
-          {/* Timestamp + ticks — IMO style: 12sp #70000000, inside the
-              bubble at bottom-right, check marks for sent messages. */}
-          {!message.deletedForEveryone && (
+          {/* Fix #31 (imo-exact ticks + sticker pill): sent/delivered =
+              blue hollow circle, seen = blue check; stickers get the grey
+              pill with white time, exactly as imo shows it. */}
+          {!message.deletedForEveryone && (isStickerMsg ? (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4,
+              alignSelf: isMe ? 'flex-end' : 'flex-start',
+              backgroundColor: '#9C9CA3', borderRadius: 12,
+              paddingHorizontal: 8, paddingVertical: 2,
+            }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 12 }}>
+                {formatMsgTime(message.createdAt)}
+              </Text>
+              {isMe && (message.status === 'seen' ? (
+                <Feather name="check" size={12} color="#009DFF" />
+              ) : (
+                <Feather name="circle" size={12} color="#009DFF" />
+              ))}
+            </View>
+          ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
               <Text style={{ color: timeColor, fontSize: 12 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
-              {isMe && (
-                message.status === 'seen' ? (
-                  <Feather name="check-circle" size={12} color={C.seen} />
-                ) : message.status === 'delivered' ? (
-                  // Double tick: two overlapping check icons
-                  <View style={{ flexDirection: 'row', marginLeft: -4 }}>
-                    <Feather name="check" size={12} color={tickColor} />
-                    <Feather name="check" size={12} color={tickColor} style={{ marginLeft: -8 }} />
-                  </View>
-                ) : (
-                  <Feather name="check" size={12} color={tickColor} />
-                )
-              )}
+              {isMe && (message.status === 'seen' ? (
+                <Feather name="check" size={12} color="#009DFF" />
+              ) : message.status === 'sending' ? (
+                <Feather name="clock" size={12} color={C.muted} />
+              ) : (
+                <Feather name="circle" size={12} color="#009DFF" />
+              ))}
             </View>
-          )}
+          ))}
           {isMe && message.sendState === 'failed' && (
             <Text style={{ color: '#D32F2F', fontSize: 12, marginTop: 4, textAlign: 'right' }}>
               Not sent — tap to retry
@@ -458,6 +574,18 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress 
         )}
 
       </Animated.View>
+      {/* Fix #31 (imo-exact): faint heart outline at the right edge of
+          incoming call cards, exactly as imo shows it. */}
+      {!isMe && isCallMsg && (
+        <View style={{ alignSelf: 'center' }}>
+          <Feather name="heart" size={22} color="#C7C7CC" />
+        </View>
+      )}
+      {isMe && (
+        <View style={{ alignSelf: 'center' }}>
+          {avatar(myPhotoURL, false)}
+        </View>
+      )}
       {/* 2026-10-27 (inbox polish): Telegram-style reaction card in a Modal.
           A Modal renders outside the FlatList hierarchy, so the card can
           never merge into, cover, or shift a neighbouring message — the

@@ -9,9 +9,14 @@
  * remote (unchanged) and downloads in the background; replays swap the
  * player to the local file (instant + offline-proof). Any cache failure
  * just keeps remote streaming — the cache is never load-bearing.
- * The player is created lazily per bubble; only one voice message plays at
- * a time is NOT enforced here — rapid taps on two bubbles just move the
- * "now playing" state; each bubble owns its player and cleans up on unmount.
+ * Fix #17 (2026-10-29): single active playback IS enforced here via a
+ * DM-only module registry below (starting one note pauses any other DM
+ * note — voice-room/call audio never touches this file). Loop is OFF:
+ * on natural finish the player is paused BEFORE rewinding, because
+ * seeking while the native player is still in its end state restarts
+ * playback on Android — the old seek-only rewind is what made one play
+ * repeat until manually stopped. Each bubble still owns its player and
+ * cleans up on unmount.
  *
  * 2026-10-22 (perf audit): progress/finish now come from
  * useAudioPlayerStatus (event-driven, updateInterval 250 ms) instead of a
@@ -35,6 +40,20 @@ const C = {
   timeOnBlue: 'rgba(255,255,255,0.85)',
 } as const;
 
+// Fix #17 (DM voice notes ONLY): single active playback registry.
+// VoiceMessageBubble is used ONLY by MessageBubble (DM threads), so this
+// set can never affect voice-room or call audio. Pausing another player
+// flips its own useAudioPlayerStatus, so its UI returns to the play icon
+// automatically — no cross-component state needed.
+const activeDmVoicePlayers = new Set<{ pause: () => void }>();
+function pauseOtherDmVoicePlayers(except: unknown) {
+  activeDmVoicePlayers.forEach((p) => {
+    if (p !== except) {
+      try { p.pause(); } catch { /* torn down — ignore */ }
+    }
+  });
+}
+
 type Props = {
   /** Remote (or local) audio URL — message.content for type='voice'. */
   uri: string;
@@ -55,6 +74,16 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
   const player = useAudioPlayer(uri ? { uri } : null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
 
+  // Fix #17: register this bubble's player for single active playback,
+  // and state loop OFF explicitly (never rely on the native default).
+  useEffect(() => {
+    activeDmVoicePlayers.add(player);
+    try { player.loop = false; } catch { /* noop */ }
+    return () => {
+      activeDmVoicePlayers.delete(player);
+    };
+  }, [player]);
+
   // Voice cache: swap an idle player to the local file when this note was
   // downloaded before. Never interrupts live playback (guarded on playing);
   // a failed lookup or swap just keeps remote streaming.
@@ -73,12 +102,18 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
   const elapsed = status.currentTime || 0;
   const progress = totalSec > 0 ? Math.min(1, elapsed / totalSec) : 0;
 
-  // On natural finish, rewind so the next tap replays from the start
-  // (progress/elapsed derive from currentTime, so the seek resets the UI).
+  // On natural finish: PAUSE first, then rewind, so the next tap replays
+  // from the start (progress/elapsed derive from currentTime, so the seek
+  // resets the UI). The pause is load-bearing: seeking while the native
+  // player is still in its end state restarts playback on Android, which
+  // is the loop bug (one play repeating until manually stopped). After
+  // pause + seek, playing=false and currentTime=0, so the UI shows the
+  // play icon and the full duration again.
   const finishHandledRef = useRef(false);
   useEffect(() => {
     if (status.didJustFinish && !finishHandledRef.current) {
       finishHandledRef.current = true;
+      try { player.pause(); } catch { /* noop */ }
       try { player.seekTo(0); } catch { /* noop */ }
     }
     if (!status.didJustFinish) finishHandledRef.current = false;
@@ -93,6 +128,9 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
       if (playing) {
         player.pause();
       } else {
+        // Fix #17: single active playback — stop any other DM voice note
+        // before starting this one (pausing flips its UI to play state).
+        pauseOtherDmVoicePlayers(player);
         // Cache for replays: download in the background while streaming.
         // Never awaited, never blocks playback; failures just keep streaming.
         void cacheVoiceInBackground(uri);

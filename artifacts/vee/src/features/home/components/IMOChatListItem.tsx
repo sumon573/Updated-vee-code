@@ -3,11 +3,13 @@
  * DP, name, preview, time, with pin/mute/unread/call/online indicators.
  * Matches IMO home screenshot exactly.
  */
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { VerifiedName } from '@/src/components/VerifiedName';
+import { useAuth } from '@/src/context/AuthContext';
+import { subscribeUser } from '@/src/services/userService';
 
 export interface IMOChat {
   id: string;
@@ -41,7 +43,52 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
   const handleLongPress = useCallback(() => onLongPress?.(chat.id), [onLongPress, chat.id]);
   const handleCallPress = useCallback(() => onCallPress?.(chat), [onCallPress, chat]);
 
-  const initials = chat.name.trim().charAt(0).toUpperCase() || '?';
+  // Fix #34 (2026-10-29, boss: chat-list row showed grey "V" + "Vee User"
+  // for a new user whose profile HAS a real name + photo): that chat's
+  // userChats entry was written by sendMessage with ONLY
+  // id/lastMessage/lastMessageTime/unreadCount — no participantId, no
+  // participantName, no participantAvatar (firebaseDmService sendMessage
+  // never writes participant fields, so a first message without a prior
+  // createOrGetChat entry creates a participant-less row). Every
+  // resolution layer in the home shell gates on a truthy participantId
+  // — liveProfiles (IMOHomeScreen), the subscribeUserChats repair worker,
+  // and the avatarCache effect — so such a row can NEVER self-heal and
+  // shows the fallback forever. This row resolves its own peer, chat-list
+  // rows only: when the row arrives without a real photo, derive the peer
+  // uid from the chat id (buildChatId = sorted uids joined by '_') and
+  // subscribe to that profile; the real name/photo win, the incoming
+  // props stay the fallback. Healthy rows (photo present) add no listener
+  // and render exactly as today. (Data-level follow-up, NOT done here:
+  // sendMessage should also write participantId so future entries
+  // self-heal via the existing repair worker.)
+  const { user } = useAuth();
+  const peerUid = useMemo(() => {
+    if (chat.participantId) return chat.participantId;
+    if (chat.photoURL || !user?.uid || !chat.id) return null;
+    const me = user.uid;
+    if (chat.id.startsWith(me + '_')) return chat.id.slice(me.length + 1);
+    if (chat.id.endsWith('_' + me)) return chat.id.slice(0, chat.id.length - me.length - 1);
+    return null;
+  }, [chat.participantId, chat.photoURL, chat.id, user?.uid]);
+  const [resolvedProfile, setResolvedProfile] = useState<{ name?: string; photoURL?: string } | null>(null);
+  useEffect(() => {
+    if (!peerUid || chat.photoURL) return;
+    return subscribeUser(peerUid, (p) => {
+      if (!p) return;
+      setResolvedProfile((prev) => {
+        const photo = p.photoURL || undefined;
+        if (prev && prev.name === p.name && prev.photoURL === photo) return prev;
+        return { name: p.name, photoURL: photo };
+      });
+    });
+  }, [peerUid, chat.photoURL]);
+  // sanitizeVeeUser falls back to 'User' for nameless profiles, but the
+  // chat list's own fallback is 'Vee User' — never let the sanitize
+  // fallback overwrite the list's fallback for genuinely nameless users.
+  const displayName = (resolvedProfile?.name && resolvedProfile.name !== 'User') ? resolvedProfile.name : chat.name;
+  const displayPhotoURL = chat.photoURL || resolvedProfile?.photoURL || null;
+
+  const initials = displayName.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <TouchableOpacity
@@ -76,9 +123,9 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
               : undefined
           }
         >
-          {chat.photoURL ? (
+          {displayPhotoURL ? (
             <Image
-              source={{ uri: chat.photoURL }}
+              source={{ uri: displayPhotoURL }}
               style={{ width: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, height: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, borderRadius: chat.isVoiceClub || chat.hasUnseenStory ? 24 : 26 }}
             />
           ) : (
@@ -145,8 +192,8 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
       {/* Name + Preview */}
       <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
         <VerifiedName
-          name={chat.name}
-          uid={chat.participantId}
+          name={displayName}
+          uid={chat.participantId || peerUid || undefined}
           nameStyle={{ fontSize: 16, fontWeight: '700', color: '#212121' }}
           logoSize={16}
         />

@@ -9,6 +9,8 @@ import { useAuth } from '@/src/context/AuthContext';
 import { ref, onValue, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { UserStories, Story, StoryPrivacy } from '../types';
+import type { Chat } from '../types';
+import { subscribeUserChats } from '../services/firebaseDmService';
 import {
   subscribeAllStories,
   subscribeMyStories,
@@ -36,6 +38,81 @@ export interface UseStoriesResult {
   getContactUids: () => Set<string>;
 }
 
+// ── Fix #24 follow-up (2026-10-29): shared userChats subscription ─────
+// Background-resume freeze root cause: on Firebase reconnect, EVERY active
+// onValue listener re-fires in one burst. The home shell, the chat tab and
+// the stories hook each held their OWN userChats/{uid} listener, so one
+// reconnect produced separate Chat[] allocations and separate chat-list
+// re-renders (each defeating row memoization) — enough to saturate the JS
+// thread, on which RN touch events dispatch, so taps looked dead until the
+// storm drained. This hub keeps exactly ONE underlying subscribeUserChats
+// per uid and fans the SAME array reference out to all consumers,
+// coalesced to a single delivery per animation frame: a reconnect burst
+// becomes ONE re-render, not ~10+.
+// Delivery timing: the frame deferral (<=1 frame, ~16ms) is imperceptible
+// and cached UI stays visible meanwhile; a late joiner gets the last
+// snapshot within a frame, matching onValue's immediate-fire contract.
+// Intermediate snapshots inside one frame are never observed by any
+// consumer (only the latest renders), so delivering only the latest is
+// semantics-preserving — including subscribeUserChats' repair follow-up
+// callback, whose repaired snapshot simply supersedes the first.
+function nextFrame(fn: () => void): void {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+  else setTimeout(fn, 0);
+}
+
+type UserChatsListener = (chats: Chat[]) => void;
+type UserChatsHub = {
+  listeners: Set<UserChatsListener>;
+  last: Chat[] | null;
+  flushQueued: boolean;
+  unsub: () => void;
+};
+const userChatsHubs = new Map<string, UserChatsHub>();
+
+function flushUserChatsHub(hub: UserChatsHub): void {
+  hub.flushQueued = false;
+  const snap = hub.last;
+  if (snap === null) return;
+  // Same reference to every consumer: no per-consumer re-allocation.
+  for (const l of Array.from(hub.listeners)) l(snap);
+}
+
+function queueUserChatsHubFlush(hub: UserChatsHub): void {
+  if (hub.flushQueued) return;
+  hub.flushQueued = true;
+  nextFrame(() => flushUserChatsHub(hub));
+}
+
+export function subscribeSharedUserChats(uid: string, cb: UserChatsListener): () => void {
+  const existing = userChatsHubs.get(uid);
+  if (existing) {
+    existing.listeners.add(cb);
+    if (existing.last !== null) queueUserChatsHubFlush(existing);
+    return () => {
+      existing.listeners.delete(cb);
+      if (existing.listeners.size === 0) {
+        existing.unsub();
+        userChatsHubs.delete(uid);
+      }
+    };
+  }
+  const hub: UserChatsHub = { listeners: new Set(), last: null, flushQueued: false, unsub: () => {} };
+  userChatsHubs.set(uid, hub);
+  hub.unsub = subscribeUserChats(uid, (chats) => {
+    hub.last = chats;
+    queueUserChatsHubFlush(hub);
+  });
+  hub.listeners.add(cb);
+  return () => {
+    hub.listeners.delete(cb);
+    if (hub.listeners.size === 0) {
+      hub.unsub();
+      userChatsHubs.delete(uid);
+    }
+  };
+}
+
 export function useStories(): UseStoriesResult {
   const { user } = useAuth();
   const [stories, setStories] = useState<UserStories[]>([]);
@@ -46,13 +123,41 @@ export function useStories(): UseStoriesResult {
   // Contact UIDs for privacy filtering
   const contactUidsRef = useRef<Set<string>>(new Set());
 
+  // Fix #24 follow-up (2026-10-29): frame-coalesced story updates. The
+  // storySeen + allStories listeners each call setStories; on reconnect
+  // both fire in one burst (myStories below feeds different UI and stays
+  // direct). Queueing their updaters into a single setStories per
+  // animation frame keeps a reconnect burst to ONE story re-render.
+  // markGroupSeen stays direct (a user tap wants immediate feedback); a
+  // queued allStories replace reads seenRef at APPLY time, so it can never
+  // clobber a tap's seen flag.
+  const storiesQueueRef = useRef<Array<(prev: UserStories[]) => UserStories[]>>([]);
+  const storiesFlushRef = useRef({ queued: false, loadingDone: false });
+  const flushStoriesQueue = useCallback(() => {
+    const updaters = storiesQueueRef.current;
+    storiesQueueRef.current = [];
+    const loadingDone = storiesFlushRef.current.loadingDone;
+    storiesFlushRef.current = { queued: false, loadingDone: false };
+    if (updaters.length > 0) {
+      setStories((prev) => updaters.reduce((s, u) => u(s), prev));
+    }
+    if (loadingDone) setLoading(false);
+  }, []);
+  const scheduleStoriesUpdate = useCallback((updater: (prev: UserStories[]) => UserStories[], opts?: { loadingDone?: boolean }) => {
+    storiesQueueRef.current.push(updater);
+    if (opts?.loadingDone) storiesFlushRef.current.loadingDone = true;
+    if (storiesFlushRef.current.queued) return;
+    storiesFlushRef.current.queued = true;
+    nextFrame(flushStoriesQueue);
+  }, [flushStoriesQueue]);
+
   // Subscribe to Firebase-persisted seen state
   useEffect(() => {
     if (!user?.uid) return;
     const unsub = subscribeStorySeen(user.uid, (seenUids) => {
       seenRef.current = seenUids;
-      // Update allSeen for already-loaded stories
-      setStories((prev) => prev.map((g) => ({
+      // Update allSeen for already-loaded stories (frame-coalesced, Fix #24).
+      scheduleStoriesUpdate((prev) => prev.map((g) => ({
         ...g,
         allSeen: seenUids.has(g.userId),
       })));
@@ -60,6 +165,15 @@ export function useStories(): UseStoriesResult {
     return unsub;
   }, [user?.uid]);
 
+  // Fix #24 follow-up (2026-10-29): this raw onValue STAYS, deliberately.
+  // It reads the raw userChats children — including HIDDEN chats, which
+  // subscribeUserChats filters out (sanitizeChat + !isHidden) — so the
+  // shared Chat[] cannot reproduce its participant set (switching sources
+  // would drop hidden-chat participants from the contacts set and hide
+  // their stories from the story row). It writes only a ref and never
+  // re-renders, so it contributes nothing to the reconnect storm; the
+  // render-causing Chat[] listeners are the ones deduped through
+  // subscribeSharedUserChats above.
   // Subscribe to contact UIDs (for privacy='contacts' filtering in StoryBar)
   useEffect(() => {
     if (!user?.uid) return;
@@ -82,11 +196,14 @@ export function useStories(): UseStoriesResult {
     if (!user?.uid) return;
     const uid = user.uid;
     const unsub = subscribeAllStories((groups) => {
-      setStories(groups.map((g) => ({
+      // seenRef is read at APPLY time (inside the updater), so a seen flag
+      // set between the callback and the frame flush is never lost.
+      // loadingDone rides the same flush, so the initial load stays ONE
+      // render (stories + loading flag together, Fix #24).
+      scheduleStoriesUpdate((_prev) => groups.map((g) => ({
         ...g,
         allSeen: seenRef.current.has(g.userId),
-      })));
-      setLoading(false);
+      })), { loadingDone: true });
     }, {
       viewerUid: uid,
       // Getter — called on every stories update, always returns the live set

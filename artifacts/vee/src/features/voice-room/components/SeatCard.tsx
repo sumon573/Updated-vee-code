@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { View, Text, Pressable, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -9,8 +9,6 @@ import { C } from '../constants/theme';
 import { Participant, SeatReaction } from '../types/room';
 import { Avatar } from './Avatar';
 import SeatEmojiReaction from './SeatEmojiReaction';
-import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
-import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 import { useActiveRipple } from '@/src/hooks/useActiveRipple';
 import { useEventEffects, getActiveEffect, effectColor } from '@/src/hooks/useEventEffects';
@@ -18,25 +16,6 @@ import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
 import { seatName } from '@/src/utils/truncateName';
 import { stickerUrl } from '../services/stickerCatalog';
 
-// 2026-10-13 (Sumon): SERVER-DRIVEN badge — admin panel থেকে change করলে সব app-এ instant update
-const FALLBACK_BADGE = require('@/assets/images/vee-badge.png');
-let cachedBadgeIcon: string | null | undefined = undefined;
-function useServerBadgeIcon() {
-  const [icon, setIcon] = useState<string | null>(null);
-  useEffect(() => {
-    if (cachedBadgeIcon !== undefined) {
-      setIcon(cachedBadgeIcon);
-      return;
-    }
-    getOfficialBadgeIconUrl().then((url) => {
-      cachedBadgeIcon = url;
-      setIcon(url);
-    }).catch(() => {
-      cachedBadgeIcon = null;
-    });
-  }, []);
-  return icon;
-}
 
 /* 2026-10-23 (Sumon pick: Style A — Glass Pod, ROUND): custom seat icons.
    Empty seat = a gradient mic with a sparkle ("tap to take the mic");
@@ -99,7 +78,7 @@ function RippleRing({ color }: { color: string }) {
    - Mic badge bottom-right: white when live, red when muted
    - Empty seat: dashed circle with +
    - HOST: gold gradient pill (#ffe27a→#ffb62e)
-   - Occupied: avatar + name + verified badge (unchanged behavior)
+   - Occupied: avatar + name (2026-10-29 boss: verified badge REMOVED from the seat-name label only)
    - Locked: lock overlay on empty seats only (unchanged behavior)
    Memoized so a single chat message doesn't re-render all 10 seats. */
 // Seat avatar diameter — 2026-10-20 polish (boss): 62 → 53 so the
@@ -157,9 +136,6 @@ export const SeatCard = memo(function SeatCard({
   const seatNum = seatIndex + 1;
   const locked  = isLocked;
   const accent  = accentColor;
-  // 2026-10-13 (Sumon): server-driven badge icon
-  const serverBadgeIcon = useServerBadgeIcon();
-  const badgeSource = serverBadgeIcon ? { uri: serverBadgeIcon } : FALLBACK_BADGE;
   const isOwner = member?.role === 'host';
   // 2026-10-26 (boss: realtime true mute state): the seat record can lag
   // the live engine (a failed seat-mute write) — for MY OWN seat the badge
@@ -168,9 +144,6 @@ export const SeatCard = memo(function SeatCard({
   // knows their engine state).
   const isSelfSeat = !!myId && member?.id === myId;
   const showMuted = member?.hostMuted === true ? true : isSelfSeat && selfMuted !== undefined ? selfMuted : !!member?.muted;
-  // 2026-10-14 (Sumon): LIVE verified check — seat data's verified flag goes stale
-  // on revocation (written once at takeSeat, never cleared). Use real-time hook.
-  const hasVerifiedBadge = useVerifiedBadge(member?.id);
   // 2026-10-14 (Sumon): BETTER ARCHITECTURE — listen DIRECTLY to users/{uid}/activeFrame
   // in real-time. No stale seat copies, no mapping bugs. Admin changes reflect LIVE.
   // Any future frame automatically works. This is the permanent fix.
@@ -272,6 +245,11 @@ export const SeatCard = memo(function SeatCard({
                     while speaking. SKIPPED when a Nobel/store frame is
                     equipped: frame art is the decoration and must never
                     be wrapped or clipped. */}
+                {/* 2026-10-29 (Fix #36, boss: seat frame slightly bigger):
+                    seat frames render at 1.25x DP (60dp on the 48dp DP)
+                    instead of the official 1.15x (55.2dp). DP size, grid,
+                    name row, badges, and the frame artwork itself are all
+                    unchanged; non-seat frames keep 1.15x via the default. */}
                 {liveFrameId ? (
                   <Avatar
                     initials={member.initials}
@@ -280,6 +258,7 @@ export const SeatCard = memo(function SeatCard({
                     speaking={member.speaking}
                     accent={accent}
                     photoURL={member.photoURL}
+                    frameScale={1.25}
                     frameType={liveFrameId || undefined}
                     nobleRankIndex={member.nobleRankIndex}
                     activeRipple={liveRipple?.id} rippleColors={liveRipple?.colors}
@@ -363,28 +342,28 @@ export const SeatCard = memo(function SeatCard({
             )}
           </View>
 
-          {/* Name — 2026-10-13 (Sumon): verified badge next to name */}
-          {/* 2026-10-14: use live hasVerifiedBadge, not stale (member as any).verified */}
+          {/* Name — 2026-10-29 (boss): verified badge REMOVED from the seat-name
+              label only. The seat DP's official frame/banner is untouched, and
+              verified badges everywhere else (profile, chat rows, lists, Room
+              Info panel) are untouched — this row only. */}
           {/* 2026-10-19 (IMO port Phase 1): 11.5sp seat name (IMO) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5 }}>
+          {/* 2026-10-29 (boss: long names collide with the neighbour): the row
+              used to size to its content (no width) and the Text had no shrink,
+              so a long name overflowed its 20%-wide cell, spilling left into
+              the adjacent seat's name. The row is now exactly the cell width
+              and the Text shrinks with tail ellipsis inside its own column. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5, width: '100%' }}>
             <Text style={{
               color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
-              textAlign: 'center',
-            }} numberOfLines={1}>{seatName(member.name)}</Text>
+              textAlign: 'center', flexShrink: 1,
+            }} numberOfLines={1} ellipsizeMode="tail">{seatName(member.name)}</Text>
             {vibeArtUrl ? <VibeHandFx artUrl={vibeArtUrl} /> : null}
-            {hasVerifiedBadge && (
-              <Image
-                source={badgeSource}
-                style={{ width: 12, height: 12, marginLeft: 2 }}
-                contentFit="contain"
-                cachePolicy="memory-disk"
-              />
-            )}
           </View>
 
           {/* 2026-10-26 (boss): role pills under seat names REMOVED — names
               stay clean. Host/admin POWERS are untouched (role checks, not
-              the pill); the crown/host label and verified badge stay. */}
+              the pill); the crown/host label stays. The seat-name verified
+              badge was removed 2026-10-29 (boss) — seat label only. */}
         </>
       ) : (
         /* ── Empty / locked seat — 2026-10-23 (Sumon pick: Style A

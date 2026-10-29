@@ -21,7 +21,7 @@ import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 import UserSearchModal from '@/src/features/user-search/UserSearchModal';
 import { Chat } from '@/src/features/chat/types';
 import {
-  subscribeUserChats, pinChat, unpinChat, clearChat } from '@/src/features/chat/services/firebaseDmService';
+  pinChat, unpinChat, clearChat } from '@/src/features/chat/services/firebaseDmService';
 import { CoupleInviteCard, type CoupleInviteSenderProfile } from '@/src/features/intimacy/CoupleInviteCard';
 import {
   subscribeIncomingCoupleInvites, acceptCoupleInvite, rejectCoupleInvite,
@@ -34,7 +34,7 @@ import {
 } from '@/src/features/intimacy/friendService';
 import { fetchPeerProfile } from '@/src/features/voice-room/services/intimacyService';
 import { deleteStory } from '@/src/features/chat/services/firebaseStoryService';
-import { useStories } from '@/src/features/chat/hooks/useStories';
+import { useStories, subscribeSharedUserChats } from '@/src/features/chat/hooks/useStories';
 import { useAuth } from '@/src/context/AuthContext';
 import { VeeUser } from '@/src/services/userService';
 
@@ -63,9 +63,13 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
   const [chats, setChats]               = useState<Chat[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
 
+  // Fix #24 follow-up (2026-10-29): shared hub — one underlying
+  // userChats listener for shell + this tab, frame-coalesced, so a
+  // reconnect burst becomes one re-render instead of a render per
+  // duplicate listener (see subscribeSharedUserChats in useStories).
   useEffect(() => {
     if (!user?.uid) return;
-    const unsub = subscribeUserChats(user.uid, (firebaseChats) => {
+    const unsub = subscribeSharedUserChats(user.uid, (firebaseChats) => {
       setChats(firebaseChats);
       setLoadingChats(false);
     });

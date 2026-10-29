@@ -1,22 +1,22 @@
 // Room Profile page — 2026-10-29 (boss, imo mirror)
 // Opened by the profile's bottom "Edit" button. Exact imo row order:
 //   Edit Profile | Bio | Motto | Level | Gender | Birthday |
-//   Country/Region | VoiceClub ID | Background
+//   Country/Region | Background
 //
 // Birthday → age is CALCULATED and shown on the profile chip (never typed).
-// VoiceClub ID is display-only (NO chevron) and is the SAME value as the
-// "..." popup (profile vId) — never the short 4-digit ID.
-// Country/Region row: rendered imo-exact (value + chevron) but its tap is
-// a no-op display for now — the boss has not decided automatic-only vs
-// picker. Do NOT build a country picker here.
-// NOTE: city/hometown/birthday/gender/country are NOT in the VeeUser type
+// Country/Region row: imo-exact picker (boss, 2026-10-29) — tap opens the
+// "Choose a Country/Region" sheet; the chosen name is saved to `country`
+// (the same field the profile country chip + room-card flag disc read).
+// Names come from ./countries.ts and match index.tsx's COUNTRY_TO_CODE
+// map verbatim where the map has an entry, so flags render.
+// NOTE: city/hometown/birthday/gender/country/language/profession are NOT in the VeeUser type
 // and sanitizeVeeUser drops them on read, so they are read raw here and
 // written via updateUser (a plain update). Follow-up: add these fields to
 // VeeUser + sanitize (userService change, separate order).
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, Image, Modal, Pressable, ScrollView, Text, TextInput, View,
+  Alert, FlatList, Image, Modal, Pressable, ScrollView, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,6 +30,7 @@ import { uploadCoverPhoto } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { LevelBadge, calcAge, genderSymbol } from './index';
+import { COUNTRIES } from './countries';
 
 const C = {
   bg: '#F4F5F5', card: '#FFFFFF', text: '#1A1A1A', muted: '#666666',
@@ -39,6 +40,7 @@ const C = {
 
 type ExtraFields = {
   city?: string; hometown?: string; birthday?: string; gender?: string; country?: string;
+  language?: string; profession?: string;
 };
 
 function Row({ label, value, sub, onPress, chevron = true, children }: {
@@ -74,6 +76,54 @@ function Divider() {
   return <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 15 }} />;
 }
 
+// ── Birthday wheel column (imo-exact): one vertical FlatList acting as a
+// scroll wheel. Items snap to WHEEL_ITEM_H so the settled offset is always
+// an exact multiple of it; the centered item is the selected value (the
+// light-grey band in the sheet sits behind the list at that position).
+// Selection updates only on scroll END (drag end / momentum end) — never
+// on every scroll frame — so scrolling stays native and jank-free.
+const WHEEL_ITEM_H = 56;
+
+function WheelColumn({ values, value, onValueChange, listRef }: {
+  values: number[]; value: number; onValueChange: (v: number) => void;
+  listRef: React.RefObject<FlatList<number> | null>;
+}) {
+  const selectedIndex = values.indexOf(value);
+  const settle = (offsetY: number) => {
+    const idx = Math.min(values.length - 1, Math.max(0, Math.round(offsetY / WHEEL_ITEM_H)));
+    const v = values[idx];
+    if (v !== value) onValueChange(v);
+  };
+  return (
+    <View style={{ flex: 1, height: WHEEL_ITEM_H * 3 }}>
+      <FlatList
+        ref={listRef}
+        data={values}
+        keyExtractor={(v) => String(v)}
+        getItemLayout={(_, index) => ({ length: WHEEL_ITEM_H, offset: WHEEL_ITEM_H + index * WHEEL_ITEM_H, index })}
+        snapToInterval={WHEEL_ITEM_H}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: WHEEL_ITEM_H, paddingBottom: WHEEL_ITEM_H }}
+        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.y)}
+        onScrollEndDrag={(e) => settle(e.nativeEvent.contentOffset.y)}
+        renderItem={({ item, index }) => {
+          const selected = index === selectedIndex;
+          return (
+            <View style={{ height: WHEEL_ITEM_H, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: selected ? 20 : 17, fontWeight: selected ? '600' : '400', color: selected ? C.text : '#BBBBBB' }}>
+                {item}
+              </Text>
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
 export default function RoomProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -89,10 +139,23 @@ export default function RoomProfileScreen() {
   const [bioModal, setBioModal] = useState(false);
   const [cityDraft, setCityDraft] = useState('');
   const [hometownDraft, setHometownDraft] = useState('');
+  const [languageDraft, setLanguageDraft] = useState('');
+  const [professionDraft, setProfessionDraft] = useState('');
   const [mottoModal, setMottoModal] = useState(false);
   const [mottoDraft, setMottoDraft] = useState('');
   const [birthdayModal, setBirthdayModal] = useState(false);
-  const [birthdayDraft, setBirthdayDraft] = useState('');
+  const [birthdayYear, setBirthdayYear] = useState(2000);
+  const [birthdayMonth, setBirthdayMonth] = useState(1);
+  const [birthdayDay, setBirthdayDay] = useState(1);
+  const yearListRef = useRef<FlatList<number> | null>(null);
+  const monthListRef = useRef<FlatList<number> | null>(null);
+  const dayListRef = useRef<FlatList<number> | null>(null);
+  const birthdayTargetRef = useRef({ y: 2000, m: 1, d: 1 });
+  const [countryPicker, setCountryPicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [countryDraft, setCountryDraft] = useState<string | null>(null);
+  const [genderPicker, setGenderPicker] = useState(false);
+  const [genderDraft, setGenderDraft] = useState<string | null>(null);
 
   useEffect(() => {
     if (!displayUid) return;
@@ -115,6 +178,7 @@ export default function RoomProfileScreen() {
           setExtra({
             city: pick('city'), hometown: pick('hometown'),
             birthday: pick('birthday'), gender: pick('gender'), country: pick('country'),
+            language: pick('language'), profession: pick('profession'),
           });
         });
       } catch {}
@@ -178,32 +242,90 @@ export default function RoomProfileScreen() {
     ]);
   }, [user?.uid, isMe]);
 
+  // ── 2026-10-29 (boss, cover viewer): Background row mirrors the profile
+  // cover tap — show the cover full-screen FIRST (same viewer + same
+  // Change pill); Change opens the change flow. No cover set -> the tap
+  // goes directly to the change flow.
+  const handleBackgroundTap = useCallback(() => {
+    if (profile?.coverImageUrl) {
+      router.push({ pathname: '/profile/dp-viewer', params: { kind: 'cover' } } as never);
+    } else {
+      void handleChangeCover();
+    }
+  }, [profile?.coverImageUrl, handleChangeCover]);
+
+  // Gender picker: imo-exact bottom sheet (replaces the old native Alert
+  // selector). The sheet opens with the current gender pre-selected;
+  // the blue confirm button saves via the existing saveFields path.
   const openGenderPicker = useCallback(() => {
     if (!isMe) return;
-    Alert.alert('Gender', 'Choose your gender', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Male', onPress: () => void saveFields({ gender: 'Male' }) },
-      { text: 'Female', onPress: () => void saveFields({ gender: 'Female' }) },
-      { text: 'Other', onPress: () => void saveFields({ gender: 'Other' }) },
-    ]);
-  }, [isMe, saveFields]);
+    setGenderDraft(extra.gender ?? null);
+    setGenderPicker(true);
+  }, [isMe, extra.gender]);
 
-  const validBirthday = (s: string): boolean => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
-    if (!m) return false;
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    if (d.getFullYear() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return false;
-    return d.getTime() <= Date.now();
+  const openCountryPicker = useCallback(() => {
+    if (!isMe) return;
+    setCountryDraft(extra.country ?? null);
+    setCountrySearch('');
+    setCountryPicker(true);
+  }, [isMe, extra.country]);
+
+  // ── Birthday wheel picker (boss, imo-exact): Year | Month | Day wheels.
+  // Day count follows the selected month/year (leap years handled by Date);
+  // the day clamps when month/year changes. The row display stays
+  // "YYYY-MM-DD"; the sheet has no age preview (imo-exact). Years run
+  // 1900 through the current year (computed at render, so the top year
+  // is always the current one).
+  const daysInMonth = (y: number, m: number): number => new Date(y, m, 0).getDate();
+  const currentYear = new Date().getFullYear();
+  const wheelYears = Array.from({ length: currentYear - 1900 + 1 }, (_, i) => 1900 + i);
+  const wheelMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const wheelDays = Array.from({ length: daysInMonth(birthdayYear, birthdayMonth) }, (_, i) => i + 1);
+
+  const scrollWheelTo = (ref: React.RefObject<FlatList<number> | null>, index: number) => {
+    ref.current?.scrollToOffset({ offset: index * WHEEL_ITEM_H, animated: false });
   };
+
+  const scrollWheelsToTarget = () => {
+    const t = birthdayTargetRef.current;
+    scrollWheelTo(yearListRef, wheelYears.indexOf(t.y));
+    scrollWheelTo(monthListRef, t.m - 1);
+    scrollWheelTo(dayListRef, t.d - 1);
+  };
+
+  const openBirthdayPicker = useCallback(() => {
+    if (!isMe) return;
+    // Parse the stored birthday; fall back to 2000-01-01 when none is set
+    // or the stored value is invalid (wheels always need a position).
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((extra.birthday ?? '').trim());
+    let y = 2000; let mo = 1; let d = 1;
+    if (m) {
+      const yy = Number(m[1]); const mm = Number(m[2]); const dd = Number(m[3]);
+      const dt = new Date(yy, mm - 1, dd);
+      if (dt.getFullYear() === yy && dt.getMonth() === mm - 1 && dt.getDate() === dd && dt.getTime() <= Date.now()) {
+        y = yy; mo = mm; d = dd;
+      }
+    }
+    birthdayTargetRef.current = { y, m: mo, d };
+    setBirthdayYear(y); setBirthdayMonth(mo); setBirthdayDay(d);
+    setBirthdayModal(true);
+    // Visual scroll position only — the saved value always comes from state,
+    // so a scroll race can never corrupt the date. The timeout scrolls
+    // during the slide-in; onShow re-scrolls after presentation as backup.
+    setTimeout(scrollWheelsToTarget, 100);
+  }, [isMe, extra.birthday]);
 
   const displayName = profile?.name ?? 'User';
   const photoURL = profile?.photoURL ?? null;
-  const vId = profile?.vId ?? null;
   const bio = profile?.bio ?? '';
   const totalLevel = levelInfo?.totalLevel ?? 1;
   const genderSym = genderSymbol(extra.gender);
   const age = calcAge(extra.birthday);
-  const cityLines = [extra.city, extra.hometown].filter((x): x is string => !!x);
+  const cityLines = [extra.city, extra.hometown, extra.language, extra.profession].filter((x): x is string => !!x);
+  const countryQuery = countrySearch.trim().toLowerCase();
+  const filteredCountries = countryQuery
+    ? COUNTRIES.filter((n) => n.toLowerCase().includes(countryQuery))
+    : COUNTRIES;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -242,7 +364,7 @@ export default function RoomProfileScreen() {
           <Row
             label="Bio"
             sub={cityLines}
-            onPress={isMe ? () => { setCityDraft(extra.city ?? ''); setHometownDraft(extra.hometown ?? ''); setBioModal(true); } : undefined}
+            onPress={isMe ? () => { setCityDraft(extra.city ?? ''); setHometownDraft(extra.hometown ?? ''); setLanguageDraft(extra.language ?? ''); setProfessionDraft(extra.profession ?? ''); setBioModal(true); } : undefined}
           />
           <Divider />
 
@@ -275,22 +397,21 @@ export default function RoomProfileScreen() {
           <Row
             label="Birthday"
             value={extra.birthday ?? ''}
-            onPress={isMe ? () => { setBirthdayDraft(extra.birthday ?? ''); setBirthdayModal(true); } : undefined}
+            onPress={isMe ? openBirthdayPicker : undefined}
           />
           <Divider />
 
-          {/* Country/Region: imo-exact row, tap is a no-op display for now.
-              Boss decision pending: automatic-only vs picker. No picker built. */}
-          <Row label="Country/Region" value={extra.country ?? ''} />
-          <Divider />
-
-          {/* VoiceClub ID: display-only, NO chevron. Same value as the "..." popup. */}
-          <Row label="VoiceClub ID" value={vId ?? ''} chevron={false} />
+          {/* Country/Region: tap opens the imo-exact picker sheet. */}
+          <Row
+            label="Country/Region"
+            value={extra.country ?? ''}
+            onPress={isMe ? openCountryPicker : undefined}
+          />
           <Divider />
 
           <Row
             label="Background"
-            onPress={isMe ? handleChangeCover : undefined}
+            onPress={isMe ? handleBackgroundTap : undefined}
           >
             <View style={{ marginRight: 6 }}>
               {uploadingCover ? (
@@ -306,28 +427,27 @@ export default function RoomProfileScreen() {
           </Row>
         </View>
 
-        {age !== null && (
-          <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 16 }}>
-            {genderSym ? `${genderSym} ` : ''}Age {age} — calculated from your birthday
-          </Text>
-        )}
       </ScrollView>
 
-      {/* Bio editor: city + hometown */}
+      {/* Bio editor: current city + hometown + language + profession */}
       <Modal visible={bioModal} transparent animationType="fade" onRequestClose={() => setBioModal(false)}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 }} onPress={() => setBioModal(false)}>
           <Pressable style={{ width: '100%', backgroundColor: C.card, borderRadius: 16, padding: 20 }} onPress={() => {}}>
             <Text style={{ fontSize: 17, fontWeight: '600', color: C.text, marginBottom: 12 }}>Bio</Text>
-            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>City</Text>
-            <TextInput value={cityDraft} onChangeText={setCityDraft} placeholder="City" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text, marginBottom: 12 }} />
+            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>Current City</Text>
+            <TextInput value={cityDraft} onChangeText={setCityDraft} placeholder="Current City" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text, marginBottom: 12 }} />
             <Text style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>Hometown</Text>
-            <TextInput value={hometownDraft} onChangeText={setHometownDraft} placeholder="Hometown" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text }} />
+            <TextInput value={hometownDraft} onChangeText={setHometownDraft} placeholder="Hometown" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text, marginBottom: 12 }} />
+            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>Language</Text>
+            <TextInput value={languageDraft} onChangeText={setLanguageDraft} placeholder="Language" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text, marginBottom: 12 }} />
+            <Text style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>Profession</Text>
+            <TextInput value={professionDraft} onChangeText={setProfessionDraft} placeholder="Profession" placeholderTextColor={C.mutedLight} style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text }} />
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
               <Pressable onPress={() => setBioModal(false)} style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
                 <Text style={{ fontSize: 15, color: C.muted }}>Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={() => { void saveFields({ city: cityDraft.trim(), hometown: hometownDraft.trim() }); setBioModal(false); }}
+                onPress={() => { void saveFields({ city: cityDraft.trim(), hometown: hometownDraft.trim(), language: languageDraft.trim(), profession: professionDraft.trim() }); setBioModal(false); }}
                 style={{ paddingVertical: 10, paddingHorizontal: 16 }}
               >
                 <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue }}>Save</Text>
@@ -358,37 +478,178 @@ export default function RoomProfileScreen() {
         </Pressable>
       </Modal>
 
-      {/* Birthday editor: YYYY-MM-DD, age preview calculated live */}
-      <Modal visible={birthdayModal} transparent animationType="fade" onRequestClose={() => setBirthdayModal(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 }} onPress={() => setBirthdayModal(false)}>
-          <Pressable style={{ width: '100%', backgroundColor: C.card, borderRadius: 16, padding: 20 }} onPress={() => {}}>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: C.text, marginBottom: 12 }}>Birthday</Text>
-            <TextInput value={birthdayDraft} onChangeText={setBirthdayDraft} placeholder="YYYY-MM-DD" placeholderTextColor={C.mutedLight} keyboardType="numbers-and-punctuation" style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 15, color: C.text }} />
-            <Text style={{ fontSize: 13, color: C.muted, marginTop: 8 }}>
-              {validBirthday(birthdayDraft)
-                ? `Age shown on your profile: ${calcAge(birthdayDraft.trim())}`
-                : 'Enter a valid past date (YYYY-MM-DD). Your age is calculated from it.'}
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
-              <Pressable onPress={() => setBirthdayModal(false)} style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
-                <Text style={{ fontSize: 15, color: C.muted }}>Cancel</Text>
-              </Pressable>
+      {/* Birthday picker: imo-exact wheel sheet — Year | Month | Day wheels
+          with a light-grey selected band + blue confirm button. No age
+          preview inside the sheet (imo-exact); age shows on the profile
+          chips row after save. The old YYYY-MM-DD text modal is fully
+          replaced — no second path remains. */}
+      <Modal visible={birthdayModal} transparent animationType="slide" onRequestClose={() => setBirthdayModal(false)} onShow={scrollWheelsToTarget}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            onPress={() => setBirthdayModal(false)}
+          />
+          <View style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 16 }}>
+            <View style={{ position: 'relative' }}>
+              <View style={{ position: 'absolute', top: WHEEL_ITEM_H, left: 0, right: 0, height: WHEEL_ITEM_H, backgroundColor: C.tile }} pointerEvents="none" />
+              <View style={{ flexDirection: 'row' }}>
+                <WheelColumn
+                  values={wheelYears}
+                  value={birthdayYear}
+                  listRef={yearListRef}
+                  onValueChange={(y) => {
+                    setBirthdayYear(y);
+                    const max = daysInMonth(y, birthdayMonth);
+                    if (birthdayDay > max) {
+                      setBirthdayDay(max);
+                      setTimeout(() => scrollWheelTo(dayListRef, max - 1), 50);
+                    }
+                  }}
+                />
+                <WheelColumn
+                  values={wheelMonths}
+                  value={birthdayMonth}
+                  listRef={monthListRef}
+                  onValueChange={(mo) => {
+                    setBirthdayMonth(mo);
+                    const max = daysInMonth(birthdayYear, mo);
+                    if (birthdayDay > max) {
+                      setBirthdayDay(max);
+                      setTimeout(() => scrollWheelTo(dayListRef, max - 1), 50);
+                    }
+                  }}
+                />
+                <WheelColumn
+                  values={wheelDays}
+                  value={birthdayDay}
+                  listRef={dayListRef}
+                  onValueChange={setBirthdayDay}
+                />
+              </View>
+            </View>
+            <View style={{ marginTop: 16 }}>
               <Pressable
                 onPress={() => {
-                  if (!validBirthday(birthdayDraft)) {
-                    Alert.alert('Invalid date', 'Please enter a valid past date as YYYY-MM-DD.');
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  const dt = new Date(birthdayYear, birthdayMonth - 1, birthdayDay);
+                  if (dt.getTime() > Date.now()) {
+                    Alert.alert('Invalid date', 'Please choose a past date.');
                     return;
                   }
-                  void saveFields({ birthday: birthdayDraft.trim() });
+                  void saveFields({ birthday: `${birthdayYear}-${pad(birthdayMonth)}-${pad(birthdayDay)}` });
                   setBirthdayModal(false);
                 }}
-                style={{ paddingVertical: 10, paddingHorizontal: 16 }}
+                style={{ height: 52, borderRadius: 12, backgroundColor: '#0098F8', alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue }}>Save</Text>
+                <Feather name="check" size={24} color="#FFFFFF" />
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Country picker: imo-exact sheet — title + Search + alphabetical
+          list (FlatList, smooth native scroll) + blue confirm button.
+          Selection starts at the current country; ✓ saves + closes;
+          backdrop/back closes WITHOUT saving. */}
+      <Modal visible={countryPicker} transparent animationType="slide" onRequestClose={() => setCountryPicker(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            onPress={() => setCountryPicker(false)}
+          />
+          <View style={{ height: '86%', backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
+            <View style={{ alignItems: 'center', paddingTop: 10 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#DDDDDD' }} />
+            </View>
+            <Text style={{ fontSize: 21, fontWeight: '700', color: C.text, paddingHorizontal: 16, marginTop: 12, marginBottom: 16 }}>
+              Choose a Country/Region
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F8F8', borderRadius: 12, marginHorizontal: 16, paddingHorizontal: 12, height: 46, marginBottom: 8 }}>
+              <Feather name="search" size={19} color={C.mutedLight} />
+              <TextInput
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+                placeholder="Search"
+                placeholderTextColor={C.mutedLight}
+                autoCorrect={false}
+                style={{ flex: 1, marginLeft: 8, fontSize: 16, color: C.text }}
+              />
+            </View>
+            <FlatList
+              data={filteredCountries}
+              keyExtractor={(name) => name}
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const selected = countryDraft === item;
+                return (
+                  <Pressable onPress={() => setCountryDraft(item)}>
+                    <View style={{ paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: selected ? C.blueLight : 'transparent' }}>
+                      <Text style={{ fontSize: 17, color: selected ? C.blue : C.text }}>{item}</Text>
+                      {selected && <Feather name="check" size={19} color={C.blue} />}
+                    </View>
+                    <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 16 }} />
+                  </Pressable>
+                );
+              }}
+            />
+            <View style={{ padding: 16, paddingTop: 8 }}>
+              <Pressable
+                onPress={() => {
+                  if (countryDraft && countryDraft !== extra.country) void saveFields({ country: countryDraft });
+                  setCountryPicker(false);
+                }}
+                style={{ height: 52, borderRadius: 12, backgroundColor: '#0098F8', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Feather name="check" size={24} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Gender picker: imo-exact sheet — small grey title + Male /
+          Female / Other rows (blue check on the selected row only, no
+          row highlight, per the screenshot) + blue confirm button.
+          Row tap moves the selection; the blue check saves via the
+          existing gender save path and closes; backdrop/back closes
+          WITHOUT saving. The old Alert selector is fully replaced —
+          no second path remains. */}
+      <Modal visible={genderPicker} transparent animationType="slide" onRequestClose={() => setGenderPicker(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            onPress={() => setGenderPicker(false)}
+          />
+          <View style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 16 }}>
+            <Text style={{ fontSize: 15, color: C.muted, marginBottom: 8 }}>Gender</Text>
+            {(['Male', 'Female', 'Other'] as const).map((g, i) => {
+              const selected = genderDraft === g;
+              return (
+                <Pressable key={g} onPress={() => setGenderDraft(g)}>
+                  <View style={{ paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontSize: 17, color: C.text }}>{g}</Text>
+                    {selected && <Feather name="check" size={19} color={C.blue} />}
+                  </View>
+                  {i < 2 && <View style={{ height: 0.5, backgroundColor: C.border }} />}
+                </Pressable>
+              );
+            })}
+            <View style={{ marginTop: 16 }}>
+              <Pressable
+                onPress={() => {
+                  if (genderDraft && genderDraft !== extra.gender) void saveFields({ gender: genderDraft });
+                  setGenderPicker(false);
+                }}
+                style={{ height: 52, borderRadius: 12, backgroundColor: '#0098F8', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Feather name="check" size={24} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

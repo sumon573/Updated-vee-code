@@ -5,12 +5,13 @@
  */
 
 import { memo, useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, Pressable, Alert, TextInput, Platform } from 'react-native';
+import { View, Text, FlatList, Pressable, Alert, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, get, remove } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
@@ -236,6 +237,40 @@ const ContactRow = memo(function ContactRow({
   );
 });
 
+/* ── Cached-first lists (2026-10-29, Fix #19: NO loading page) ───────────
+   The Contacts screen never shows a full-page spinner. Lists render
+   instantly from the last-known data: an in-memory cache (synchronous,
+   survives the tab unmount/remount cycle) backed by AsyncStorage
+   (survives app restarts, works offline) — the same pattern as the chat
+   cache service. Live subscriptions refresh in the background and
+   overwrite the cache on every successful update. Failures never clear
+   the cache — the last-known list stays (keep-last-known rule). */
+const friendsMemCache: Record<string, VeeUser[]> = {};
+const incomingMemCache: Record<string, FriendRequest[]> = {};
+const sentMemCache: Record<string, VeeUser[]> = {};
+
+const contactsCacheKey = (kind: string, uid: string) => `vee_contacts_${kind}_${uid}`;
+
+async function readCachedList<T>(kind: string, uid: string): Promise<T[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(contactsCacheKey(kind, uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((i) => i && typeof i === 'object') as T[];
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedList(kind: string, uid: string, list: unknown): void {
+  try {
+    AsyncStorage.setItem(contactsCacheKey(kind, uid), JSON.stringify(list)).catch(() => {});
+  } catch {
+    /* stringify failure — cache stays as-is */
+  }
+}
+
 type Tab = 'friends' | 'requests';
 type RequestSubTab = 'received' | 'sent';
 
@@ -246,19 +281,23 @@ export default function ContactsScreen() {
   const [tab, setTab] = useState<Tab>('friends');
   const [requestSubTab, setRequestSubTab] = useState<RequestSubTab>('received');
 
-  // Friends list
-  const [contacts, setContacts] = useState<VeeUser[]>([]);
-  const [contactsLoading, setContactsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // Friends list — initialized from the in-memory cache so a remount
+  // (e.g. returning to the Contacts tab) paints instantly, no spinner.
+  const [contacts, setContacts] = useState<VeeUser[]>(() =>
+    me?.uid ? friendsMemCache[me.uid] ?? [] : [],
+  );
 
   // Incoming (received) requests
-  const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>(() =>
+    me?.uid ? incomingMemCache[me.uid] ?? [] : [],
+  );
   const [requestActionUid, setRequestActionUid] = useState<string | null>(null);
 
   // Sent requests
   const [sentRequestUids, setSentRequestUids] = useState<string[]>([]);
-  const [sentRequestUsers, setSentRequestUsers] = useState<VeeUser[]>([]);
-  const [sentLoading, setSentLoading] = useState(false);
+  const [sentRequestUsers, setSentRequestUsers] = useState<VeeUser[]>(() =>
+    me?.uid ? sentMemCache[me.uid] ?? [] : [],
+  );
   const [cancellingUid, setCancellingUid] = useState<string | null>(null);
 
   const [searchModalOpen, setSearchModalOpen] = useState(false);
@@ -318,25 +357,57 @@ export default function ContactsScreen() {
     return results.filter(Boolean) as VeeUser[];
   }, []);
 
+  // ─── Cached-first hydrate (Fix #19) ────────────────────────────────────
+  // On mount / uid change, paint the last-known lists from cache before
+  // any network round-trip. No spinner ever: if there is no cache yet
+  // (and the device is offline), the empty state renders instead.
+  useEffect(() => {
+    if (!me?.uid) return;
+    const uid = me.uid;
+    let stale = false;
+    (async () => {
+      if (friendsMemCache[uid]) {
+        setContacts(friendsMemCache[uid]);
+      } else {
+        const cached = await readCachedList<VeeUser>('friends', uid);
+        if (!stale && cached) { friendsMemCache[uid] = cached; setContacts(cached); }
+      }
+      if (incomingMemCache[uid]) {
+        setIncomingRequests(incomingMemCache[uid]);
+      } else {
+        const cached = await readCachedList<FriendRequest>('incoming', uid);
+        if (!stale && cached) { incomingMemCache[uid] = cached; setIncomingRequests(cached); }
+      }
+      if (sentMemCache[uid]) {
+        setSentRequestUsers(sentMemCache[uid]);
+      } else {
+        const cached = await readCachedList<VeeUser>('sent', uid);
+        if (!stale && cached) { sentMemCache[uid] = cached; setSentRequestUsers(cached); }
+      }
+    })().catch(() => {});
+    return () => { stale = true; };
+  }, [me?.uid]);
+
   // ─── Friends subscription ────────────────────────────────────────────────
 
   useEffect(() => {
     if (!me?.uid || tab !== 'friends') return;
-    setContactsLoading(true);
     let stale = false;
     const unsub = subscribeFriendUids(me.uid, async (uids) => {
       // FIX: fetchUsers is a network read — a rejection here previously
       // escaped as an unhandled promise rejection (async onValue callback).
       // Keep the previous list on transient failure; the next snapshot
       // re-triggers this callback and retries.
+      // Fix #19: no loading flag — the cached list stays on screen while
+      // this refreshes in the background; success updates the cache.
       try {
         const users = await fetchUsers(uids);
         if (stale) return;
         setContacts(users);
+        friendsMemCache[me.uid] = users;
+        writeCachedList('friends', me.uid, users);
       } catch {
         /* transient load failure — list stays as-is until next snapshot */
-      } finally {
-        if (!stale) setContactsLoading(false);
       }
     });
     return () => { stale = true; unsub(); };
@@ -346,7 +417,12 @@ export default function ContactsScreen() {
 
   useEffect(() => {
     if (!me?.uid) return;
-    const unsub = subscribeIncomingRequests(me.uid, setIncomingRequests);
+    const uid = me.uid;
+    const unsub = subscribeIncomingRequests(uid, (reqs) => {
+      setIncomingRequests(reqs);
+      incomingMemCache[uid] = reqs;
+      writeCachedList('incoming', uid, reqs);
+    });
     return unsub;
   }, [me?.uid]);
 
@@ -354,31 +430,41 @@ export default function ContactsScreen() {
 
   useEffect(() => {
     if (!me?.uid) return;
-    const unsub = subscribeSentRequestUids(me.uid, setSentRequestUids);
+    const uid = me.uid;
+    const unsub = subscribeSentRequestUids(uid, (uids) => {
+      setSentRequestUids(uids);
+      if (uids.length === 0) {
+        sentMemCache[uid] = [];
+        writeCachedList('sent', uid, []);
+      }
+    });
     return unsub;
   }, [me?.uid]);
 
   // When sentRequestUids change, fetch full user objects
   useEffect(() => {
     if (sentRequestUids.length === 0) { setSentRequestUsers([]); return; }
-    setSentLoading(true);
+    const uid = me?.uid;
     let stale = false;
     // FIX: fetchUsers can reject (offline / permission) — this promise
     // previously had no .catch, producing an unhandled rejection. The stale
     // flag also guards setState after unmount.
+    // Fix #19: no loading flag — the cached list stays on screen while
+    // this refreshes in the background; success updates the cache.
     fetchUsers(sentRequestUids)
       .then((users) => {
         if (stale) return;
         setSentRequestUsers(users);
+        if (uid) {
+          sentMemCache[uid] = users;
+          writeCachedList('sent', uid, users);
+        }
       })
       .catch(() => {
-        /* transient load failure — list stays as-is; spinner stops below */
-      })
-      .finally(() => {
-        if (!stale) setSentLoading(false);
+        /* transient load failure — list stays as-is until next snapshot */
       });
     return () => { stale = true; };
-  }, [sentRequestUids, fetchUsers]);
+  }, [sentRequestUids, fetchUsers, me?.uid]);
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -566,12 +652,6 @@ export default function ContactsScreen() {
   // 2026-10-13 (Sumon): ব্লকড ইউজার কোনো লিস্টে দেখা যাবে না
   // (আনব্লক: Privacy → Blocked Users)।
   const visibleContacts = contacts.filter((u) => !blockedUids.has(u.uid));
-  const filtered = search.trim()
-    ? visibleContacts.filter((u) =>
-        u.name?.toLowerCase().includes(search.toLowerCase()) ||
-        u.vId?.toLowerCase().includes(search.toLowerCase()),
-      )
-    : visibleContacts;
 
   const visibleIncoming = incomingRequests.filter((r) => !blockedUids.has(r.fromUid));
   const visibleSent = sentRequestUsers.filter((u) => !blockedUids.has(u.uid));
@@ -645,7 +725,7 @@ export default function ContactsScreen() {
         {(['friends', 'requests'] as Tab[]).map((t_) => (
           <Pressable
             key={t_}
-            onPress={() => { setTab(t_); setSearch(''); }}
+            onPress={() => setTab(t_)}
             style={{
               flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
               backgroundColor: tab === t_ ? C.primary : 'transparent' }}
@@ -748,11 +828,7 @@ export default function ContactsScreen() {
             )
           ) : (
             /* Sent requests list */
-            sentLoading ? (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <PremiumLoader size="large" />
-              </View>
-            ) : visibleSent.length === 0 ? (
+            visibleSent.length === 0 ? (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
                 <View style={{
                   width: 72, height: 72, borderRadius: 36,
@@ -779,33 +855,7 @@ export default function ContactsScreen() {
       ) : (
         /* ── FRIENDS TAB ── */
         <>
-          {/* Search bar */}
-          <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            marginHorizontal: 20, marginBottom: 12,
-            backgroundColor: C.inputBg, borderRadius: 12,
-            paddingHorizontal: 12, paddingVertical: 10,
-            borderWidth: 1, borderColor: C.border, gap: 8 }}>
-            <Feather name="search" size={16} color={C.dim} />
-            <TextInput
-              style={{ flex: 1, color: C.text, fontSize: 14 }}
-              placeholder={t('contacts.searchPlaceholder')}
-              placeholderTextColor={C.dim}
-              value={search}
-              onChangeText={setSearch}
-            />
-            {search.length > 0 && (
-              <Pressable onPress={() => setSearch('')}>
-                <Feather name="x-circle" size={15} color={C.muted} />
-              </Pressable>
-            )}
-          </View>
-
-          {contactsLoading ? (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <PremiumLoader size="large" />
-            </View>
-          ) : filtered.length === 0 ? (
+          {visibleContacts.length === 0 ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
               <View style={{
                 width: 72, height: 72, borderRadius: 36,
@@ -815,28 +865,26 @@ export default function ContactsScreen() {
                 <Feather name="users" size={32} color={C.glow} />
               </View>
               <Text style={{ color: C.text, fontSize: 18, fontWeight: '800' }}>
-                {search ? t('contacts.noResults') : t('contacts.noFriends')}
+                {t('contacts.noFriends')}
               </Text>
               <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
                 {t('contacts.findPeopleCta')}
               </Text>
-              {!search && (
-                <Pressable
-                  onPress={() => setSearchModalOpen(true)}
-                  style={{
-                    // 2026-10-13 (Sumon): বাটন স্ট্যান্ডার্ড #E3F2FD bg + #007AFF text
-                    marginTop: 20, backgroundColor: '#E3F2FD',
-                    borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}
-                >
-                  <Text style={{ color: '#007AFF', fontWeight: '800', fontSize: 14 }}>
-                    {t('contacts.findPeopleBtn')}
-                  </Text>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={() => setSearchModalOpen(true)}
+                style={{
+                  // 2026-10-13 (Sumon): বাটন স্ট্যান্ডার্ড #E3F2FD bg + #007AFF text
+                  marginTop: 20, backgroundColor: '#E3F2FD',
+                  borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}
+              >
+                <Text style={{ color: '#007AFF', fontWeight: '800', fontSize: 14 }}>
+                  {t('contacts.findPeopleBtn')}
+                </Text>
+              </Pressable>
             </View>
           ) : (
             <FlatList
-              data={filtered}
+              data={visibleContacts}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingBottom: 120 }}
               showsVerticalScrollIndicator={false}

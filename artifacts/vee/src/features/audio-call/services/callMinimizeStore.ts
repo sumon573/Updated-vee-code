@@ -24,6 +24,9 @@ export interface MinimizedCall {
     // otherwise the returned screen can't do mute-sync, call history, etc.
     myUid?: string;
     myName?: string;
+    // 2026-10-29 Fix #18: speaker choice survives minimize → return
+    // ('true'/'false' — params are strings).
+    speakerOn?: string;
   };
 }
 

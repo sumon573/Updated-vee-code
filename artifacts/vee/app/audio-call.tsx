@@ -127,6 +127,7 @@ export default function AudioCallPage() {
     myName,
     myPhotoURL,
     returning,
+    speakerOn,
   } = useLocalSearchParams<{
     roomId: string;
     role: 'caller' | 'callee';
@@ -138,6 +139,7 @@ export default function AudioCallPage() {
     myName: string;
     myPhotoURL?: string;
     returning?: string;
+    speakerOn?: string;
   }>();
 
   // Guard: a malformed deep link (e.g. vee://audio-call with missing params)
@@ -170,6 +172,7 @@ export default function AudioCallPage() {
         myName={myName || 'Vee User'}
         myPhotoURL={myPhotoURL}
         isReturning={isReturning}
+        initialSpeakerOn={speakerOn === 'true'}
       />
     </ErrorBoundary>
   );

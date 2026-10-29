@@ -33,7 +33,7 @@ const C = {
 const MAX_DP = 6;
 const DP = 24;
 
-type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number };
+type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number; hideLiveBadge?: boolean };
 
 /** Format distance: < 1km shows meters, else km with 1 decimal. */
 function formatDistance(km: number): string {
@@ -42,7 +42,7 @@ function formatDistance(km: number): string {
 }
 
 // Perf (2026-10-22 audit): memoized — see RoomCard note.
-export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount }: Props) {
+export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, hideLiveBadge }: Props) {
   // 2026-10-26 (weak network): same failed-cover fallback as RoomCard.
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
@@ -114,7 +114,7 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
             </View>
           </View>
 
-          {room.isLive && (
+          {room.isLive && !hideLiveBadge && (
             <View style={{
               backgroundColor: 'rgba(239,68,68,0.12)',
               borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,

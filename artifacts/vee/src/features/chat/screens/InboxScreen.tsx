@@ -16,6 +16,21 @@
  *     loadOlderMessages() (cursor-based, DM_PAGE_SIZE=50 per page).
  *     The list never auto-scrolls when older messages are prepended, so the
  *     user's reading position is preserved.
+ *
+ * Fix #16/#17 (2026-10-29):
+ *   - Thread open: cached-first + paginated (limitToLast 50) load verified
+ *     intact; the large centered spinner on a cache-miss first load is now
+ *     a small inline indicator (header + composer always visible) — no
+ *     blank blocking spinner, matching the app-wide no-loading rule.
+ *   - Back button: duplicate thread pushes (second tap while the thread
+ *     was still opening) self-pop on mount via liveThreadMounts, so one
+ *     back press always returns to the chat list.
+ *   - Voice send: optimistic bubble with the LOCAL uri renders instantly
+ *     (before upload), plus the speech-optimized recording preset in
+ *     useVoiceRecorder for ~2.7x smaller files.
+ *   - Voice playback (VoiceMessageBubble): loop OFF (pause-then-rewind on
+ *     finish + explicit loop=false) and single active playback via a
+ *     DM-only player registry.
  */
 
 import {
@@ -66,6 +81,7 @@ import { blockUser, getBlockDirection, BlockDirection, BlockedInteractionError }
 import { isVeeTeam } from '../services/veeTeamService';
 import { VerifiedName } from '@/src/components/VerifiedName';
 import { getUserPrivacy } from '@/src/services/privacyService';
+import { dismissChatNotifications } from '@/src/services/fcmPushService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 
 // 2026-10-19 polish: FlatList row union — day separators interleaved with messages.
@@ -75,8 +91,19 @@ type ChatRow =
 
 const { width, height } = Dimensions.get('window');
 
+// Fix #16 (back-button bug): live mount counts per chatId for the thread
+// screen. If the same thread is pushed twice (e.g. a second tap while it
+// was still opening), two identical thread screens stack up and one back
+// press only reveals the other copy — the "back re-opens the same thread,
+// needs 2-3 backs" bug. The duplicate instance pops itself on mount
+// (see the effect near userScrolledRef), leaving exactly one thread, so
+// one back always returns to the chat list. Per-chatId counts, so
+// different threads never interfere, and sequential open → back →
+// reopen counts cleanly (1 → 0 → 1).
+const liveThreadMounts = new Map<string, number>();
+
 const C = {
-  bg: '#FFFFFF',
+  bg: '#ECECF0',
   surface: '#F2F2F7',
   border: '#E5E5EA',
   primary: '#7C3AED',
@@ -88,6 +115,29 @@ const C = {
   headerBg: 'rgba(255,255,255,0.97)',
   onlineGreen: '#22C55E',
   offlineGray: '#C7C7CC' } as const;
+
+// Fix #31/#32 (imo-exact last seen, 2026-10-29): today → "Last seen HH:MM"
+// (24-hour); a day or more ago → "Last seen Oct 28, 16:42". The header
+// itself stays LIVE: the presence subscription below re-fires on every
+// online/offline change, so this text re-renders the moment presence
+// changes — never a one-time fetch.
+function formatLastSeen(ts: number): string {
+  if (!Number.isFinite(ts)) return '';
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  if (sameDay) return `Last seen ${hh}:${mm}`;
+  const mon = d.toLocaleDateString('en-US', { month: 'short' });
+  return `Last seen ${mon} ${d.getDate()}, ${hh}:${mm}`;
+}
+
+// Fix #31 (imo-exact quick reactions, বন্ধু order): tapping one sends it
+// instantly as a message (see handleQuickReaction).
+const QUICK_REACTIONS = ['😂', '😘', '💋', '🌹', '❤️', '😭', '💕'];
 
 // ── Typing dots ────────────────────────────────────────────────────────────────
 function TypingDots() {
@@ -281,6 +331,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // 2026-10-19 (IMO port): voice message recording state.
   const voice = useVoiceRecorder();
   const [uploadingVoice, setUploadingVoice] = useState(false);
+  // Fix #31 (imo-exact quick reactions): emoji row above the composer.
+  const [showQuickReactions, setShowQuickReactions] = useState(true);
 
   const flatRef         = useRef<FlatList>(null);
   const inputRef        = useRef<TextInput>(null);
@@ -302,24 +354,24 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // initial load phase-এ onContentSizeChange-এও scroll to end করি।
   const userScrolledRef    = useRef(false);
 
-  // ── Status text helper ────────────────────────────────────────────────────
-  const getStatusText = useCallback((
-    ls: number | null,
-    online: boolean,
-    typing: boolean,
-  ): string => {
-    if (typing) return t('chat.statusTyping');
-    if (online) return t('chat.statusOnline');
-    if (!ls) return t('chat.statusOffline');
-    const diff = Date.now() - ls;
-    const min = 60_000;
-    const h = 3_600_000;
-    if (diff < min) return t('chat.statusJustNow');
-    if (diff < h) return t('chat.statusMinutesAgo', { count: Math.floor(diff / min) });
-    if (diff < 2 * h) return t('chat.statusOneHourAgo');
-    if (diff < 24 * h) return t('chat.statusHoursAgo', { count: Math.floor(diff / h) });
-    return t('chat.statusYesterday');
-  }, [t]);
+  // Fix #16 (back-button bug): duplicate-thread self-pop — see
+  // liveThreadMounts above. Runs once per mount; the duplicate instance
+  // (count > 1) pops itself immediately, the original underneath stays.
+  // The original instance never pops: its effect ran when count was 1,
+  // and its deps do not change when the duplicate mounts.
+  const dupPopDoneRef = useRef(false);
+  useEffect(() => {
+    const count = (liveThreadMounts.get(chatId) ?? 0) + 1;
+    liveThreadMounts.set(chatId, count);
+    if (count > 1 && !dupPopDoneRef.current) {
+      dupPopDoneRef.current = true;
+      router.back();
+    }
+    return () => {
+      liveThreadMounts.set(chatId, Math.max(0, (liveThreadMounts.get(chatId) ?? 1) - 1));
+    };
+  }, [chatId, router]);
+
 
   // ── Subscribe to Firebase messages ─────────────────────────────────────────
   // RC8-A: subscribeMessages now returns limitToLast(50). The callback
@@ -434,6 +486,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // only messages newer than the last marked key.
   const markSeenThrottled = useCallback(() => {
     if (!atBottomRef.current) return;
+    // Fix #35: the user is viewing this chat right now — dismiss its
+    // system-bar notification(s) at once, even when the Firebase
+    // seen-write below is throttled. Best-effort, never fatal.
+    void dismissChatNotifications(chatId);
     const now = Date.now();
     if (now - lastMarkSeenAtRef.current < 5000) return;
     lastMarkSeenAtRef.current = now;
@@ -727,6 +783,47 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     }
   }, [inputText, chatId, myUid, effectiveParticipantId, replyTarget, displayName, t, user, saveDmOutboxEntry, clearDmOutboxEntry]);
 
+  // Fix #31 (imo-exact quick reactions): tapping an emoji sends it as a
+  // message instantly, reusing the exact optimistic + sendMessage path of
+  // handleSend (no change to sending logic itself; sent as a text message
+  // so failed-send retry and the outbox work exactly as for typed text).
+  const handleQuickReaction = useCallback(async (emoji: string) => {
+    if (!user?.uid) return;
+    if (isVeeTeam(effectiveParticipantId)) return;
+    if (blockDirection !== 'none') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const messageKey = newMessageKey(chatId);
+    const optimistic: DmMessage = {
+      id: messageKey,
+      chatId,
+      senderId: myUid,
+      type: 'text',
+      content: emoji,
+      createdAt: Date.now(),
+      status: 'sending',
+      sendState: 'sending',
+      reactions: {},
+    };
+    setPendingMsgs((prev) => [...prev, optimistic]);
+    void saveDmOutboxEntry(chatId, { id: messageKey, text: emoji, createdAt: Date.now() });
+    setTyping(chatId, myUid, false);
+    shouldScrollRef.current = true;
+    try {
+      await sendMessage(chatId, myUid, effectiveParticipantId, emoji, 'text', undefined, undefined, myRealName || user?.displayName || undefined, messageKey);
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+      void clearDmOutboxEntry(chatId, messageKey);
+    } catch (e) {
+      if (e instanceof BlockedInteractionError) {
+        setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
+        void clearDmOutboxEntry(chatId, messageKey);
+        const d = await getBlockDirection(myUid, effectiveParticipantId).catch(() => 'none' as BlockDirection);
+        setBlockDirection(d);
+      } else {
+        setPendingMsgs((prev) => prev.map((m) => (m.id === messageKey ? { ...m, sendState: 'failed' as const } : m)));
+      }
+    }
+  }, [user, effectiveParticipantId, blockDirection, chatId, myUid, myRealName, saveDmOutboxEntry, clearDmOutboxEntry]);
+
   // ── IMO-style voice messages ─────────────────────────────────────────────
   // Mic button (in the send circle, IMO beb.xml) → recording bar with timer +
   // waves → send uploads to Telegram storage and sends a 'voice' message.
@@ -753,6 +850,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     if (!rec) return; // nothing recorded (or stop failed)
     setUploadingVoice(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Fix #17 (slow voice send): optimistic bubble FIRST, with the LOCAL
+    // uri and the final push key — the sender sees the note instantly
+    // (and can even play it) instead of staring at a loader for the whole
+    // upload. The live subscription's real message shares this id, so it
+    // dedupes the optimistic copy on arrival; the explicit filter below
+    // is cleanup for the same reason.
+    const messageKey = newMessageKey(chatId);
+    const optimistic: DmMessage = {
+      id: messageKey,
+      chatId,
+      senderId: myUid,
+      type: 'voice',
+      content: rec.uri,
+      durationSec: rec.durationSec,
+      createdAt: Date.now(),
+      status: 'sending',
+      reactions: {},
+    };
+    setPendingMsgs((prev) => [...prev, optimistic]);
+    shouldScrollRef.current = true;
     try {
       // Telegram-backed storage, type='chat' (folder 'vee/dm' maps to chat).
       const uploaded = await uploadImage(rec.uri, {
@@ -762,20 +879,6 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         // forever with no error and no retry.
         timeoutMs: 30000,
       });
-      const messageKey = newMessageKey(chatId);
-      const optimistic: DmMessage = {
-        id: messageKey,
-        chatId,
-        senderId: myUid,
-        type: 'voice',
-        content: uploaded.url,
-        durationSec: rec.durationSec,
-        createdAt: Date.now(),
-        status: 'sending',
-        reactions: {},
-      };
-      setPendingMsgs((prev) => [...prev, optimistic]);
-      shouldScrollRef.current = true;
       await sendMessage(
         chatId, myUid, effectiveParticipantId, uploaded.url, 'voice',
         undefined, uploaded.publicId,
@@ -784,7 +887,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       );
       setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
     } catch (e) {
-      // Upload/send failed — surface the ACTUAL cause, nothing half-sent.
+      // Upload/send failed — drop the optimistic bubble and surface the
+      // ACTUAL cause, nothing half-sent.
+      setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
       Alert.alert(t('chat.error'), `${t('chat.sendError')}\n\nReason: ${getErrorCause(e)}`);
     } finally {
       setUploadingVoice(false);
@@ -1029,15 +1134,27 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // 2026-10-19 polish: day-grouped date separators — chatRows (computed
   // below, after allVisibleMessages) interleaves {kind:'sep'} divider rows
   // with {kind:'msg'} message rows.
+  // Fix #31 (zero lag): stable media-press callback — the old inline
+  // closure was a NEW function on every parent render, which defeated
+  // MessageBubble's memo and re-rendered every row on every keystroke.
+  const handleMediaPress = useCallback((uri: string, type: 'image' | 'video') => {
+    setMediaViewerUri(uri);
+    setMediaViewerType(type);
+  }, []);
+  // Fix #31: call-back indirection — handleVoiceCall is defined below the
+  // render section, so rows call through this stable ref callback instead
+  // of capturing the function before its declaration (TDZ).
+  const callBackRef = useRef<(() => void) | undefined>(undefined);
+  const stableCallBack = useCallback(() => { callBackRef.current?.(); }, []);
   const renderItem = useCallback(({ item }: { item: ChatRow }) => {
     if (item.kind === 'sep') {
       return (
         <View style={{ alignItems: 'center', marginVertical: 10 }}>
           <View style={{
-            backgroundColor: 'rgba(0,0,0,0.06)',
-            borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4,
+            backgroundColor: '#C6C6CC',
+            borderRadius: 14, paddingHorizontal: 14, paddingVertical: 5,
           }}>
-            <Text style={{ color: C.muted, fontSize: 11, fontWeight: '600' }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>
               {item.label}
             </Text>
           </View>
@@ -1053,13 +1170,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         myUid={myUid}
         onReply={handleReply}
         onRetry={retryDmText}
-        onMediaPress={(uri, type) => {
-          setMediaViewerUri(uri);
-          setMediaViewerType(type as 'image' | 'video');
-        }}
+        onMediaPress={handleMediaPress}
+        peerPhotoURL={participantPhotoURL}
+        myPhotoURL={user?.photoURL ?? null}
+        isPeerOnline={isOnline}
+        onCallBack={stableCallBack}
       />
     );
-  }, [chatId, myUid, handleReply, retryDmText]);
+  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack]);
 
   const keyExtractor = useCallback((item: ChatRow) => (
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
@@ -1101,7 +1219,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     router.push(url as never);
   }, [user, myUid, effectiveParticipantId, displayName, participantPhotoURL, router]);
 
-  const statusColor = isTypingRemote ? C.glow : isOnline ? C.onlineGreen : C.offlineGray;
+  // Fix #31: call-back ref assignment (see stableCallBack above renderItem).
+  useEffect(() => { callBackRef.current = handleVoiceCall; }, [handleVoiceCall]);
+
+  // Fix #31/#32 (imo-exact header subtitle): typing → "typing…",
+  // online → "Online", else the live last-seen text (or nothing when
+  // presence is hidden by privacy). Derived from live subscription state,
+  // so it updates the moment presence changes.
+  const headerSubtitle = isTypingRemote
+    ? 'typing…'
+    : isOnline
+      ? 'Online'
+      : lastSeen
+        ? formatLastSeen(lastSeen)
+        : '';
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
   // RC8-A: combine older loaded messages with the live subscription window.
@@ -1145,21 +1276,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     return rows.reverse();
   }, [allVisibleMessages]);
 
+  // Fix #31 (imo-exact date pills): always "Oct 5" style (month first),
+  // with the year only for other years — exactly as imo shows it.
   function dayLabel(ts: number): string {
     if (!Number.isFinite(ts)) return '';
     const d = new Date(ts);
     const now = new Date();
-    const startOfDay = (x: Date) => {
-      const c = new Date(x);
-      c.setHours(0, 0, 0, 0);
-      return c.getTime();
-    };
-    const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
-    if (diffDays <= 0) return t('chat.today', { defaultValue: 'Today' });
-    if (diffDays === 1) return t('chat.yesterday', { defaultValue: 'Yesterday' });
-    return d.toLocaleDateString([], {
-      day: 'numeric',
+    return d.toLocaleDateString('en-US', {
       month: 'short',
+      day: 'numeric',
       ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' as const }),
     });
   }
@@ -1180,13 +1305,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
           <PremiumLoader size="small" />
         ) : hasMoreOlder ? (
           <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 6,
-            backgroundColor: 'rgba(124,58,237,0.12)',
-            borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
-            borderWidth: 1, borderColor: 'rgba(124,58,237,0.25)' }}>
-            <Feather name="chevrons-up" size={14} color={C.glow} />
-            <Text style={{ color: C.glow, fontSize: 13, fontWeight: '600' }}>
-              Load earlier messages
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20, paddingHorizontal: 28, paddingVertical: 12,
+            shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8,
+            shadowOffset: { width: 0, height: 2 }, elevation: 3 }}>
+            <Text style={{ color: '#000000', fontSize: 16 }}>
+              Tap to load history
             </Text>
           </View>
         ) : (
@@ -1210,63 +1334,30 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             paddingHorizontal: 14, paddingVertical: 10,
             borderBottomWidth: 1, borderBottomColor: C.border }}>
             <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginRight: 10 }}>
-              <Feather name="arrow-left" size={22} color="#000000" />
+              <Feather name="arrow-left" size={24} color="#000000" />
             </Pressable>
 
-            {/* Avatar — tap to visit profile */}
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push(
-                  `/user-profile?uid=${encodeURIComponent(effectiveParticipantId)}&name=${encodeURIComponent(displayName)}` as never,
-                );
-              }}
-              style={{ position: 'relative', marginRight: 10 }}
-            >
-              <View style={{
-                width: 42, height: 42, borderRadius: 21,
-                backgroundColor: 'rgba(124,58,237,0.25)',
-                borderWidth: 2, borderColor: C.glow,
-                alignItems: 'center', justifyContent: 'center',
-                overflow: 'hidden' }}>
-                {participantPhotoURL ? (
-                  <Image
-                    source={{ uri: participantPhotoURL }}
-                    style={{ width: 42, height: 42, borderRadius: 21 }}
-                  />
-                ) : (
-                  <Text style={{ color: '#7C3AED', fontWeight: '900', fontSize: 16 }}>
-                    {displayName[0]?.toUpperCase()}
-                  </Text>
-                )}
-              </View>
-              <View style={{
-                position: 'absolute', bottom: 1, right: 1,
-                width: 11, height: 11, borderRadius: 6,
-                backgroundColor: isOnline ? C.onlineGreen : C.offlineGray,
-                borderWidth: 2, borderColor: C.bg }} />
-            </Pressable>
-
-            {/* Name + status */}
+            {/* Fix #31 (imo-exact header): no avatar — back + name +
+                grey last-seen subtitle, exactly as imo shows it. */}
+            {/* Name + last seen */}
             <View style={{ flex: 1 }}>
               {/* 2026-10-17 (Sumon): Vee Team — official verified badge via standard component */}
               {isSystemChat ? (
                 <VerifiedName
                   name={displayName}
                   uid={effectiveParticipantId}
-                  nameStyle={{ color: '#000000', fontWeight: '800', fontSize: 15 }}
+                  nameStyle={{ color: '#000000', fontWeight: '800', fontSize: 18 }}
                 />
               ) : (
-                <Text style={{ color: '#000000', fontWeight: '800', fontSize: 15 }}>
+                <Text style={{ color: '#000000', fontWeight: '800', fontSize: 18 }} numberOfLines={1}>
                   {displayName}
                 </Text>
               )}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: statusColor }} />
-                <Text style={{ color: statusColor, fontSize: 11, fontWeight: '600' }}>
-                  {getStatusText(lastSeen, isOnline, isTypingRemote)}
+              {headerSubtitle ? (
+                <Text style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }} numberOfLines={1}>
+                  {headerSubtitle}
                 </Text>
-              </View>
+              ) : null}
             </View>
 
             {/* Actions — bigger touch targets for easy tapping */}
@@ -1281,7 +1372,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 {/* 2026-10-26 (boss: imo call icon): plain blue handset,
                     exactly like the search-page rows — the old green
                     circle button is gone. */}
-                <Ionicons name="call" size={24} color="#2196F3" />
+                <Ionicons name="call" size={24} color="#009DFF" />
               </Pressable>
               )}
               {/* Video call hidden until implemented — the "coming soon" alert
@@ -1304,7 +1395,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 style={{
                   width: 44, height: 44, borderRadius: 22,
                   alignItems: 'center', justifyContent: 'center' }}>
-                <Feather name="more-vertical" size={22} color={C.muted} />
+                <Feather name="more-vertical" size={22} color="#000000" />
               </Pressable>
             </View>
           </View>
@@ -1329,9 +1420,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               contentContainerStyle={{ paddingVertical: 12 }}
               removeClippedSubviews
               initialNumToRender={20}
-              maxToRenderPerBatch={15}
-              windowSize={10}
+              maxToRenderPerBatch={20}
+              windowSize={15}
               showsVerticalScrollIndicator={false}
+              // Fix #31 (imo-like smooth keyboard + zero lag): taps on
+              // messages work without dismissing the keyboard first, and
+              // dragging the list dismisses it smoothly.
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ scroll —
               // image load-এ height বদলালেও নিচেই থাকবে।
               onScrollBeginDrag={handleScrollBeginDrag}
@@ -1341,10 +1437,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               // (inverted list: the footer renders at the visual top)
               ListFooterComponent={ListHeaderComponent}
               ListEmptyComponent={
-                // A1: show spinner during initial load, not false "empty".
+                // Fix #16 (no blank blocking spinner): during initial
+                // load show only a small inline indicator — header +
+                // composer stay visible, and cached messages (when present)
+                // render instead of this empty state. Never a full-screen
+                // spinner, matching the app-wide no-loading rule.
                 initialLoading ? (
-                  <View style={{ alignItems: 'center', paddingTop: 80 }}>
-                    <PremiumLoader size="large" />
+                  <View style={{ alignItems: 'center', paddingTop: 24 }}>
+                    <PremiumLoader size="small" />
                   </View>
                 ) : (
                   <View style={{ alignItems: 'center', paddingTop: 80 }}>
@@ -1408,17 +1508,49 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 style={{
                   position: 'absolute',
                   right: 16,
-                  bottom: 90,
-                  width: 44, height: 44, borderRadius: 22,
-                  backgroundColor: C.glow,
+                  // Fix #31 (imo-exact): white circle above the composer
+                  // (higher when the quick-reaction row is visible).
+                  bottom: showQuickReactions && !isSystemChat && !voice.isRecording ? 150 : 90,
+                  width: 48, height: 48, borderRadius: 24,
+                  backgroundColor: '#FFFFFF',
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: '#000', shadowOpacity: 0.3,
+                  shadowColor: '#000', shadowOpacity: 0.2,
                   shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
                   elevation: 6,
                   zIndex: 100 }}
               >
-                <Feather name="chevron-down" size={22} color="#fff" />
+                <Feather name="chevron-down" size={22} color="#000000" />
               </Pressable>
+            )}
+
+            {/* Fix #31 (imo-exact quick reactions): emoji row above the
+                composer — tap sends the emoji instantly. The smiley in
+                the composer toggles this row. */}
+            {!isSystemChat && !voice.isRecording && showQuickReactions && (
+              <View style={{
+                flexDirection: 'row', justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 12, paddingVertical: 8,
+                backgroundColor: C.bg,
+                opacity: blockDirection !== 'none' ? 0.4 : 1 }}>
+                {QUICK_REACTIONS.map((emoji) => (
+                  <Pressable
+                    key={emoji}
+                    hitSlop={6}
+                    disabled={blockDirection !== 'none'}
+                    onPress={() => { void handleQuickReaction(emoji); }}
+                    style={{
+                      width: 48, height: 48, borderRadius: 24,
+                      backgroundColor: '#FFFFFF',
+                      alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
+                      shadowOffset: { width: 0, height: 2 }, elevation: 2,
+                    }}
+                  >
+                    <Text style={{ fontSize: 26 }}>{emoji}</Text>
+                  </Pressable>
+                ))}
+              </View>
             )}
 
             {/* ── Input bar (IMO style) ──────────────────────────────────── */}
@@ -1482,58 +1614,67 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               flexDirection: 'row', alignItems: 'flex-end',
               paddingHorizontal: 12, paddingVertical: 10,
               borderTopWidth: 1, borderTopColor: C.border,
-              backgroundColor: C.headerBg, gap: 10,
+              backgroundColor: '#FFFFFF', gap: 10,
               opacity: blockDirection !== 'none' ? 0.4 : 1 }}>
-              {/* Attachment */}
-              <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia}>
-                <View style={{
-                  width: 48, height: 48, borderRadius: 24,
-                  backgroundColor: uploadingMedia ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.18)',
-                  borderWidth: 1, borderColor: 'rgba(124,58,237,0.35)',
-                  alignItems: 'center', justifyContent: 'center' }}>
-                  <Feather name={uploadingMedia ? 'loader' : 'image'} size={18} color={C.glow} />
-                </View>
-              </Pressable>
-
-              {/* Text input */}
-              <TextInput
-                ref={inputRef}
-                editable={blockDirection === 'none'}
-                style={{
-                  flex: 1, minHeight: 48, maxHeight: 110,
-                  backgroundColor: C.inputBg,
-                  borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10,
-                  color: '#000000', fontSize: 16,
-                  borderWidth: 1, borderColor: C.border }}
-                placeholder={blockDirection !== 'none' ? '' : t('chat.messagePlaceholder')}
+              {/* Fix #31 (imo-exact composer): white pill — smiley (toggles
+                  the quick-reaction row) + input + image + plus. */}
+              <View style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center',
+                backgroundColor: '#FFFFFF', borderRadius: 28,
+                borderWidth: 1, borderColor: '#E5E5EA',
+                paddingHorizontal: 6, minHeight: 48 }}>
+                <Pressable onPress={() => setShowQuickReactions((v) => !v)} hitSlop={8} style={{ padding: 6 }}>
+                  <Ionicons name="happy-outline" size={26} color="#000000" />
+                </Pressable>
+                <TextInput
+                  ref={inputRef}
+                  editable={blockDirection === 'none'}
+                  style={{
+                    flex: 1, minHeight: 48, maxHeight: 110,
+                    paddingHorizontal: 6, paddingVertical: 10,
+                    color: '#000000', fontSize: 16 }}
+                  // imo-exact placeholder (boss's hubhu order): "Message".
+                  placeholder={blockDirection !== 'none' ? '' : 'Message'}
                 placeholderTextColor={C.muted}
                 multiline
                 value={inputText}
                 onChangeText={handleInputChange}
                 onSubmitEditing={handleSend}
                 blurOnSubmit={false}
-                returnKeyType="send"
-              />
+                  returnKeyType="send"
+                />
+                <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia} style={{ padding: 6 }}>
+                  <Feather name={uploadingMedia ? 'loader' : 'image'} size={24} color="#000000" />
+                </Pressable>
+                <Pressable onPress={handleMedia} hitSlop={8} disabled={uploadingMedia} style={{ padding: 6 }}>
+                  <View style={{
+                    width: 26, height: 26, borderRadius: 13,
+                    borderWidth: 1.5, borderColor: '#000000',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Feather name="plus" size={18} color="#000000" />
+                  </View>
+                </Pressable>
+              </View>
 
-              {/* IMO send/mic circle (beb.xml): 50dp #009dff — mic when the
-                  input is empty, send arrow when there is text. */}
+              {/* IMO send/mic circle: 52dp #009dff — mic when the input is
+                  empty, send arrow when there is text. */}
               {inputText.trim() ? (
                 <Pressable onPress={handleSend} disabled={blockDirection !== 'none' || !user?.uid} hitSlop={8}>
                   <View style={{
-                    width: 48, height: 48, borderRadius: 24,
+                    width: 52, height: 52, borderRadius: 26,
                     backgroundColor: '#009dff',
                     alignItems: 'center', justifyContent: 'center' }}>
-                    <Feather name="send" size={20} color="#fff" />
+                    <Feather name="send" size={22} color="#fff" />
                   </View>
                 </Pressable>
               ) : (
                 <Pressable onPress={handleMicPress} disabled={blockDirection !== 'none' || !user?.uid || uploadingVoice} hitSlop={8}>
                   <View style={{
-                    width: 48, height: 48, borderRadius: 24,
+                    width: 52, height: 52, borderRadius: 26,
                     backgroundColor: '#009dff',
                     alignItems: 'center', justifyContent: 'center',
                     opacity: uploadingVoice ? 0.6 : 1 }}>
-                    <Feather name={uploadingVoice ? 'loader' : 'mic'} size={20} color="#fff" />
+                    <Feather name={uploadingVoice ? 'loader' : 'mic'} size={22} color="#fff" />
                   </View>
                 </Pressable>
               )}

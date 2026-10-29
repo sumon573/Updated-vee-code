@@ -7,7 +7,8 @@
  *  3. tap cancel → stop + discard (no file kept)
  *
  * Uses expo-audio (already a dependency — no new native module).
- * Recording preset HIGH_QUALITY = AAC/m4a, plays everywhere expo-audio plays.
+ * Recording preset VOICE_NOTE_PRESET = AAC/m4a, plays everywhere
+ * expo-audio plays (same container/codec as the old HIGH_QUALITY).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
@@ -28,8 +29,25 @@ export const MAX_VOICE_SEC = 120;
 
 type RecorderState = 'idle' | 'recording';
 
+/**
+ * VOICE_NOTE_PRESET — speech-optimized recording for DM voice notes.
+ * Same .m4a/AAC container as HIGH_QUALITY (plays everywhere), but mono,
+ * 22.05 kHz, 48 kbps instead of stereo 44.1 kHz 128 kbps: ~2.7x smaller
+ * files → ~2.7x faster uploads on weak networks, with speech clarity
+ * unchanged for voice notes.
+ * NOTE: the stock LOW_QUALITY preset is NOT used — on Android it switches
+ * to .3gp/AMR, which would break the audio/mp4 upload path and playback.
+ */
+const VOICE_NOTE_PRESET = {
+  ...RecordingPresets.HIGH_QUALITY,
+  sampleRate: 22050,
+  numberOfChannels: 1,
+  bitRate: 48000,
+  web: { mimeType: 'audio/webm', bitsPerSecond: 48000 },
+};
+
 export function useVoiceRecorder() {
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorder = useAudioRecorder(VOICE_NOTE_PRESET);
   const [state, setState] = useState<RecorderState>('idle');
   const [elapsedSec, setElapsedSec] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);

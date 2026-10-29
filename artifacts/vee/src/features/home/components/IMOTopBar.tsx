@@ -2,9 +2,16 @@
  * IMOTopBar — IMO-style top navigation bar (2026-10-10).
  * Profile DP (left) + 3 tabs: Chat (active, blue), Voice, Contacts (gray).
  * Matches IMO home screenshot exactly.
+ * 2026-10-29 (boss: Fix #25): chat tab icon is the custom ChatTabIcon
+ * vector (reference double-bubble + two message lines, not the stock
+ * Ionicons glyph); all three tab icons sized to the contacts icon's
+ * visual size (voice PNG enlarged 28 -> 33 — its ink is only 66/112 of
+ * its frame, so at 28 it rendered 16.5dp tall vs the contacts glyph's
+ * 19.3dp; at 33 its ink is 19.4dp tall, matching).
  */
 import { View, Image, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ChatTabIcon } from '@/src/components/ChatTabIcon';
 
 interface IMOTopBarProps {
   profilePhotoURL?: string | null;
@@ -73,8 +80,7 @@ export default function IMOTopBar({
           style={{ alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 }}
         >
           <View>
-            <Ionicons
-              name="chatbubbles"
+            <ChatTabIcon
               size={28}
               color={activeTab === 'chat' ? '#2196F3' : '#9E9E9E'}
             />
@@ -124,8 +130,9 @@ export default function IMOTopBar({
           <Image
             source={require('@/assets/images/voice-tab-icon.png')}
             style={{
-              width: 28,
-              height: 28,
+              // Fix #25: 33 (not 28) — see header note; matches contacts ink size.
+              width: 33,
+              height: 33,
               tintColor: activeTab === 'voice' ? '#2196F3' : '#9E9E9E',
             }}
             resizeMode="contain"

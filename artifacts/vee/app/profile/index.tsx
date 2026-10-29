@@ -393,8 +393,8 @@ export function flagUrl(code: string): string {
 function LightChip({ children, onPress }: { children: any; onPress?: () => void }) {
   const inner = (
     <View style={{
-      backgroundColor: C.tile, borderRadius: 12,
-      paddingHorizontal: 10, paddingVertical: 5, marginRight: 6,
+      backgroundColor: C.tile, borderRadius: 11,
+      paddingHorizontal: 9, paddingVertical: 4, marginRight: 6,
       flexDirection: 'row', alignItems: 'center' }}>
       {children}
     </View>
@@ -1051,6 +1051,7 @@ export default function ProfileScreen({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await Clipboard.setStringAsync(id);
       setVidCopied(true);
+      setShowVidPopup(false);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => setVidCopied(false), 2000);
     } catch {}
@@ -1100,9 +1101,10 @@ export default function ProfileScreen({
     }
   }, [user?.uid, profile]);
 
-  // ── 2026-10-29 (boss, imo mirror): Cover Change flow — tap the cover
-  // itself for the change option, exactly like DP change, NOT inside the
-  // Edit Profile sub-flow. Fixed 180dp cover for ALL users.
+  // ── 2026-10-29 (boss, imo mirror): Cover Change flow — reached from
+  // the cover viewer's Change button (or directly when no cover is set),
+  // exactly like DP change, NOT inside the Edit Profile sub-flow.
+  // Fixed 180dp cover for ALL users.
   const handleChangeCover = useCallback(async () => {
     if (!user?.uid) return;
     Alert.alert('Cover photo', 'Change your profile cover photo?', [
@@ -1138,6 +1140,18 @@ export default function ProfileScreen({
         } },
     ]);
   }, [user?.uid]);
+
+  // ── 2026-10-29 (boss, cover viewer): cover tap mirrors the DP tap —
+  // show the cover full-screen FIRST (same viewer + same Change pill),
+  // and only the viewer's Change button opens the change flow. No cover
+  // set -> nothing to view, so the tap goes directly to the change flow.
+  const handleCoverTap = useCallback(() => {
+    if (profile?.coverImageUrl) {
+      router.push({ pathname: '/profile/dp-viewer', params: { kind: 'cover' } } as never);
+    } else {
+      void handleChangeCover();
+    }
+  }, [profile?.coverImageUrl, handleChangeCover]);
 
   if (loading) {
     return (
@@ -1234,14 +1248,33 @@ export default function ProfileScreen({
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
       {/* ─── 2026-10-29 (boss, imo mirror): cover + DP + chips ───
           Cover is fixed 180dp for ALL users; DP is 80dp for ALL users.
-          Cover tap (own only) opens the change option, like DP change —
-          NOT inside the Edit Profile sub-flow. The cover does not scroll
-          away (unlike imo): the back button stays reachable. Inline vId +
+          Cover tap (own only) opens the full-screen cover viewer first
+          (same viewer as DP, same Change pill); Change opens the change
+          option — NOT inside the Edit Profile sub-flow. The whole page scrolls as ONE container (imo-like, 2026-10-29 Fix #4):
+          cover, DP, name, chips, bio, sections and the bottom action all scroll;
+          navigation stays reachable via the slim sticky bar. Inline vId +
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
-      <View>
+      <ScrollView stickyHeaderIndices={[0]} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+        {/* Slim sticky bar (imo scrolled look, 2026-10-29 Fix #4): back + name + gear/"..." — native stickyHeaderIndices, no scroll handlers, no jank. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, height: 56, backgroundColor: C.card, borderBottomWidth: 0.5, borderBottomColor: C.border }}>
+          <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Feather name="arrow-left" size={24} color={C.text} />
+          </Pressable>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: C.text, marginLeft: 4 }} numberOfLines={1}>{displayName}</Text>
+          {isMe ? (
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="settings" size={22} color={C.text} />
+            </Pressable>
+          ) : null}
+          {vId ? (
+            <Pressable onPress={() => setShowVidPopup(true)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="more-horizontal" size={24} color={C.text} />
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable
-          onPress={isMe ? handleChangeCover : undefined}
+          onPress={isMe ? handleCoverTap : undefined}
           style={{ height: 180, backgroundColor: '#E8E8ED', alignItems: 'center', justifyContent: 'center' }}
         >
           {profile?.coverImageUrl ? (
@@ -1254,22 +1287,6 @@ export default function ProfileScreen({
               <PremiumLoader size="small" />
             </View>
           )}
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingTop: 8 }}>
-            <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-              <Feather name="arrow-left" size={24} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
-            </Pressable>
-            <View style={{ flex: 1 }} />
-            {isMe ? (
-              <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-                <Feather name="settings" size={22} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
-              </Pressable>
-            ) : null}
-            {vId ? (
-              <Pressable onPress={() => setShowVidPopup(true)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-                <Feather name="more-horizontal" size={24} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
-              </Pressable>
-            ) : null}
-          </View>
         </Pressable>
         <View style={{ backgroundColor: C.card, paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ marginTop: -40 }}>
@@ -1360,16 +1377,16 @@ export default function ProfileScreen({
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
             <LightChip onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
-              <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>⭐ {fmtCompact(followCounts.followers)} Followers</Text>
+              <Text style={{ fontSize: 11, color: C.text, fontWeight: '500' }}>⭐ {fmtCompact(followCounts.followers)} Followers</Text>
             </LightChip>
             {age !== null && (
               <LightChip>
-                <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{myGenderSym ? `${myGenderSym} ` : ''}{age}</Text>
+                <Text style={{ fontSize: 11, color: C.text, fontWeight: '500' }}>{myGenderSym ? `${myGenderSym} ` : ''}{age}</Text>
               </LightChip>
             )}
             {myCountry ? (
               <LightChip>
-                <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>📍 {myCountry}</Text>
+                <Text style={{ fontSize: 11, color: C.text, fontWeight: '500' }}>📍 {myCountry}</Text>
               </LightChip>
             ) : null}
           </View>
@@ -1400,9 +1417,6 @@ export default function ProfileScreen({
             </View>
           ) : null}
         </View>
-      </View>
-
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
 
         {/* ─── VoiceClub Room section ─── */}
         {rooms.length > 0 && (
@@ -1578,34 +1592,8 @@ export default function ProfileScreen({
 
         {/* 2026-10-27 (boss): Wallet/Store/Notifications/Privacy/Help/About rows REMOVED from
             profile — they already live in Settings (gear screen). No placeholder left. */}
-      </ScrollView>
-
-      {/* ─── 2026-10-29 (boss): "..." popup — white pill with copy icon + VoiceClub ID.
-          The ID is the SAME value as the Room Profile row (profile vId), NOT the short ID. */}
-      <Modal visible={showVidPopup} transparent animationType="fade" onRequestClose={() => setShowVidPopup(false)}>
-        <Pressable
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          onPress={() => setShowVidPopup(false)}
-        />
-        <View style={{
-          position: 'absolute', top: 60, right: 16,
-          flexDirection: 'row', alignItems: 'center',
-          backgroundColor: '#FFFFFF', borderRadius: 14,
-          paddingHorizontal: 16, paddingVertical: 12,
-          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8,
-          shadowOffset: { width: 0, height: 2 }, elevation: 8 }}>
-          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
-            <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
-          </Pressable>
-        </View>
-      </Modal>
-
-      {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
-      {pinDialog}
-
       {/* ─── Bottom Action: Edit (own) or Chat/Add + Follow (other user) ─── */}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
+      <View style={{ padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
         {isMe ? (
           <Pressable
             onPress={() => router.push('/profile/room-profile')}
@@ -1665,6 +1653,32 @@ export default function ProfileScreen({
           </View>
         )}
       </View>
+      </ScrollView>
+
+      {/* ─── 2026-10-29 (boss): "..." popup — white pill with copy icon + VoiceClub ID.
+          The ID is the SAME value as the Room Profile row (profile vId), NOT the short ID. */}
+      <Modal visible={showVidPopup} transparent animationType="fade" onRequestClose={() => setShowVidPopup(false)}>
+        <Pressable
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          onPress={() => setShowVidPopup(false)}
+        />
+        <View style={{
+          position: 'absolute', top: 60, right: 16,
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: '#FFFFFF', borderRadius: 14,
+          paddingHorizontal: 16, paddingVertical: 12,
+          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 }, elevation: 8 }}>
+          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
+            <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
+      {pinDialog}
+
     </SafeAreaView>
   );
 }

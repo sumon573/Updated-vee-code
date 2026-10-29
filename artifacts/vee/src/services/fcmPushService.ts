@@ -63,6 +63,30 @@ export function setupNotificationHandler() {
 }
 
 /**
+ * Fix #35 (2026-10-29): dismiss one chat's system-bar notifications the
+ * moment its messages are seen. Presented notifications are matched by
+ * their push payload's data.chatId — the same key the tap handler routes
+ * on (app/_layout.tsx) — so ONLY that chat's notifications go away:
+ * call pushes carry no chatId and other chats' notifications are
+ * untouched. Same mechanism as dismissIncomingCallNotifications (which
+ * matches data.type); FCM exposes no stable tag to expo-notifications.
+ * Best-effort: a stale bar entry is cosmetic, never fatal.
+ */
+export async function dismissChatNotifications(chatId: string): Promise<void> {
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const n of presented) {
+      const data = (n.request?.content?.data ?? {}) as Record<string, unknown>;
+      if (data?.chatId === chatId) {
+        await Notifications.dismissNotificationAsync(n.request.identifier).catch(() => {});
+      }
+    }
+  } catch {
+    /* best-effort — a stale tray entry is cosmetic */
+  }
+}
+
+/**
  * 2026-10-19 (batch 2D): clear the app icon badge. setupNotificationHandler
  * sets shouldSetBadge:true so every push increments the badge, but nothing
  * ever cleared it — a stale count stuck forever. Call on app foreground and

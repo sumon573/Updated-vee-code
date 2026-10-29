@@ -1,6 +1,6 @@
 /**
  * Edit Profile Screen — ধাপ ২
- * নাম, bio পরিবর্তন + Cloudinary photo upload
+ * নাম পরিবর্তন + Cloudinary photo upload
  * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
  * cards, 56dp title bar, white input boxes). Save persists via existing
  * updateUser service calls — logic unchanged.
@@ -107,17 +107,16 @@ export default function EditProfileScreen() {
 
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [name, setName] = useState('');
-  const [bio, setBio] = useState('');
   const [photoURI, setPhotoURI] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Track whether we've already done the initial load from Firebase.
   // Without this, every Firebase update (e.g. after photo upload writes
-  // the new URL) would reset the user's in-progress name/bio edits.
+  // the new URL) would reset the user's in-progress name edits.
   const hasLoadedRef = useRef(false);
 
-  // Load current profile from Firebase — only seed name/bio on first snapshot.
+  // Load current profile from Firebase — only seed the name on first snapshot.
   useEffect(() => {
     if (!user?.uid) return;
     hasLoadedRef.current = false; // reset on uid change (re-mount)
@@ -130,7 +129,6 @@ export default function EditProfileScreen() {
       if (!hasLoadedRef.current) {
         hasLoadedRef.current = true;
         setName(veeUser.name ?? '');
-        setBio(veeUser.bio ?? '');
       }
     });
     return () => { hasLoadedRef.current = false; unsub(); };
@@ -218,7 +216,7 @@ export default function EditProfileScreen() {
     ]);
   }, [takePhoto, pickPhoto, t]);
 
-  // ── Save name + bio to Firebase ───────────────────────────────────────────
+  // ── Save name to Firebase ───────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!user?.uid) return;
     const trimmedName = name.trim();
@@ -234,9 +232,7 @@ export default function EditProfileScreen() {
       // queues it and replays on reconnect); we just stop showing the saving
       // state and tell the user it is queued.
       const result = await withTimeout(
-        updateUser(user.uid, {
-          name: trimmedName,
-          bio: bio.trim() }),
+        updateUser(user.uid, { name: trimmedName }),
         SAVE_TIMEOUT_MS,
       );
       if (result.timedOut) {
@@ -251,7 +247,7 @@ export default function EditProfileScreen() {
     } finally {
       setSaving(false);
     }
-  }, [user?.uid, name, bio, t]);
+  }, [user?.uid, name, t]);
 
   const initials = name
     ? name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
@@ -322,7 +318,7 @@ export default function EditProfileScreen() {
             </Text>
           </View>
 
-          {/* Form — name + bio */}
+          {/* Form — name */}
           <View style={[cardStyle, { padding: 15 }]}>
             <InputField
               label={t('editProfile.fieldName')}
@@ -331,32 +327,6 @@ export default function EditProfileScreen() {
               placeholder={t('editProfile.namePlaceholder')}
               maxLength={40}
             />
-            <InputField
-              label={t('editProfile.fieldBio')}
-              value={bio}
-              onChangeText={setBio}
-              placeholder={t('editProfile.bioPlaceholder')}
-              multiline
-              maxLength={150}
-            />
-
-            {/* Vee ID (read-only) — NO # prefix (sacred) */}
-            <View style={{ marginBottom: 18 }}>
-              <Text style={{ color: C.muted, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>
-                {t('editProfile.fieldVeeId')}
-              </Text>
-              <View style={{
-                backgroundColor: C.tile,
-                borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-                borderWidth: 0.5, borderColor: C.border,
-                flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: C.muted, fontSize: 15 }}>
-                  {profile?.vId ?? '...'}
-                </Text>
-                <Feather name="lock" size={13} color={C.mutedLight} style={{ marginLeft: 'auto' }} />
-              </View>
-            </View>
-
             {/* Email (read-only) */}
             <View>
               <Text style={{ color: C.muted, fontSize: 13, fontWeight: '600', marginBottom: 8 }}>

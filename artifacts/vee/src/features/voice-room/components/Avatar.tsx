@@ -249,9 +249,12 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleCol
 // 2026-10-15 (Sumon): NO fake zoom/pulse. DP is 100% stable.
 // Speaking indicator = premium ripple (waves + mist + flowers) OUTSIDE the frame,
 // ONLY while actually speaking (voice detected).
-export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex, activeRipple, rippleColors }: {
+export function Avatar({ initials, color, size, speaking, accent, photoURL, frameType, nobleRankIndex, activeRipple, rippleColors, frameScale }: {
   initials: string; color: string; size: number; speaking: boolean; accent: string;
   photoURL?: string; frameType?: string; nobleRankIndex?: number; activeRipple?: string; rippleColors?: string[];
+  /** 2026-10-29 (Fix #36): seat-only frame scale override, forwarded to
+      AnimatedFrame. Undefined everywhere else -> official 1.15x unchanged. */
+  frameScale?: number;
 }) {
   // 2026-10-19 (IMO port Phase 1): IMO-style speaking halo — normal users get
   // the #05b5fa blue halo ring; noble/equipped-ripple users keep their theme.
@@ -352,7 +355,7 @@ export function Avatar({ initials, color, size, speaking, accent, photoURL, fram
           ) : (
             /* 2026-10-13 (Sumon): server-hosted APNG; frameId resolves the admin-controlled URL.
                 compact: voice room-এ নাম ঢেকে না যায় */
-            <AnimatedFrame size={size} frameId={frameType} compact />
+            <AnimatedFrame size={size} frameId={frameType} compact scale={frameScale} />
           )}
         </View>
       )}

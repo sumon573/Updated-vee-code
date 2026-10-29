@@ -5,7 +5,7 @@
  * "Rooms owned" + "Rooms joined" (admin rooms live under Joined, not Owned);
  * count pill icon ORANGE for owned, BLUE for joined; private rooms show a
  * lock AFTER the name (not on the photo); each row = photo + name (+lock)
- * + count pill top-right + topic + 5 seat icons. NO Owner/Admin text
+ * + count pill top-right + topic. NO Owner/Admin text
  * pills, NO "Live · N members" line, NO flags on list rows (imo has none),
  * NO imo privacy banner (imo-chrome). Vee's header is kept ("My Rooms" +
  * count) — NOT renamed to imo's "VoiceClub Room / Joined 42".
@@ -30,6 +30,7 @@ import {
   cleanupStaleReservations,
   type RoomInfo } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
+import { LockIcon } from '@/src/components/LockIcon';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // IMO BIUI light tokens (matches app/profile/index.tsx)
@@ -148,7 +149,9 @@ function RoomRow({
               {room.name}
             </Text>
             {room.isPublic === false && (
-              <Feather name="lock" size={13} color="#F59E0B" style={{ marginLeft: 6 }} />
+              <View style={{ marginLeft: 6 }}>
+                <LockIcon size={13} />
+              </View>
             )}
           </View>
 
@@ -158,20 +161,6 @@ function RoomRow({
             </Text>
           ) : null}
 
-          {/* 5 seat icons (imo list rows) — empty circles. Live seat avatars
-              would need a per-room seats subscription; RoomInfo carries no
-              seat data, so empty circles are the honest fallback. */}
-          <View style={{ flexDirection: 'row', marginTop: 6 }}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <View
-                key={i}
-                style={{
-                  width: 16, height: 16, borderRadius: 8,
-                  backgroundColor: C.tile, borderWidth: 1, borderColor: C.border,
-                  marginRight: 4 }}
-              />
-            ))}
-          </View>
         </View>
 
         {/* Count pill top-right: ORANGE person for owned, BLUE for joined */}

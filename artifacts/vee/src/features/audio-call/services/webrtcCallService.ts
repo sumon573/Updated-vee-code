@@ -549,6 +549,16 @@ export class WebRTCCallSession {
   }
 
   /**
+   * True once remote audio / ICE has reported the call connected
+   * (2026-10-29 Fix #18: the call screen's minimize -> return path must
+   * restore the TRUE state — a call minimized while still dialing must
+   * not come back showing 'connected').
+   */
+  isConnected(): boolean {
+    return this.connectedNotified && !this.ended;
+  }
+
+  /**
    * Ends the call: closes the peer connection, stops local tracks, removes
    * all RTDB listeners, cancels the onDisconnect hook, and removes the
    * ephemeral signaling node exactly once. Idempotent — safe to call twice.

@@ -6,8 +6,8 @@ import { memo, useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
-import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
+import { LockIcon } from '@/src/components/LockIcon';
 import { VoiceRoom } from '../types/room';
 
 // 2026-10-23 (Sumon): tiles slimmed down + flat — no glow shadow, just a
@@ -25,7 +25,6 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
   // the next feed refresh (URL change resets the failure).
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
-  const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, 4) ?? [];
 
   return (
@@ -94,35 +93,21 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
           </View>
         </View>
 
-        {/* Name */}
-        <Text numberOfLines={1} style={{
-          color: '#000000', fontSize: 13, fontWeight: '800', marginTop: 6,
-        }}>
-          {room.isPublic === false ? '🔒 ' : ''}{room.name}
-        </Text>
+        {/* Name — private rooms carry Vee's own gold lock (LockIcon),
+            never the demo emoji. Position/size/gold family unchanged. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+          {room.isPublic === false && (
+            <View style={{ marginRight: 3 }}>
+              <LockIcon size={13} />
+            </View>
+          )}
+          <Text numberOfLines={1} style={{
+            color: '#000000', fontSize: 13, fontWeight: '800', flex: 1,
+          }}>
+            {room.name}
+          </Text>
+        </View>
 
-        {/* Topic label + text — 2026-10-22 (Sumon): small soft label;
-            the topic text itself is lightly highlighted. */}
-        {!!room.topic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5, gap: 4, flexWrap: 'wrap' }}>
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 2,
-              backgroundColor: 'rgba(249,115,22,0.13)', borderRadius: 999,
-              paddingHorizontal: 5, paddingVertical: 2,
-            }}>
-              <Text style={{ fontSize: 7 }}>💬</Text>
-              <Text style={{ color: '#EA580C', fontSize: 7.5, fontWeight: '800' }}>{t('voiceRoom.card.topic')}</Text>
-            </View>
-            <View style={{
-              backgroundColor: 'rgba(249,115,22,0.10)', borderRadius: 6,
-              paddingHorizontal: 6, paddingVertical: 2, flexShrink: 1,
-            }}>
-              <Text numberOfLines={1} style={{ color: '#9A3412', fontSize: 10, fontWeight: '600' }}>
-                {room.topic}
-              </Text>
-            </View>
-          </View>
-        )}
       </View>
     </ScalePress>
   );

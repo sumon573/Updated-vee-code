@@ -120,6 +120,10 @@ export type AudioCallProps = {
   /** 2026-10-11 Issue #8: true when returning from a minimized call —
    *  reattach to the persisted WebRTC session instead of dialing anew. */
   isReturning?: boolean;
+  /** 2026-10-29 Fix #18: speaker choice carried through a minimize →
+   *  return cycle (set by the minimized record) so the returned screen's
+   *  speaker button shows the true route instead of resetting to off. */
+  initialSpeakerOn?: boolean;
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -139,7 +143,7 @@ export default function AudioCallScreen({
   roomId, role,
   remoteUid, remoteName, remotePhotoURL,
   calleeUid, myUid, myName, myPhotoURL,
-  isReturning,
+  isReturning, initialSpeakerOn,
 }: AudioCallProps) {
   const router = useRouter();
   const navigation = useNavigation();
@@ -161,6 +165,9 @@ export default function AudioCallScreen({
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutedRef       = useRef(false);
+  /** 2026-10-29 Fix #18: ref mirror of speakerOn — native routing calls
+   *  must happen OUTSIDE setState callbacks (same pattern as mutedRef). */
+  const speakerOnRef   = useRef(initialSpeakerOn ?? false);
   /** Unsubscribe for the call-signal reject listener (caller side). */
   const signalUnsubRef = useRef<(() => void) | null>(null);
   /** Unsubscribe for the callee-online presence listener (caller side). */
@@ -185,6 +192,13 @@ export default function AudioCallScreen({
   }, [callState, role]);
   useEffect(() => () => stopOutgoingTone(), []);
   const [muted,     setMuted]     = useState(false);
+  // 2026-10-29 Fix #18: speaker toggle state. The 2026-10-19 disabled
+  // placeholder is gone — session.setSpeakerphone() is REAL since the
+  // 2026-10-24 Bluetooth fix, so the button toggles it in BOTH dialing
+  // and connected states. speakerReady gates the button until the WebRTC
+  // session exists (session creation awaits mic permission).
+  const [speakerOn, setSpeakerOn] = useState(initialSpeakerOn ?? false);
+  const [speakerReady, setSpeakerReady] = useState(false);
   const [elapsed,   setElapsed]   = useState(0);
   /** Ref mirror of elapsed — endCall's closure needs the live value. */
   const elapsedRef = useRef(0);
@@ -388,8 +402,13 @@ export default function AudioCallScreen({
   // CallMinimizeBar, and navigates back. Audio continues. Returning via the
   // bar reattaches to the persisted session (no re-dial).
   const minimizeCall = useCallback(() => {
-    // Only minimize an active/connected call — ringing calls end normally.
-    if (callStateRef.current !== 'connected') {
+    // 2026-10-29 Fix #18: minimize is allowed in ANY non-terminal state.
+    // Dialing ("Calling..."/"Ringing"/"Connecting") minimizes exactly like
+    // a connected call — the session persists at module level, the bar
+    // shows, and Back never hangs up. Only 'ended'/'declined' end normally
+    // (there is no live call left to minimize).
+    const minimizeState = callStateRef.current;
+    if (minimizeState === 'ended' || minimizeState === 'declined') {
       endCall(true);
       return;
     }
@@ -425,6 +444,10 @@ export default function AudioCallScreen({
         // cycle so the returned screen stays fully functional.
         ...(myUid ? { myUid } : {}),
         ...(myName ? { myName } : {}),
+        // 2026-10-29 Fix #18: carry the speaker choice through the
+        // minimize → return cycle so the returned screen's button
+        // shows the true route (params are strings — 'true'/'false').
+        speakerOn: speakerOnRef.current ? 'true' : 'false',
         // 2026-10-13: DP ও minimize → return সাইকেলে টিকে থাকে, ফলে ফেরত
         // আসা স্ক্রিন Firebase থেকে আবার না এনে সাথে সাথে DP দেখায়।
         ...((remotePhoto || remotePhotoURL) ? { remotePhotoURL: (remotePhoto || remotePhotoURL) as string } : {}),
@@ -445,8 +468,13 @@ export default function AudioCallScreen({
     const unsub = navigation.addListener('beforeRemove', (e) => {
       // Already minimizing/ending — let the navigation proceed.
       if (isMinimizingRef.current || isCallMinimizing() || cleaningUpRef.current) return;
-      // Only intercept connected calls — otherwise let back end normally.
-      if (callStateRef.current !== 'connected') return;
+      // 2026-10-29 Fix #18: Back minimizes in EVERY non-terminal state.
+      // Back during dialing used to proceed to unmount → hangup (the
+      // boss's bug report); now it minimizes exactly like a connected
+      // call. Only 'ended'/'declined' let back proceed — the screen is
+      // already leaving via endCall there.
+      const backState = callStateRef.current;
+      if (backState === 'ended' || backState === 'declined') return;
       e.preventDefault();
       minimizeCall();
     });
@@ -496,6 +524,9 @@ export default function AudioCallScreen({
       const persisted = getPersistedCallSession(roomId) as WebRTCCallSession | null;
       if (persisted) {
         webrtcRef.current = persisted;
+        // 2026-10-29 Fix #18: the session exists from here on, so the
+        // speaker button is live on the returned screen too.
+        setSpeakerReady(true);
         // 2026-10-22 (deep audit): REBIND the session's callbacks to THIS
         // live instance. The session was created by the previous (now
         // unmounted) screen and its handlers still close over that dead
@@ -568,24 +599,46 @@ export default function AudioCallScreen({
         // 2026-10-11 FIX: clear the module-level minimizing flag — we're
         // back on the call screen, future unmounts must hang up normally.
         setCallMinimizing(false);
-        // Restore connected state — the call never dropped.
-        callStateRef.current = 'connected';
-        if (mountedRef.current) {
-          setCallState('connected');
-          // Resume the timer from the minimized duration.
-          const min = getMinimizedCall();
-          if (min) {
-            elapsedRef.current = Math.floor((Date.now() - min.startedAt) / 1000);
-            setElapsed(elapsedRef.current);
+        // 2026-10-29 Fix #18: restore the TRUE state. A call minimized
+        // while still dialing must come back dialing — the old code
+        // unconditionally faked 'connected' (and started the timer on a
+        // live dial). The fresh instance already starts in 'calling'
+        // (caller) / 'connecting' (callee), so the dialing branch leaves
+        // it alone and only re-arms the 45 s no-answer cap (the original
+        // timeout was stopped on minimize; without a re-arm a returned
+        // but unanswered dial would ring forever — the user can still
+        // hang up, and the cap bounds it).
+        // Known edge (not expanded here): the fresh-dial decline/online
+        // listeners were unsubscribed at minimize-unmount and are not
+        // re-attached on return, so a decline that lands while
+        // minimized-during-dialing surfaces via this cap, not instantly.
+        if (persisted.isConnected()) {
+          // Restore connected state — the call never dropped.
+          callStateRef.current = 'connected';
+          if (mountedRef.current) {
+            setCallState('connected');
+            // Resume the timer from the minimized duration.
+            const min = getMinimizedCall();
+            if (min) {
+              elapsedRef.current = Math.floor((Date.now() - min.startedAt) / 1000);
+              setElapsed(elapsedRef.current);
+            }
+            if (!timerRef.current) {
+              timerRef.current = setInterval(() => {
+                if (mountedRef.current) {
+                  elapsedRef.current += 1;
+                  setElapsed(e => e + 1);
+                }
+              }, 1000);
+            }
           }
-          if (!timerRef.current) {
-            timerRef.current = setInterval(() => {
-              if (mountedRef.current) {
-                elapsedRef.current += 1;
-                setElapsed(e => e + 1);
-              }
-            }, 1000);
-          }
+        } else {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          timeoutRef.current = setTimeout(() => {
+            if (mountedRef.current && callStateRef.current !== 'connected') {
+              endCall(true);
+            }
+          }, 45_000);
         }
         clearPersistedCallSession();
         setMinimizedCall(null);
@@ -621,6 +674,15 @@ export default function AudioCallScreen({
 
       const session = new WebRTCCallSession();
       webrtcRef.current = session;
+      setSpeakerReady(true);
+      // 2026-10-29 Fix #18: the minimize button renders from mount, so a
+      // minimize tapped before this line (during mic permission) would
+      // otherwise leave a session that is neither persisted nor hung up.
+      // If a minimize is already in flight, persist it now so the bar's
+      // return path can reattach.
+      if (isCallMinimizing() && roomId) {
+        setPersistedCallSession(roomId, session);
+      }
 
       // startCall never throws — failures surface via onError below.
       await session.startCall({
@@ -886,6 +948,25 @@ export default function AudioCallScreen({
     } catch { /* non-critical */ }
   }, [roomId, myUid]);
 
+  // ── Speaker toggle (2026-10-29 Fix #18) ──────────────────────────────
+  // RC6 fix pattern (same as mic): native SDK call OUTSIDE setState.
+  // Works in dialing AND connected states — the audio session is started
+  // in startCall(), before any peer connection, so route switching is
+  // live from "Calling..." onward. OFF returns to Bluetooth-first
+  // (headset, then earpiece) via the session — never yanks audio off a
+  // Bluetooth headset.
+  const handleToggleSpeaker = useCallback(() => {
+    const session = webrtcRef.current;
+    if (!session) return;
+    try {
+      const next = !speakerOnRef.current;
+      session.setSpeakerphone(next);
+      speakerOnRef.current = next;
+      setSpeakerOn(next);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch { /* non-critical */ }
+  }, []);
+
   // ── End call button ───────────────────────────────────────────────────────
   const handleEndCall = useCallback(() => {
     endCall(true);
@@ -905,6 +986,13 @@ export default function AudioCallScreen({
     : callState === 'ended'   ? C.red
     : callState === 'declined' ? C.red
     : C.muted;
+
+  // 2026-10-29 Fix #18: the minimize button shows in EVERY non-terminal
+  // state — dialing included (previously connected-only, which is why
+  // dialing had no minimize button at all).
+  const showMinimize =
+    callState === 'connected' || callState === 'calling' ||
+    callState === 'ringing' || callState === 'connecting';
 
   const topPad = Platform.OS === 'web' ? 67 : 0;
 
@@ -999,19 +1087,21 @@ export default function AudioCallScreen({
                 onPress={handleToggleMic}
                 active={muted}
               />
-              {/* Speaker — DISABLED (2026-10-19): react-native-webrtc exposes
-                  no JS API for audio-route switching without the
-                  react-native-incall-manager native module (not approved), so
-                  audio follows the OS default route. Honest greyed placeholder
-                  in IMO's control style — never pretend it works.
-                  2026-10-20 (boss): the "Follows system" label is REMOVED —
-                  icon only, no writing under it. */}
+              {/* Speaker (2026-10-29 Fix #18): the 2026-10-19 disabled
+                  placeholder is gone — session.setSpeakerphone() has been
+                  REAL since the 2026-10-24 Bluetooth fix (LiveKit
+                  AudioSession route switching), so the button toggles
+                  loudspeaker in dialing AND connected states. Active tint
+                  = speaker on. 2026-10-20 (boss) still holds: NO writing
+                  under the speaker icon — icon only. */}
               <CallOptButton
                 icon="volume-2"
                 label=""
-                disabled
+                onPress={handleToggleSpeaker}
+                active={speakerOn}
+                disabled={!speakerReady}
               />
-              {callState === 'connected' && (
+              {showMinimize && (
                 <CallOptButton
                   icon="chevron-down"
                   label={t('audioCall.minimize')}

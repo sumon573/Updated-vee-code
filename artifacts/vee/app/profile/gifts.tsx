@@ -12,10 +12,14 @@
  * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
  * cards, 56dp title bar). LEGACY_GIFT_ID_MAP kept verbatim — all logic
  * unchanged.
+ * 2026-10-29 (Fix #15): dark blue gradient theme (imo reference direction),
+ * gift tiles removed (art floats transparent on the page background), and
+ * gift counts corrected — see the giftCounts useMemo + corrected heal below.
  */
 import { memo, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,23 +36,29 @@ import {
 import { ref, get, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 
-// IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
-// primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
+// Dark theme (2026-10-29, Fix #15 — imo reference direction): rich dark
+// blue gradient (royal-blue glow -> deep navy). Page cards dissolve into
+// the gradient (card: transparent); modal sheet + sort menu use the solid
+// dark surface so they stay readable as overlays. All text is light.
 const C = {
-  bg: '#F4F5F5',
-  card: '#FFFFFF',
-  tile: '#F4F5F5',
-  text: '#25292D',
-  muted: '#788187',
-  mutedLight: '#C7C7CC',
-  border: '#F0F1F2',
-  blue: '#007AFF',
-  blueLight: '#E3F2FD',
+  bg: '#0B1E4B',
+  card: 'transparent',
+  surface: '#16295E',
+  tile: 'transparent',
+  text: '#FFFFFF',
+  muted: '#9AA7C7',
+  mutedLight: '#6B7AA6',
+  border: 'rgba(255,255,255,0.14)',
+  blue: '#7FB2FF',
+  blueLight: 'rgba(91,157,255,0.22)',
   green: '#34C759',
-  goldBg: '#FFF8E6',
-  goldBorder: '#F5D67B',
-  goldText: '#B8860B',
+  goldBg: 'rgba(245,158,11,0.16)',
+  goldBorder: 'rgba(245,158,11,0.4)',
+  goldText: '#FBBF24',
   gold: '#F59E0B' } as const;
+
+// Gradient stops, top -> bottom (matches the imo reference page).
+const GRADIENT_COLORS = ['#274B9F', '#10245E', '#070D24'] as const;
 
 // IMO card container: white, 12dp radius, 15dp side margins
 const cardStyle = { backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12 } as const;
@@ -218,12 +228,40 @@ export default function GiftDisplayScreen() {
     });
     // 2026-10-15 (Sumon): subscribe lifetime gift counts (permanent aggregate).
     let offCounts: (() => void) | undefined;
-    import('@/src/features/wallet/walletService').then(({ subscribeGiftCounts, healGiftCounts }) => {
-      // 2026-10-16 (Sumon): Heal server counts from tx history on first load.
-      // Ensures gift counts are server-sourced and survive app updates.
-      healGiftCounts(uid).catch(() => {});
+    import('@/src/features/wallet/walletService').then(({ subscribeGiftCounts }) => {
       offCounts = subscribeGiftCounts(uid, setLifetimeCounts);
     }).catch(() => {});
+    // 2026-10-29 (Fix #15): CORRECTED heal — replaces healGiftCounts (which
+    // only filled missing keys and never corrected an undercount). Reads
+    // the FULL transaction history, dedupes by idempotencyKey, and raises
+    // each aggregate key to max(existing, txTotal). Best-effort: any
+    // failure leaves existing counts untouched.
+    (async () => {
+      try {
+        const txSnap = await get(ref(database, `wallets/${uid}/transactions`));
+        if (!txSnap.exists()) return;
+        const seen = new Set<string>();
+        const totals: Record<string, number> = {};
+        txSnap.forEach((child) => {
+          const tx = child.val();
+          if (!tx || tx.type !== 'gift_received' || typeof tx.giftId !== 'string' || tx.giftId.length === 0) return;
+          const key = typeof tx.idempotencyKey === 'string' && tx.idempotencyKey.length > 0
+            ? tx.idempotencyKey
+            : `tx:${child.key}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          totals[tx.giftId] = (totals[tx.giftId] ?? 0) + 1;
+        });
+        const { runTransaction } = await import('firebase/database');
+        for (const [giftId, total] of Object.entries(totals)) {
+          const countRef = ref(database, `wallets/${uid}/giftCounts/${giftId}`);
+          await runTransaction(countRef, (cur) => {
+            const n = typeof cur === 'number' ? cur : 0;
+            return total > n ? total : n;
+          }).catch(() => {});
+        }
+      } catch { /* best-effort — counts display from the merge below regardless */ }
+    })();
     return () => {
       offUser();
       offTxs();
@@ -281,21 +319,36 @@ export default function GiftDisplayScreen() {
   );
 
   const giftCounts = useMemo(() => {
-    // 2026-10-15 (Sumon): prefer lifetime aggregate (accurate forever).
-    // Fall back to tx counting for users with no aggregate yet (legacy).
-    let raw: Record<string, number>;
-    if (Object.keys(lifetimeCounts).length > 0) {
-      raw = lifetimeCounts;
-    } else {
-      raw = {};
-      for (const t of receivedTxs) {
-        raw[t.giftId] = (raw[t.giftId] ?? 0) + 1;
-      }
+    // 2026-10-29 (Fix #15): NEVER prefer the aggregate wholesale — it can
+    // be partial (the sender-side fire-and-forget increment fails silently
+    // when the sender's app is killed/offline at send time, and the server
+    // gift path never writes giftCounts itself). Merge per RAW gift id:
+    // max(aggregate, recent-tx count) — the last-50 tx window is a subset
+    // of the aggregate's coverage, so max only ever recovers missing gifts,
+    // never overcounts. Then SUM across raw ids that resolve to the same
+    // canonical id (2026-10-18 legacy rule preserved: {1: 2, heart: 1}
+    // still shows as {heart: 3}). Tx counts are deduped by idempotencyKey
+    // (the server mirror can duplicate a display entry on crash-retry).
+    const txCounts: Record<string, number> = {};
+    const seenTx = new Set<string>();
+    for (const t of receivedTxs) {
+      const raw = t as unknown as { idempotencyKey?: unknown };
+      const key = typeof raw.idempotencyKey === 'string' && raw.idempotencyKey.length > 0
+        ? raw.idempotencyKey
+        : `tx:${t.id}`;
+      if (seenTx.has(key)) continue;
+      seenTx.add(key);
+      txCounts[t.giftId] = (txCounts[t.giftId] ?? 0) + 1;
     }
-    // 2026-10-18 (Sumon): PERMANENT — merge legacy numeric IDs into canonical
-    // string IDs. A user with {1: 2, heart: 1} shows as {heart: 3}.
+    const perRaw: Record<string, number> = {};
+    for (const [id, count] of Object.entries(lifetimeCounts)) {
+      perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    }
+    for (const [id, count] of Object.entries(txCounts)) {
+      perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    }
     const merged: Record<string, number> = {};
-    for (const [id, count] of Object.entries(raw)) {
+    for (const [id, count] of Object.entries(perRaw)) {
       const canonical = resolveGiftId(id);
       merged[canonical] = (merged[canonical] ?? 0) + count;
     }
@@ -409,21 +462,13 @@ export default function GiftDisplayScreen() {
         onPress={() => setPreviewGift({ giftId, count })}
         style={{ width: '25%', padding: 4, alignItems: 'center', opacity: dimmed ? 0.45 : 1 }}
       >
-        <View
-          style={{
-            width: '100%',
-            aspectRatio: 1,
-            backgroundColor: C.tile,
-            borderRadius: 12,
-            alignItems: 'center',
-            justifyContent: 'center' }}
-        >
-          {info?.thumbnailUrl ? (
-            <Image source={{ uri: info.thumbnailUrl }} style={{ width: 48, height: 48, borderRadius: 8 }} contentFit="contain" cachePolicy="memory-disk" recyclingKey={giftId} />
-          ) : (
+        {info?.thumbnailUrl ? (
+          <Image source={{ uri: info.thumbnailUrl }} style={{ width: '100%', aspectRatio: 1 }} contentFit="contain" cachePolicy="memory-disk" recyclingKey={giftId} />
+        ) : (
+          <View style={{ width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 36 }}>{info?.emoji ?? '🎁'}</Text>
-          )}
-        </View>
+          </View>
+        )}
         <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
       </Pressable>
       );
@@ -442,7 +487,8 @@ export default function GiftDisplayScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: GRADIENT_COLORS[0] }} edges={['top']}>
+      <LinearGradient colors={[...GRADIENT_COLORS]} style={{ flex: 1 }}>
       <TitleBar title="Gifts" />
 
       {/* ── Summary card: DP + name + totals ── */}
@@ -622,7 +668,7 @@ export default function GiftDisplayScreen() {
               position: 'absolute',
               top: sortMenuTop,
               right: 16,
-              backgroundColor: C.card,
+              backgroundColor: C.surface,
               borderRadius: 12,
               borderWidth: 0.5,
               borderColor: C.border,
@@ -669,7 +715,7 @@ export default function GiftDisplayScreen() {
           />
           <View
             style={{
-              backgroundColor: C.card,
+              backgroundColor: C.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               paddingTop: 10,
@@ -702,6 +748,7 @@ export default function GiftDisplayScreen() {
           </View>
         </View>
       </Modal>
+      </LinearGradient>
     </SafeAreaView>
   );
 }

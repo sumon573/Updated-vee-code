@@ -18,7 +18,6 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
 import {
-  subscribeUserChats,
   subscribePresence,
   pinChat,
   unpinChat,
@@ -33,7 +32,7 @@ import {
 import { loadChatList, saveChatList } from '@/src/features/chat/services/chatCacheService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import type { CallHistoryEntry } from '@/src/features/audio-call/services/callHistoryService';
-import { useStories } from '@/src/features/chat/hooks/useStories';
+import { useStories, subscribeSharedUserChats } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { getUser } from '@/src/services/userService';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
@@ -63,6 +62,11 @@ export default function IMOHomeScreen() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const refreshingRef = useRef(false);
+  // Fix #20 (2026-10-29, boss: no loading page on home, offline opens):
+  // tracks whether the live chat subscription has fired for the current
+  // effect run, so the no-cache + offline case can settle to the empty
+  // state instead of staying blank forever (onValue never fires offline).
+  const liveArrivedRef = useRef(false);
   const [chatsReady, setChatsReady] = useState(false);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
@@ -119,18 +123,42 @@ export default function IMOHomeScreen() {
   // Chats — offline-first (NOTE 5, 2026-10-11): show the cached list
   // instantly (works fully offline), then live-subscribe; every live
   // update refreshes the cache. Firebase onValue auto-syncs on reconnect.
+  // Fix #24 follow-up (2026-10-29): the live subscription is the shared
+  // hub (one underlying listener for shell + chat tab + stories
+  // derivation), frame-coalesced — a reconnect burst becomes one
+  // re-render, not ~10+ (see subscribeSharedUserChats in useStories).
+  // Fix #20 (2026-10-29, boss: no loading page on home, offline opens):
+  // the list must SETTLE in every case — cached → instant; live → on
+  // arrival; neither (offline + no cache, where onValue never fires) →
+  // the empty state after a short settle window, never a blank page
+  // forever. There is no spinner on this screen by design.
   useEffect(() => {
     const uid = user?.uid;
     if (!uid) return;
     let cancelled = false;
+    liveArrivedRef.current = false;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     loadChatList(uid).then((cached) => {
-      if (!cancelled && cached) {
+      if (cancelled) return;
+      if (cached) {
         setChats(cached);
         setChatsReady(true);
+      } else {
+        // No cache: if the live snapshot hasn't arrived shortly, settle
+        // anyway so the empty state shows (offline + no cache). A later
+        // live snapshot replaces it with the real list.
+        settleTimer = setTimeout(() => {
+          if (!cancelled && !liveArrivedRef.current) setChatsReady(true);
+        }, 3000);
       }
     });
-    const unsub = subscribeUserChats(uid, (live) => {
+    const unsub = subscribeSharedUserChats(uid, (live) => {
       if (cancelled) return;
+      liveArrivedRef.current = true;
+      if (settleTimer) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+      }
       setChats(live);
       setChatsReady(true);
       // 2026-10-19 polish: pull-to-refresh re-subscribes, which fires this
@@ -143,14 +171,17 @@ export default function IMOHomeScreen() {
     });
     return () => {
       cancelled = true;
+      if (settleTimer) clearTimeout(settleTimer);
       unsub();
     };
     // refreshTick forces a fresh subscription = a real re-pull on refresh.
   }, [user?.uid, refreshTick]);
 
-  // 2026-10-19 polish: pull-to-refresh. Re-subscribing re-reads userChats
-  // immediately (onValue fires on subscribe); the spinner ends in the
-  // callback above. Backstop clears it if the callback never fires.
+  // 2026-10-19 polish: pull-to-refresh. Re-attaching to the shared hub
+  // delivers the latest snapshot within a frame (the underlying listener
+  // stays live, so the data is already fresh — no redundant re-read);
+  // the spinner ends in the callback above. Backstop clears it if the
+  // callback never fires.
   const handleRefresh = useCallback(() => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
