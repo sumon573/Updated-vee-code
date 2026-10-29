@@ -23,7 +23,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/userService';
-import { uploadProfilePhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
+import { uploadProfilePhoto, uploadCoverPhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
 import { hasOfficialBadge, getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
@@ -105,7 +105,7 @@ const C = {
 
 function SectionHeader({ title, count, onPress }: { title: string; count?: number; onPress?: () => void }) {
   return (
-    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 6 }}>
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 6, paddingBottom: 6 }}>
       <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>{title}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {count !== undefined && (
@@ -119,9 +119,12 @@ function SectionHeader({ title, count, onPress }: { title: string; count?: numbe
 
 
 // 2026-10-27 (boss, flat imo profile): sections flow flat on the page bg —
-// no white cards, no side margins, no radius. Vertical rhythm comes from
-// SectionHeader paddingTop 14 + previous section paddingBottom 12.
-const flatSectionStyle = { paddingBottom: 12 } as const;
+// no white cards, no side margins, no radius.
+// 2026-10-29 (boss, tight profile): inter-section rhythm compressed to a
+// uniform 11dp (SectionHeader paddingTop 6 + previous section paddingBottom 5),
+// matching the tightened preview's 28px gaps at ~2.56px/dp. Intra-section
+// title->content gaps are untouched.
+const flatSectionStyle = { paddingBottom: 5 } as const;
 
 // ─── Badge Pill (IMO style) ───
 
@@ -217,7 +220,7 @@ function Sparkle({ delay, left, top, size = 4, color = '#FFFFFF' }:
   );
 }
 
-function LevelBadge({ level, width = 100 }: { level: number; width?: number }) {
+export function LevelBadge({ level, width = 100 }: { level: number; width?: number }) {
   const tier = getLevelTier(level);
   const levelInTier = getLevelInTier(level);
   const style = TIER_STYLE[tier];
@@ -328,24 +331,132 @@ function PremiumPill({ label, icon, colors, width = 100 }: { label: string; icon
   );
 }
 
-// ─── Voice Room Card (IMO style with live indicator) ───
 
-function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+// ─── 2026-10-29 (boss, profile mirror): shared profile helpers ───
+// Age is ALWAYS calculated from the birthday, never typed (boss 20:01).
+// Apr 12, 2004 -> 22 in Oct 2026 proves the rule.
+export function calcAge(birthday: string | undefined | null): number | null {
+  if (!birthday || typeof birthday !== 'string') return null;
+  const m = birthday.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]); const mo = Number(m[2]); const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < mo || (now.getMonth() + 1 === mo && now.getDate() < d)) age -= 1;
+  if (age < 0 || age > 120) return null;
+  return age;
+}
 
+/** Gender symbol for the profile age chip (imo: "♂ 22"). Unknown -> ''. */
+export function genderSymbol(gender: string | undefined | null): string {
+  if (!gender) return '';
+  const g = gender.toLowerCase();
+  if (g === 'male' || g === 'm' || g === '♂') return '♂';
+  if (g === 'female' || g === 'f' || g === '♀') return '♀';
+  return '';
+}
+
+// Country name (or 2-letter code) -> ISO flag code. Unknown -> null (globe).
+// ONE shared source for the profile country chip AND the room-card flags.
+const COUNTRY_TO_CODE: Record<string, string> = {
+  bangladesh: 'bd', india: 'in', pakistan: 'pk', afghanistan: 'af',
+  philippines: 'ph', nepal: 'np', 'sri lanka': 'lk', bhutan: 'bt',
+  myanmar: 'mm', thailand: 'th', vietnam: 'vn', cambodia: 'kh', laos: 'la',
+  malaysia: 'my', singapore: 'sg', indonesia: 'id', china: 'cn',
+  japan: 'jp', 'south korea': 'kr', korea: 'kr', taiwan: 'tw', 'hong kong': 'hk',
+  'united states': 'us', usa: 'us', america: 'us', canada: 'ca',
+  'united kingdom': 'gb', uk: 'gb', england: 'gb', ireland: 'ie',
+  australia: 'au', 'new zealand': 'nz', germany: 'de', france: 'fr',
+  italy: 'it', spain: 'es', portugal: 'pt', netherlands: 'nl', belgium: 'be',
+  switzerland: 'ch', austria: 'at', sweden: 'se', norway: 'no', denmark: 'dk',
+  finland: 'fi', iceland: 'is', poland: 'pl', greece: 'gr', turkey: 'tr',
+  russia: 'ru', ukraine: 'ua', romania: 'ro', brazil: 'br', mexico: 'mx',
+  argentina: 'ar', chile: 'cl', colombia: 'co', peru: 'pe',
+  'saudi arabia': 'sa', 'united arab emirates': 'ae', uae: 'ae', qatar: 'qa',
+  kuwait: 'kw', oman: 'om', bahrain: 'bh', jordan: 'jo', lebanon: 'lb',
+  iraq: 'iq', iran: 'ir', yemen: 'ye', egypt: 'eg', morocco: 'ma',
+  algeria: 'dz', tunisia: 'tn', libya: 'ly', nigeria: 'ng', kenya: 'ke',
+  ghana: 'gh', ethiopia: 'et', 'south africa': 'za',
+};
+export function countryToFlagCode(value: string | undefined | null): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const v = value.trim();
+  if (/^[A-Za-z]{2}$/.test(v)) return v.toLowerCase();
+  return COUNTRY_TO_CODE[v.toLowerCase()] ?? null;
+}
+export function flagUrl(code: string): string {
+  return `https://flagcdn.com/w80/${code}.png`;
+}
+
+// Light imo chip (Followers / age / country) — replaces the old gradient pills.
+function LightChip({ children, onPress }: { children: any; onPress?: () => void }) {
+  const inner = (
+    <View style={{
+      backgroundColor: C.tile, borderRadius: 12,
+      paddingHorizontal: 10, paddingVertical: 5, marginRight: 6,
+      flexDirection: 'row', alignItems: 'center' }}>
+      {children}
+    </View>
+  );
+  if (onPress) return <Pressable onPress={onPress}>{inner}</Pressable>;
+  return inner;
+}
+
+// Small voice waveform (imo count pill, live only) — 4 bars, 2px wide,
+// heights 13/10/9/13px at preview scale -> 5/4/4/5dp. Animated wave.
+function WaveformBars() {
+  const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (item.isLive) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    }
-  }, [item.isLive]);
+    const loop = Animated.loop(
+      Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const heights = [5, 4, 4, 5];
+  const phases: Array<[number, number, number]> = [
+    [0.6, 1, 0.6], [1, 0.6, 1], [0.6, 1, 0.6], [1, 0.6, 1],
+  ];
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 3, height: 5 }}>
+      {heights.map((h, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 1, height: h, backgroundColor: '#FFFFFF', borderRadius: 0.5,
+            marginLeft: i === 0 ? 0 : (i === 2 ? 3 : 2),
+            transform: [{ scaleY: anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: phases[i] }) }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
 
+// ─── Voice Room Card (IMO style with live indicator) ───
+// 2026-10-29 (boss, refined cards v2): top corner = owner-country flag disc
+// (16dp, 1px white ring, soft shadow, exact globe-badge spot) or lock when
+// private; bottom-left = role disc (16dp, GOLD owner / BLUE admin / NONE for
+// plain members); bottom-right = uniform count pill (person + live count)
+// with a SMALL waveform ONLY when the real live count > 0 (never at 0,
+// never a demo number). Derived from the approved v2 preview at ~2.56px/dp:
+// flag 42px->16dp, badge 40px->16dp, glyph 17x18px->7dp silhouette,
+// insets left 15px->6dp / bottom 12px->5dp, pill right 9px->4dp,
+// pill bottom 6dp (shared centerline with the badge at 13dp from bottom),
+// waveform bars 2px->1dp wide, heights 13/10/9/13px->5/4/4/5dp.
+// Roles come from the PROFILE OWNER's role per room (ownerId + userRooms
+// role map) — the same reading the boss saw; he corrects if he meant the
+// viewer's role. Unknown owner country -> globe, NEVER a fake flag.
+function RoomCard({ item, role, ownerCountry, onPress }: {
+  item: any;
+  role: 'owner' | 'admin' | 'member';
+  ownerCountry?: string | null;
+  onPress: () => void;
+}) {
+  const liveCount = item.liveCount ?? item.memberCount ?? 0;
+  const flagCode = item.isPublic === false ? null : countryToFlagCode(ownerCountry);
+  const roleColor = role === 'owner' ? '#FCB01A' : '#599DF9';
   return (
     <Pressable onPress={onPress} style={{ width: 80, padding: 4, alignItems: 'center' }}>
       <View style={{ width: 72, height: 72, borderRadius: 16, overflow: 'hidden', backgroundColor: C.card }}>
@@ -356,41 +467,58 @@ function RoomCard({ item, onPress }: { item: any; onPress: () => void }) {
             <Text style={{ fontSize: 36 }}>🎙️</Text>
           </View>
         )}
-        {/* Live badge with pulsing dot */}
-        {item.isLive && (
+        {/* Top corner: flag disc (public + known country) else globe/lock badge */}
+        {item.isPublic === false ? (
           <View style={{
-            position: 'absolute', bottom: 6, left: 6,
-            flexDirection: 'row', alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 10,
-            paddingHorizontal: 7, paddingVertical: 3 }}>
-            <Animated.View style={{
-              width: 7, height: 7, borderRadius: 3.5,
-              backgroundColor: '#FF3B30', marginRight: 4,
-              opacity: pulseAnim }} />
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-              {item.memberCount || 0}
-            </Text>
-          </View>
-        )}
-        {/* Member count for non-live */}
-        {!item.isLive && item.memberCount > 0 && (
-          <View style={{
-            position: 'absolute', bottom: 6, right: 6,
+            position: 'absolute', top: 6, right: 6,
             backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
-            paddingHorizontal: 6, paddingVertical: 2 }}>
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>👥 {item.memberCount}</Text>
+            padding: 4 }}>
+            <Feather name="lock" size={12} color="#F59E0B" />
+          </View>
+        ) : flagCode ? (
+          <View style={{
+            position: 'absolute', top: 8, right: 8, width: 16, height: 16,
+            borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#FFFFFF',
+            backgroundColor: '#E8E8ED',
+            shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2,
+            shadowOffset: { width: 0, height: 1 }, elevation: 2 }}>
+            <Image source={{ uri: flagUrl(flagCode) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          </View>
+        ) : (
+          <View style={{
+            position: 'absolute', top: 6, right: 6,
+            backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
+            padding: 4 }}>
+            <Feather name="globe" size={12} color="#10B981" />
           </View>
         )}
-        {/* Private/Public icon — top-right corner, same as trending */}
+        {/* Bottom-left role disc: GOLD owner / BLUE admin / none for members */}
+        {role !== 'member' && (
+          <View style={{
+            position: 'absolute', left: 6, bottom: 5, width: 16, height: 16,
+            borderRadius: 8, backgroundColor: '#FFFFFF',
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2,
+            shadowOffset: { width: 0, height: 1 }, elevation: 2 }}>
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: roleColor }} />
+              <View style={{
+                width: 8, height: 4, borderTopLeftRadius: 2, borderTopRightRadius: 2,
+                backgroundColor: roleColor, marginTop: 1 }} />
+            </View>
+          </View>
+        )}
+        {/* Bottom-right uniform count pill: person + live count + small waveform when live */}
         <View style={{
-          position: 'absolute', top: 6, right: 6,
-          backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
-          padding: 4 }}>
-          {item.isPublic === false ? (
-            <Feather name="lock" size={12} color="#F59E0B" />
-          ) : (
-            <Feather name="globe" size={12} color="#10B981" />
-          )}
+          position: 'absolute', right: 4, bottom: 6,
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 7,
+          paddingHorizontal: 6, paddingVertical: 2 }}>
+          <Feather name="user" size={9} color="#FFFFFF" />
+          {liveCount > 0 && <WaveformBars />}
+          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginLeft: 3 }}>
+            {liveCount}
+          </Text>
         </View>
       </View>
       <Text style={{ fontSize: 12, color: C.text, marginTop: 6, fontWeight: '600' }} numberOfLines={1}>
@@ -470,9 +598,6 @@ export default function ProfileScreen({
   }, [isMe, user?.uid]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
-  // 2026-10-20 (boss): profile pills row — measured pill width so Nameplate /
-  // Level / Follower sit in ONE line at the SAME size and always fit.
-  const [pillW, setPillW] = useState(100);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
@@ -495,6 +620,16 @@ export default function ProfileScreen({
   // NOTE 11 (2026-10-11): full-screen DP viewer + Change flow
   const [showDpViewer, setShowDpViewer] = useState(false); // DEPRECATED 2026-10-13: DP viewer is now /profile/dp-viewer route
   const [uploadingDp, setUploadingDp] = useState(false);
+  // 2026-10-29 (boss, imo mirror): "..." popup, bio More/Collapse, card roles,
+  // owner countries, raw profile fields, cover upload state.
+  const [showVidPopup, setShowVidPopup] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [roleMap, setRoleMap] = useState<Record<string, string>>({});
+  const [ownerCountryMap, setOwnerCountryMap] = useState<Record<string, string>>({});
+  const [extraFields, setExtraFields] = useState<{
+    city?: string; hometown?: string; birthday?: string; gender?: string; country?: string;
+  }>({});
+  const [uploadingCover, setUploadingCover] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
   // 2026-10-26: Intimacy card — real pairs for the VIEWED uid + couple pointer (null = no couple).
@@ -642,6 +777,89 @@ export default function ProfileScreen({
     if (!displayUid) return;
     return subscribeMyRoomsCombined(displayUid, setRooms);
   }, [displayUid]);
+
+  // ── 2026-10-29 (boss, refined cards): profile-owner role per room.
+  // userRooms/{uid} carries the role; ownerId wins (same as rooms.tsx).
+  useEffect(() => {
+    if (!displayUid) { setRoleMap({}); return; }
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        if (cancelled) return;
+        unsub = onValue(ref(database, `userRooms/${displayUid}`), (snap) => {
+          const map: Record<string, string> = {};
+          if (snap.exists()) {
+            snap.forEach((child) => {
+              const v = child.val() as { role?: string };
+              map[child.key!] = v.role ?? 'member';
+            });
+          }
+          setRoleMap(map);
+        });
+      } catch {}
+    })();
+    return () => { cancelled = true; unsub?.(); };
+  }, [displayUid]);
+
+  // ── 2026-10-29: raw profile fields (city/hometown/birthday/gender/country).
+  // NOTE: these are NOT in the VeeUser type and sanitizeVeeUser drops them on
+  // read, so they are read raw here. Writes go through updateUser (a plain
+  // update) and rules allow owner writes (no field whitelist). Follow-up:
+  // add these fields to VeeUser + sanitize (userService change, separate order).
+  useEffect(() => {
+    if (!displayUid) { setExtraFields({}); return; }
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { ref, onValue } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        if (cancelled) return;
+        unsub = onValue(ref(database, `users/${displayUid}`), (snap) => {
+          const v = snap.val() as any;
+          if (!v || typeof v !== 'object') { setExtraFields({}); return; }
+          const pick = (k: string) => (typeof v[k] === 'string' ? v[k] : undefined);
+          setExtraFields({
+            city: pick('city'), hometown: pick('hometown'),
+            birthday: pick('birthday'), gender: pick('gender'), country: pick('country'),
+          });
+        });
+      } catch {}
+    })();
+    return () => { cancelled = true; unsub?.(); };
+  }, [displayUid]);
+
+  // ── 2026-10-29: owner countries for the room-card flags (one-shot, cached).
+  useEffect(() => {
+    if (!displayUid || rooms.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { ref, get } = await import('firebase/database');
+        const { database } = await import('@/src/config/firebase');
+        const missing = new Set<string>();
+        for (const r of rooms) {
+          const oid = (r as any)?.ownerId;
+          if (oid && oid !== displayUid && !(oid in ownerCountryMap)) missing.add(oid);
+        }
+        if (missing.size === 0) return;
+        const next: Record<string, string> = {};
+        for (const oid of missing) {
+          try {
+            const snap = await get(ref(database, `users/${oid}/country`));
+            if (snap.exists() && typeof snap.val() === 'string' && snap.val()) next[oid] = snap.val();
+          } catch {}
+        }
+        if (!cancelled && Object.keys(next).length > 0) {
+          setOwnerCountryMap((prev) => ({ ...prev, ...next }));
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [rooms, displayUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Nobel tier — always shows the user's current rank name
   useEffect(() => {
@@ -882,6 +1100,45 @@ export default function ProfileScreen({
     }
   }, [user?.uid, profile]);
 
+  // ── 2026-10-29 (boss, imo mirror): Cover Change flow — tap the cover
+  // itself for the change option, exactly like DP change, NOT inside the
+  // Edit Profile sub-flow. Fixed 180dp cover for ALL users.
+  const handleChangeCover = useCallback(async () => {
+    if (!user?.uid) return;
+    Alert.alert('Cover photo', 'Change your profile cover photo?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Change photo',
+        onPress: async () => {
+          try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permission needed', 'Please allow gallery access to choose a cover photo.');
+              return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [16, 9],
+              quality: 0.85 });
+            if (result.canceled || !result.assets[0]) return;
+            setUploadingCover(true);
+            try {
+              const upload = await uploadCoverPhoto(result.assets[0].uri);
+              await updateUser(user.uid, { coverImageUrl: upload.url });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (err) {
+              Alert.alert('Could not update cover', `Reason: ${getErrorCause(err)}`);
+            } finally {
+              setUploadingCover(false);
+            }
+          } catch (err) {
+            Alert.alert('Could not open gallery', `Reason: ${getErrorCause(err)}`);
+          }
+        } },
+    ]);
+  }, [user?.uid]);
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -958,55 +1215,83 @@ export default function ProfileScreen({
     else router.replace('/home' as never);
   };
 
+  // ── 2026-10-29 (boss, imo mirror): derived profile values ───
+  const roleForRoom = (room: any): 'owner' | 'admin' | 'member' => {
+    if (room.ownerId === displayUid) return 'owner';
+    return (roleMap[room.id] as 'owner' | 'admin' | 'member' | undefined) ?? 'member';
+  };
+  const ownerCountryForRoom = (room: any): string | null => {
+    if (room.ownerId === displayUid) return extraFields.country ?? null;
+    return ownerCountryMap[room.ownerId] ?? null;
+  };
+  const age = calcAge(extraFields.birthday);
+  const myCountry = extraFields.country ?? '';
+  const myCity = extraFields.city ?? '';
+  const myHometown = extraFields.hometown ?? '';
+  const myGenderSym = genderSymbol(extraFields.gender);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      {/* ─── IMO title bar: 56dp, back left, title centered 17sp semibold, gear right ─── */}
-      <View style={{ height: 56, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
-        <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-          <Feather name="chevron-left" size={24} color={C.text} />
+      {/* ─── 2026-10-29 (boss, imo mirror): cover + DP + chips ───
+          Cover is fixed 180dp for ALL users; DP is 80dp for ALL users.
+          Cover tap (own only) opens the change option, like DP change —
+          NOT inside the Edit Profile sub-flow. The cover does not scroll
+          away (unlike imo): the back button stays reachable. Inline vId +
+          short-ID badge were removed here — the ID now lives in the "..."
+          popup + Room Profile row. */}
+      <View>
+        <Pressable
+          onPress={isMe ? handleChangeCover : undefined}
+          style={{ height: 180, backgroundColor: '#E8E8ED', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {profile?.coverImageUrl ? (
+            <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          ) : (
+            <Feather name="image" size={40} color={C.mutedLight} />
+          )}
+          {uploadingCover && (
+            <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+              <PremiumLoader size="small" />
+            </View>
+          )}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingTop: 8 }}>
+            <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="arrow-left" size={24} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
+            </Pressable>
+            <View style={{ flex: 1 }} />
+            {isMe ? (
+              <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+                <Feather name="settings" size={22} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
+              </Pressable>
+            ) : null}
+            {vId ? (
+              <Pressable onPress={() => setShowVidPopup(true)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+                <Feather name="more-horizontal" size={24} color={profile?.coverImageUrl ? '#FFFFFF' : C.text} style={profile?.coverImageUrl ? { textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 } : undefined} />
+              </Pressable>
+            ) : null}
+          </View>
         </Pressable>
-        <Text style={{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>
-          {/* 2026-10-20 (boss): NO "Me" title on own profile — title text removed.
-              Other users' profiles still show their name here. */}
-          {isMe ? '' : displayName}
-        </Text>
-        {isMe ? (
-          <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-            <Feather name="settings" size={22} color={C.text} />
-          </Pressable>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
-      </View>
-
-        {/* ─── Header card: avatar + name/ID chain + pills ─── */}
-        {/* 2026-10-20 (boss): NO box, but the box's WHITE color stays — the
-            header sits on a full-width white band (edge to edge, no rounded
-            corners, no margins). Padding matches the cards below so contents
-            stay aligned. */}
-        <View style={{ backgroundColor: C.card, paddingVertical: 15, paddingHorizontal: 30 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Pressable
-                onPress={() => {
-                  // 2026-10-13 (Sumon): DP viewer is now a dedicated route —
-                  // the Modal was showing 404 on other users' profiles.
-                  if (isMe) {
-                    router.push('/profile/dp-viewer');
-                  } else {
-                    router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
-                  }
-                }}
-                hitSlop={6}
-              >
-                <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
-                  {photoURL ? (
-                    <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.card }} />
-                  ) : (
-                    <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
-                    </View>
-                  )}
-                  {(() => {
+        <View style={{ backgroundColor: C.card, paddingHorizontal: 16, paddingBottom: 15 }}>
+          <View style={{ marginTop: -40 }}>
+            <Pressable
+              onPress={() => {
+                if (isMe) {
+                  router.push('/profile/dp-viewer');
+                } else {
+                  router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
+                }
+              }}
+              hitSlop={6}
+            >
+              <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
+                {photoURL ? (
+                  <Image source={{ uri: photoURL }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: C.card }} />
+                ) : (
+                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.blueLight, borderWidth: 3, borderColor: C.card, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 32, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
+                  </View>
+                )}
+                {(() => {
                     const activeFrameId = profile?.activeFrame;
                     if (!activeFrameId) return null;
                     // Official animated frame — pure RN AnimatedFrame (no native modules)
@@ -1044,77 +1329,78 @@ export default function ProfileScreen({
                       <View style={{ position: 'absolute', width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: '#FFD54A' }} />
                     );
                   })()}
-                </View>
-              </Pressable>
-            <View style={{ flex: 1, marginLeft: 15, minWidth: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: 18, fontWeight: '500', color: C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
-                {(profile?.officialBadge || isOfficial) ? (
-                  <Image
-                    source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
-                    style={{ width: 20, height: 20, marginLeft: 6 }}
-                    resizeMode="contain"
-                  />
-                ) : null}
               </View>
-              {/* Vee ID — NO # prefix (sacred). ONLY the copy action lives here
-                  (boss 2026-10-20): VID text + copy icon, nothing else. */}
-              {vId ? (
-                <Pressable onPress={handleCopyVid} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }} hitSlop={8}>
-                  <Text style={{ fontSize: 14, color: C.muted, flexShrink: 1 }} numberOfLines={1}>{vId}</Text>
-                  <Feather name={vidCopied ? 'check' : 'copy'} size={13} color={vidCopied ? C.blue : C.mutedLight} style={{ marginLeft: 6 }} />
-                </Pressable>
-              ) : null}
-              {/* Short-ID gold badge (sacred) */}
-              {profile?.shortId ? (
-                <View style={{ flexDirection: 'row', marginTop: 5 }}>
-                  <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: C.goldText }}>{profile.shortId}</Text>
-                  </View>
-                </View>
-              ) : null}
-              {bio ? <Text style={{ fontSize: 14, color: C.muted, marginTop: 3 }} numberOfLines={2}>{bio}</Text> : null}
-            </View>
-            {/* 2026-10-20 (boss): the edit-chevron is REMOVED — Edit is only in
-                the bottom Edit button; nothing in the header opens Edit. */}
+            </Pressable>
           </View>
-
-          {/* ─── Pills: nameplate + Level + Follower — uniform 20dp height, ONE LINE.
-              2026-10-20 boss: all three MUST fit exactly like before — measure
-              the row and size each pill identically (100 wide on a full-width
-              row; scaled down together on narrow screens). Never wraps. ─── */}
-          <View
-            style={{ flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 12 }}
-            onLayout={(e) => {
-              const rowW = e.nativeEvent.layout.width;
-              // three pills + total 18dp of margins must fit the row
-              setPillW(Math.min(100, Math.max(70, Math.floor((rowW - 18) / 3))));
-            }}
-          >
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+            <Text style={{ fontSize: 18, fontWeight: '500', color: C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
+            {(profile?.officialBadge || isOfficial) ? (
+              <Image
+                source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
+                style={{ width: 20, height: 20, marginLeft: 6 }}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
             {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) ? (
               <View style={{ marginRight: 6 }}>
                 {nameplateMist ? (
-                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={pillW} height={20} fit="cover" />
+                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} fit="cover" />
                 ) : (
                   <Image
                     source={{ uri: activeNameplate.icon }}
-                    style={{ width: pillW, height: 20 }}
+                    style={{ width: 100, height: 20 }}
                     contentFit="cover"
                   />
                 )}
               </View>
             ) : null}
-            <LevelBadge level={userLevel} width={pillW} />
-            <Pressable onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
-              <PremiumPill
-                width={pillW}
-                label={`${fmtCompact(followCounts.followers)} Follower`}
-                icon="⭐"
-                colors={['#0EA5E9', '#38BDF8']}
-              />
-            </Pressable>
+            <LevelBadge level={userLevel} width={100} />
           </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
+            <LightChip onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
+              <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>⭐ {fmtCompact(followCounts.followers)} Followers</Text>
+            </LightChip>
+            {age !== null && (
+              <LightChip>
+                <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{myGenderSym ? `${myGenderSym} ` : ''}{age}</Text>
+              </LightChip>
+            )}
+            {myCountry ? (
+              <LightChip>
+                <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>📍 {myCountry}</Text>
+              </LightChip>
+            ) : null}
+          </View>
+          {myCity ? (
+            <Text style={{ fontSize: 14, color: C.text, marginTop: 8 }}>🏙 {myCity}</Text>
+          ) : null}
+          {myHometown ? (
+            <Text style={{ fontSize: 14, color: C.text, marginTop: 4 }}>🏠 {myHometown}</Text>
+          ) : null}
+          {bio ? (
+            <View style={{ marginTop: 8 }}>
+              <Text
+                numberOfLines={bioExpanded ? undefined : 2}
+                style={{ fontSize: 14, color: C.muted, opacity: bioExpanded ? 1 : 0.6 }}
+              >
+                {bio}
+              </Text>
+              <Pressable
+                onPress={() => setBioExpanded((v) => !v)}
+                hitSlop={6}
+                style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+              >
+                <Feather name={bioExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: C.text, marginLeft: 2 }}>
+                  {bioExpanded ? 'Collapse' : 'More'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
+      </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
 
@@ -1133,6 +1419,8 @@ export default function ProfileScreen({
                 <RoomCard
                   key={item.id || String(i)}
                   item={item}
+                  role={roleForRoom(item)}
+                  ownerCountry={ownerCountryForRoom(item)}
                   onPress={() => handleRoomPress(item)}
                 />
               ))}
@@ -1292,6 +1580,27 @@ export default function ProfileScreen({
             profile — they already live in Settings (gear screen). No placeholder left. */}
       </ScrollView>
 
+      {/* ─── 2026-10-29 (boss): "..." popup — white pill with copy icon + VoiceClub ID.
+          The ID is the SAME value as the Room Profile row (profile vId), NOT the short ID. */}
+      <Modal visible={showVidPopup} transparent animationType="fade" onRequestClose={() => setShowVidPopup(false)}>
+        <Pressable
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          onPress={() => setShowVidPopup(false)}
+        />
+        <View style={{
+          position: 'absolute', top: 60, right: 16,
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: '#FFFFFF', borderRadius: 14,
+          paddingHorizontal: 16, paddingVertical: 12,
+          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 }, elevation: 8 }}>
+          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
+            <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
       {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
       {pinDialog}
 
@@ -1299,7 +1608,7 @@ export default function ProfileScreen({
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
         {isMe ? (
           <Pressable
-            onPress={() => router.push('/profile/edit')}
+            onPress={() => router.push('/profile/room-profile')}
             style={{ backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
           >
             <Feather name="edit-2" size={18} color={C.blue} />

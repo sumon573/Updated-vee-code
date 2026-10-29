@@ -1,13 +1,15 @@
 /**
  * Profile — My Rooms Screen (CRITICAL-10 fix)
  *
- * Shows all rooms the user is associated with, sorted by role:
- *   1. Owner (golden badge)
- *   2. Admin (purple badge)
- *   3. Member (muted badge)
- *
- * Tapping a room navigates into it. Active rooms show a green live dot;
- * closed rooms show a grey dot so the user can still see their history.
+ * 2026-10-29 (boss, imo-exact list): grouped expandable sections
+ * "Rooms owned" + "Rooms joined" (admin rooms live under Joined, not Owned);
+ * count pill icon ORANGE for owned, BLUE for joined; private rooms show a
+ * lock AFTER the name (not on the photo); each row = photo + name (+lock)
+ * + count pill top-right + topic + 5 seat icons. NO Owner/Admin text
+ * pills, NO "Live · N members" line, NO flags on list rows (imo has none),
+ * NO imo privacy banner (imo-chrome). Vee's header is kept ("My Rooms" +
+ * count) — NOT renamed to imo's "VoiceClub Room / Joined 42".
+ * Tapping a room navigates into it (PIN gate enforced from everywhere).
  * 2026-10-19 (Sumon): restyled to IMO Me-tab design language —
  * #F4F5F5 bg, white 12dp card, 56dp title bar. All logic untouched.
  */
@@ -78,32 +80,21 @@ function TitleBar({ title, count }: { title: string; count?: number }) {
 
 type UserRole = 'owner' | 'admin' | 'member';
 
-const ROLE_ORDER: Record<UserRole, number> = { owner: 0, admin: 1, member: 2 };
+// NOTE 2026-10-29: the old Owner/Admin/Member text pills and role ordering
+// are gone — the imo-exact list groups by section (Owned vs Joined) and
+// encodes the section in the count-pill icon color instead.
 
-const ROLE_CONFIG: Record<UserRole, { color: string; bg: string; border: string; label: string }> = {
-  owner:  { color: C.gold,    bg: C.goldBg,        border: C.goldBorder,  label: 'Owner'  },
-  admin:  { color: C.purple,  bg: C.purpleLight,   border: '#D9C8F5',     label: 'Admin'  },
-  member: { color: C.muted,   bg: C.tile,          border: C.border,       label: 'Member' } };
-
-function RoleBadge({ role }: { role: UserRole }) {
-  const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.member; // Fallback for unexpected roles
-  return (
-    <View style={{
-      paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-      backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }}>
-      <Text style={{ color: cfg.color, fontSize: 11, fontWeight: '700' }}>{cfg.label}</Text>
-    </View>
-  );
-}
-
-// ─── Room row ─────────────────────────────────────────────────────────────────
+// ─── Room row (imo-exact) ─────────────────────────────────────────────────────
 
 function RoomRow({
-  room, role, onDelete, onRoomPress, last }: { room: RoomInfo; role: UserRole; onDelete?: () => void; onRoomPress: (room: RoomInfo) => void; last?: boolean }) {
+  room, section, onDelete, onRoomPress, last }: {
+  room: RoomInfo; section: 'owned' | 'joined';
+  onDelete?: () => void; onRoomPress: (room: RoomInfo) => void; last?: boolean }) {
   // Backward compatible: rooms created before the `active` flag existed
   // (or with a missing field) are treated as active. Only an explicit
   // `active: false` means closed.
   const isActive = room.active !== false;
+  const liveCount = room.liveCount ?? room.memberCount ?? 0;
 
   const handlePress = () => {
     if (!isActive) {
@@ -126,7 +117,7 @@ function RoomRow({
       <Pressable
         onPress={handlePress}
         style={{
-          flexDirection: 'row', alignItems: 'center',
+          flexDirection: 'row', alignItems: 'flex-start',
           paddingVertical: 13, paddingHorizontal: 15,
           opacity: isActive ? 1 : 0.55 }}
       >
@@ -156,7 +147,9 @@ function RoomRow({
             >
               {room.name}
             </Text>
-            <RoleBadge role={role} />
+            {room.isPublic === false && (
+              <Feather name="lock" size={13} color="#F59E0B" style={{ marginLeft: 6 }} />
+            )}
           </View>
 
           {room.topic ? (
@@ -165,29 +158,81 @@ function RoomRow({
             </Text>
           ) : null}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <View style={{
-              width: 7, height: 7, borderRadius: 4, marginRight: 6,
-              backgroundColor: isActive ? C.green : C.mutedLight }} />
-            <Text style={{ color: isActive ? C.green : C.muted, fontSize: 12 }}>
-              {isActive ? 'Live' : 'Closed'} · {room.memberCount ?? 0} members
-            </Text>
+          {/* 5 seat icons (imo list rows) — empty circles. Live seat avatars
+              would need a per-room seats subscription; RoomInfo carries no
+              seat data, so empty circles are the honest fallback. */}
+          <View style={{ flexDirection: 'row', marginTop: 6 }}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <View
+                key={i}
+                style={{
+                  width: 16, height: 16, borderRadius: 8,
+                  backgroundColor: C.tile, borderWidth: 1, borderColor: C.border,
+                  marginRight: 4 }}
+              />
+            ))}
           </View>
         </View>
 
-        <Feather name={isActive ? 'chevron-right' : 'lock'} size={18} color={C.mutedLight} style={{ marginLeft: 8 }} />
-        {!isActive && onDelete && (
-          <Pressable
-            onPress={onDelete}
-            hitSlop={10}
-            style={{
-              padding: 7, borderRadius: 8, backgroundColor: '#FDE8E8', marginLeft: 8 }}
-          >
-            <Feather name="trash-2" size={16} color={C.red} />
-          </Pressable>
-        )}
+        {/* Count pill top-right: ORANGE person for owned, BLUE for joined */}
+        <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: '#F0F1F2', borderRadius: 12,
+            paddingHorizontal: 8, paddingVertical: 4 }}>
+            <Feather name="user" size={13} color={section === 'owned' ? '#FF9500' : '#007AFF'} />
+            <Text style={{ color: C.text, fontSize: 13, fontWeight: '700', marginLeft: 4 }}>
+              {liveCount}
+            </Text>
+          </View>
+          {!isActive && onDelete && (
+            <Pressable
+              onPress={onDelete}
+              hitSlop={10}
+              style={{
+                padding: 7, borderRadius: 8, backgroundColor: '#FDE8E8', marginTop: 8 }}
+            >
+              <Feather name="trash-2" size={16} color={C.red} />
+            </Pressable>
+          )}
+        </View>
       </Pressable>
       {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 75 }} />}
+    </View>
+  );
+}
+
+// ─── Expandable section (imo: "Rooms owned" / "Rooms joined") ───────────────
+
+function RoomSection({ title, items, expanded, onToggle, onDelete, onRoomPress }: {
+  title: string;
+  items: Array<{ room: RoomInfo; role: UserRole }>;
+  expanded: boolean;
+  onToggle: () => void;
+  onDelete: (room: RoomInfo) => void;
+  onRoomPress: (room: RoomInfo) => void;
+}) {
+  return (
+    <View style={cardStyle}>
+      <Pressable
+        onPress={onToggle}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 15, paddingVertical: 13 }}
+      >
+        <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>{title}</Text>
+        <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={C.muted} />
+      </Pressable>
+      {expanded && items.map(({ room, role }, index) => (
+        <RoomRow
+          key={room.id}
+          room={room}
+          section={role === 'owner' ? 'owned' : 'joined'}
+          last={index === items.length - 1}
+          onDelete={role === 'owner' && room.active === false ? () => onDelete(room) : undefined}
+          onRoomPress={onRoomPress}
+        />
+      ))}
     </View>
   );
 }
@@ -271,20 +316,31 @@ export default function ProfileRoomsScreen() {
     );
   };
 
-  const sorted = [...rooms].sort((a, b) => {
-    const diff = ROLE_ORDER[getRole(a)] - ROLE_ORDER[getRole(b)];
-    return diff !== 0 ? diff : b.createdAt - a.createdAt;
-  });
+  // 2026-10-29 (boss, imo-exact list): sections replace role ordering.
+  // Owned = profile-owner's own rooms; Joined = admin + member rooms.
+  const owned = rooms
+    .filter((r) => getRole(r) === 'owner')
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const joined = rooms
+    .filter((r) => getRole(r) !== 'owner')
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const [ownedExpanded, setOwnedExpanded] = useState(true);
+  const [joinedExpanded, setJoinedExpanded] = useState(true);
+  const handleRoomPress = (room: RoomInfo) => {
+    requestRoomAccess(room, () => {
+      router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
+    });
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      <TitleBar title={t('profile.statRooms', { defaultValue: 'My Rooms' })} count={loading ? undefined : sorted.length} />
+      <TitleBar title={t('profile.statRooms', { defaultValue: 'My Rooms' })} count={loading ? undefined : rooms.length} />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <PremiumLoader size="large" />
         </View>
-      ) : sorted.length === 0 ? (
+      ) : rooms.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
           <Feather name="mic-off" size={44} color={C.mutedLight} />
           <Text style={{ color: C.text, fontSize: 17, fontWeight: '700', marginTop: 14 }}>No rooms yet</Text>
@@ -297,24 +353,26 @@ export default function ProfileRoomsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
         >
-          <View style={cardStyle}>
-            {sorted.map((item, index) => {
-              const role = getRole(item);
-              const isClosed = item.active === false;
-              return (
-                <RoomRow
-                  key={item.id}
-                  room={item}
-                  role={role}
-                  last={index === sorted.length - 1}
-                  onDelete={role === 'owner' && isClosed ? () => handleDeleteClosed(item) : undefined}
-                  onRoomPress={(room) => requestRoomAccess(room, () => {
-                    router.push({ pathname: '/voice-room', params: { roomId: room.id } } as never);
-                  })}
-                />
-              );
-            })}
-          </View>
+          {owned.length > 0 && (
+            <RoomSection
+              title="Rooms owned"
+              items={owned.map((r) => ({ room: r, role: getRole(r) }))}
+              expanded={ownedExpanded}
+              onToggle={() => setOwnedExpanded((v) => !v)}
+              onDelete={handleDeleteClosed}
+              onRoomPress={handleRoomPress}
+            />
+          )}
+          {joined.length > 0 && (
+            <RoomSection
+              title="Rooms joined"
+              items={joined.map((r) => ({ room: r, role: getRole(r) }))}
+              expanded={joinedExpanded}
+              onToggle={() => setJoinedExpanded((v) => !v)}
+              onDelete={handleDeleteClosed}
+              onRoomPress={handleRoomPress}
+            />
+          )}
         </ScrollView>
       )}
       {pinDialog}
