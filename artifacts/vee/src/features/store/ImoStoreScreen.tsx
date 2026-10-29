@@ -339,13 +339,24 @@ function PreviewSheet({
           // display names/photos for the picker.
           const entries = await new Promise<IntimacyEntry[]>((resolve) => {
             let done = false;
-            const unsub = subscribeMyIntimacies(uid, (list) => {
+            // NOTE: Firebase fires the first snapshot SYNCHRONOUSLY inside
+            // subscribeMyIntimacies when the intimacy node is already cached
+            // (e.g. Profile's listener is mounted beneath the Store). The
+            // callback must therefore never call unsub() before the
+            // assignment below has run — that was the Store white-screen
+            // crash ("undefined is not a function").
+            let unsub: (() => void) | undefined;
+            const finish = (list: IntimacyEntry[]) => {
               if (done) return;
               done = true;
-              unsub();
-              resolve(list.filter((e) => e.value > 0));
-            });
-            setTimeout(() => { if (!done) { done = true; unsub(); resolve([]); } }, 6000);
+              if (unsub) unsub();
+              resolve(list);
+            };
+            unsub = subscribeMyIntimacies(uid, (list) => finish(list.filter((e) => e.value > 0)));
+            // Sync-fire case: the callback already ran (and resolved) before
+            // this assignment — clean the still-live listener up now.
+            if (done && unsub) unsub();
+            setTimeout(() => { if (!done) finish([]); }, 6000);
           });
           const withProfiles = await Promise.all(entries.map(async (e) => {
             const p = await fetchPeerProfile(e.otherUid).catch(() => ({ name: '', photoURL: null }));
