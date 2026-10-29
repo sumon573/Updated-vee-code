@@ -353,26 +353,84 @@ export function genderSymbol(gender: string | undefined | null): string {
 }
 
 // Country name (or 2-letter code) -> ISO flag code. Unknown -> null (globe).
-// ONE shared source for the profile country chip AND the room-card flags.
+// Covers EVERY name in the Country/Region picker (app/profile/countries.ts)
+// verbatim, so any owner's stored country resolves to its own flag disc;
+// only a truly missing/unknown stored country falls back to the globe.
 const COUNTRY_TO_CODE: Record<string, string> = {
-  bangladesh: 'bd', india: 'in', pakistan: 'pk', afghanistan: 'af',
-  philippines: 'ph', nepal: 'np', 'sri lanka': 'lk', bhutan: 'bt',
-  myanmar: 'mm', thailand: 'th', vietnam: 'vn', cambodia: 'kh', laos: 'la',
-  malaysia: 'my', singapore: 'sg', indonesia: 'id', china: 'cn',
-  japan: 'jp', 'south korea': 'kr', korea: 'kr', taiwan: 'tw', 'hong kong': 'hk',
-  'united states': 'us', usa: 'us', america: 'us', canada: 'ca',
-  'united kingdom': 'gb', uk: 'gb', england: 'gb', ireland: 'ie',
-  australia: 'au', 'new zealand': 'nz', germany: 'de', france: 'fr',
-  italy: 'it', spain: 'es', portugal: 'pt', netherlands: 'nl', belgium: 'be',
-  switzerland: 'ch', austria: 'at', sweden: 'se', norway: 'no', denmark: 'dk',
-  finland: 'fi', iceland: 'is', poland: 'pl', greece: 'gr', turkey: 'tr',
-  russia: 'ru', ukraine: 'ua', romania: 'ro', brazil: 'br', mexico: 'mx',
-  argentina: 'ar', chile: 'cl', colombia: 'co', peru: 'pe',
-  'saudi arabia': 'sa', 'united arab emirates': 'ae', uae: 'ae', qatar: 'qa',
-  kuwait: 'kw', oman: 'om', bahrain: 'bh', jordan: 'jo', lebanon: 'lb',
-  iraq: 'iq', iran: 'ir', yemen: 'ye', egypt: 'eg', morocco: 'ma',
-  algeria: 'dz', tunisia: 'tn', libya: 'ly', nigeria: 'ng', kenya: 'ke',
-  ghana: 'gh', ethiopia: 'et', 'south africa': 'za',
+  afghanistan: 'af', 'aland islands': 'ax', albania: 'al', algeria: 'dz',
+  'american samoa': 'as', andorra: 'ad', angola: 'ao', anguilla: 'ai',
+  antarctica: 'aq', 'antigua & barbuda': 'ag', argentina: 'ar', armenia: 'am',
+  aruba: 'aw', australia: 'au', austria: 'at', azerbaijan: 'az',
+  bahamas: 'bs', bahrain: 'bh', bangladesh: 'bd', barbados: 'bb',
+  belarus: 'by', belgium: 'be', belize: 'bz', benin: 'bj', bermuda: 'bm',
+  bhutan: 'bt', bolivia: 'bo', 'bosnia & herzegovina': 'ba', botswana: 'bw',
+  'bouvet island': 'bv', brazil: 'br', 'british indian ocean territory': 'io',
+  'british virgin islands': 'vg', brunei: 'bn', bulgaria: 'bg',
+  'burkina faso': 'bf', burundi: 'bi', cambodia: 'kh', cameroon: 'cm',
+  canada: 'ca', 'cape verde': 'cv', 'cayman islands': 'ky',
+  'central african republic': 'cf', chad: 'td', chile: 'cl', china: 'cn',
+  'christmas island': 'cx', 'cocos (keeling) islands': 'cc', colombia: 'co',
+  comoros: 'km', congo: 'cg', 'congo (drc)': 'cd', 'cook islands': 'ck',
+  'costa rica': 'cr', croatia: 'hr', cuba: 'cu', 'curaçao': 'cw',
+  cyprus: 'cy', 'czech republic': 'cz', denmark: 'dk', djibouti: 'dj',
+  dominica: 'dm', 'dominican republic': 'do', ecuador: 'ec', egypt: 'eg',
+  'el salvador': 'sv', 'equatorial guinea': 'gq', eritrea: 'er',
+  estonia: 'ee', eswatini: 'sz', ethiopia: 'et', 'falkland islands': 'fk',
+  'faroe islands': 'fo', fiji: 'fj', finland: 'fi', france: 'fr',
+  'french guiana': 'gf', 'french polynesia': 'pf',
+  'french southern territories': 'tf', gabon: 'ga', gambia: 'gm',
+  georgia: 'ge', germany: 'de', ghana: 'gh', gibraltar: 'gi',
+  greece: 'gr', greenland: 'gl', grenada: 'gd', guadeloupe: 'gp',
+  guam: 'gu', guatemala: 'gt', guernsey: 'gg', guinea: 'gn',
+  'guinea-bissau': 'gw', guyana: 'gy', haiti: 'ht', honduras: 'hn',
+  'hong kong': 'hk', hungary: 'hu', iceland: 'is', india: 'in',
+  indonesia: 'id', iran: 'ir', iraq: 'iq', ireland: 'ie',
+  'isle of man': 'im', israel: 'il', italy: 'it', 'ivory coast': 'ci',
+  jamaica: 'jm', japan: 'jp', jersey: 'je', jordan: 'jo',
+  kazakhstan: 'kz', kenya: 'ke', kiribati: 'ki', kosovo: 'xk',
+  kuwait: 'kw', kyrgyzstan: 'kg', laos: 'la', latvia: 'lv',
+  lebanon: 'lb', lesotho: 'ls', liberia: 'lr', libya: 'ly',
+  liechtenstein: 'li', lithuania: 'lt', luxembourg: 'lu', macao: 'mo',
+  madagascar: 'mg', malawi: 'mw', malaysia: 'my', maldives: 'mv',
+  mali: 'ml', malta: 'mt', 'marshall islands': 'mh', martinique: 'mq',
+  mauritania: 'mr', mauritius: 'mu', mayotte: 'yt', mexico: 'mx',
+  micronesia: 'fm', moldova: 'md', monaco: 'mc', mongolia: 'mn',
+  montenegro: 'me', montserrat: 'ms', morocco: 'ma', mozambique: 'mz',
+  myanmar: 'mm', namibia: 'na', nauru: 'nr', nepal: 'np',
+  netherlands: 'nl', 'new caledonia': 'nc', 'new zealand': 'nz',
+  nicaragua: 'ni', niger: 'ne', nigeria: 'ng', niue: 'nu',
+  'norfolk island': 'nf', 'north korea': 'kp', 'north macedonia': 'mk',
+  'northern mariana islands': 'mp', norway: 'no', oman: 'om',
+  pakistan: 'pk', palau: 'pw', palestine: 'ps', panama: 'pa',
+  'papua new guinea': 'pg', paraguay: 'py', peru: 'pe',
+  philippines: 'ph', 'pitcairn islands': 'pn', poland: 'pl',
+  portugal: 'pt', 'puerto rico': 'pr', qatar: 'qa', 'réunion': 're',
+  romania: 'ro', russia: 'ru', rwanda: 'rw', 'saint barthélemy': 'bl',
+  'saint helena': 'sh', 'saint kitts & nevis': 'kn', 'saint lucia': 'lc',
+  'saint martin': 'mf', 'saint vincent & the grenadines': 'vc',
+  samoa: 'ws', 'san marino': 'sm', 'são tomé & príncipe': 'st',
+  'saudi arabia': 'sa', senegal: 'sn', serbia: 'rs', seychelles: 'sc',
+  'sierra leone': 'sl', singapore: 'sg', 'sint maarten': 'sx',
+  slovakia: 'sk', slovenia: 'si', 'solomon islands': 'sb', somalia: 'so',
+  'south africa': 'za', 'south georgia & the south sandwich islands': 'gs',
+  'south korea': 'kr', 'south sudan': 'ss', spain: 'es',
+  'sri lanka': 'lk', sudan: 'sd', suriname: 'sr',
+  'svalbard & jan mayen': 'sj', sweden: 'se', switzerland: 'ch',
+  syria: 'sy', taiwan: 'tw', tajikistan: 'tj', tanzania: 'tz',
+  thailand: 'th', 'timor-leste': 'tl', togo: 'tg', tokelau: 'tk',
+  tonga: 'to', 'trinidad & tobago': 'tt', tunisia: 'tn',
+  turkey: 'tr', turkmenistan: 'tm', 'turks & caicos islands': 'tc',
+  tuvalu: 'tv', uganda: 'ug', ukraine: 'ua',
+  'united arab emirates': 'ae', 'united kingdom': 'gb',
+  'united states': 'us', 'us minor outlying islands': 'um',
+  uruguay: 'uy', uzbekistan: 'uz', vanuatu: 'vu', 'vatican city': 'va',
+  venezuela: 've', vietnam: 'vn', 'virgin islands (us)': 'vi',
+  'wallis & futuna': 'wf', 'western sahara': 'eh', yemen: 'ye',
+  zambia: 'zm', zimbabwe: 'zw',
+  // Common aliases (kept from the original map).
+  usa: 'us', america: 'us', uk: 'gb', england: 'gb', uae: 'ae',
+  korea: 'kr', czechia: 'cz', macedonia: 'mk', vatican: 'va',
+  swaziland: 'sz', "cote d'ivoire": 'ci',
 };
 export function countryToFlagCode(value: string | undefined | null): string | null {
   if (!value || typeof value !== 'string') return null;
@@ -396,6 +454,25 @@ function LightChip({ children, onPress }: { children: any; onPress?: () => void 
   );
   if (onPress) return <Pressable onPress={onPress}>{inner}</Pressable>;
   return inner;
+}
+// Premium location marker (boss, 2026-10-30): bespoke gradient pin — NOT an
+// emoji, NOT a stock pin. Violet→fuchsia gradient head with a white ring and
+// white core dot, tapering to a point in the deep violet end: a gem-like
+// marker that reads premium on the light chip.
+function PremiumLocationIcon() {
+  return (
+    <View style={{ width: 13, height: 15, marginRight: 4, alignItems: 'center' }}>
+      <LinearGradient
+        colors={['#C4B5FD', '#8B5CF6', '#D946EF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#FFFFFF' }} />
+      </LinearGradient>
+      <View style={{ width: 4, height: 4, backgroundColor: '#8B5CF6', transform: [{ rotate: '45deg' }], marginTop: -2 }} />
+    </View>
+  );
 }
 
 // Small voice waveform (imo count pill, live only) — 4 bars, 2px wide,
@@ -1385,7 +1462,8 @@ export default function ProfileScreen({
             )}
             {myCountry ? (
               <LightChip>
-                <Text style={{ fontSize: 11, color: C.text, fontWeight: '500' }}>📍 {myCountry}</Text>
+                <PremiumLocationIcon />
+                <Text style={{ fontSize: 11, color: C.text, fontWeight: '500' }}>{myCountry}</Text>
               </LightChip>
             ) : null}
           </View>
