@@ -382,7 +382,7 @@ export default function RoomProfileScreen() {
             }}
           >
             <View style={{ marginRight: 6 }}>
-              <LevelBadge level={totalLevel} width={100} />
+              <LevelBadge level={totalLevel} />
             </View>
           </Row>
           <Divider />

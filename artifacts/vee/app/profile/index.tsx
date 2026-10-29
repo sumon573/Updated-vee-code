@@ -220,15 +220,18 @@ function Sparkle({ delay, left, top, size = 4, color = '#FFFFFF' }:
   );
 }
 
-export function LevelBadge({ level, width = 100 }: { level: number; width?: number }) {
+export function LevelBadge({ level }: { level: number }) {
   const tier = getLevelTier(level);
   const levelInTier = getLevelInTier(level);
   const style = TIER_STYLE[tier];
-  // 2026-10-12 (Sumon): SAME SIZE as Nobel/Follower pills. Single-line
-  // "Bronze Lv 17" format. Premium gradient kept.
-  // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
-  // 2026-10-16 (Sumon): Tier animations — Bronze static, Silver shimmer,
-  // Gold sparkle, Max PREMIUM dazzling. All inside the box only.
+  // Level pill redesign (2026-10-30, boss spec 21:47): SMALL COMPACT pill —
+  // hug content everywhere (no fixed width), NO tier name text, rank by COLOR
+  // only + medal icon + "Lv.<number>". Sparkles/shimmer are MAX-ONLY; lower
+  // tiers are static gradients. Level computation untouched: bronze/silver/
+  // gold show the in-tier number as before; max shows the total level (its
+  // in-tier number is undefined — previously rendered as the tier word "Max",
+  // which the no-tier-name rule now forbids).
+  const displayNumber = tier === 'max' ? level : levelInTier;
   return (
     <View style={{ marginRight: 6 }}>
       <LinearGradient
@@ -236,19 +239,10 @@ export function LevelBadge({ level, width = 100 }: { level: number; width?: numb
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          width, height: 20, borderRadius: 10,
+          height: 20, borderRadius: 10, paddingHorizontal: 8,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden' }}
       >
-        {tier === 'silver' && <ShimmerOverlay speed={2500} opacity={0.4} />}
-        {tier === 'gold' && (
-          <>
-            <ShimmerOverlay speed={1500} opacity={0.6} />
-            <Sparkle delay={0} left={20} top={4} size={3} />
-            <Sparkle delay={500} left={70} top={12} size={4} />
-            <Sparkle delay={900} left={45} top={6} size={3} />
-          </>
-        )}
         {tier === 'max' && (
           <>
             <ShimmerOverlay speed={900} opacity={0.8} />
@@ -259,8 +253,9 @@ export function LevelBadge({ level, width = 100 }: { level: number; width?: numb
             <Sparkle delay={700} left={65} top={4} size={4} color="#FFD700" />
           </>
         )}
+        <Feather name="award" size={12} color="#FFFFFF" style={{ marginRight: 3, zIndex: 1 }} />
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF', zIndex: 1 }} numberOfLines={1}>
-          {tier === 'max' ? 'Lv Max' : `${style.label} Lv ${levelInTier}`}
+          {`Lv.${displayNumber}`}
         </Text>
       </LinearGradient>
     </View>
@@ -1377,7 +1372,7 @@ export default function ProfileScreen({
                 )}
               </View>
             ) : null}
-            <LevelBadge level={userLevel} width={100} />
+            <LevelBadge level={userLevel} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
             <LightChip onPress={() => router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: displayUid } } as never)}>
