@@ -1326,19 +1326,24 @@ export default function ProfileScreen({
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
       <ScrollView stickyHeaderIndices={[0]} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Slim sticky bar (imo scrolled look, 2026-10-29 Fix #4): back + name + gear/"..." — native stickyHeaderIndices, no scroll handlers, no jank. */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, height: 56, backgroundColor: C.card, borderBottomWidth: 0.5, borderBottomColor: C.border }}>
-          <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+        {/* Slim sticky bar (imo scrolled look, 2026-10-29 Fix #4; 2026-10-30 mirror-proof): back + name + gear/"..." — native stickyHeaderIndices, no scroll handlers, no jank.
+            Icon placement is ABSOLUTE with physical left/right offsets (back left:4; three-dot right:4; gear right:44 when the three-dot is also present, else right:4).
+            Physical left/right are never flipped by RTL layout mirroring (unlike flex row order), so gear + three-dot stay on the RIGHT on every phone regardless of layout direction.
+            Name stays flex:1 and centered, with side margins that clear the absolute icons. Bar height, back behavior, gear-only-when-isMe, three-dot-only-when-vId, and the vId popup are all unchanged. */}
+        <View style={{ height: 56, backgroundColor: C.card, borderBottomWidth: 0.5, borderBottomColor: C.border, justifyContent: 'center' }}>
+          <View style={{ flex: 1, marginLeft: 48, marginRight: (isMe ? 40 : 0) + (vId ? 40 : 0) + 8, justifyContent: 'center' }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: C.text, textAlign: 'center' }} numberOfLines={1}>{displayName}</Text>
+          </View>
+          <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
             <Feather name="arrow-left" size={24} color={C.text} />
           </Pressable>
-          <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: C.text, marginLeft: 4 }} numberOfLines={1}>{displayName}</Text>
           {isMe ? (
-            <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ position: 'absolute', right: vId ? 44 : 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
               <Feather name="settings" size={22} color={C.text} />
             </Pressable>
           ) : null}
           {vId ? (
-            <Pressable onPress={() => setShowVidPopup(true)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
               <Feather name="more-horizontal" size={24} color={C.text} />
             </Pressable>
           ) : null}
