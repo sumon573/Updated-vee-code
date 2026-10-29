@@ -508,16 +508,15 @@ function RoomCard({ item, role, ownerCountry, onPress }: {
             </View>
           </View>
         )}
-        {/* Bottom-right uniform count pill: person + live count + small waveform when live */}
+        {/* FIX #2/#3: count pill — no person icon, number + waveform only; uniform compact size; >100 shows "100+". */}
         <View style={{
           position: 'absolute', right: 4, bottom: 6,
           flexDirection: 'row', alignItems: 'center',
           backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 7,
           paddingHorizontal: 6, paddingVertical: 2 }}>
-          <Feather name="user" size={9} color="#FFFFFF" />
           {liveCount > 0 && <WaveformBars />}
-          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginLeft: 3 }}>
-            {liveCount}
+          <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700' }}>
+            {liveCount > 100 ? '100+' : String(liveCount)}
           </Text>
         </View>
       </View>
