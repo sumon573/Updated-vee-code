@@ -228,10 +228,9 @@ export function LevelBadge({ level }: { level: number }) {
   // hug content everywhere (no fixed width), NO tier name text, rank by COLOR
   // only + medal icon + "Lv.<number>". Sparkles/shimmer are MAX-ONLY; lower
   // tiers are static gradients. Level computation untouched: bronze/silver/
-  // gold show the in-tier number as before; max shows the total level (its
-  // in-tier number is undefined — previously rendered as the tier word "Max",
-  // which the no-tier-name rule now forbids).
-  const displayNumber = tier === 'max' ? level : levelInTier;
+  // gold show the in-tier number as before. 2026-10-30 01:39 (boss order):
+  // max shows "Lv Max" again (previous rule) — NOT the total level.
+  const displayText = tier === 'max' ? 'Lv Max' : `Lv.${levelInTier}`;
   return (
     <View style={{ marginRight: 6 }}>
       <LinearGradient
@@ -255,7 +254,7 @@ export function LevelBadge({ level }: { level: number }) {
         )}
         <Feather name="award" size={12} color="#FFFFFF" style={{ marginRight: 3, zIndex: 1 }} />
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF', zIndex: 1 }} numberOfLines={1}>
-          {`Lv.${displayNumber}`}
+          {displayText}
         </Text>
       </LinearGradient>
     </View>
