@@ -399,7 +399,7 @@ function LightChip({ children, onPress }: { children: any; onPress?: () => void 
 }
 
 // Small voice waveform (imo count pill, live only) — 4 bars, 2px wide,
-// heights 13/10/9/13px at preview scale -> 5/4/4/5dp. Animated wave.
+// heights 13/10/9/13px at preview scale -> 5/4/4/5dp; FIX #43: shortened to 3/2/2/3dp (imo-like tiny pill equalizer). Animated wave.
 function WaveformBars() {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -409,12 +409,12 @@ function WaveformBars() {
     loop.start();
     return () => loop.stop();
   }, [anim]);
-  const heights = [5, 4, 4, 5];
+  const heights = [3, 2, 2, 3];
   const phases: Array<[number, number, number]> = [
     [0.6, 1, 0.6], [1, 0.6, 1], [0.6, 1, 0.6], [1, 0.6, 1],
   ];
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 3, height: 5 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginHorizontal: 3, height: 3 }}>
       {heights.map((h, i) => (
         <Animated.View
           key={i}
