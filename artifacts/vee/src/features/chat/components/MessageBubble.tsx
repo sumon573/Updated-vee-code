@@ -464,7 +464,14 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
                 }}>
                   <Feather name={callIconName} size={26} color={callIconColor} />
                 </View>
-                <View style={{ flex: 1 }}>
+                {/* FIX #37: NO flex on this text container. flex:1 inside this
+                    indefinite-width row (content-driven chain under a maxWidth-only
+                    bubble) collapses the texts to ~0 width on Android -> the tall
+                    narrow empty call card. A plain View sizes to content, exactly
+                    like the pre-Fix #31 card (which rendered correctly). Do NOT
+                    re-add flex here. Titles/subtitles are short literals, so the
+                    row (56 icon + 12 gap + ~150 text) always fits maxWidth 0.78. */}
+                <View>
                   <Text style={{ color: textColor, fontSize: 18, fontWeight: '700' }}>
                     {callTitle}
                   </Text>

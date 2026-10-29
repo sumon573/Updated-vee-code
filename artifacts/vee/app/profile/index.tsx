@@ -1290,6 +1290,10 @@ export default function ProfileScreen({
         </Pressable>
         <View style={{ backgroundColor: C.card, paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ marginTop: -40 }}>
+            {/* FIX #39: alignSelf flex-start — without a style this Pressable
+                stretches to the full header width (column parent defaults to
+                stretch), so taps on the EMPTY space right of the DP opened the
+                DP viewer. Now the hit box is just the 92x92 DP (+ hitSlop). */}
             <Pressable
               onPress={() => {
                 if (isMe) {
@@ -1299,6 +1303,7 @@ export default function ProfileScreen({
                 }
               }}
               hitSlop={6}
+              style={{ alignSelf: 'flex-start' }}
             >
               <View style={{ width: 92, height: 92, alignItems: 'center', justifyContent: 'center' }}>
                 {photoURL ? (

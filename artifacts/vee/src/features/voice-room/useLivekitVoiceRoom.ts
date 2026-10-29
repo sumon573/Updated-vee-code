@@ -1312,6 +1312,18 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     this.joining = false;
     this.speakingIds.clear();
     this.participants = [];
+    // FIX #41 (2026-10-30, boss: "Voice room active" notification lingers
+    // after exit): drop the foreground-service ref SYNCHRONOUSLY, before
+    // any await. The stop used to live in the finally below, so a hung
+    // teardown (or a hung audio-session stop) delayed it — and on older
+    // builds with unbounded teardown it never ran at all, leaving the
+    // notification up with no room on screen. The ref-count is unchanged
+    // (exactly one stop per leave(), same as before); repair paths
+    // (watchdog leave + re-join) keep the service alive through the
+    // session-hold / watchdog refs, which never hit zero mid-session,
+    // and the minimize path never calls leave() at all — so a minimized
+    // room's notification correctly stays.
+    stopVoiceForegroundService();
     // Capture the room BEFORE teardownRoom() nulls it: if teardown hangs,
     // the mic fallback below still has a participant to unpublish.
     const roomBefore = this.room;
@@ -1361,11 +1373,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
             2000,
           );
         } catch {
-          // non-critical — the service stop below is the backstop
+          // non-critical — the service stop at the top of leave() already ran
         }
       }
-      // Audio-session stop is also bounded now: a hung native call must
-      // never strand execution before the service-stop line either.
+      // Audio-session stop is also bounded now, so leave() itself still
+      // settles promptly (the notification no longer waits on it — see
+      // the Fix #41 stop at the top of leave()).
       try {
         const session = this.rnSdk?.AudioSession;
         if (session) {
@@ -1375,9 +1388,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         // non-critical
       }
     } finally {
-      // 2026-10-15 (Sumon): voice over — drop the foreground service.
-      // In finally: reachable even if a teardown step throws unexpectedly.
-      stopVoiceForegroundService();
+      // FIX #41: the foreground-service stop moved to the top of leave()
+      // (synchronous) — it no longer waits on teardown, so there is
+      // nothing left to drop here.
       // 2026-10-19 stability fix: release the audio pipeline — 1-to-1 calls
       // are allowed again.
       setVoiceRoomAudioActive(false);

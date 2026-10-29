@@ -328,20 +328,9 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
         </Animated.View>
       ))}
 
-      {/* Sender pill during display (not rendered for fly-only shows) */}
-      {!isFlyOnly && (
-      <Animated.View style={{
-        position: 'absolute', top: 60, alignSelf: 'center',
-        opacity: displayOp, flexDirection: 'row', alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 999,
-        paddingHorizontal: 10, paddingVertical: 6, gap: 8,
-      }}>
-        <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={26} />
-        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }} numberOfLines={1}>
-          {show.fromName}
-        </Text>
-      </Animated.View>
-      )}
+      {/* Fix #40 (2026-10-29, boss): sender pill REMOVED — it appeared FIRST
+          at gift start. Sender is still shown in the uniform banner below
+          (sender -> gift xN -> recipients + coins); nothing else changed. */}
 
       {/* 2026-10-27 (boss): ONE uniform compact banner for ALL gifts —
           sender -> gift xN -> recipients + coins. Same layout/size/style

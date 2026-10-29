@@ -1183,6 +1183,19 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
   ), []);
 
+  // Fix #38 (2026-10-29): header name tap opens the PEER's profile via the
+  // existing /user-profile route (same as ContactsScreen handleViewProfile).
+  // effectiveParticipantId is always the peer (myUid excluded at derivation),
+  // so this can never open the boss's own profile. Vee Team needs no
+  // carve-out: 'vee_team' is a real users/ record with an official badge.
+  const handleTitlePress = useCallback(() => {
+    if (!effectiveParticipantId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(
+      `/user-profile?uid=${encodeURIComponent(effectiveParticipantId)}&name=${encodeURIComponent(displayName)}` as never,
+    );
+  }, [effectiveParticipantId, displayName, router]);
+
   // RC6 fix Issue 8: navigate to real audio-call screen instead of Alert
   const handleVoiceCall = useCallback(async () => {
     if (!user) return;
@@ -1339,8 +1352,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* Fix #31 (imo-exact header): no avatar — back + name +
                 grey last-seen subtitle, exactly as imo shows it. */}
-            {/* Name + last seen */}
-            <View style={{ flex: 1 }}>
+            {/* Name + last seen — Fix #38: tappable, opens peer profile */}
+            <Pressable onPress={handleTitlePress}
+              style={({ pressed }) => [{ flex: 1, opacity: pressed ? 0.7 : 1 }]}>
               {/* 2026-10-17 (Sumon): Vee Team — official verified badge via standard component */}
               {isSystemChat ? (
                 <VerifiedName
@@ -1358,7 +1372,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                   {headerSubtitle}
                 </Text>
               ) : null}
-            </View>
+            </Pressable>
 
             {/* Actions — bigger touch targets for easy tapping */}
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
