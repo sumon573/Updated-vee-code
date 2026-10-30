@@ -10,10 +10,16 @@
  * Row tap opens the visitor's profile via the existing /user-profile route.
  *
  * Pattern mirrors app/profile/followers.tsx (TitleBar, expo-image DPs with
- * initials fallback, users/{uid} profile fetch, /user-profile row tap, 3s
- * offline-safety timeout). No pagination: the 7-day window keeps the list
- * small, and loading the full list is what makes "currently-listed" exact
- * for the mark-seen rule. No help icon (never specified by the boss).
+ * initials fallback, /user-profile row tap, 3s offline-safety timeout).
+ * 2026-10-30 (boss: instant load): profiles come from subscribeUser —
+ * cached-first (repeat visitors render with zero network wait) + live
+ * refresh; rows render progressively as profiles arrive, and the empty
+ * text shows only when the loaded map truly lists nobody. Mark-seen
+ * reuses the first map delivery as its snapshot (no extra round trip).
+ * No v-id is displayed on rows (boss order). No pagination: the 7-day
+ * window keeps the list small, and loading the full list is what makes
+ * "currently-listed" exact for the mark-seen rule. No help icon
+ * (never specified by the boss).
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Platform, SectionList } from 'react-native';
@@ -22,14 +28,12 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { ref, get } from 'firebase/database';
-import { database } from '@/src/config/firebase';
-import { VeeUser } from '@/src/services/userService';
+import { VeeUser, subscribeUser } from '@/src/services/userService';
 import { useAuth } from '@/src/context/AuthContext';
 import * as Haptics from 'expo-haptics';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import {
-  subscribeVisitors, markVisitorsSeen, getVisitorMap,
+  subscribeVisitors, markVisitorsSeen,
   splitVisitorSections, type VisitorMap,
 } from '@/src/services/visitorService';
 
@@ -112,10 +116,7 @@ const VisitorRow = memo(function VisitorRow({ user, unseen, last, badgeIconUrl, 
               />
             ) : null}
           </View>
-          {/* SACRED (Sumon): Vee ID shows with NO '#' prefix anywhere */}
-          {user.vId ? (
-            <Text style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>{user.vId}</Text>
-          ) : null}
+          {/* 2026-10-30 (boss): v-id is NOT displayed on visitor rows. */}
         </View>
         <Feather name="chevron-right" size={18} color={C.mutedLight} />
       </Pressable>
@@ -132,13 +133,26 @@ export default function VisitorsScreen() {
   const [profiles, setProfiles] = useState<Record<string, VeeUser>>({});
   const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const fetchingRef = useRef(new Set<string>());
   const markedSeenRef = useRef(false);
+  const profileSubsRef = useRef(new Map<string, () => void>());
 
   // Live visitor map — keys only at first, cheap even for long lists.
+  // 2026-10-30 (boss: instant load): mark-seen reuses this first
+  // delivery as the view-time snapshot instead of a separate
+  // getVisitorMap round trip — same rule (visitors arriving after
+  // this view stay unseen until the next view), one less RTT.
   useEffect(() => {
     if (!uid) { setLoading(false); return; }
-    const unsub = subscribeVisitors(uid, (map) => { setRecords(map); setLoading(false); });
+    const unsub = subscribeVisitors(uid, (map) => {
+      setRecords(map);
+      setLoading(false);
+      if (!markedSeenRef.current) {
+        markedSeenRef.current = true;
+        const { today, last7 } = splitVisitorSections(map);
+        const unseenListed = [...today, ...last7].filter((v) => map[v]?.seen === false);
+        if (unseenListed.length > 0) void markVisitorsSeen(uid, unseenListed);
+      }
+    });
 
     // Offline safety: onValue never fires on a cold start with no network
     // (the RTDB JS SDK has no disk persistence, so there is no cached data
@@ -147,20 +161,6 @@ export default function VisitorsScreen() {
     const timeout = setTimeout(() => setLoading(false), 3000);
 
     return () => { clearTimeout(timeout); unsub(); };
-  }, [uid]);
-
-  // Mark-seen rule (boss, exact): viewing the list marks all CURRENTLY-LISTED
-  // visitors as seen — once, on mount, from a snapshot's keys only. Visitors
-  // who arrive after this view keep their unseen flag until the next view.
-  useEffect(() => {
-    if (!uid || markedSeenRef.current) return;
-    markedSeenRef.current = true;
-    void (async () => {
-      const map = await getVisitorMap(uid);
-      const { today, last7 } = splitVisitorSections(map);
-      const unseenListed = [...today, ...last7].filter((v) => map[v]?.seen === false);
-      if (unseenListed.length > 0) await markVisitorsSeen(uid, unseenListed);
-    })();
   }, [uid]);
 
   // Server-driven official badge icon (once; rows fall back to the bundle asset).
@@ -174,29 +174,33 @@ export default function VisitorsScreen() {
   const { today, last7 } = splitVisitorSections(records);
   const listedUids = [...today, ...last7];
 
-  // Profile docs — fetch only listed visitors, once each.
+  // Profiles — cached-first + live (boss: instant load). subscribeUser
+  // delivers the on-device cached profile IMMEDIATELY (repeat visitors
+  // render with zero network wait), then the live listener refreshes
+  // it. Subs persist across records changes (only new uids subscribe);
+  // pruned when a uid leaves the list, unsubscribed on unmount.
   useEffect(() => {
-    const wanted = listedUids.filter((u) => !profiles[u] && !fetchingRef.current.has(u));
-    if (wanted.length === 0) return;
-    let cancelled = false;
-    for (const u of wanted) fetchingRef.current.add(u);
-    void Promise.all(
-      wanted.map((u) =>
-        get(ref(database, `users/${u}`)).then((s) =>
-          s.exists() ? { ...(s.val() as VeeUser), uid: u } : null,
-        ).catch(() => null),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      setProfiles((prev) => {
-        const next = { ...prev };
-        for (const r of results) if (r) next[r.uid] = r;
-        return next;
+    const wanted = listedUids.filter((u) => !profileSubsRef.current.has(u));
+    for (const u of wanted) {
+      const unsub = subscribeUser(u, (user) => {
+        setProfiles((prev) => {
+          const next = { ...prev };
+          if (user) next[u] = user;
+          else delete next[u];
+          return next;
+        });
       });
-    });
-    return () => { cancelled = true; };
+      profileSubsRef.current.set(u, unsub);
+    }
+    for (const [u, unsub] of [...profileSubsRef.current.entries()]) {
+      if (!listedUids.includes(u)) { unsub(); profileSubsRef.current.delete(u); }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records]);
+  useEffect(() => () => {
+    profileSubsRef.current.forEach((unsub) => unsub());
+    profileSubsRef.current.clear();
+  }, []);
 
   const handleUserPress = (u: VeeUser) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -214,11 +218,14 @@ export default function VisitorsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
       <TitleBar title="Recent Visitors" count={loading ? undefined : listedUids.length} />
 
-      {loading ? (
+      {/* 2026-10-30 (boss: instant load): the empty text shows ONLY when
+          the map is loaded and truly lists nobody — never while listed
+          profiles are still arriving (that flashed a false empty state). */}
+      {loading || (listedUids.length > 0 && sections.length === 0) ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <PremiumLoader size="small" />
         </View>
-      ) : sections.length === 0 ? (
+      ) : listedUids.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
           <Text style={{ color: C.muted, fontSize: 15, textAlign: 'center' }}>No recent visitors yet</Text>
         </View>
