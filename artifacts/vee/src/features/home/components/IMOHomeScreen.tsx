@@ -377,6 +377,8 @@ export default function IMOHomeScreen() {
   const insets = useSafeAreaInsets();
   const topBarFullH = useSharedValue(insets.top + 77);
   const bottomBarFullH = useSharedValue(insets.bottom + 57);
+  const topBarMeasured = useRef(false);
+  const bottomBarMeasured = useRef(false);
   const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
   const topBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: topBarFullH.value, opacity: 1 };
@@ -578,7 +580,7 @@ export default function IMOHomeScreen() {
         windowSize={11}
         initialNumToRender={15}
         maxToRenderPerBatch={10}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -638,7 +640,7 @@ export default function IMOHomeScreen() {
       <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, topBarWrapStyle]}>
         <View
           style={{ paddingTop: insets.top }}
-          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) topBarFullH.value = h; }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && !topBarMeasured.current) { topBarMeasured.current = true; topBarFullH.value = h; } }}
         >
           <IMOTopBar
             profilePhotoURL={profile?.photoURL || user?.photoURL || null}
@@ -720,7 +722,7 @@ export default function IMOHomeScreen() {
       <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, bottomBarWrapStyle]}>
         <View
           style={{ paddingBottom: insets.bottom }}
-          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) bottomBarFullH.value = h; }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && !bottomBarMeasured.current) { bottomBarMeasured.current = true; bottomBarFullH.value = h; } }}
         >
           <IMOBottomBar
             onAddPress={() => goToTab('contacts')}
