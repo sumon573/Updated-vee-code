@@ -49,13 +49,30 @@ const C = {
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
 
 function formatMsgTime(ts: number): string {
-  // Fix #31 (imo-exact, 2026-10-29): imo shows 24-hour times ("18:17",
-  // "13:19") — the old 12-hour "2:30 PM" format is gone.
+  // 2026-10-30 (boss: times follow the phone, supersedes Fix #31's
+  // hardcoded 24-hour format for DM times): use the device's own
+  // hour-cycle when it can be read (Intl hour12) - 24h phone ->
+  // "15:07", 12h phone -> "3:07 PM". If the device cannot report it
+  // (hour12 undefined, or Intl unavailable), fall back to 12-hour,
+  // per his order. Used by every DM thread timestamp (inline text
+  // time and the photo/video/voice/call/sticker rows), so all message
+  // times in the thread follow the same rule.
   if (!Number.isFinite(ts)) return '';
   const d = new Date(ts);
-  const h = String(d.getHours()).padStart(2, '0');
   const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
+  let hour12: boolean | undefined;
+  try {
+    hour12 = new Intl.DateTimeFormat().resolvedOptions().hour12;
+  } catch {
+    hour12 = undefined;
+  }
+  if (hour12 === false) {
+    const h = String(d.getHours()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  const h12 = d.getHours() % 12 || 12;
+  const ampm = d.getHours() < 12 ? 'AM' : 'PM';
+  return `${h12}:${m} ${ampm}`;
 }
 
 // Fix #31 (imo-exact call durations): "2 min 6 sec" / "44 sec".
@@ -169,28 +186,41 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   // (failOffsetY), so thread scroll + long-press menu are untouched.
   // Only right drags move the bubble (clamped 0..72); past 48 on
   // release -> reply + spring back, else spring back silently.
+  // 2026-10-30 (boss: own messages swipe too): drag MY message LEFT ->
+  // reply, exactly the same system mirrored (clamped -72..0, past -48
+  // on release -> reply; icon at the bubble's RIGHT edge, same glyph).
+  // isMe is declared ABOVE the gesture on purpose: the Pan/icon
+  // worklets capture it at creation, so it must already be initialized
+  // here (it used to be declared below this block). Incoming behavior
+  // is byte-identical (0..72, > 48, icon left).
+  const isMe = message.senderId === myUid;
   const swipeX = useSharedValue(0);
   const swipePan = Gesture.Pan()
     .activeOffsetX([-12, 12])
     .failOffsetY([-12, 12])
-    .onUpdate((e) => { swipeX.value = Math.max(0, Math.min(e.translationX, 72)); })
+    .onUpdate((e) => {
+      swipeX.value = isMe
+        ? Math.max(-72, Math.min(e.translationX, 0))
+        : Math.max(0, Math.min(e.translationX, 72));
+    })
     .onEnd(() => {
-      if (swipeX.value > 48) runOnJS(onReply)(message);
+      if (isMe ? swipeX.value < -48 : swipeX.value > 48) runOnJS(onReply)(message);
       swipeX.value = withSpring(0, { damping: 20, stiffness: 300 });
     })
     .onFinalize(() => { swipeX.value = withSpring(0, { damping: 20, stiffness: 300 }); });
   const swipeTranslateStyle = useAnimatedStyle(() => ({ transform: [{ translateX: swipeX.value }] }));
   const swipeIconStyle = useAnimatedStyle(() => {
-    const t = Math.max(0, Math.min(swipeX.value / 48, 1));
+    const t = Math.max(0, Math.min(Math.abs(swipeX.value) / 48, 1));
     return {
-      position: 'absolute', left: 0, top: '50%', marginTop: -14,
+      position: 'absolute', top: '50%', marginTop: -14,
+      ...(isMe ? { right: 0 } : { left: 0 }),
       opacity: t, transform: [{ scale: 0.6 + 0.4 * t }],
     };
   });
 
-  const isMe = message.senderId === myUid;
-  // Swipe reply: incoming only, never deleted messages (nothing to quote).
-  const swipeable = !isMe && !message.deletedForEveryone;
+  // Swipe reply: both sides now (incoming right, own left); never
+  // deleted messages (nothing to quote).
+  const swipeable = !message.deletedForEveryone;
 
   if (message.deletedForMe) return null;
 
@@ -342,6 +372,44 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
         strokeLinejoin="round"
       />
     </Svg>
+  ) : (
+    <Feather name="check" size={12} color="#009DFF" />
+  );
+
+  // 2026-10-30 (boss: bubble must hug the message, Telegram-style):
+  // INLINE tick for text messages only. Same mapping as tickMark above
+  // (seen = circle, sending = clock, delivered-or-peer-online = the
+  // picture-exact double Svg, offline sent = single check); seen always
+  // wins; stored delivered is a floor. Feather icons are Text-based so
+  // they nest directly; the Svg rides in an explicit 14x9 View in the
+  // text flow (an Svg cannot nest in Text). PHONE-VERDICT RISK: the
+  // inline View's vertical alignment on Android is unverified — if the
+  // double tick sits low vs the time text, that is the thing to fix.
+  const tickInline = message.status === 'seen' ? (
+    <Feather name="circle" size={12} color="#009DFF" />
+  ) : message.status === 'sending' ? (
+    <Feather name="clock" size={12} color={C.muted} />
+  ) : message.status === 'delivered' || isPeerOnline ? (
+    <View style={{ width: 14, height: 9 }}>
+      <Svg width={14} height={9} viewBox="0 0 42 26">
+        <Polyline
+          points="3,14 11,21 27,3"
+          fill="none"
+          stroke="#009DFF"
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Polyline
+          points="16,14 24,21 39,3"
+          fill="none"
+          stroke="#009DFF"
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
+    </View>
   ) : (
     <Feather name="check" size={12} color="#009DFF" />
   );
@@ -578,16 +646,33 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               </Text>
             )
           ) : (
-            // IMO: 16sp message text.
+            // 2026-10-30 (boss: bubble must hug the message, Telegram-
+            // style): the time (+tick for own messages) renders INLINE
+            // at the end of the last text line, inside this Text — no
+            // separate row below, so no dead band under the text. The
+            // nested time Text sets fontSize 12 only and inherits
+            // lineHeight 22, so the last line keeps its height; bubble
+            // padding (14/11), radius, colours and text size are all
+            // unchanged. Incoming text gets time only, exactly as today.
             <Text style={{ color: textColor, fontSize: 16, lineHeight: 22 }}>
               {message.content}
+              <Text style={{ color: timeColor, fontSize: 12 }}>
+                {'  '}{formatMsgTime(message.createdAt)}
+              </Text>
+              {isMe && ' '}
+              {isMe && tickInline}
             </Text>
           )}
 
           {/* 2026-10-30 (boss: DM ticks spec): offline = one blue tick,
               online = two blue ticks, seen = blue circle; stickers get the
               grey pill with white time. Mapping lives in tickMark above. */}
-          {!message.deletedForEveryone && (isStickerMsg ? (
+          {/* 2026-10-30 (boss: bubble must hug the message): text
+              carries its time+tick inline (see text branch above), so
+              the separate row below is skipped for text — that row was
+              the dead empty band under every text message. Photo, video,
+              voice, call and sticker rows are untouched. */}
+          {!message.deletedForEveryone && message.type !== 'text' && (isStickerMsg ? (
             <View style={{
               flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4,
               alignSelf: isMe ? 'flex-end' : 'flex-start',
