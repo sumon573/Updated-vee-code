@@ -346,6 +346,15 @@ export default function IMOHomeScreen() {
   // (the same destination as the DP tap) on release past threshold.
   const [pagerIndex, setPagerIndex] = useState(0);
   const pagerProgress = useSharedValue(0);
+  // 2026-10-30 (boss: one clean switch per tap, no jitter): settled flag
+  // owned by HomePager — true only when no pager spring is in flight.
+  // The focus repair below reads it and never acts mid-animation.
+  const pagerSettled = useSharedValue(true);
+  // Latest pagerIndex for the focus repair, whose callback is intentionally
+  // dependency-free (stable identity) so it never re-runs on tab changes.
+  // (Assigned during render so a focus event always sees the fresh tab.)
+  const pagerIndexRef = useRef(pagerIndex);
+  pagerIndexRef.current = pagerIndex;
   const goToTab = useCallback((tab: ContentTab) => {
     setActiveTab(tab);
     if (tab === 'chats') setPagerIndex(0);
@@ -367,19 +376,36 @@ export default function IMOHomeScreen() {
   // truth: a small drift snaps the indicator to the JS tab; a full-tab
   // drift adopts the visible page as the tab (the user is looking at
   // that page). No-op in the normal case (already aligned).
+  // 2026-10-30 (boss: one clean switch per tap, no jitter): this repair
+  // MUST run only on focus gain, never on tab changes. The previous
+  // version closed over [pagerIndex], and expo-router's useFocusEffect
+  // re-runs its effect whenever the callback identity changes while
+  // focused (its deps are [effect, navigation, optionalNavigation], and
+  // it runs the callback immediately when navigation.isFocused()) — so
+  // every tap re-ran the repair mid-spring, it read mid-animation
+  // progress, adopted round(progress) as the tab, and yanked JS state
+  // back against the tap spring: the row slid left-right by itself.
+  // Now the callback is dependency-free (stable identity, so tab changes
+  // never re-run it) and reads the current tab from a ref, and it is
+  // settled-gated: while any pager spring is in flight it does nothing
+  // (the spring's own completion settles progress exactly, and JS state
+  // already names its target tab). The return-from-room repair itself is
+  // unchanged — focus gain is exactly when it is needed.
   useFocusEffect(
     useCallback(() => {
+      if (!pagerSettled.value) return;
       const p = pagerProgress.value;
-      if (Math.abs(p - pagerIndex) < 0.5) {
-        if (p !== pagerIndex) pagerProgress.value = pagerIndex;
+      const idx = pagerIndexRef.current;
+      if (Math.abs(p - idx) < 0.5) {
+        if (p !== idx) pagerProgress.value = idx;
       } else {
         const ni = Math.max(0, Math.min(2, Math.round(p)));
-        if (ni !== pagerIndex) {
+        if (ni !== idx) {
           setPagerIndex(ni);
           setActiveTab(ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts');
         }
       }
-    }, [pagerIndex]),
+    }, []),
   );
 
   // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
@@ -540,6 +566,7 @@ export default function IMOHomeScreen() {
         <HomePager
           index={pagerIndex}
           progress={pagerProgress}
+          pagerSettled={pagerSettled}
           onIndexChange={handlePagerIndexChange}
           onProfileEdge={handleProfileEdge}
           pages={[chatsPage, <VoiceRoomHome key="pager-voice" />, <ContactsScreen key="pager-contacts" />]}

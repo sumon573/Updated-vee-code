@@ -68,11 +68,12 @@ type HomePagerProps = {
   pages: ReactNode[]; // [chats, voice, contacts]
   index: number; // controlled page index (from shell state)
   progress: SharedValue<number>; // shared page position — also drives the top-bar underline
+  pagerSettled: SharedValue<boolean>; // true only when no pager spring is in flight (screen's focus repair reads it)
   onIndexChange: (index: number) => void;
   onProfileEdge: () => void; // fired on release past the Profile threshold (shell pushes /profile)
 };
 
-export default function HomePager({ pages, index, progress, onIndexChange, onProfileEdge }: HomePagerProps) {
+export default function HomePager({ pages, index, progress, pagerSettled, onIndexChange, onProfileEdge }: HomePagerProps) {
   const { width: W } = useWindowDimensions();
   const last = pages.length - 1;
   // Page the pager is settled on or animating toward (worklet-side truth;
@@ -86,9 +87,27 @@ export default function HomePager({ pages, index, progress, onIndexChange, onPro
   // Tab tap (or any controlled index change): animate to the new page.
   // During an active drag the pan's onUpdate overwrites progress every
   // frame, so a tap mid-drag cannot hijack the finger.
+  // 2026-10-30 (boss: one clean switch per tap, no jitter): the tap
+  // spring is now the SOLE driver of progress during a tap. The
+  // re-entrancy guard skips duplicate renders that would restart it,
+  // and the completion callback snaps progress exactly to the target
+  // page and raises the settled flag, so the screen's focus repair
+  // (which is settled-gated) can never read mid-tap progress and yank
+  // JS state back against the tap spring.
   useEffect(() => {
+    if (targetSV.value === index && Math.abs(progress.value - index) < 0.01) {
+      pagerSettled.value = true; // already at rest on the target page
+      return;
+    }
     targetSV.value = index;
-    progress.value = withSpring(index, SPRING_CONFIG);
+    pagerSettled.value = false;
+    progress.value = withSpring(index, SPRING_CONFIG, (finished) => {
+      'worklet';
+      if (finished) {
+        progress.value = index;
+        pagerSettled.value = true;
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
@@ -99,6 +118,7 @@ export default function HomePager({ pages, index, progress, onIndexChange, onPro
       'worklet';
       grabProgress.value = progress.value;
       grabPage.value = targetSV.value;
+      pagerSettled.value = false; // finger is driving now, not a spring
     })
     .onUpdate((e) => {
       'worklet';
@@ -131,9 +151,17 @@ export default function HomePager({ pages, index, progress, onIndexChange, onPro
         target = 0;
       }
       targetSV.value = target;
+      pagerSettled.value = false;
       progress.value = withSpring(target, SPRING_CONFIG, (finished) => {
         'worklet';
-        if (finished) runOnJS(onIndexChange)(target);
+        if (finished) {
+          progress.value = target;
+          pagerSettled.value = true;
+          // Stale guard: if a tap moved the target after this spring
+          // finished but before the JS callback ran, the tap wins —
+          // never yank JS state back to an old drag target.
+          if (target === targetSV.value) runOnJS(onIndexChange)(target);
+        }
       });
       if (profileEdge) runOnJS(onProfileEdge)();
     })
@@ -142,7 +170,14 @@ export default function HomePager({ pages, index, progress, onIndexChange, onPro
       // Gesture lost to a list scroll (or cancelled): spring back to the
       // settled page instead of leaving the row half-dragged.
       if (!success) {
-        progress.value = withSpring(targetSV.value, SPRING_CONFIG);
+        pagerSettled.value = false;
+        progress.value = withSpring(targetSV.value, SPRING_CONFIG, (finished) => {
+          'worklet';
+          if (finished) {
+            progress.value = targetSV.value;
+            pagerSettled.value = true;
+          }
+        });
       }
     });
 
