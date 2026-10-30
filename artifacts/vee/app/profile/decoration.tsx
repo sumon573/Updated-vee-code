@@ -15,9 +15,10 @@
  * cards with gold accents. All equip/remove/store logic unchanged.
  */
 import { useEffect, useState } from 'react';
-import { checkNobleMaintenance } from '@/src/services/nobleService';
+import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 import { View, Text, ScrollView, Pressable, FlatList } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -89,6 +90,18 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 
+/** Lighten a hex color - second stop of the pill gradient (same helper as profile's PremiumPill). */
+function lightenHex(hex: string, amt: number): string {
+  const n = hex.replace('#', '');
+  const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
+  const num = parseInt(full, 16);
+  if (!Number.isFinite(num)) return hex;
+  const r = Math.min(255, ((num >> 16) & 0xff) + amt);
+  const g = Math.min(255, ((num >> 8) & 0xff) + amt);
+  const b = Math.min(255, (num & 0xff) + amt);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
 function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: string; frameId?: string; frameName?: string; itemId?: string }) {
   // 2026-10-16: Hooks must be at top level — before any early returns
   const [imgError, setImgError] = useState(false);
@@ -114,6 +127,29 @@ function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: stri
     const mistColor = mistEntry?.nameplate.mistColor;
     if (mistColor) {
       return <MistNameplate imageUrl={icon} mistColor={mistColor} width={100} height={34} />;
+    }
+  }
+
+  /* 2026-10-30 (boss): noble-plate thumbnails show the short pill, not the
+     squeezed banner image - the plate art is 5:1, the tile is square. The
+     pill hugs icon + text (row title is flex:1, so long ranks like ROYAL
+     DUKE stay fully visible instead of clipping out of a fixed 44px slot). */
+  if (itemId && itemId.startsWith('noble-plate-')) {
+    const rankIndex = NOBLE_RANKS.findIndex((r) => r.key === itemId.slice('noble-plate-'.length));
+    if (rankIndex >= 0) {
+      const rank = NOBLE_RANKS[rankIndex];
+      const entryIcon = nobleThemeFor(rankIndex)?.entryIcon;
+      return (
+        <LinearGradient
+          colors={[rank.color, lightenHex(rank.color, 60)]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ height: 20, borderRadius: 10, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {entryIcon ? <Text style={{ fontSize: 12, marginRight: 3 }}>{entryIcon}</Text> : null}
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{rank.name.toUpperCase()}</Text>
+        </LinearGradient>
+      );
     }
   }
   if (/^https?:\/\//i.test(icon) && !/\.mp4$/i.test(icon)) {
