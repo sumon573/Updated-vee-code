@@ -94,7 +94,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     },
     badge: {
       fallbackIcon: '👑',
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-count.png?v=2',
+      designUrl: 'https://vee-club.duckdns.org/m/7edbae418a07678f4ad94771a47eb3ef',
     },
     frame: {
       fallbackIcon: '🖼️',
@@ -102,7 +102,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       designUrl: 'https://vee-club.duckdns.org/m/a9c749f2d2c978b62a9faccc19d80278',
       config: { seatScale: 1.44, seatDy: 0.04 },
     },
-    ripple: null, entryEffect: null,
+    ripple: { fallbackIcon: '✨', config: { colors: ['#7E57C2', '#FFD700'] } }, entryEffect: null,
   },
   {
     rankKey: 'marquis', rankName: 'Marquis', rankColor: '#EC407A',

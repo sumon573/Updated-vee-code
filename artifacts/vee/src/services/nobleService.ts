@@ -195,7 +195,10 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   // 2026-10-30 (boss): Viscount sound ripple, refined — very tiny GREEN leaves
   // twinkling, slightly faster. Waves/mist stay entry purple+gold.
   { entryGradient: ['#42A5F5', lightenHex('#42A5F5', 60)], entryIcon: '\uD83D\uDD37', rippleWave: '#8E24AA', rippleMist: ['#8E24AA', '#FFD700', '#BA68C8'], rippleParticles: ['🍃', '🌿', '☘️'], rippleEffect: 'stars', rippleWaveCount: 3, rippleParticleSize: 6, rippleSpeedMul: 1.25 },
-  themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C'], 'stars', 3),
+  // 2026-10-31 (boss): Count sound ripple — sparklier than Viscount's:
+  // gold sparkles + stars (not leaves), bigger glints, faster twinkle.
+  // Waves/mist Count purple+gold. Entry gradient/icon unchanged.
+  { entryGradient: ['#7E57C2', lightenHex('#7E57C2', 60)], entryIcon: '\uD83D\uDD2E', rippleWave: '#7E57C2', rippleMist: ['#7E57C2', '#FFD700', '#CE93D8'], rippleParticles: ['✨', '🌟', '⭐'], rippleEffect: 'stars', rippleWaveCount: 3, rippleParticleSize: 12, rippleSpeedMul: 1.5 },
   themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
   themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
   themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F'], 'coins', 4),
