@@ -308,7 +308,7 @@ function fmtCompact(n: number): string {
 
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
-function PremiumPill({ label, icon, colors, padH = 8 }: { label: string; icon?: string; colors: [string, string]; padH?: number }) {
+function PremiumPill({ label, icon, colors, padH = 8, fontSize = 11 }: { label: string; icon?: string; colors: [string, string]; padH?: number; fontSize?: number }) {
   // 2026-10-30 (boss): short pill - hug content (no fixed width) + Lv Max size:
   // height 20, radius 10, paddingHorizontal 8, icon 12, text 11/700. REPLACES the noble-plate banner.
   return (
@@ -322,7 +322,7 @@ function PremiumPill({ label, icon, colors, padH = 8 }: { label: string; icon?: 
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
       >
         {icon && <Text style={{ fontSize: 12, marginRight: 3 }}>{icon}</Text>}
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{label}</Text>
+        <Text style={{ fontSize, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{label}</Text>
       </LinearGradient>
     </View>
   );
@@ -1543,7 +1543,8 @@ export default function ProfileScreen({
                 Use -> shows, Remove -> hides. Rank alone must not display it. */}
             {nobleState && NOBLE_RANKS[nobleState.rankIndex] && activeNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key ? (
               <PremiumPill
-                padH={NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
+                padH={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 5 : NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
+                fontSize={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 9 : 11}
                 label={NOBLE_RANKS[nobleState.rankIndex].name.toUpperCase()}
                 icon={nobleThemeFor(nobleState.rankIndex)?.entryIcon}
                 colors={[NOBLE_RANKS[nobleState.rankIndex].color, lightenHex(NOBLE_RANKS[nobleState.rankIndex].color, 60)]}

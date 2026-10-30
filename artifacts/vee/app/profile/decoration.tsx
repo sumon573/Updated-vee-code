@@ -144,10 +144,10 @@ function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: stri
           colors={[rank.color, lightenHex(rank.color, 60)]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={{ height: 20, borderRadius: 10, paddingHorizontal: rank.key === 'knight' ? 7 : 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+          style={{ height: 20, borderRadius: 10, paddingHorizontal: rank.key === 'viscount' ? 5 : rank.key === 'knight' ? 7 : 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
         >
           {entryIcon ? <Text style={{ fontSize: 12, marginRight: 3 }}>{entryIcon}</Text> : null}
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{rank.name.toUpperCase()}</Text>
+          <Text style={{ fontSize: rank.key === 'viscount' ? 9 : 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{rank.name.toUpperCase()}</Text>
         </LinearGradient>
       );
     }
