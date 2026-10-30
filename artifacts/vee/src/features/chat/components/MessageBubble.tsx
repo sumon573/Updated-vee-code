@@ -265,17 +265,35 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   const bubbleBg  = isMe ? C.myBubble : C.theirBubble;
   const textColor = isMe ? C.myText : C.theirText;
   const align     = isMe ? 'flex-end' : 'flex-start';
-  // NOTE 12 (2026-10-11): media messages render edge-to-edge with no bubble
-  // chrome (no padding, no background, no border) — clean professional look.
-  // Timestamps/ticks below media use muted colors (no bubble bg to sit on).
+  // NOTE 12 (2026-10-11): video/sticker messages render edge-to-edge with no
+  // bubble chrome (no padding, no background, no border). Photos (2026-10-30
+  // boss order) render inside a bubble frame below; their timestamps/ticks
+  // sit on bubble bg like text bubbles.
   const isMediaMsg = message.type === 'image' || message.type === 'video';
+  const isImageMsg = message.type === 'image';
   const isCallMsg = message.type === 'call';
   const isStickerMsg = message.type === 'sticker';
-  const noChrome = isMediaMsg || isStickerMsg;
+  const noChrome = message.type === 'video' || isStickerMsg;
   // 2026-10-27 (inbox polish): my-bubble timestamp was white-on-light-blue
   // (#bbdefb) — unreadable. Dark timestamp on both bubble colours.
-  const timeColor = isMediaMsg ? C.muted : isMe ? 'rgba(0,0,0,0.5)' : C.muted;
+  const timeColor = (isMediaMsg && !isImageMsg) ? C.muted : isMe ? 'rgba(0,0,0,0.5)' : C.muted;
   const tickColor = isMediaMsg ? C.muted : C.sent;
+  // 2026-10-30 (boss: DM ticks spec, real-time): seen = blue circle,
+  // delivered (peer online, live) = two blue ticks, sent (peer offline) =
+  // one blue tick. Stored status is a floor (delivered never drops back
+  // to sent); live presence upgrades sent -> delivered with no write.
+  const tickMark = message.status === 'seen' ? (
+    <Feather name="circle" size={12} color="#009DFF" />
+  ) : message.status === 'sending' ? (
+    <Feather name="clock" size={12} color={C.muted} />
+  ) : message.status === 'delivered' || isPeerOnline ? (
+    <View style={{ flexDirection: 'row' }}>
+      <Feather name="check" size={12} color="#009DFF" />
+      <Feather name="check" size={12} color="#009DFF" />
+    </View>
+  ) : (
+    <Feather name="check" size={12} color="#009DFF" />
+  );
 
   // Fix #31 (imo-exact call card copy): missed → "Missed Audio Call" +
   // "Tap to call back"; canceled (outgoing) → "Canceled" + "Tap to call
@@ -374,7 +392,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
           </View>
         )}
 
-        {/* Main bubble — NOTE 12: media messages skip bubble chrome for a clean, professional look */}
+        {/* Main bubble — NOTE 12: video/sticker skip bubble chrome; photos get the bubble frame below */}
         <Pressable
           ref={bubbleRef}
           onPress={() => {
@@ -389,6 +407,15 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             borderRadius: 16,
             paddingHorizontal: 0, paddingVertical: 0,
             borderWidth: 0,
+            overflow: 'hidden',
+          } : isImageMsg ? {
+            // 2026-10-30 (boss: DM photo bubble): photo inside a bubble
+            // frame — text-bubble radius (20) + light thin border, image
+            // itself unchanged (220x220, radius 16, clipped by the frame).
+            backgroundColor: bubbleBg,
+            borderRadius: 20,
+            paddingHorizontal: 0, paddingVertical: 0,
+            borderWidth: 1, borderColor: C.border,
             overflow: 'hidden',
           } : isCallMsg ? {
             // Fix #31 (imo-exact call card): wide rounded card, no border,
@@ -511,9 +538,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             </Text>
           )}
 
-          {/* Fix #31 (imo-exact ticks + sticker pill): sent/delivered =
-              blue hollow circle, seen = blue check; stickers get the grey
-              pill with white time, exactly as imo shows it. */}
+          {/* 2026-10-30 (boss: DM ticks spec): offline = one blue tick,
+              online = two blue ticks, seen = blue circle; stickers get the
+              grey pill with white time. Mapping lives in tickMark above. */}
           {!message.deletedForEveryone && (isStickerMsg ? (
             <View style={{
               flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4,
@@ -524,24 +551,14 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               <Text style={{ color: '#FFFFFF', fontSize: 12 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
-              {isMe && (message.status === 'seen' ? (
-                <Feather name="check" size={12} color="#009DFF" />
-              ) : (
-                <Feather name="circle" size={12} color="#009DFF" />
-              ))}
+              {isMe && tickMark}
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4, ...(isImageMsg ? { paddingHorizontal: 12, paddingBottom: 8 } : {}) }}>
               <Text style={{ color: timeColor, fontSize: 12 }}>
                 {formatMsgTime(message.createdAt)}
               </Text>
-              {isMe && (message.status === 'seen' ? (
-                <Feather name="check" size={12} color="#009DFF" />
-              ) : message.status === 'sending' ? (
-                <Feather name="clock" size={12} color={C.muted} />
-              ) : (
-                <Feather name="circle" size={12} color="#009DFF" />
-              ))}
+              {isMe && tickMark}
             </View>
           ))}
           {isMe && message.sendState === 'failed' && (

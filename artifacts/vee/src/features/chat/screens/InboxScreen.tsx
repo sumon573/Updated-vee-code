@@ -349,6 +349,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const lastMarkSeenAtRef = useRef(0);
   const lastMarkedKeyRef  = useRef<string | null>(null);
   const markedChatRef     = useRef<string | null>(null);
+  const pendingMarkSeenRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ থাকতে হবে। image/media
   // async load হয়ে content height বদলালে scroll position নষ্ট হয় — তাই
   // initial load phase-এ onContentSizeChange-এও scroll to end করি।
@@ -491,7 +492,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     // seen-write below is throttled. Best-effort, never fatal.
     void dismissChatNotifications(chatId);
     const now = Date.now();
-    if (now - lastMarkSeenAtRef.current < 5000) return;
+    if (now - lastMarkSeenAtRef.current < 5000) {
+      // 2026-10-30 (boss: ticks real-time): a throttled mark is deferred, not
+      // dropped — otherwise a message arriving inside the window would never
+      // be marked seen until the next message/scroll.
+      if (!pendingMarkSeenRef.current) {
+        pendingMarkSeenRef.current = setTimeout(() => {
+          pendingMarkSeenRef.current = null;
+          markSeenThrottled();
+        }, 5000 - (now - lastMarkSeenAtRef.current));
+      }
+      return;
+    }
     lastMarkSeenAtRef.current = now;
     const afterKey = markedChatRef.current === chatId ? lastMarkedKeyRef.current : null;
     markedChatRef.current = chatId;
@@ -1429,6 +1441,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               ref={flatRef}
               inverted
               data={chatRows}
+              // 2026-10-30 (boss: ticks real-time): rows depend on isOnline
+              // via MessageBubble's isPeerOnline — re-render on presence change.
+              extraData={isOnline}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               contentContainerStyle={{ paddingVertical: 12 }}
