@@ -42,7 +42,7 @@ import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/fir
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
-import { subscribeNoble, NOBLE_RANKS, nobleThemeFor, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
+import { subscribeNoble, NOBLE_RANKS, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import {
   subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
   type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
@@ -308,9 +308,8 @@ function fmtCompact(n: number): string {
 
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
-function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
-  // 2026-10-30 (boss): hug content (no fixed width) + Lv Max pill size:
-  // height 20, radius 10, paddingHorizontal 8, icon 12, text 11/700.
+function PremiumPill({ label, icon, colors, width = 100 }: { label: string; icon?: string; colors: [string, string]; width?: number }) {
+  // 2026-10-16 (Sumon): FIXED 100x20 — same uniform size as the Nobel nameplate.
   return (
     <View style={{ marginRight: 6 }}>
       <LinearGradient
@@ -318,10 +317,10 @@ function PremiumPill({ label, icon, colors }: { label: string; icon?: string; co
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          height: 20, borderRadius: 10, paddingHorizontal: 8,
+          width, height: 20, borderRadius: 10,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
       >
-        {icon && <Text style={{ fontSize: 12, marginRight: 3 }}>{icon}</Text>}
+        {icon && <Text style={{ fontSize: 10, marginRight: 3 }}>{icon}</Text>}
         <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{label}</Text>
       </LinearGradient>
     </View>
@@ -1535,13 +1534,6 @@ export default function ProfileScreen({
                   />
                 )}
               </View>
-            ) : null}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] ? (
-              <PremiumPill
-                label={NOBLE_RANKS[nobleState.rankIndex].name.toUpperCase()}
-                icon={nobleThemeFor(nobleState.rankIndex)?.entryIcon}
-                colors={[NOBLE_RANKS[nobleState.rankIndex].color, lightenHex(NOBLE_RANKS[nobleState.rankIndex].color, 60)]}
-              />
             ) : null}
             <LevelBadge level={userLevel} />
           </View>
