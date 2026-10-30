@@ -33,21 +33,17 @@ interface EntryBannerProps {
   onDismiss: () => void;
 }
 
-export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntryEffect, onDismiss }: EntryBannerProps) {
+export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss }: EntryBannerProps) {
   // 2026-10-15 (Sumon): per-rank theme. Non-nobles get the standard blue.
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
   const rankName = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.name : null;
   const isNoble = !!theme && !!rankName;
   // 2026-10-15 (Sumon): Count+ (index >= 3) gets PREMIUM animated entry effect
   const isPremiumEntry = nobleRankIndex != null && nobleRankIndex >= 3;
-  // 2026-10-30 (boss): Baron (index 1) grand entry IS the equipped Baron
-  // entry effect (noble-effect-baron) - Baron-rank users only, and only when
-  // the effect is equipped. Old senders (no activeEntryEffect in the event)
-  // keep the rank-based grand entry, so nothing that worked breaks. The art
+  // 2026-10-30 (boss): Baron grand entry REMOVED - Baron entry is the standard
+  // pill again (name + is coming). Grand entry is Count+ premium only; the art
   // branch still needs Count+ + designUrl.
-  const entryEffectKnown = activeEntryEffect !== undefined;
-  const hasBaronEntry = nobleRankIndex === 1 && (!entryEffectKnown || activeEntryEffect === 'noble-effect-baron');
-  const isGrandEntry = isPremiumEntry || hasBaronEntry;
+  const isGrandEntry = isPremiumEntry;
   const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
   const catalog = rankKey ? rewardsForRankKey(rankKey) : null;
   const frameUrl = catalog?.frame?.designUrl;
