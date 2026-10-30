@@ -62,7 +62,7 @@ export const PRIVILEGES: PrivilegeDef[] = [
   { key: 'badge',        name: 'Noble Badge',       icon: '🛡️', minRankIndex: 1, enforced: true  },
   { key: 'gift',         name: 'Noble Gift',        icon: '🎁', minRankIndex: 1, enforced: true  },
   { key: 'avatarFrame',  name: 'Avatar Frame',      icon: '🖼️', minRankIndex: 3, enforced: true  },
-  { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 4, enforced: true },
+  { key: 'entryEffects', name: 'Fancy Entry Effects', icon: '✨', minRankIndex: 2, enforced: true },
   { key: 'micRipple',    name: 'Microphone Ripple', icon: '🎤', minRankIndex: 6, enforced: false },
   { key: 'seatPriority', name: 'Seat Priority',     icon: '💺', minRankIndex: 9, enforced: true  },
   { key: 'upgradeBanner', name: 'Upgrade Banner',   icon: '🚩', minRankIndex: 5, enforced: false },
@@ -87,7 +87,7 @@ export interface NobleRank {
 export const NOBLE_RANKS: NobleRank[] = [
   { key: 'knight',    name: 'Knight',     minXP: 0,         maxXP: 1259,       color: '#8BC34A', privileges: ['nameplate'] },
   { key: 'baron',     name: 'Baron',      minXP: 1260,      maxXP: 8399,       color: '#26A69A', privileges: ['nameplate', 'badge', 'gift'] },
-  { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 41999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift'] },
+  { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 41999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift', 'entryEffects'] },
   { key: 'count',     name: 'Count',      minXP: 42000,     maxXP: 251999,     color: '#7E57C2', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame'] },
   { key: 'marquis',   name: 'Marquis',    minXP: 252000,    maxXP: 587999,    color: '#EC407A', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'] },
   { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
@@ -186,7 +186,9 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   // 2026-10-16 (Sumon): Each rank = distinct premium effect. Higher = more gorgeous.
   themeFor('#8BC34A', '\uD83D\uDEE1\uFE0F', ['\uD83C\uDF43', '\uD83C\uDF3F', '☘️'], 'leaves', 2),
   themeFor('#26A69A', '⚔️', ['\uD83D\uDCA7', '\uD83D\uDCA6', '\uD83C\uDF0A'], 'droplets', 2),
-  themeFor('#42A5F5', '\uD83D\uDD37', ['✨', '\uD83D\uDCAB', '❄️'], 'snow', 3),
+  // 2026-10-30 (boss): Viscount sound ripple matches the Viscount entry
+  // banner — purple + gold, sparkling stars. Pill gradient/icon unchanged.
+  { entryGradient: ['#42A5F5', lightenHex('#42A5F5', 60)], entryIcon: '\uD83D\uDD37', rippleWave: '#8E24AA', rippleMist: ['#8E24AA', '#FFD700', '#BA68C8'], rippleParticles: ['✨', '💫', '⭐'], rippleEffect: 'stars', rippleWaveCount: 3 },
   themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C'], 'stars', 3),
   themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
   themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),

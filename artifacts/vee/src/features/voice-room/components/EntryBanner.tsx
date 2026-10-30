@@ -14,7 +14,7 @@
  * shimmering rank-color background + sparkles.
  */
 import { useEffect, useRef } from 'react';
-import { View, Text, Image, Animated, Dimensions } from 'react-native';
+import { View, Text, Image, Animated, Dimensions, Easing } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
@@ -41,8 +41,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // 2026-10-15 (Sumon): Count+ (index >= 3) gets PREMIUM animated entry effect
   const isPremiumEntry = nobleRankIndex != null && nobleRankIndex >= 3;
   // 2026-10-30 (boss): Baron grand entry REMOVED - Baron entry is the standard
-  // pill again (name + is coming). Grand entry is Count+ premium only; the art
-  // branch still needs Count+ + designUrl.
+  // pill again (name + is coming). Grand entry is Count+ premium only.
   const isGrandEntry = isPremiumEntry;
   const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
   const catalog = rankKey ? rewardsForRankKey(rankKey) : null;
@@ -54,13 +53,44 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // fills the name slot next to the crown. Marquis is the first rank with
   // entry art (his own supplied design, approved final 2026-10-24).
   const entryUrl = catalog?.entryEffect?.designUrl;
-  const hasEntryArt = isPremiumEntry && !!entryUrl;
+  // 2026-10-30 (boss): Viscount entry art — any rank whose catalog entryEffect
+  // carries a designUrl gets the art branch (Marquis was first; Viscount's own
+  // banner art is server-driven). Viscount's art is a static banner, so the app
+  // animates it: slide in from the right, stop dead-center.
+  const hasEntryArt = !!entryUrl;
+  const isViscountArt = hasEntryArt && rankKey === 'viscount';
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (hasEntryArt) {
-      // Art branch: no slide (the art sweeps in by itself) — fade in fast,
+      if (isViscountArt) {
+        // Viscount: static banner art — slide in from the right, stop
+        // dead-center, hold ~4s, fade out. Timing (no bounce): a clean stop.
+        slideAnim.setValue(Dimensions.get('window').width);
+        Animated.parallel([
+          Animated.timing(slideAnim, {
+            toValue: 0,
+            duration: 550,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacityAnim, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+        ]).start();
+        const timer = setTimeout(() => {
+          Animated.timing(opacityAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => onDismiss());
+        }, 3650);
+        return () => clearTimeout(timer);
+      }
+      // Marquis art branch: no slide (the art sweeps in by itself) — fade in fast,
       // hold for the art's ~4s loop, fade out at its own fade tail.
       Animated.timing(opacityAnim, {
         toValue: 1,
@@ -119,14 +149,18 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // art's native 1600x533 canvas, verified against the approved design:
   // DP socket center (24.3% W, 48.7% H), disc 12.7% of W; name slot starts
   // at 37.2% W with its baseline at 48.7% H, emblem begins at ~62.5% W.
+  // Viscount canvas 1903x826: DP center (17.6% W, 49.4% H), disc 19.2% of W;
+  // name slot starts at 31.5% W (gold name + white 'is coming...' below).
   if (hasEntryArt && theme) {
     const bannerW = Math.min(Dimensions.get('window').width * 0.94, 470);
-    const bannerH = (bannerW * 533) / 1600;
-    const dpSize = bannerW * 0.127;
-    const nameFont = bannerW * 0.043;
+    // Viscount canvas is 1903x826 (own banner art); Marquis is 1600x533.
+    const bannerH = isViscountArt ? (bannerW * 826) / 1903 : (bannerW * 533) / 1600;
+    const dpSize = isViscountArt ? bannerW * 0.1923 : bannerW * 0.127;
+    const nameFont = isViscountArt ? bannerW * 0.075 : bannerW * 0.043;
     return (
       <Animated.View
         style={{
+          ...(isViscountArt ? { transform: [{ translateX: slideAnim }] } : {}),
           opacity: opacityAnim,
           position: 'absolute',
           top: '42%',
@@ -148,8 +182,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
             source={{ uri: photoURL }}
             style={{
               position: 'absolute',
-              left: bannerW * 0.1788,
-              top: bannerH * 0.295,
+              left: isViscountArt ? bannerW * 0.0799 : bannerW * 0.1788,
+              top: isViscountArt ? bannerH * 0.2723 : bannerH * 0.295,
               width: dpSize,
               height: dpSize,
               borderRadius: dpSize / 2,
@@ -159,8 +193,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
           <View
             style={{
               position: 'absolute',
-              left: bannerW * 0.1788,
-              top: bannerH * 0.295,
+              left: isViscountArt ? bannerW * 0.0799 : bannerW * 0.1788,
+              top: isViscountArt ? bannerH * 0.2723 : bannerH * 0.295,
               width: dpSize,
               height: dpSize,
               borderRadius: dpSize / 2,
@@ -174,25 +208,68 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
             </Text>
           </View>
         )}
-        {/* Live name in the art's name slot (gold, beside the crown) */}
-        <Text
-          style={{
-            position: 'absolute',
-            left: bannerW * 0.3719,
-            top: bannerH * 0.372,
-            width: bannerW * 0.245,
-            color: '#FFD94D',
-            fontSize: nameFont,
-            lineHeight: nameFont * 1.1,
-            fontWeight: '800',
-            textShadowColor: 'rgba(30,10,0,0.85)',
-            textShadowOffset: { width: 0, height: 1 },
-            textShadowRadius: 3,
-          }}
-          numberOfLines={1}
-        >
-          {name}
-        </Text>
+        {/* Live name in the art's name slot. Viscount: gold name + white
+            'is coming...' below it, serif to match the banner art. */}
+        {isViscountArt ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: bannerW * 0.3153,
+              top: bannerH * 0.34,
+              width: bannerW * 0.305,
+            }}
+          >
+            <Text
+              style={{
+                color: '#FFD94D',
+                fontSize: nameFont,
+                lineHeight: nameFont * 1.05,
+                fontWeight: '800',
+                fontFamily: 'serif',
+                textShadowColor: 'rgba(30,10,0,0.85)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }}
+              numberOfLines={1}
+            >
+              {name}
+            </Text>
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: bannerW * 0.052,
+                lineHeight: bannerW * 0.052 * 1.1,
+                fontWeight: '700',
+                fontFamily: 'serif',
+                textShadowColor: 'rgba(30,10,0,0.85)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }}
+              numberOfLines={1}
+            >
+              is coming...
+            </Text>
+          </View>
+        ) : (
+          <Text
+            style={{
+              position: 'absolute',
+              left: bannerW * 0.3719,
+              top: bannerH * 0.372,
+              width: bannerW * 0.245,
+              color: '#FFD94D',
+              fontSize: nameFont,
+              lineHeight: nameFont * 1.1,
+              fontWeight: '800',
+              textShadowColor: 'rgba(30,10,0,0.85)',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 3,
+            }}
+            numberOfLines={1}
+          >
+            {name}
+          </Text>
+        )}
       </Animated.View>
     );
   }

@@ -197,6 +197,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     const perRankUrl = def.key === 'nameplate' ? rankCat?.nameplate?.designUrl
       : def.key === 'badge' ? rankCat?.badge?.designUrl
       : def.key === 'avatarFrame' ? rankCat?.frame?.designUrl
+      : def.key === 'entryEffects' ? rankCat?.entryEffect?.designUrl
       : undefined;
     const art = perRankUrl ? { uri: perRankUrl } : PRIV_ART[def.key];
     return (
