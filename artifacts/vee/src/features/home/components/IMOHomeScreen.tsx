@@ -384,11 +384,18 @@ export default function IMOHomeScreen() {
   // IMOBottomBar is fixed 57 (12 padding + 32 icon + 12 padding +
   // 1 border; the Connecting text and green dot never change it),
   // so the wrapper height is derived ONLY from insets: 57 +
-  // clearance, where clearance = max(insets.bottom, 16) + 12 slack
-  // (fully visible at insets 0 AND at any real inset). onLayout
+  // clearance, where clearance = insets.bottom ONLY (2026-10-30
+  // slim: the old max(insets.bottom, 16) + 12 slack read as a thick
+  // dead band under the icons. The inset band itself is the OS
+  // gesture zone and stays; nothing extra is added. Fully visible
+  // at insets 0 AND at any real inset). onLayout
   // adoption is DELETED — nothing measured can shrink the bar now.
   // The worklet floor below is belt-and-braces for the same rule.
-  const bottomClearance = Math.max(insets.bottom, 16) + 12;
+  // 2026-10-30 (boss: bar too thick, dead gap below icons):
+  // clearance is the system inset ONLY. Never below insets.bottom,
+  // or the 15:55 clipping returns. What remains below the icons is
+  // exactly the OS gesture zone, not bar dead space.
+  const bottomClearance = insets.bottom;
   const bottomBarFullH = useSharedValue(57 + bottomClearance);
   const topBarMeasured = useRef(false);
   useEffect(() => {

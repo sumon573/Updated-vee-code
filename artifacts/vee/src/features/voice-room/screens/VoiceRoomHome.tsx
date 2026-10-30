@@ -159,24 +159,24 @@ function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => voi
   );
 }
 
+// 2026-10-30 (boss: Create Room label goes, box stays lightly premium):
+// the "Create Room" text under the tile is removed entirely; the 68x68 box
+// keeps its size, position and tap (create flow), and the plain dashed look
+// is replaced by a subtle premium finish: soft violet tint, solid hairline
+// border, faint shadow. The "+" stays as the create cue. No new text.
 function CreateRoomTile({ onPress }: { onPress: () => void }) {
-  const { t } = useTranslation();
   return (
     <ScalePress onPress={onPress}>
       <View style={{ width: 82, marginRight: 8 }}>
         <View style={{
           width: 68, height: 68, borderRadius: 16,
-          backgroundColor: '#F2F2F7',
-          borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.55)',
-          borderStyle: 'dashed',
+          backgroundColor: 'rgba(139,92,246,0.08)',
+          borderWidth: 1, borderColor: 'rgba(139,92,246,0.30)',
+          shadowColor: '#8B5CF6', shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.12, shadowRadius: 6, elevation: 2,
           alignItems: 'center', justifyContent: 'center' }}>
           <Feather name="plus" size={24} color={C.glow} />
         </View>
-        <Text style={{
-          color: C.text, fontSize: 13, fontWeight: '800',
-          marginTop: 6 }}>
-          {t('voiceRoom.home.createRoom')}
-        </Text>
       </View>
     </ScalePress>
   );
@@ -731,10 +731,9 @@ export default function VoiceRoomHome({
         // the Recommended header + chips dock at the top once reached
         // and stay while cards flow beneath. Direct-child index map:
         // 0 My Rooms header, 1 My Rooms carousel, 2 empty-state wrapper
-        // (always rendered, zero-height when non-empty), 3 Leaderboard,
-        // 4 Recommended wrapper (STICKY), 5+ room list. Preceding
-        // children are unconditional so index 4 can never shift.
-        stickyHeaderIndices={[4]}
+        // (always rendered, zero-height when non-empty), 3 Recommended wrapper (STICKY), 4+ room list.
+        // Preceding children are unconditional so index 3 can never shift.
+        stickyHeaderIndices={[3]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -747,7 +746,8 @@ export default function VoiceRoomHome({
                   header row (Room | Explore + chart icon) does not exist in
                   Vee — no Explore tab in the tree — so the Leaderboard
                   trophy sits here, first among the page header icons, and
-                  opens the same LeaderboardModal as the banner below. */}
+                  is now the ONLY leaderboard entry on this page (the gold banner was
+                  removed 2026-10-30) and opens the LeaderboardModal. */}
               <ScalePress onPress={() => setLeaderboardOpen(true)} style={{ padding: 8 }}>
                 <TrophyIcon size={24} />
               </ScalePress>
@@ -803,29 +803,7 @@ export default function VoiceRoomHome({
             )}
             </View>
 
-            {/* ═══ LEADERBOARD ENTRY POINT ═══ */}
-            <ScalePress onPress={() => setLeaderboardOpen(true)}>
-              <View style={{
-                flexDirection: 'row', alignItems: 'center',
-                backgroundColor: 'rgba(245,158,11,0.07)',
-                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
-                marginBottom: 4,
-                borderWidth: 1, borderColor: 'rgba(245,158,11,0.22)',
-                gap: 12 }}>
-                <TrophyIcon size={28} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '900' }}>
-                    {t('leaderboard.title')}
-                  </Text>
-                  <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
-                    {t('leaderboard.topRooms')} · {t('leaderboard.topEarners')}
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={18} color="#F59E0B" />
-              </View>
-            </ScalePress>
-
-            {/* ═══ RECOMMENDED ROOMS ═══ (sticky child #4: docks at top) */}
+            {/* ═══ RECOMMENDED ROOMS ═══ (sticky child #3: docks at top) */}
             <View style={{ backgroundColor: '#FFFFFF' }}>
             <SectionTitle title={t('voiceRoom.home.recommended')} />
 
