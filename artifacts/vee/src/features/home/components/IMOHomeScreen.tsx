@@ -63,6 +63,8 @@ export default function IMOHomeScreen() {
   // whether list gestures arrive and whether content exceeds container.
   const diagRef = useRef<{ chatContentH: number; chatLayout: boolean }>({ chatContentH: 0, chatLayout: false });
   const diag = (key: string, value: number) => { const uid = user?.uid; if (!uid) return; update(ref(database, `users/${uid}/diagScroll`), { [key]: value }).catch(() => {}); };
+  // TEMPORARY D1 (2026-10-30): home-mount marker + re-fire stored chats content height once uid is available.
+  useEffect(() => { if (!user?.uid) return; diag('homeMountedAt', Date.now()); if (diagRef.current.chatContentH > 0) diag('chatsContentH', Math.round(diagRef.current.chatContentH)); }, [user?.uid]);
   const [activeTab, setActiveTab] = useState<ContentTab>('chats');
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);

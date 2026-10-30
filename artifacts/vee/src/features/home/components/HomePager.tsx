@@ -184,7 +184,9 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
           }
         });
       }
-    });
+    })
+    // TEMPORARY D1 (2026-10-30): Pan DISABLED - proves/exonerates Pan theft. Swipes dead for this test only; remove to restore.
+    .enabled(false);
 
   // Row offset +1: the profile page sits at array index 0, so progress
   // -1 (profile) must translate to 0, progress 0 (chats) to -W, etc.
