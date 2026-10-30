@@ -12,7 +12,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, Alert, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
-import { FlatList, RefreshControl } from 'react-native-gesture-handler';
+import { FlatList } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -62,10 +62,7 @@ export default function IMOHomeScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  // 2026-10-19 polish: pull-to-refresh + empty state on the chat list.
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshingRef = useRef(false);
+  // 2026-10-19 polish: empty state on the chat list.
   // Fix #20 (2026-10-29, boss: no loading page on home, offline opens):
   // tracks whether the live chat subscription has fired for the current
   // effect run, so the no-cache + offline case can settle to the empty
@@ -165,12 +162,6 @@ export default function IMOHomeScreen() {
       }
       setChats(live);
       setChatsReady(true);
-      // 2026-10-19 polish: pull-to-refresh re-subscribes, which fires this
-      // callback immediately with fresh data — end the spinner here.
-      if (refreshingRef.current) {
-        refreshingRef.current = false;
-        setRefreshing(false);
-      }
       saveChatList(uid, live);
     });
     return () => {
@@ -178,26 +169,8 @@ export default function IMOHomeScreen() {
       if (settleTimer) clearTimeout(settleTimer);
       unsub();
     };
-    // refreshTick forces a fresh subscription = a real re-pull on refresh.
-  }, [user?.uid, refreshTick]);
+  }, [user?.uid]);
 
-  // 2026-10-19 polish: pull-to-refresh. Re-attaching to the shared hub
-  // delivers the latest snapshot within a frame (the underlying listener
-  // stays live, so the data is already fresh — no redundant re-read);
-  // the spinner ends in the callback above. Backstop clears it if the
-  // callback never fires.
-  const handleRefresh = useCallback(() => {
-    if (refreshingRef.current) return;
-    refreshingRef.current = true;
-    setRefreshing(true);
-    setRefreshTick((t) => t + 1);
-    setTimeout(() => {
-      if (refreshingRef.current) {
-        refreshingRef.current = false;
-        setRefreshing(false);
-      }
-    }, 8000);
-  }, []);
 
   // 2026-10-26 (boss: chat-list online + unseen-story marks): realtime
   // presence per chat participant (privacy-masked inside subscribePresence
@@ -602,9 +575,6 @@ export default function IMOHomeScreen() {
         maxToRenderPerBatch={10}
         removeClippedSubviews={false}
         nestedScrollEnabled={true}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
         // 2026-10-19 polish: empty state — only after the first load so the
         // cached/live fetch doesn't flash "no chats" while loading.
         ListEmptyComponent={chatsReady ? (
