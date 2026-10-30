@@ -472,12 +472,30 @@ async function renewNobleRankValidity(uid: string, rankIndex: number, newDeadlin
   } catch {
     // Read failed — fall through and write (safe).
   }
+  // 2026-10-30 (boss): EXISTENCE-GATED renewal - only renew validity for
+  // grant slots the user actually holds. The old unconditional 5-path
+  // update CREATED phantom nodes (RTDB update() creates missing paths):
+  // two Baron users gained a validity-only noble-ripple-baron (no art, no
+  // name) although Baron has no ripple design - it showed as a broken row
+  // in their Ripples tab. Real grants (incl. manually granted ones like
+  // Mh's Baron entry effect) still renew exactly as before.
+  const slots: Array<[string, string]> = [
+    ['frames', `noble-frame-${key}`],
+    ['badges', `noble-badge-${key}`],
+    ['nameplates', `noble-plate-${key}`],
+    ['ripples', `noble-ripple-${key}`],
+    ['entryEffects', `noble-effect-${key}`],
+  ];
   const updates: Record<string, number> = {};
-  updates[`users/${uid}/frames/noble-frame-${key}/validity`] = newDeadline;
-  updates[`users/${uid}/badges/noble-badge-${key}/validity`] = newDeadline;
-  updates[`users/${uid}/nameplates/noble-plate-${key}/validity`] = newDeadline;
-  updates[`users/${uid}/ripples/noble-ripple-${key}/validity`] = newDeadline;
-  updates[`users/${uid}/entryEffects/noble-effect-${key}/validity`] = newDeadline;
+  try {
+    const snaps = await Promise.all(slots.map(([node, id]) => get(ref(database, `users/${uid}/${node}/${id}`)).catch(() => null)));
+    snaps.forEach((snap, i) => {
+      if (snap && snap.exists()) updates[`users/${uid}/${slots[i][0]}/${slots[i][1]}/validity`] = newDeadline;
+    });
+  } catch {
+    // Read failed - fall through with no writes rather than creating phantoms.
+  }
+  if (Object.keys(updates).length === 0) return;
   await update(ref(database), updates).catch(() => {});
 }
 
