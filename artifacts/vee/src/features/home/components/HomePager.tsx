@@ -115,7 +115,17 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
 
   const pan = Gesture.Pan()
     .activeOffsetX([-12, 12]) // activate only once horizontal movement dominates…
-    .failOffsetY([-12, 12]) // …and fail fast on vertical drags so lists keep scrolling
+    // 2026-10-30 (scroll regression: chats + contacts lists stopped
+    // scrolling on batch 18 while taps + slide stayed perfect): bias
+    // arbitration toward vertical. The Pan config was byte-identical
+    // batch-17 -> batch-18, so this is a hardening, not a revert:
+    // with activeOffsetX 12 + failOffsetY 12 the Pan won every drag
+    // shallower than 45deg; with failOffsetY 8 the boundary moves to
+    // ~34deg, so diagonal thumb-arc drags in the 34-45deg band now fail
+    // the Pan and reach the lists. Genuine swipes (realistically <25deg,
+    // even sloppy ones) still activate at the same 12px with the
+    // identical spring/transform/settle — slide feel unchanged.
+    .failOffsetY([-8, 8]) // …and fail fast on vertical drags so lists keep scrolling
     .onBegin(() => {
       'worklet';
       grabProgress.value = progress.value;
