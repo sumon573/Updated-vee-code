@@ -36,7 +36,11 @@ const C = {
   playBg: '#009dff',
   trackBg: 'rgba(0,0,0,0.15)',
   trackBgOnBlue: 'rgba(255,255,255,0.35)',
-  time: '#70000000',
+  // 2026-10-30 (boss: voice duration parity): '#70000000' was written as
+  // Android-style AARRGGBB (44% black), but React Native parses 8-digit
+  // hex as RRGGBBAA (alpha LAST) -- so it rendered fully transparent and
+  // the peer duration label was invisible while own (rgba white) showed.
+  time: 'rgba(0,0,0,0.44)',
   timeOnBlue: 'rgba(255,255,255,0.85)',
 } as const;
 
@@ -229,7 +233,9 @@ function VoiceMessageBubble({ uri, durationSec, isMe }: Props) {
         <Text style={{ color: timeColor, fontSize: 11, marginTop: 4, fontVariant: ['tabular-nums'] }}>
           {playing
             ? formatVoiceDuration(elapsed)
-            : formatVoiceDuration(totalSec)}
+            : totalSec > 0
+              ? formatVoiceDuration(totalSec)
+              : ''}
         </Text>
       </View>
     </View>

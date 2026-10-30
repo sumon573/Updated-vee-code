@@ -4,9 +4,12 @@
  * Shows the owner's profile visitors in TWO sections by LATEST visit:
  * Today / Last 7 days. Each visitor appears ONCE, under their latest-visit
  * section, latest first. Rows for unseen visitors are LIGHT-GREEN; seen rows
- * are white. Viewing this list marks all currently-listed visitors as seen
- * (snapshot keys only, once on mount) — so on re-entry the previously-green
- * rows are white and only visitors who arrived after that view show green.
+ * are white. Viewing this list marks all visitors listed at first render as
+ * seen (snapshot keys only, marked when LEAVING the page) — so on re-entry
+ * the previously-green rows are white and only visitors who arrived after
+ * that view show green. The mark MUST NOT fire on data arrival: rows render
+ * after the first map delivery (profiles load progressively), so marking on
+ * arrival turned every new row white before it was ever seen.
  * Row tap opens the visitor's profile via the existing /user-profile route.
  *
  * Pattern mirrors app/profile/followers.tsx (TitleBar, expo-image DPs with
@@ -131,26 +134,33 @@ export default function VisitorsScreen() {
 
   const [records, setRecords] = useState<VisitorMap>({});
   const [profiles, setProfiles] = useState<Record<string, VeeUser>>({});
+  // Uids listed in the map whose users/{uid} doc does not exist (live null
+  // from subscribeUser) — rendered as placeholder rows so a real visit is
+  // never invisible just because the profile doc is missing.
+  const [missing, setMissing] = useState<Record<string, true>>({});
   const [badgeIconUrl, setBadgeIconUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const markedSeenRef = useRef(false);
+  // First-view snapshot of unseen listed uids. Captured on the first map
+  // delivery but marked ONLY when leaving the page (effect cleanup) — never
+  // on arrival, or new rows render white before the owner can see them.
+  const snapshotUnseenRef = useRef<string[] | null>(null);
   const profileSubsRef = useRef(new Map<string, () => void>());
 
   // Live visitor map — keys only at first, cheap even for long lists.
-  // 2026-10-30 (boss: instant load): mark-seen reuses this first
-  // delivery as the view-time snapshot instead of a separate
-  // getVisitorMap round trip — same rule (visitors arriving after
-  // this view stay unseen until the next view), one less RTT.
+  // 2026-10-30 (boss: new-visit visibility): the first delivery is ONLY
+  // the view-time snapshot (same rule — visitors arriving after this view
+  // stay unseen until the next view). The mark itself fires in the cleanup
+  // when LEAVING the page: marking on arrival used to flip rows white
+  // before their profiles had even rendered, so a new visitor was never
+  // distinguishable. Rows stay green for the whole view.
   useEffect(() => {
     if (!uid) { setLoading(false); return; }
     const unsub = subscribeVisitors(uid, (map) => {
       setRecords(map);
       setLoading(false);
-      if (!markedSeenRef.current) {
-        markedSeenRef.current = true;
+      if (snapshotUnseenRef.current === null) {
         const { today, last7 } = splitVisitorSections(map);
-        const unseenListed = [...today, ...last7].filter((v) => map[v]?.seen === false);
-        if (unseenListed.length > 0) void markVisitorsSeen(uid, unseenListed);
+        snapshotUnseenRef.current = [...today, ...last7].filter((v) => map[v]?.seen === false);
       }
     });
 
@@ -160,7 +170,13 @@ export default function VisitorsScreen() {
     // timeout pattern already used in app/chat/index.tsx.
     const timeout = setTimeout(() => setLoading(false), 3000);
 
-    return () => { clearTimeout(timeout); unsub(); };
+    return () => {
+      clearTimeout(timeout);
+      unsub();
+      const snapshot = snapshotUnseenRef.current;
+      snapshotUnseenRef.current = null;
+      if (snapshot && snapshot.length > 0) void markVisitorsSeen(uid, snapshot);
+    };
   }, [uid]);
 
   // Server-driven official badge icon (once; rows fall back to the bundle asset).
@@ -189,6 +205,18 @@ export default function VisitorsScreen() {
           else delete next[u];
           return next;
         });
+        // Live null = users/{uid} doc does not exist: remember it so the
+        // visit still renders as a placeholder row instead of vanishing.
+        // A later user delivery clears it (doc created after the visit).
+        setMissing((prev) => {
+          if (user) {
+            if (!prev[u]) return prev;
+            const next = { ...prev };
+            delete next[u];
+            return next;
+          }
+          return prev[u] ? prev : { ...prev, [u]: true };
+        });
       });
       profileSubsRef.current.set(u, unsub);
     }
@@ -209,9 +237,17 @@ export default function VisitorsScreen() {
     );
   };
 
+  // 2026-10-30 (boss: new-visit visibility): a listed uid with no profile
+  // doc renders as a placeholder row ('?' avatar, 'User' name) instead of
+  // disappearing — a real visit must always be visible. Taps still open
+  // /user-profile like every other row.
+  const fallbackUser = (u: string): VeeUser => ({
+    uid: u, vId: '', name: '', email: '', photoURL: '', bio: '',
+    createdAt: 0, lastSeen: 0, online: false,
+  });
   const sections = [
-    { title: 'Today', data: today.map((u) => profiles[u]).filter(Boolean) as VeeUser[] },
-    { title: 'Last 7 days', data: last7.map((u) => profiles[u]).filter(Boolean) as VeeUser[] },
+    { title: 'Today', data: today.map((u) => profiles[u] ?? (missing[u] ? fallbackUser(u) : null)).filter(Boolean) as VeeUser[] },
+    { title: 'Last 7 days', data: last7.map((u) => profiles[u] ?? (missing[u] ? fallbackUser(u) : null)).filter(Boolean) as VeeUser[] },
   ].filter((s) => s.data.length > 0);
 
   return (

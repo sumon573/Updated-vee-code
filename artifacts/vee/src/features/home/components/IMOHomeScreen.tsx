@@ -370,22 +370,29 @@ export default function IMOHomeScreen() {
   // ever unmounts (a tab switch is a hard screen change, not a slide).
   const insets = useSafeAreaInsets();
   const topBarFullH = useSharedValue(insets.top + 77);
-  // 2026-10-30 (boss: bottom +/search icons STILL cut, all users):
-  // guaranteed clearance = max(insets.bottom, 16) + 12 slack, so the
-  // bar sits fully visible even when insets.bottom reports 0, and
-  // keeps the real inset when it is larger. First-frame estimate =
-  // 57 (bar) + clearance; the effect below keeps that estimate in
-  // sync with insets until the first real measurement lands, and
-  // onLayout then adopts EVERY new measurement (the old one-shot
-  // guard froze the first, insets=0 measurement forever — see the
-  // bottom-bar comment below for the full diagnosis).
+  // 2026-10-30 (boss: bottom bar VANISHED after the 16:11 update):
+  // fix FORWARD, never back to clipped. The 16:11 fix let onLayout
+  // adopt EVERY measured height into the wrapper height, with no
+  // floor and no recovery — a transient small layout value (a frame
+  // mid profile-collapse, or a first frame before content/insets
+  // settled) then stuck the bar at that height forever, because the
+  // dedup guard treated the adopted value as final and the effect
+  // only wrote while "not measured yet". The 14:56 one-shot guard
+  // was the mirror flaw (froze the first value -> clip). Both flaws
+  // share one root cause: deriving the wrapper height from
+  // measurement when the content height is a KNOWN constant.
+  // IMOBottomBar is fixed 57 (12 padding + 32 icon + 12 padding +
+  // 1 border; the Connecting text and green dot never change it),
+  // so the wrapper height is derived ONLY from insets: 57 +
+  // clearance, where clearance = max(insets.bottom, 16) + 12 slack
+  // (fully visible at insets 0 AND at any real inset). onLayout
+  // adoption is DELETED — nothing measured can shrink the bar now.
+  // The worklet floor below is belt-and-braces for the same rule.
   const bottomClearance = Math.max(insets.bottom, 16) + 12;
   const bottomBarFullH = useSharedValue(57 + bottomClearance);
   const topBarMeasured = useRef(false);
-  // Last measured bottom-bar height adopted (-1 = not measured yet).
-  const bottomBarAppliedH = useRef(-1);
   useEffect(() => {
-    if (bottomBarAppliedH.current < 0) bottomBarFullH.value = 57 + bottomClearance;
+    bottomBarFullH.value = 57 + bottomClearance;
   }, [bottomClearance]);
   const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
   const topBarWrapStyle = useAnimatedStyle(() => {
@@ -399,11 +406,20 @@ export default function IMOHomeScreen() {
   const bottomBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: bottomBarFullH.value, opacity: 1 };
     const p = pagerProgress.value;
+    const h = interpolate(p, [-1, 0], [0, bottomBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
+    // Floor (belt-and-braces, 2026-10-30 regression): on any settled
+    // tab (p >= 0 — chats, voice, contacts) the bar can never be
+    // shorter than its true content height 57 + clearance, even if
+    // bottomBarFullH were ever stale. At p >= 0 the correct height
+    // already equals the floor, so this changes nothing when healthy
+    // and rescues the bar when not. During a profile drag (p < 0)
+    // the smooth shrink is preserved, and at p = -1 the height is
+    // exactly 0, so the profile-page collapse is untouched.
     return {
-      height: interpolate(p, [-1, 0], [0, bottomBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+      height: p >= 0 ? Math.max(h, 57 + bottomClearance) : h,
       opacity: interpolate(p, [-1, 0], [0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
     };
-  }, [isPagerTab]);
+  }, [isPagerTab, bottomClearance]);
   // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
   // renders a placeholder for the profile page at home mount, then
   // mounts the real ProfileScreen once after home settles
@@ -726,24 +742,19 @@ export default function IMOHomeScreen() {
           overlay is gone — connection status now lives IN this bar
           ("Connecting..." center + green dot on "+"). */}
       <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, bottomBarWrapStyle]}>
-        {/* 2026-10-30 (boss: bottom +/search icons STILL cut, all
-            users): root cause was NOT the +12 slack — the wrapper
-            never adopted any measurement after the first. The app
-            root SafeAreaProvider has no initialMetrics, so insets
-            start at 0 and resolve later; the first onLayout fired
-            at insets.bottom = 0 (height 69) and the one-shot guard
-            froze bottomBarFullH at 69 forever, while the padding
-            kept growing with the real inset — so the content
-            (57 + inset + 12) was clipped by exactly the inset on
-            every device with a non-zero bottom inset. Fix: onLayout
-            now adopts EVERY new measured height, and the padding
-            is a guaranteed clearance max(insets.bottom, 16) + 12,
-            so the bar is fully visible at insets 0 AND at any real
-            inset. Bar look/position/actions and the profile
+        {/* 2026-10-30 (boss: bottom bar VANISHED after 16:11):
+            the 16:11 onLayout-adopts-everything fix regressed the
+            bar to zero — a transient small layout value stuck
+            forever (no floor, no recovery). Fix forward: the
+            wrapper height is now purely insets-derived (57 +
+            clearance, see above) and the worklet floors it at
+            57 + clearance on settled tabs, so no measured value
+            can ever shrink it again. The padding View below keeps
+            the clearance under the bar; it no longer measures
+            anything. Bar look/position/actions and the profile
             collapse (height -> 0) are unchanged. */}
         <View
           style={{ paddingBottom: bottomClearance }}
-          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && h !== bottomBarAppliedH.current) { bottomBarAppliedH.current = h; bottomBarFullH.value = h; } }}
         >
           <IMOBottomBar
             onAddPress={() => goToTab('contacts')}
