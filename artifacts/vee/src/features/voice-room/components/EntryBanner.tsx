@@ -156,7 +156,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
     // Viscount canvas is 1903x826 (own banner art); Marquis is 1600x533.
     const bannerH = isViscountArt ? (bannerW * 826) / 1903 : (bannerW * 533) / 1600;
     const dpSize = isViscountArt ? bannerW * 0.1923 : bannerW * 0.127;
-    const nameFont = isViscountArt ? bannerW * 0.075 : bannerW * 0.043;
+    const nameFont = isViscountArt ? bannerW * 0.042 : bannerW * 0.043;
     return (
       <Animated.View
         style={{
@@ -215,7 +215,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
             style={{
               position: 'absolute',
               left: bannerW * 0.3153,
-              top: bannerH * 0.34,
+              top: bannerH * 0.35,
               width: bannerW * 0.305,
             }}
           >
@@ -231,14 +231,16 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
                 textShadowRadius: 3,
               }}
               numberOfLines={1}
+              ellipsizeMode="tail"
+              allowFontScaling={false}
             >
               {name}
             </Text>
             <Text
               style={{
                 color: '#FFFFFF',
-                fontSize: bannerW * 0.052,
-                lineHeight: bannerW * 0.052 * 1.1,
+                fontSize: bannerW * 0.030,
+                lineHeight: bannerW * 0.030 * 1.1,
                 fontWeight: '700',
                 fontFamily: 'serif',
                 textShadowColor: 'rgba(30,10,0,0.85)',
@@ -246,6 +248,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
                 textShadowRadius: 3,
               }}
               numberOfLines={1}
+              allowFontScaling={false}
             >
               is coming...
             </Text>

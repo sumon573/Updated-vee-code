@@ -88,7 +88,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleCol
   const particleCount = isFancy ? 10 + rankIdx : 0;  // Knight=10, SSKing=19
   const flowerCount = isFancy ? 5 + Math.floor(rankIdx / 2) : 0;  // Knight=5, SSKing=9
   const waveCount = isFancy ? 2 + Math.floor(rankIdx / 3) : 2;  // Knight=2, King+=4
-  const speedBoost = isFancy ? 1 + (rankIdx * 0.08) : 1;  // SSKing=1.72x faster
+  const speedBoost = (isFancy ? 1 + (rankIdx * 0.08) : 1) * (theme?.rippleSpeedMul ?? 1);
   // 14 tiny mist dots — random outward trajectories, fixed per mount (lazy init:
   // useRef's argument would otherwise re-run Array.from + 14 Animated.Value allocs
   // on every render)
@@ -122,7 +122,7 @@ function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleCol
       dist: size * (0.66 + Math.random() * 0.78),
       dur: 750 + Math.random() * 500,
       delay: (i / 7) * 800,
-      fSize: 10 + Math.random() * 5,
+      fSize: (theme?.rippleParticleSize ?? 10) + Math.random() * 5,
       char: particleChars[i % particleChars.length],
       spin: Math.random() > 0.5 ? 1 : -1,
     }));

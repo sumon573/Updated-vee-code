@@ -154,6 +154,10 @@ export interface NobleVisualTheme {
   // premium/gorgeous effect type. Higher rank = more spectacular.
   rippleEffect: 'leaves' | 'droplets' | 'snow' | 'stars' | 'petals' | 'flames' | 'coins' | 'crowns' | 'sparks' | 'diamonds';
   rippleWaveCount: number;  // Distinct wave count per rank
+  // 2026-10-30 (boss): optional per-rank particle size + speed multiplier.
+  // Absent = defaults (flower base 10, speed x1) — other ranks untouched.
+  rippleParticleSize?: number;
+  rippleSpeedMul?: number;
 }
 function themeFor(
   color: string,
@@ -188,7 +192,9 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   themeFor('#26A69A', '⚔️', ['\uD83D\uDCA7', '\uD83D\uDCA6', '\uD83C\uDF0A'], 'droplets', 2),
   // 2026-10-30 (boss): Viscount sound ripple matches the Viscount entry
   // banner — purple + gold, sparkling stars. Pill gradient/icon unchanged.
-  { entryGradient: ['#42A5F5', lightenHex('#42A5F5', 60)], entryIcon: '\uD83D\uDD37', rippleWave: '#8E24AA', rippleMist: ['#8E24AA', '#FFD700', '#BA68C8'], rippleParticles: ['✨', '💫', '⭐'], rippleEffect: 'stars', rippleWaveCount: 3 },
+  // 2026-10-30 (boss): Viscount sound ripple, refined — very tiny GREEN leaves
+  // twinkling, slightly faster. Waves/mist stay entry purple+gold.
+  { entryGradient: ['#42A5F5', lightenHex('#42A5F5', 60)], entryIcon: '\uD83D\uDD37', rippleWave: '#8E24AA', rippleMist: ['#8E24AA', '#FFD700', '#BA68C8'], rippleParticles: ['🍃', '🌿', '☘️'], rippleEffect: 'stars', rippleWaveCount: 3, rippleParticleSize: 6, rippleSpeedMul: 1.25 },
   themeFor('#7E57C2', '\uD83D\uDD2E', ['⭐', '\uD83C\uDF1F', '\uD83D\uDC9C'], 'stars', 3),
   themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
   themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
