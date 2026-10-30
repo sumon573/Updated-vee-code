@@ -52,7 +52,9 @@ import {
   subscribeMessages, sendMessage, markAllSeen, newMessageKey,
   subscribeTyping, subscribePresence, setTyping,
   addReaction, deleteMessage, clearChat,
+  subscribeUserChats, subscribePinnedMessage, setPinnedMessage,
   loadOlderMessages, DM_PAGE_SIZE } from '../services/firebaseDmService';
+import type { Chat } from '../types/index';
 // 2026-10-13 (Sumon): showNotification সরানো হলো — InAppNotification কোথাও
 // mount করা নেই (dead code), আর খোলা chat-এ banner+haptic শুধু বিরক্তি; নতুন
 // message এমনিতেই list-এ scroll হয়ে দেখা যায়।
@@ -397,6 +399,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jumpRetryRef = useRef(false);
+  // 2026-10-30 (boss: quote-jump must load the window): pending jump
+  // target while older pages load, + guard against concurrent jumps.
+  const pendingJumpRef = useRef<string | null>(null);
+  const jumpLoadingRef = useRef(false);
   // 2026-10-30 (boss: inbox open must be fully smooth): the slide
   // animation shares its window with every mount subscription, and
   // each first callback re-renders the list — that pile-up is the
@@ -1112,6 +1118,56 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     }
   }, [pendingMedia, sendMediaAssets, t]);
 
+  // ── Pinned message + forward picker (2026-10-30, boss: Telegram
+  // long-press menu) ──────────────────────────────────────────────────
+  // Pin state lives per-user at userChats/{myUid}/{chatId}/pinnedMessageId
+  // (see firebaseDmService.setPinnedMessage for why the chats/{chatId}
+  // node cannot hold it); this screen reads only its own entry. The
+  // setter dual-writes the peer's entry too, so both sides see the bar.
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!myUid || myUid === 'unknown') return;
+    return subscribePinnedMessage(chatId, myUid, (id) => setPinnedMessageId(id));
+  }, [chatId, myUid]);
+  const handleTogglePin = useCallback((msg: DmMessage) => {
+    const next = pinnedMessageId === msg.id ? null : msg.id;
+    void setPinnedMessage(chatId, myUid, effectiveParticipantId, next).catch(() => {
+      Alert.alert(t('chat.error'));
+    });
+  }, [chatId, myUid, effectiveParticipantId, pinnedMessageId, t]);
+
+  // Forward picker: MessageBubble's Forward row opens it via
+  // handleForwardOpen; the picker subscribes the DM chat list only
+  // while open, sends a COPY (same content/type/media ids, no replyTo),
+  // then confirms briefly. Blocked targets surface sendMessage's error
+  // as the forward error alert.
+  const [forwardTarget, setForwardTarget] = useState<DmMessage | null>(null);
+  const [forwardChats, setForwardChats] = useState<Chat[]>([]);
+  const [forwardSending, setForwardSending] = useState(false);
+  const handleForwardOpen = useCallback((msg: DmMessage) => {
+    setForwardTarget(msg);
+  }, []);
+  useEffect(() => {
+    if (!forwardTarget) return;
+    return subscribeUserChats(myUid, (chats) => {
+      setForwardChats(chats.filter((c) => !c.isHidden));
+    });
+  }, [forwardTarget, myUid]);
+  const handleForwardSend = useCallback(async (targetChat: Chat) => {
+    const src = forwardTarget;
+    if (!src || forwardSending) return;
+    setForwardSending(true);
+    try {
+      await sendMessage(targetChat.id, myUid, targetChat.participantId, src.content, src.type, undefined, src.cloudinaryId, myRealName || user?.displayName || undefined, undefined, src.durationSec);
+      setForwardTarget(null);
+      Alert.alert(t('chat.forwarded'));
+    } catch {
+      Alert.alert(t('chat.error'), t('chat.forwardError'));
+    } finally {
+      setForwardSending(false);
+    }
+  }, [forwardTarget, forwardSending, myUid, myRealName, user?.displayName, t]);
+
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
     setReplyTarget(msg);
@@ -1122,27 +1178,124 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // quoted message in the currently rendered rows (chatRows is the
   // reversed, separator-interleaved array the inverted FlatList
   // renders, so its index IS the scrollToIndex index). Found -> scroll
-  // to the middle + flash the target ~1.5s. Not found (outside the
-  // loaded window, or deleted) -> brief Alert, existing pattern, no
-  // new strings. scrollToIndex can fail while the target row is not
-  // laid out yet (windowing) -> onScrollToIndexFailed retries once,
-  // then Alerts. (chatRows is declared below; this closure only runs
-  // on tap, long after it is initialized.)
-  const jumpToMessage = useCallback((messageId: string) => {
-    jumpRetryRef.current = false;
+  // to the middle + flash the target ~1.5s.
+  // 2026-10-30 (boss: quote-jump MUST load the window — phone failure):
+  // DIAGNOSED CAUSE: the live subscription caps at 50 (DM_PAGE_SIZE),
+  // so a quoted message older than the window was idx===-1 -> a WRONG
+  // Alert even though the record exists in RTDB. (Id mismatch ruled
+  // out: replyTo.messageId is the original id; separators are skipped
+  // by the kind==='msg' check.) Now: not found -> page backward (same
+  // cursor + dedupe rules as handleLoadOlder) until the target appears
+  // or history is exhausted; only then is the Alert shown, and only
+  // for genuinely-missing messages. Found-but-deleted also Alerts
+  // (there is nothing to show). scrollToIndex can fail while the
+  // target row is not laid out yet (windowing) -> onScrollToIndexFailed
+  // retries once, then Alerts. (chatRows is declared below; these
+  // closures only run on tap, long after it is initialized.)
+  const scrollAndFlash = useCallback((messageId: string) => {
     const idx = chatRows.findIndex((r) => r.kind === 'msg' && r.message.id === messageId);
-    if (idx === -1) {
-      Alert.alert('Original message not available');
-      return;
-    }
+    if (idx === -1) return false;
+    jumpRetryRef.current = false;
     flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     setHighlightedId(messageId);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightedId(null), 1500);
+    return true;
   }, [chatRows]);
+  // After a jump-load merge re-renders the rows, complete the pending jump.
+  useEffect(() => {
+    const target = pendingJumpRef.current;
+    if (!target) return;
+    const row = chatRows.find((r) => r.kind === 'msg' && r.message.id === target);
+    if (row && row.kind === 'msg') {
+      pendingJumpRef.current = null;
+      if (row.message.deletedForEveryone || row.message.deletedForMe) {
+        Alert.alert('Original message not available');
+        return;
+      }
+      scrollAndFlash(target);
+      return;
+    }
+    // Merge landed but the target is still absent — it was not in the
+    // loaded pages after all (the loop already Alerted in that case, so
+    // this only fires if state raced); clear to never scroll later.
+    if (!jumpLoadingRef.current) pendingJumpRef.current = null;
+  }, [chatRows, scrollAndFlash]);
+  const jumpToMessage = useCallback(async (messageId: string) => {
+    jumpRetryRef.current = false;
+    const found = chatRows.find((r) => r.kind === 'msg' && r.message.id === messageId);
+    if (found && found.kind === 'msg') {
+      if (found.message.deletedForEveryone || found.message.deletedForMe) {
+        Alert.alert('Original message not available');
+        return;
+      }
+      scrollAndFlash(messageId);
+      return;
+    }
+    // Not in the loaded window: page backward until found or exhausted.
+    // Same cursor + dedupe rules as handleLoadOlder; loadingOlder also
+    // blocks a concurrent manual load (its button disables on the flag).
+    // markSeen is untouched: it is at-bottom gated and keyed on the
+    // NEWEST message, so older pages never trigger a mark.
+    if (jumpLoadingRef.current || loadingOlder) return;
+    jumpLoadingRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const seen = new Set([...olderMessages.map((m) => m.id), ...messages.map((m) => m.id)]);
+      let cursor = olderMessages.length > 0
+        ? olderMessages[0].id
+        : (oldestRecentKey ?? messages[0]?.id ?? null);
+      let acc: DmMessage[] = [];
+      let lastHasMore = true;
+      let exhausted = false;
+      for (let i = 0; i < 100 && cursor && lastHasMore; i++) {
+        const { messages: fetched, hasMore } = await loadOlderMessages(chatId, myUid, cursor);
+        lastHasMore = hasMore;
+        if (fetched.length === 0) { exhausted = true; break; }
+        const newOnes = fetched.filter((m) => !seen.has(m.id));
+        newOnes.forEach((m) => seen.add(m.id));
+        if (newOnes.length === 0) break; // no progress — never spin forever
+        acc = [...newOnes, ...acc];
+        cursor = fetched[0].id;
+        const hit = acc.find((m) => m.id === messageId);
+        if (hit) {
+          if (hit.deletedForEveryone || hit.deletedForMe) {
+            Alert.alert('Original message not available');
+            return;
+          }
+          break;
+        }
+      }
+      if (acc.length > 0) {
+        // acc is oldest-first and entirely older than the existing prefix,
+        // so prepending preserves chronological order (same merge as
+        // handleLoadOlder, just batched). The pending-jump effect above
+        // scrolls + flashes once the rows re-render.
+        setOlderMessages((prev) => [...acc, ...prev]);
+        setHasMoreOlder(lastHasMore);
+        const hit = acc.find((m) => m.id === messageId);
+        if (hit) pendingJumpRef.current = messageId;
+        else if (exhausted || !lastHasMore) Alert.alert('Original message not available');
+        // else: loop ended on no-progress/bound with history possibly
+        // remaining — do NOT Alert for a maybe-existing message; the
+        // merge already advanced the cursor, so a retry re-pages onward.
+      } else if (exhausted || !lastHasMore) {
+        setHasMoreOlder(false);
+        Alert.alert('Original message not available');
+      } else {
+        Alert.alert('Original message not available');
+      }
+    } catch {
+      Alert.alert('Original message not available');
+    } finally {
+      setLoadingOlder(false);
+      jumpLoadingRef.current = false;
+    }
+  }, [chatRows, olderMessages, messages, oldestRecentKey, chatId, myUid, loadingOlder, scrollAndFlash]);
 
   useEffect(() => () => {
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    pendingJumpRef.current = null;
   }, []);
 
   const handleScrollToIndexFailed = useCallback((info: { index: number }) => {
@@ -1315,9 +1468,12 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         onCallBack={stableCallBack}
         onQuotePress={jumpToMessage}
         isHighlighted={highlightedId === msg.id}
+        onForward={handleForwardOpen}
+        onTogglePin={handleTogglePin}
+        isPinned={pinnedMessageId === msg.id}
       />
     );
-  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack, jumpToMessage, highlightedId]);
+  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack, jumpToMessage, highlightedId, handleForwardOpen, handleTogglePin, pinnedMessageId]);
 
   const keyExtractor = useCallback((item: ChatRow) => (
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
@@ -1475,6 +1631,24 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     );
   }, [hasMoreOlder, loadingOlder, olderMessages.length, handleLoadOlder]);
 
+  // Pinned-bar preview: the pinned message's own preview when it is in
+  // the loaded rows, else a generic label (tap still attempts the jump,
+  // which Alerts when the message is genuinely unavailable).
+  const pinnedPreview = (() => {
+    if (!pinnedMessageId) return '';
+    const row = chatRows.find((r) => r.kind === 'msg' && r.message.id === pinnedMessageId);
+    if (!row || row.kind !== 'msg') return t('chat.pinnedMessage');
+    const m = row.message;
+    if (m.deletedForEveryone || m.deletedForMe) return t('chat.pinnedMessage');
+    return m.type === 'text' ? m.content.slice(0, 60)
+      : m.type === 'image' ? '📷 Photo'
+      : m.type === 'video' ? '🎥 Video'
+      : m.type === 'voice' ? '🎤 Voice message'
+      : m.type === 'call' ? '📞 Call'
+      : m.type === 'sticker' ? '😊 Sticker'
+      : '📎 Attachment';
+  })();
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
@@ -1553,6 +1727,69 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               </Pressable>
             </View>
           </View>
+
+          {/* ── Pinned message bar (2026-10-30) ── */}
+          {pinnedMessageId ? (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: C.border,
+              paddingHorizontal: 14, paddingVertical: 10,
+            }}>
+              <Pressable
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}
+                onPress={() => jumpToMessage(pinnedMessageId)}
+              >
+                <Ionicons name="pin" size={18} color={C.glow} />
+                <Text style={{ color: '#000000', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                  {pinnedPreview}
+                </Text>
+              </Pressable>
+              <Pressable hitSlop={8} onPress={() => { void setPinnedMessage(chatId, myUid, effectiveParticipantId, null).catch(() => {}); }}>
+                <Feather name="x" size={18} color={C.muted} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {/* ── Forward picker (2026-10-30) ── */}
+          <Modal visible={forwardTarget !== null} animationType="slide" onRequestClose={() => setForwardTarget(null)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }} edges={['top', 'bottom']}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                <Pressable hitSlop={8} onPress={() => setForwardTarget(null)} style={{ padding: 6 }}>
+                  <Feather name="x" size={24} color="#000000" />
+                </Pressable>
+                <Text style={{ color: '#000000', fontSize: 18, fontWeight: '800' }}>{t('chat.forwardTo')}</Text>
+              </View>
+              {forwardChats.length === 0 ? (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: C.muted, fontSize: 14 }}>{t('chat.noChats')}</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={forwardChats}
+                  keyExtractor={(c) => c.id}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      disabled={forwardSending}
+                      onPress={() => { void handleForwardSend(item); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
+                    >
+                      {item.participantAvatar ? (
+                        <Image source={{ uri: item.participantAvatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      ) : (
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#D9D9DE', alignItems: 'center', justifyContent: 'center' }}>
+                          <Feather name="user" size={20} color="#fff" />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }} numberOfLines={1}>{item.participantName}</Text>
+                        <Text style={{ color: C.muted, fontSize: 13 }} numberOfLines={1}>{item.lastMessage}</Text>
+                      </View>
+                    </Pressable>
+                  )}
+                />
+              )}
+            </SafeAreaView>
+          </Modal>
 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView

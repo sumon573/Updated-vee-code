@@ -42,6 +42,7 @@ import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IM
 import ChatLongPressMenu from '@/src/features/home/components/ChatLongPressMenu';
 import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
+import { formatMsgTime } from '@/src/utils/formatMsgTime';
 import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
 import HomePager from '@/src/features/home/components/HomePager';
 import Animated, { useSharedValue, useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
@@ -369,11 +370,23 @@ export default function IMOHomeScreen() {
   // ever unmounts (a tab switch is a hard screen change, not a slide).
   const insets = useSafeAreaInsets();
   const topBarFullH = useSharedValue(insets.top + 77);
-  // 2026-10-30 (boss: bottom +/search icons slightly cut): first-frame
-  // height carries the same +12 slack as the measured padding below.
-  const bottomBarFullH = useSharedValue(insets.bottom + 69);
+  // 2026-10-30 (boss: bottom +/search icons STILL cut, all users):
+  // guaranteed clearance = max(insets.bottom, 16) + 12 slack, so the
+  // bar sits fully visible even when insets.bottom reports 0, and
+  // keeps the real inset when it is larger. First-frame estimate =
+  // 57 (bar) + clearance; the effect below keeps that estimate in
+  // sync with insets until the first real measurement lands, and
+  // onLayout then adopts EVERY new measurement (the old one-shot
+  // guard froze the first, insets=0 measurement forever — see the
+  // bottom-bar comment below for the full diagnosis).
+  const bottomClearance = Math.max(insets.bottom, 16) + 12;
+  const bottomBarFullH = useSharedValue(57 + bottomClearance);
   const topBarMeasured = useRef(false);
-  const bottomBarMeasured = useRef(false);
+  // Last measured bottom-bar height adopted (-1 = not measured yet).
+  const bottomBarAppliedH = useRef(-1);
+  useEffect(() => {
+    if (bottomBarAppliedH.current < 0) bottomBarFullH.value = 57 + bottomClearance;
+  }, [bottomClearance]);
   const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
   const topBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: topBarFullH.value, opacity: 1 };
@@ -713,15 +726,24 @@ export default function IMOHomeScreen() {
           overlay is gone — connection status now lives IN this bar
           ("Connecting..." center + green dot on "+"). */}
       <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, bottomBarWrapStyle]}>
-        {/* 2026-10-30 (boss: bottom +/search icons slightly cut at the
-            screen edge): +12dp slack below the bar so both icons sit
-            fully visible with breathing room. The measured height
-            grows equally, so the animated wrapper grows with it;
-            the pager flex absorbs the 12dp; bar look/position/actions
-            unchanged. */}
+        {/* 2026-10-30 (boss: bottom +/search icons STILL cut, all
+            users): root cause was NOT the +12 slack — the wrapper
+            never adopted any measurement after the first. The app
+            root SafeAreaProvider has no initialMetrics, so insets
+            start at 0 and resolve later; the first onLayout fired
+            at insets.bottom = 0 (height 69) and the one-shot guard
+            froze bottomBarFullH at 69 forever, while the padding
+            kept growing with the real inset — so the content
+            (57 + inset + 12) was clipped by exactly the inset on
+            every device with a non-zero bottom inset. Fix: onLayout
+            now adopts EVERY new measured height, and the padding
+            is a guaranteed clearance max(insets.bottom, 16) + 12,
+            so the bar is fully visible at insets 0 AND at any real
+            inset. Bar look/position/actions and the profile
+            collapse (height -> 0) are unchanged. */}
         <View
-          style={{ paddingBottom: insets.bottom + 12 }}
-          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && !bottomBarMeasured.current) { bottomBarMeasured.current = true; bottomBarFullH.value = h; } }}
+          style={{ paddingBottom: bottomClearance }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && h !== bottomBarAppliedH.current) { bottomBarAppliedH.current = h; bottomBarFullH.value = h; } }}
         >
           <IMOBottomBar
             onAddPress={() => goToTab('contacts')}
@@ -739,7 +761,10 @@ function formatTime(timestamp?: number): string {
   const now = new Date();
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    // 2026-10-30 (boss: list times match inbox): same-day clock uses
+    // the shared phone-rule formatter (was hardcoded 24h); Yesterday
+    // and older-date branches below are untouched.
+    return formatMsgTime(timestamp);
   } else if (diffDays === 1) {
     return 'Yesterday';
   } else {

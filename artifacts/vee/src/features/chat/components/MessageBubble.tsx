@@ -1,7 +1,7 @@
-import { memo, useRef, useState, useEffect } from 'react';
+import { memo, useRef, useState, useEffect, useCallback } from 'react';
 import {
   View, Text, Pressable, Animated, Alert, Modal,
-  ActionSheetIOS, Platform, Dimensions,
+  Dimensions,
 } from 'react-native';
 // 2026-10-19 OOM fix: chat thumbnails use expo-image (disk cache + native
 // downsampling) instead of RN core Image, which decodes full-resolution
@@ -25,6 +25,7 @@ import { DmMessage } from '../types/dm';
 import { addReaction, deleteMessage } from '../services/firebaseDmService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+import { formatMsgTime } from '@/src/utils/formatMsgTime';
 import VoiceMessageBubble from './VoiceMessageBubble';
 
 const { width, height } = Dimensions.get('window');
@@ -46,37 +47,11 @@ const C = {
   sent: '#70000000',
 } as const;
 
-const REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
-
-function formatMsgTime(ts: number): string {
-  // 2026-10-30 (boss: times follow the phone, supersedes Fix #31's
-  // hardcoded 24-hour format for DM times): use the device's own
-  // hour-cycle when it can be read (Intl hour12) - 24h phone ->
-  // "15:07", 12h phone -> "3:07 PM". If the device cannot report it
-  // (hour12 undefined, or Intl unavailable), fall back to 12-hour,
-  // per his order. Used by every DM thread timestamp (inline text
-  // time and the photo/video/voice/call/sticker rows), so all message
-  // times in the thread follow the same rule.
-  if (!Number.isFinite(ts)) return '';
-  const d = new Date(ts);
-  const m = d.getMinutes().toString().padStart(2, '0');
-  let hour12: boolean | undefined;
-  try {
-    hour12 = new Intl.DateTimeFormat().resolvedOptions().hour12;
-  } catch {
-    hour12 = undefined;
-  }
-  if (hour12 === false) {
-    const h = String(d.getHours()).padStart(2, '0');
-    return `${h}:${m}`;
-  }
-  const h12 = d.getHours() % 12 || 12;
-  const ampm = d.getHours() < 12 ? 'AM' : 'PM';
-  // 2026-10-30 (boss: Telegram corner time): the 12h parts are joined
-  // with a NON-BREAKING space so "3:26 PM" can never split across
-  // lines (the old "3:26" / "PM" wrap). 24h output has no space.
-  return `${h12}:${m}\u00A0${ampm}`;
-}
+// 2026-10-30 (boss: Telegram long-press menu): the long-press quick
+// set is Telegram's 7. The composer quick row (InboxScreen
+// QUICK_REACTIONS) is a different set and is untouched. Stored reactions
+// of any emoji still render in the pill.
+const REACTIONS = ['❤️', '👍', '👎', '🔥', '🥰', '👏', '😁'];
 
 // Fix #31 (imo-exact call durations): "2 min 6 sec" / "44 sec".
 function formatCallDuration(totalSec: number): string {
@@ -103,6 +78,12 @@ type Props = {
   // passes the jump handler + whether this bubble is the jump target.
   onQuotePress?: (messageId: string) => void;
   isHighlighted?: boolean;
+  // 2026-10-30 (boss: Telegram long-press menu): parent handles
+  // forward (picker + send) and message pin toggle; isPinned tells
+  // the menu to show Unpin instead of Pin.
+  onForward?: (msg: DmMessage) => void;
+  onTogglePin?: (msg: DmMessage) => void;
+  isPinned?: boolean;
 };
 
 /**
@@ -176,7 +157,7 @@ export async function saveRemoteMediaToGallery(
 }
 
 // Memoized: the DM thread FlatList renders one of these per message.
-function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack, onQuotePress, isHighlighted }: Props) {
+function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack, onQuotePress, isHighlighted, onForward, onTogglePin, isPinned }: Props) {
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const [showReactions, setShowReactions] = useState(false);
@@ -242,6 +223,38 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
     Animated.spring(pillPop, { toValue: 1, useNativeDriver: true, tension: 300, friction: 12 }).start();
   }, [reactionsKey]);
 
+  // 2026-10-30 (boss: Telegram long-press menu): spring open/close.
+  // The Modal uses animationType="none"; the card itself springs in
+  // (scale + fade) and the reaction pill pops with staggered emoji
+  // fades — no bare fade, no jank. closeMenu animates out, then hides.
+  const menuScale = useRef(new Animated.Value(0.92)).current;
+  const menuOpacity = useRef(new Animated.Value(0)).current;
+  const menuPillScale = useRef(new Animated.Value(0.7)).current;
+  const menuEmojiOpacities = useRef(REACTIONS.map(() => new Animated.Value(0))).current;
+  const menuClosingRef = useRef(false);
+  useEffect(() => {
+    if (!showReactions) return;
+    menuClosingRef.current = false;
+    menuScale.setValue(0.92);
+    menuOpacity.setValue(0);
+    menuPillScale.setValue(0.7);
+    menuEmojiOpacities.forEach((v) => v.setValue(0));
+    Animated.parallel([
+      Animated.spring(menuScale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 20 }),
+      Animated.timing(menuOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.spring(menuPillScale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 14 }),
+      Animated.stagger(25, menuEmojiOpacities.map((v) => Animated.timing(v, { toValue: 1, duration: 120, useNativeDriver: true }))),
+    ]).start();
+  }, [showReactions, menuScale, menuOpacity, menuPillScale, menuEmojiOpacities]);
+  const closeMenu = useCallback(() => {
+    if (menuClosingRef.current || !showReactions) return;
+    menuClosingRef.current = true;
+    Animated.parallel([
+      Animated.timing(menuScale, { toValue: 0.95, duration: 130, useNativeDriver: true }),
+      Animated.timing(menuOpacity, { toValue: 0, duration: 130, useNativeDriver: true }),
+    ]).start(() => setShowReactions(false));
+  }, [showReactions, menuScale, menuOpacity]);
+
   // Swipe reply: both sides now (incoming right, own left); never
   // deleted messages (nothing to quote).
   const swipeable = !message.deletedForEveryone;
@@ -277,7 +290,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   const canCopy = message.type === 'text' && !message.deletedForEveryone && !!message.content;
   const handleCopy = async () => {
     if (!canCopy) return;
-    setShowReactions(false);
+    closeMenu();
     try {
       await Clipboard.setStringAsync(message.content);
       Alert.alert(t('chat.msgCopied'));
@@ -287,64 +300,44 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   };
 
   const handleReaction = (emoji: string) => {
-    setShowReactions(false);
+    closeMenu();
     addReaction(chatId, message.id, myUid, emoji).catch(() => {
       Alert.alert(t('chat.error'), t('chat.reactionError'));
     });
   };
 
-  const handleOptions = () => {
-    const options: string[] = message.deletedForEveryone
-      ? [t('chat.cancel')]
-      : isMe
-        ? [t('chat.msgReply'), t('chat.msgDeleteForMe'), t('chat.msgDeleteForEveryone'), t('chat.cancel')]
-        : [t('chat.msgReply'), t('chat.msgSaveToGallery'), t('chat.msgDeleteForMe'), t('chat.cancel')];
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: options.length - 1,
-          destructiveButtonIndex: options.includes(t('chat.msgDeleteForEveryone'))
-            ? options.indexOf(t('chat.msgDeleteForEveryone'))
-            : undefined,
-        },
-        (idx) => handleOptionSelect(options[idx]),
-      );
-    } else {
-      // Android — Alert.alert with typed buttons
-      type BtnStyle = 'cancel' | 'destructive' | 'default';
-      const buttons: Array<{ text: string; style: BtnStyle; onPress: () => void }> = options
-        .filter((o) => o !== t('chat.cancel'))
-        .map((label) => ({
-          text: label,
-          style: (label === t('chat.msgDeleteForMe') || label === t('chat.msgDeleteForEveryone') ? 'destructive' : 'default') as BtnStyle,
-          onPress: () => handleOptionSelect(label),
-        }));
-      buttons.push({ text: t('chat.cancel'), style: 'cancel' as BtnStyle, onPress: () => {} });
-      Alert.alert(t('chat.messageOptions'), '', buttons);
-    }
+  // 2026-10-30 (boss: Telegram long-press menu): the dark card rows
+  // call these directly — the old two-step ActionSheet/Alert menu is
+  // gone. Row visibility mirrors the old rules (Reply non-deleted,
+  // Copy text-only, Save media-only, Delete-for-Everyone own-only)
+  // plus the new Forward (text/media/voice/sticker, non-deleted) and
+  // Pin/Unpin (any non-deleted message) rows. NO dead rows: a row
+  // renders only when its action applies.
+  const canForward = !message.deletedForEveryone
+    && ['text', 'image', 'video', 'voice', 'sticker'].includes(message.type);
+  const canPin = !message.deletedForEveryone;
+  const menuReply = () => { closeMenu(); onReply(message); };
+  const menuForward = () => { closeMenu(); onForward?.(message); };
+  const menuTogglePin = () => { closeMenu(); onTogglePin?.(message); };
+  const menuSave = async () => {
+    closeMenu();
+    if (message.type !== 'image' && message.type !== 'video') return;
+    await saveRemoteMediaToGallery(message.content, {
+      permissionRequired: t('chat.permissionRequired'),
+      galleryPermission: t('chat.galleryPermission'),
+      saved: t('chat.saved'),
+      msgSaveToGallery: t('chat.msgSaveToGallery'),
+      error: t('chat.error'),
+      saveToGalleryFailed: t('chat.saveToGalleryFailed'),
+    });
   };
-
-  const handleOptionSelect = async (action: string) => {
-    if (action === t('chat.msgReply')) { onReply(message); return; }
-    if (action === t('chat.msgDeleteForMe')) { deleteMessage(chatId, message.id, myUid, false).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); }); return; }
-    if (action === t('chat.msgDeleteForEveryone')) { deleteMessage(chatId, message.id, myUid, true).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); }); return; }
-    if (action === t('chat.msgSaveToGallery')) {
-      if (message.type !== 'image' && message.type !== 'video') return;
-      // NOTE 12 (2026-10-11): fixed — downloads remote URL to a local file
-      // first. Strings are resolved here rather than passing `t` itself, which
-      // trips a TypeScript 5.9 overload-resolution compiler crash.
-      await saveRemoteMediaToGallery(message.content, {
-        permissionRequired: t('chat.permissionRequired'),
-        galleryPermission: t('chat.galleryPermission'),
-        saved: t('chat.saved'),
-        msgSaveToGallery: t('chat.msgSaveToGallery'),
-        error: t('chat.error'),
-        saveToGalleryFailed: t('chat.saveToGalleryFailed'),
-      });
-      return;
-    }
+  const menuDeleteMe = () => {
+    closeMenu();
+    deleteMessage(chatId, message.id, myUid, false).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); });
+  };
+  const menuDeleteEveryone = () => {
+    closeMenu();
+    deleteMessage(chatId, message.id, myUid, true).catch(() => { Alert.alert(t('chat.error'), t('chat.deleteError')); });
   };
 
   const bubbleBg  = isMe ? C.myBubble : C.theirBubble;
@@ -442,7 +435,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   // is always clamped inside the screen — so it can never cover a
   // neighbouring message or run off the screen edge.
   const REACTION_CARD_W = Math.min(width - 32, 360);
-  const REACTION_CARD_H_EST = 212;
+  const REACTION_CARD_H_EST = 400;
   let reactionCardLeft = (width - REACTION_CARD_W) / 2;
   let reactionCardTop = Math.max(80, (height - REACTION_CARD_H_EST) / 2);
   if (anchor) {
@@ -479,6 +472,10 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
       )}
     </View>
   );
+
+  // 2026-10-30 (boss: Telegram long-press menu): shared dark-row styles.
+  const menuRowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 12, paddingVertical: 12, paddingHorizontal: 4 };
+  const menuLabelStyle = { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const };
 
   const bubbleBody = (
       <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg ? width * 0.78 : BUBBLE_MAX }}>
@@ -815,59 +812,92 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
           that on the inverted list, and its inset:-200 dismiss layer also
           swallowed taps on adjacent messages. Backdrop tap dismisses. */}
       {showReactions && (
-        <Modal transparent animationType="fade" onRequestClose={() => setShowReactions(false)}>
+        <Modal transparent animationType="none" onRequestClose={closeMenu}>
           <View style={{ flex: 1 }}>
             <Pressable
-              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' }}
-              onPress={() => setShowReactions(false)}
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' }}
+              onPress={closeMenu}
             />
-            <View style={{
+            <Animated.View style={{
               position: 'absolute', left: reactionCardLeft, top: reactionCardTop, width: REACTION_CARD_W,
-              backgroundColor: '#ffffff', borderRadius: 20, padding: 12,
-              borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
-              shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 16,
+              backgroundColor: '#1C1C1E', borderRadius: 16, padding: 12,
+              shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16,
               shadowOffset: { width: 0, height: 6 }, elevation: 12,
+              opacity: menuOpacity, transform: [{ scale: menuScale }],
             }}>
               <View style={{
-                backgroundColor: isMe ? '#bbdefb' : '#F2F2F7',
+                backgroundColor: '#2C2C2E',
                 borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10,
               }}>
                 {message.deletedForEveryone ? (
-                  <Text style={{ color: C.muted, fontSize: 13, fontStyle: 'italic' }}>
+                  <Text style={{ color: '#AEAEB2', fontSize: 13, fontStyle: 'italic' }}>
                     {isMe ? '🗑 You deleted this message' : '🗑 This message was deleted'}
                   </Text>
                 ) : message.type === 'text' ? (
-                  <Text style={{ color: '#000000', fontSize: 14, lineHeight: 19 }} numberOfLines={3}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 19 }} numberOfLines={3}>
                     {message.content}
                   </Text>
                 ) : (
-                  <Text style={{ color: C.muted, fontSize: 13 }}>{reactionPreviewLabel}</Text>
+                  <Text style={{ color: '#AEAEB2', fontSize: 13 }}>{reactionPreviewLabel}</Text>
                 )}
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 2 }}>
-                {REACTIONS.map((emoji) => (
-                  <Pressable key={emoji} onPress={() => handleReaction(emoji)} hitSlop={4} style={{ padding: 6 }}>
-                    <Text style={{ fontSize: 28 }}>{emoji}</Text>
-                  </Pressable>
+              <Animated.View style={{
+                backgroundColor: '#26262B', borderRadius: 24,
+                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                paddingHorizontal: 10, paddingVertical: 6, marginBottom: 4,
+                transform: [{ scale: menuPillScale }],
+              }}>
+                {REACTIONS.map((emoji, i) => (
+                  <Animated.View key={emoji} style={{ opacity: menuEmojiOpacities[i] }}>
+                    <Pressable onPress={() => handleReaction(emoji)} hitSlop={4} style={{ padding: 4 }}>
+                      <Text style={{ fontSize: 28 }}>{emoji}</Text>
+                    </Pressable>
+                  </Animated.View>
                 ))}
-              </View>
-              <View style={{ height: 1, backgroundColor: '#E5E5EA', marginVertical: 10 }} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                {canCopy && (
-                  <Pressable onPress={handleCopy} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}>
-                    <Feather name="copy" size={18} color="#8E8E93" />
-                    <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.msgCopy')}</Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  onPress={() => { setShowReactions(false); handleOptions(); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
-                >
-                  <Feather name="more-horizontal" size={20} color="#8E8E93" />
-                  <Text style={{ color: '#8E8E93', fontSize: 13, fontWeight: '700' }}>{t('chat.messageOptions')}</Text>
+              </Animated.View>
+              {!message.deletedForEveryone && (
+                <Pressable onPress={menuReply} style={menuRowStyle}>
+                  <Feather name="corner-up-left" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgReply')}</Text>
                 </Pressable>
-              </View>
-            </View>
+              )}
+              {canCopy && (
+                <Pressable onPress={handleCopy} style={menuRowStyle}>
+                  <Feather name="copy" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgCopy')}</Text>
+                </Pressable>
+              )}
+              {canForward && (
+                <Pressable onPress={menuForward} style={menuRowStyle}>
+                  <Feather name="share" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgForward')}</Text>
+                </Pressable>
+              )}
+              {canPin && (
+                <Pressable onPress={menuTogglePin} style={menuRowStyle}>
+                  <Feather name="bookmark" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{isPinned ? t('chat.msgUnpin') : t('chat.msgPin')}</Text>
+                </Pressable>
+              )}
+              {(message.type === 'image' || message.type === 'video') && !message.deletedForEveryone && (
+                <Pressable onPress={menuSave} style={menuRowStyle}>
+                  <Feather name="download" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgSaveToGallery')}</Text>
+                </Pressable>
+              )}
+              {!message.deletedForEveryone && (
+                <Pressable onPress={menuDeleteMe} style={menuRowStyle}>
+                  <Feather name="trash-2" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgDeleteForMe')}</Text>
+                </Pressable>
+              )}
+              {isMe && !message.deletedForEveryone && (
+                <Pressable onPress={menuDeleteEveryone} style={menuRowStyle}>
+                  <Feather name="trash-2" size={20} color="#FFFFFF" />
+                  <Text style={menuLabelStyle}>{t('chat.msgDeleteForEveryone')}</Text>
+                </Pressable>
+              )}
+            </Animated.View>
           </View>
         </Modal>
       )}

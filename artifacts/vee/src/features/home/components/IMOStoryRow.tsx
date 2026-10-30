@@ -25,7 +25,8 @@ export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOSt
       style={{
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        // 2026-10-30 (boss: top lines light grey, faint): was '#E0E0E0'.
+        borderBottomColor: '#EAEAEA',
         paddingVertical: 12,
       }}
     >

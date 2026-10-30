@@ -98,7 +98,8 @@ export default function IMOTopBar({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        // 2026-10-30 (boss: top lines light grey, faint): was '#E0E0E0'.
+        borderBottomColor: '#EAEAEA',
       }}
     >
       {/* Profile DP */}

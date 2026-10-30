@@ -847,6 +847,36 @@ export async function unpinChat(uid: string, chatId: string): Promise<void> {
   await update(ref(database, `userChats/${uid}/${chatId}`), { isPinned: false });
 }
 
+// ─── Pinned message (2026-10-30, boss: Telegram long-press menu) ─────────
+// Pin state lives per-user at userChats/{uid}/{chatId}/pinnedMessageId.
+// The chats/{chatId} node has NO client write rule outside messages/typing
+// (see database.rules.json), so a shared chats-level pin is not writable
+// without a rules change (out of scope). setPinnedMessage dual-writes the
+// peer's entry too — the same proven pattern as sendMessage metadata — so
+// both sides see the bar; each screen reads only its own entry. The peer
+// write is best-effort: it must never fail the pin itself.
+export async function setPinnedMessage(
+  chatId: string,
+  myUid: string,
+  peerUid: string,
+  messageId: string | null,
+): Promise<void> {
+  await update(ref(database, `userChats/${myUid}/${chatId}`), { pinnedMessageId: messageId });
+  if (peerUid) {
+    update(ref(database, `userChats/${peerUid}/${chatId}`), { pinnedMessageId: messageId }).catch(() => {});
+  }
+}
+
+export function subscribePinnedMessage(
+  chatId: string,
+  myUid: string,
+  callback: (messageId: string | null) => void,
+): () => void {
+  return onValue(ref(database, `userChats/${myUid}/${chatId}/pinnedMessageId`), (snap) => {
+    callback(snap.exists() ? (snap.val() as string | null) : null);
+  });
+}
+
 /** Mute a chat for a user (2026-10-11 Issue #6) */
 export async function muteChat(uid: string, chatId: string): Promise<void> {
   await update(ref(database, `userChats/${uid}/${chatId}`), { isMuted: true });
