@@ -38,6 +38,9 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   const isNoble = !!theme && !!rankName;
   // 2026-10-15 (Sumon): Count+ (index >= 3) gets PREMIUM animated entry effect
   const isPremiumEntry = nobleRankIndex != null && nobleRankIndex >= 3;
+  // 2026-10-30 (boss): Baron (index 1) gets the same premium banner treatment
+  // (code-only, no art, no grant); the art branch still needs Count+ + designUrl.
+  const isGrandEntry = isPremiumEntry || nobleRankIndex === 1;
   const rankKey = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.key : null;
   const catalog = rankKey ? rewardsForRankKey(rankKey) : null;
   const frameUrl = catalog?.frame?.designUrl;
@@ -193,7 +196,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
 
   // 2026-10-15 (Sumon): PREMIUM entry for Count+ — wide banner from right,
   // DP with crown frame, name only, shimmering rank color + sparkles.
-  if (isPremiumEntry && theme) {
+  if (isGrandEntry && theme) {
     const rankColor = NOBLE_RANKS[nobleRankIndex!]?.color || '#7E57C2';
     return (
       <Animated.View
