@@ -1177,9 +1177,17 @@ function RootLayoutNav() {
           options={{ animation: 'slide_from_right' }}
         />
         {/* ── Profile sub-screens ── */}
+        {/* 2026-10-30 (boss: Profile slide must feel exactly like the
+            pager slide): the profile route enters from the LEFT and pops
+            to the LEFT — the same flight as a pager drag toward Profile
+            (new page from the left, old page out right; return mirrors
+            it). The old slide_from_right entered from the opposite side,
+            which is why the transition never felt like the pager slide.
+            DP tap + room -> profile share this entry, so they slide
+            from the left too; destinations and back behavior unchanged. */}
         <Stack.Screen
           name="profile/index"
-          options={{ animation: 'slide_from_right' }}
+          options={{ animation: 'slide_from_left' }}
         />
         <Stack.Screen
           name="profile/edit"

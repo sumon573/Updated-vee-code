@@ -819,6 +819,7 @@ export default function ContactsScreen() {
               </View>
             ) : (
               <FlatList
+                style={{ flex: 1 }}
                 data={visibleIncoming}
                 keyExtractor={(item) => item.fromUid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
@@ -843,6 +844,7 @@ export default function ContactsScreen() {
               </View>
             ) : (
               <FlatList
+                style={{ flex: 1 }}
                 data={visibleSent}
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
@@ -884,6 +886,7 @@ export default function ContactsScreen() {
             </View>
           ) : (
             <FlatList
+              style={{ flex: 1 }}
               data={visibleContacts}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingBottom: 120 }}
