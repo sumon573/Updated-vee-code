@@ -481,8 +481,17 @@ export function recordUserRoomVisit(
 
 /**
  * 2026-10-16 (Sumon): REAL LEAVE — completely remove user from room.
- * Removes from roomMembers, userRooms, audience, and seats.
+ * Removes from roomMembers, userRooms, audience, and the admin registry.
  * After this, the room vanishes from user's lists everywhere.
+ * 2026-10-30 (boss: unjoin must durably strip admin): previously the
+ * rooms/{id}/admins entry was NEVER removed here, so the registry — the
+ * source of truth for myRole — kept the user admin on every re-entry
+ * (Bug B). Revoking it here is allowed by the rules: a room admin may
+ * delete their own entry, and deleting a non-existent entry is a no-op.
+ * NOTE: seats are NOT removed here (despite the old docstring) — the
+ * caller frees the seat (handleLeave today; unjoinToAudience in the
+ * audience flow). Never use removeSeat's demoteUid path here: it rewrites
+ * roomMembers/{uid}/role back to 'member', resurrecting the record.
  */
 export async function leaveRoomCompletely(
   roomId: string,
@@ -493,7 +502,64 @@ export async function leaveRoomCompletely(
     remove(ref(database, `roomMembers/${roomId}/${uid}`)).catch(() => {}),
     remove(ref(database, `userRooms/${uid}/${roomId}`)).catch(() => {}),
     remove(ref(database, `rooms/${roomId}/audience/${uid}`)).catch(() => {}),
+    revokeRoomAdmin(roomId, uid).catch(() => {}),
   ]);
+}
+
+/**
+ * 2026-10-30 (boss: unjoin = demote to AUDIENCE, never eject): move a user
+ * from member (optionally seated, optionally admin) to audience IN THE SAME
+ * ROOM. This is the RTDB side of the unjoin-to-audience flow; the screen
+ * handler must call this INSTEAD of leaveRoomCompletely + handleLeave
+ * (calling both would delete the audience record this function just added).
+ * ORDER MATTERS:
+ *  1. Free the seat with PLAIN removeSeat — never demoteUid: the demote path
+ *     rewrites roomMembers/{uid}/role back to 'member', which would resurrect
+ *     the membership record deleted in step 3.
+ *  2. Revoke the admin registry entry FIRST — joinRoomAsAudience stamps
+ *     role:'admin' whenever the registry entry still exists, so revoking first
+ *     is what keeps the new audience record role-less.
+ *  3. Remove membership (roomMembers + userRooms) and the old audience record.
+ *  4. Write a fresh ROLE-LESS audience record directly (NOT via
+ *     joinRoomAsAudience: its registry read can still see the entry when the
+ *     revoke has not propagated, or when SDK reads come from the offline
+ *     cache in pass2 mode — either would re-stamp admin on the record and
+ *     myRole's audience-label path would resurrect admin powers). The
+ *     audience write is the one step that propagates errors: if it fails,
+ *     the caller must know the user is NOT in the room as audience.
+ * Audience ONLY — this never creates membership (same rule as
+ * joinRoomAsAudience, 2026-10-27). Pass2 caveat (Gap 5, unchanged): SDK
+ * writes queue while pass2-offline and apply on mode-exit goOnline; the
+ * caller must ALSO fire the seat_leave tier op in pass2 mode for an
+ * immediate seat release.
+ */
+export async function unjoinToAudience(
+  roomId: string,
+  uid: string,
+  member: RoomAudienceMember,
+): Promise<void> {
+  const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`)).catch(() => null);
+  const seatsVal = seatsSnap?.val();
+  if (seatsVal && typeof seatsVal === 'object') {
+    for (const [idx, seat] of Object.entries(seatsVal as Record<string, unknown>)) {
+      const rec = seat as { userId?: unknown } | null;
+      if (rec && rec.userId === uid) {
+        await removeSeat(roomId, Number(idx)).catch(() => {});
+        break;
+      }
+    }
+  }
+  await revokeRoomAdmin(roomId, uid).catch(() => {});
+  await Promise.all([
+    remove(ref(database, `roomMembers/${roomId}/${uid}`)).catch(() => {}),
+    remove(ref(database, `userRooms/${uid}/${roomId}`)).catch(() => {}),
+    remove(ref(database, `rooms/${roomId}/audience/${uid}`)).catch(() => {}),
+  ]);
+  const rest = { ...member };
+  delete rest.role;
+  delete rest.roleLevel;
+  await set(ref(database, `rooms/${roomId}/audience/${uid}`), { ...rest, ts: serverTimestamp() });
+  _updateCounts(roomId).catch(() => {});
 }
 
 /**
@@ -856,8 +922,9 @@ export async function joinRoomAsAudience(
   // Explicit leave still removes the entry immediately (leaveAudience).
   // 2026-10-27 (boss): audience entry must NOT create membership.
   // Entry = audience ONLY. The member record (roomMembers + userRooms)
-  // is written ONLY when the user taps the green + button (handleJoinRoom),
-  // takes a seat, or owns the room. Previously this line wrote the record
+  // is written ONLY when the user taps the Join button/banner or the
+  // audience + icon (handleJoinRoom), or owns the room. Taking a seat
+  // NEVER creates it (boss 2026-10-30). Previously this line wrote the
   // on every entry, so every visitor auto-became a member forever.
   // Count update is best-effort
   _updateCounts(roomId).catch(() => {});
@@ -1078,10 +1145,12 @@ async function takeSeatInner(
   // proven 2026-10-22 18:42/18:45). A truly dead seat (app killed) is
   // swept by VeeGuard once seatTs is >5 min stale AND the user is absent
   // from LiveKit participants — a live participant is never swept.
-  // Belt-and-suspenders: also record in "My Room" index in case a seat was
-  // taken directly without going through joinRoomAsAudience first.
-  // background: safe to swallow — analytics index write
-  recordUserRoomVisit(member.userId, roomId, 'member').catch(() => {});
+  // 2026-10-30 (boss: sitting must NEVER auto-join): taking a seat creates
+  // NO membership. Joining is an EXPLICIT act only (handleJoinRoom via the
+  // Join button/banner or the audience + icon). The old belt-and-suspenders
+  // recordUserRoomVisit call here wrote roomMembers + userRooms on every
+  // seat claim, so every first-entry sit silently made the sitter a member
+  // forever. A seated non-member stays audience until they explicitly join.
   _updateCounts(roomId).catch(() => {}); // best-effort
   return { success: true };
 }

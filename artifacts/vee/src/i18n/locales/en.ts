@@ -1091,7 +1091,7 @@ removedMsg: 'You have been removed from this room by the host.',
     plusMessage: '💬 New Message',
   },
   leaderboard: {
-    title: '🏆 Leaderboard',
+    title: 'Leaderboard',
     topRooms: 'Top Rooms',
     topEarners: 'Top Earners',
     members: 'members',

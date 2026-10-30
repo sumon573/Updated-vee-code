@@ -11,6 +11,7 @@ import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native';
@@ -39,8 +40,14 @@ import {
   getVoiceBreadcrumb,
   clearVoiceBreadcrumb } from '../utils/voiceCrashBreadcrumb';
 import { VoiceRoom } from '../types/room';
-import { useLiveAudienceCounts } from '../hooks/useLiveAudienceCounts';
 import { useAuth } from '@/src/context/AuthContext';
+import {
+  fetchPass2Flags,
+  subscribePass2HomeLists,
+  type Pass2Flags } from '../services/pass2RestService';
+import {
+  enterPass2Mode,
+  exitPass2Mode } from '../services/pass2SessionMode';
 import * as Crypto from 'expo-crypto';
 
 /** Fix 6: Haversine distance in km between two lat/lng points */
@@ -168,7 +175,7 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
         </View>
         <Text style={{
           color: C.text, fontSize: 13, fontWeight: '800',
-          marginTop: 6, textAlign: 'center' }}>
+          marginTop: 6 }}>
           {t('voiceRoom.home.createRoom')}
         </Text>
       </View>
@@ -261,8 +268,27 @@ export default function VoiceRoomHome({
     merged.sort((a, b) => b.createdAt - a.createdAt);
     return merged;
   }, []);
+  // Fix #23 (smoothness): the directory poll re-fetched + re-set the whole
+  // list every 30s even when NOTHING changed — every poll re-rendered the
+  // entire page mid-scroll. Skip the set (and the cache write) when the
+  // visible content is identical; real changes still flow immediately.
+  // Sentinel '__none__' (not '') so a legitimately empty list still sets.
+  const allRoomsSigRef = useRef<string>('__none__');
+  const roomsSignature = useCallback((rooms: RoomInfo[]): string => {
+    return rooms.map((r) => [
+      r.id, r.active, r.liveCount, r.memberCount, r.listenerCount,
+      r.name, r.topic, r.coverImageUrl, r.isLive, r.themeColor,
+      r.createdAt, r.isPublic,
+      JSON.stringify(r.memberPreviews ?? []),
+    ].join('|')).join(';');
+  }, []);
   const normalizeDirectoryRoom = useCallback((raw: any): RoomInfo | null => {
     if (!raw || typeof raw.id !== 'string') return null;
+    // Fix #29: the directory serves closed rooms too (active:false +
+    // closedAt, with a stale liveCount of 1 from one ghost listener).
+    // They must never enter the list — the Recommended filter alone
+    // cannot catch them because it keys on liveCount.
+    if (raw.active === false) return null;
     return {
       ...(raw as RoomInfo),
       id: raw.id,
@@ -274,24 +300,57 @@ export default function VoiceRoomHome({
       createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0,
     } as RoomInfo;
   }, []);
-  // Live-count subscriptions skip directory rooms: their info counts
-  // (memberCount + listenerCount = liveCount by sync-counts construction)
-  // are the displayed value via liveAudienceOf's fallback below.
-  const countRoomIds = useMemo(() => {
-    const dirIds = directoryIdsRef.current;
-    const rooms = directoryOk ? allRooms.filter((r) => !dirIds.has(r.id)) : allRooms;
-    return [...rooms, ...myRooms].map((r) => r.id);
-  }, [allRooms, myRooms, directoryOk]);
-
-  // REAL-TIME live audience (2026-10-11 Issue #1): cached info counts can go
-  // stale, so compute the true live count from actual seats+audience nodes.
-  // Entering the room counts — seat NOT required.
-  const liveCounts = useLiveAudienceCounts(countRoomIds);
+  // Pass2 (DESIGN.md §3.6): useLiveAudienceCounts is DELETED — it held 2
+  // listeners per directory card. The directory liveCount IS the count
+  // (memberCount + listenerCount by sync-counts construction); rooms
+  // without a liveCount fall back to that sum. No per-card subscription
+  // remains anywhere on this screen.
   const liveAudienceOf = useCallback((r: RoomInfo): number => {
-    const real = liveCounts[r.id];
-    if (real !== undefined) return real;
+    if (typeof r.liveCount === 'number') return r.liveCount;
     return (r.memberCount ?? 0) + (r.listenerCount ?? 0);
-  }, [liveCounts]);
+  }, []);
+
+  // Pass2 home mode (flag-gated, inert when off): private + mine come
+  // from the tier (30s REST) instead of Firebase subscribes, and the
+  // subscribeActiveRooms fallback never runs — cache + directory retry
+  // cover directory outages. Fallback flips the flag off for the stay
+  // (§3.10), which resubscribes today's Firebase path.
+  const [pass2HomeFlags, setPass2HomeFlags] = useState<Pass2Flags | null>(null);
+  const pass2HomeActive =
+    pass2HomeFlags?.enabled === true && pass2HomeFlags?.home === true;
+  useEffect(() => {
+    let cancelled = false;
+    fetchPass2Flags().then((f) => { if (!cancelled) setPass2HomeFlags(f); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!pass2HomeActive || !user?.uid) return;
+    // NOTE: goOffline() is session-global, so while home pass2 is active
+    // an UNCONVERTED surface opened from home (DM, stories, profile
+    // sheets) would queue its SDK calls instead of serving them. Drills
+    // must not open unconverted surfaces mid-mode; full home 0-slot
+    // waits on DM/profile conversion (same staged limitation as the
+    // room modals — see the build report).
+    enterPass2Mode('home', { offline: true });
+    const unsub = subscribePass2HomeLists((lists) => {
+      myLiveRef.current = true;
+      setMyRooms(lists.mineRooms);
+      setMyLoading(false);
+      privateRoomsRef.current = lists.privateRooms;
+      const merged = mergeDirectoryRooms(directoryRoomsRef.current, lists.privateRooms);
+      setAllRooms(merged);
+      cacheRooms(user.uid, lists.mineRooms, merged);
+      finishRefresh();
+    }, () => {
+      // Fallback: sticky for the stay — Firebase effects resubscribe.
+      setPass2HomeFlags((f) => (f ? { ...f, home: false } : f));
+    });
+    return () => {
+      unsub();
+      exitPass2Mode('home');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pass2HomeActive, user?.uid, refreshTick]);
 
   // Perf (2026-10-22 audit): stable per-room VoiceRoom objects + press
   // handlers, so memoized RoomCard/RoomListItem rows only re-render when
@@ -473,14 +532,19 @@ export default function VoiceRoomHome({
         const parsed = JSON.parse(raw) as CachedVoiceRooms;
         if (parsed?.uid !== user.uid || !Array.isArray(parsed.myRooms) || !Array.isArray(parsed.allRooms)) return;
         memoryCachedVoiceRooms = parsed;
-        if (!myLiveRef.current) { setMyRooms(parsed.myRooms); setMyLoading(false); }
-        if (!recLiveRef.current) { setAllRooms(parsed.allRooms); setRecLoading(false); }
+        // Fix #29: never seed a closed room from disk, even briefly —
+        // the live feeds filter them, so the seed must too.
+        const seededMy = parsed.myRooms.filter((r) => r.active !== false);
+        const seededAll = parsed.allRooms.filter((r) => r.active !== false);
+        if (!myLiveRef.current) { setMyRooms(seededMy); setMyLoading(false); }
+        if (!recLiveRef.current) { setAllRooms(seededAll); setRecLoading(false); }
       } catch { /* ignore — live feeds still load */ }
     })();
     return () => { cancelled = true; };
   }, [user?.uid]);
   useEffect(() => {
     if (!user?.uid) { setMyLoading(false); return; }
+    if (pass2HomeActive) return; // pass2 REST lists own this feed
     const unsub = subscribeMyRoomsCombined(user.uid, (rooms) => {
       myLiveRef.current = true;
       setMyRooms(rooms);
@@ -489,7 +553,7 @@ export default function VoiceRoomHome({
       finishRefresh();
     });
     return unsub;
-  }, [user?.uid, refreshTick]);
+  }, [user?.uid, refreshTick, pass2HomeActive]);
 
   // Directory feed: public rooms from the edge. Polls every 30s; the
   // tier serves its 60s cache, so origin load stays ~1 refresh/min no
@@ -513,6 +577,13 @@ export default function VoiceRoomHome({
         directoryEverOkRef.current = true;
         const merged = mergeDirectoryRooms(mapped, privateRoomsRef.current);
         recLiveRef.current = true;
+        // Fix #23: identical poll result → no set, no re-render, no cache
+        // churn. The refresh spinner still stops via finishRefresh().
+        if (roomsSignature(merged) === allRoomsSigRef.current) {
+          finishRefresh();
+          return;
+        }
+        allRoomsSigRef.current = roomsSignature(merged);
         setAllRooms(merged);
         setRecLoading(false);
         setDirectoryOk(true);
@@ -531,6 +602,7 @@ export default function VoiceRoomHome({
   // Private rooms in directory mode (never on the public CDN).
   useEffect(() => {
     if (!directoryOk) return;
+    if (pass2HomeActive) return; // pass2 REST lists own this feed
     const unsub = subscribePrivateActiveRooms((rooms) => {
       privateRoomsRef.current = rooms;
       const merged = mergeDirectoryRooms(directoryRoomsRef.current, rooms);
@@ -540,13 +612,14 @@ export default function VoiceRoomHome({
       // Feed error: keep the last list, never wipe.
     });
     return unsub;
-  }, [directoryOk]);
+  }, [directoryOk, pass2HomeActive]);
 
   // Subscribe to all active public rooms (fallback: runs only while the
   // directory has neither succeeded nor failed yet — i.e. never once the
   // directory is up, and always when it is down).
   useEffect(() => {
     if (directoryOk || !directoryFailed) return;
+    if (pass2HomeActive) return; // pass2 mode: cache + directory retry, never Firebase fallback
     const unsub = subscribeActiveRooms((rooms) => {
       recLiveRef.current = true;
       setAllRooms(rooms);
@@ -560,7 +633,7 @@ export default function VoiceRoomHome({
       finishRefresh();
     });
     return unsub;
-  }, [refreshTick, directoryOk, directoryFailed]);
+  }, [refreshTick, directoryOk, directoryFailed, pass2HomeActive]);
 
   // Fix 6: Request location permission when "Nearby" tab is selected
   useEffect(() => {
@@ -596,7 +669,11 @@ export default function VoiceRoomHome({
     // rooms with NO live audience appear in NO category — only truly live
     // rooms are listed.
     const liveAudience = liveAudienceOf;
-    const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => liveAudience(r) > 0);
+    // Fix #29: liveCount alone is NOT enough — closed rooms carry a stale
+    // liveCount of 1 (one ghost listener in the directory snapshot).
+    // active:false rooms are excluded from every tab. (Missing flag is
+    // NOT treated as closed — only explicit active:false is dropped.)
+    const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => r.active !== false && liveAudience(r) > 0);
     // TRENDING RANK (2026-10-11): most live audience first, then most diamonds
     // sent. Global — every user worldwide sees the same Firebase-driven order.
     const byTrendingRank = (rooms: RoomInfo[]) =>
@@ -642,8 +719,13 @@ export default function VoiceRoomHome({
 
   return (
     <>
+      {/* Fix #23: clip off-screen native views while scrolling — the
+          Recommended list is long and non-virtualized, so mounting every
+          card at once was the main scroll cost. Images are memory-disk
+          cached, so clipped cards repaint instantly on scroll-back. */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -710,7 +792,7 @@ export default function VoiceRoomHome({
                 marginBottom: 4,
                 borderWidth: 1, borderColor: 'rgba(245,158,11,0.22)',
                 gap: 12 }}>
-                <Text style={{ fontSize: 22 }}>🏆</Text>
+                <TrophyIcon size={28} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '900' }}>
                     {t('leaderboard.title')}
@@ -806,6 +888,7 @@ export default function VoiceRoomHome({
                         liveCount={liveAudienceOf(r)}
                         distanceKm={distanceKm}
                         onPress={pressFor(r.id)}
+                        hideLiveBadge
                       />
                     );
                   })

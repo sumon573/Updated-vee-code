@@ -9,8 +9,10 @@ import { Animated, Easing, Text, View } from 'react-native';
  * stay STATIC, rendered exactly as before (numberOfLines=1 + tail ellipsis).
  *
  * Overflow is MEASURED, never guessed: the container width comes from
- * onLayout and the full single-line text width from onTextLayout of the
- * first copy. The animated row holds the text TWICE with a gap, so the loop
+ * onLayout and the full single-line text width from onTextLayout of an
+ * always-mounted hidden copy (the visible copies alone cannot measure:
+ * the overflow branch copy exists only after overflow is known).
+ * The animated row holds the text TWICE with a gap, so the loop
  * reset (translateX back to 0) lands on an identical frame — seamless.
  * Everything stays inside this View (overflow hidden, flex:1, minWidth:0),
  * so the scroll can never push the trio buttons or overlap share/X/dots,
@@ -71,6 +73,21 @@ export function MarqueeRoomName({ text, color, fontWeight }: Props) {
       style={{ flex: 1, minWidth: 0, overflow: 'hidden', justifyContent: 'center' }}
       onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
     >
+      {/* 2026-10-30 (boss: long room names must marquee): hidden measurer.
+          The overflow branch onTextLayout could never fire while overflow
+          was false (catch-22: the measuring Text only existed in the
+          overflow branch), so textWidth stuck at 0 and every long name
+          rendered static with tail dots. This always-mounted,
+          absolutely-positioned (unbounded width, same font) copy measures
+          the full single-line width without affecting layout. */}
+      <Text
+        aria-hidden
+        pointerEvents="none"
+        style={{ ...textStyle, position: 'absolute', top: 0, left: 0, opacity: 0 }}
+        onTextLayout={(e) => setTextWidth(e.nativeEvent.lines[0]?.width ?? 0)}
+      >
+        {text}
+      </Text>
       {!overflow ? (
         <Text numberOfLines={1} ellipsizeMode="tail" style={{ color, fontSize: FONT_SIZE, fontWeight, flex: 1 }}>
           {text}

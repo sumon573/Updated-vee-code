@@ -13,6 +13,7 @@ import { database, auth } from '@/src/config/firebase';
 import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, clearCurrentRoom } from '@/src/store/minimizedRoom';
 import { getRoomChatSession, setRoomChatSession, clearRoomChatSession } from '@/src/store/roomChatSession';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
+import { getRoomEntryCache, saveRoomEntryCache } from '@/src/store/roomEntryCache';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
 import { useAuth } from '@/src/context/AuthContext';
@@ -111,11 +112,28 @@ import {
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents,
-  leaveRoomCompletely, removeMemberFromRoom, subscribeRoomMembers } from '../services/firebaseRoomService';
+  leaveRoomCompletely, unjoinToAudience, removeMemberFromRoom, subscribeRoomMembers } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
 import { fetchWatcherFlag, subscribeWatcherPoll, type WatcherPollApi, type WatcherFlag } from '../services/watcherPollService';
+import { subscribePass2RoomPoll, type Pass2PollApi } from '../services/pass2PollService';
+import {
+  fetchPass2Flags,
+  subscribePass2MyProfile,
+  subscribePass2SeatInvites,
+  subscribePass2Pairs,
+  fetchPass2WalletMe,
+  sendPass2RoomChat,
+  sendPass2RoomAction,
+  takePass2Seat,
+  sendPass2SeatMute,
+  writePass2SeatMuteReliable,
+  type Pass2Flags } from '../services/pass2RestService';
+import {
+  enterPass2Mode,
+  exitPass2Mode,
+  setPass2Seated } from '../services/pass2SessionMode';
 import { subscribeEdgeRoomChat } from '../services/edgeRoomChatService';
 
 
@@ -199,10 +217,76 @@ export default function VoiceRoomScreen() {
   const myUidRef = useRef(myUid);
   useEffect(() => { myUidRef.current = myUid; }, [myUid]);
 
+  // ── Pass2 (another-pass Phase 1, staging flags) ──────────────────────────
+  // pass2PollActive is the room-screen pass2 switch: flags (staging tier
+  // GET /pass2/flags, fail-closed false) + a real room + a signed-in user.
+  // It is INDEPENDENT of watcherPollActive: the watcher path covers
+  // watch/chat for public audience, while pass2 covers the residual
+  // (reactions/entry/gifts via /events, music/PK/games via /live,
+  // announcement/blocks/decor/grabTop via /watch, intimacy/handshake +
+  // seat invites + profile/wallet via REST, chat sends via REST).
+  // Gap 5 adds: seat-action writes via REST + base payload + chat
+  // receives via the pass2 poll, so seated sessions goOffline too —
+  // EXCEPT seated owners/admins, whose host-mute has no tier op (see
+  // the choreography gate below). With flags off (production today)
+  // every guard below is a no-op and the screen runs today's Firebase
+  // path byte-identically.
+  const [pass2Flags, setPass2Flags] = useState<Pass2Flags | null>(null);
+  const pass2PollActive =
+    pass2Flags?.enabled === true && pass2Flags?.room === true &&
+    !!roomId && myUid !== 'anonymous';
+  const pass2PollActiveRef = useRef(pass2PollActive);
+  useEffect(() => { pass2PollActiveRef.current = pass2PollActive; }, [pass2PollActive]);
+  const pass2ApiRef = useRef<Pass2PollApi | null>(null);
+  // Gap 5: mirrors of the derived showJoinBanner / isOwnerOrAdmin, for
+  // the pass2 onMemberCount callback (which must apply the member-count
+  // effect's show condition with fresh values — the effect's own values
+  // are derived later in the file, so refs bridge the ordering).
+  const showJoinBannerRef = useRef(false);
+  const isOwnerOrAdminRef = useRef(false);
+  // Decor / GrabTop values delivered by /watch — stored, not yet consumed:
+  // useStoreRoomDecor and GrabTopPill still read Firebase (deferred swap,
+  // see build report). The service field is plumbed so the swap is a
+  // consumer change, not a service change.
+  const pass2DecorRef = useRef<{ storeBackground?: string | null; activeMicDecor?: string | null }>({});
+  const pass2GrabTopRef = useRef<unknown>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPass2Flags().then((f) => { if (!cancelled) setPass2Flags(f); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [roomId]);
+  // Chat sends route through REST in poll mode (SDK sends would reopen
+  // the socket). Reads the ref so callbacks defined once stay current.
+  const sendChatInMode = (
+    rId: string,
+    payload: Omit<RoomChatMsg, 'id' | 'isMe'>,
+    id?: string,
+  ): Promise<void> => pass2PollActiveRef.current
+    ? sendPass2RoomChat(rId, payload, id)
+    : sendRoomChatMsg(rId, payload, id);
+  const sendGiftEventInMode = (rId: string, event: Record<string, unknown>): Promise<void> =>
+    pass2PollActiveRef.current
+      ? sendPass2RoomAction(rId, 'giftEvent', { event }).then(() => {})
+      : (sendRoomGiftEvent as (roomId: string, event: any) => Promise<void>)(rId, event);
+  const sendReactionInMode = (rId: string, reaction: { emoji: string; byUid: string; byName: string }): Promise<void> =>
+    pass2PollActiveRef.current
+      // Gap 5 fix: the tier serves reaction_send {emoji|type}, not the
+      // Phase 1 'reaction' op (which 400s as unknown op).
+      ? sendPass2RoomAction(rId, 'reaction_send', { emoji: reaction.emoji }).then(() => {})
+      : sendRoomEmojiReaction(rId, reaction);
+  // Gap 5: seat self-mute writes route through REST in pass2 mode
+  // (seat_mute/seat_unmute). The pending-retry mechanism is LOCAL, so
+  // it works unchanged on either transport.
+  const setSeatMuteInMode = (rId: string, seatIdx: number, value: boolean): Promise<void> =>
+    pass2PollActiveRef.current
+      ? sendPass2SeatMute(rId, seatIdx, value)
+      : setSeatMute(rId, seatIdx, value);
+
   const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string; activeFrame?: string } | null>(null);
   const [myVerified, setMyVerified] = useState(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
+    if (pass2PollActive) return; // pass2 REST profile owns this (effect below)
     const unsub = subscribeUser(myUid, (p) => {
       if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: (p as any).activeFrame || undefined });
     });
@@ -210,7 +294,7 @@ export default function VoiceRoomScreen() {
       hasOfficialBadge(myUid).then(setMyVerified).catch(() => {});
     }).catch(() => {});
     return unsub;
-  }, []);
+  }, [pass2PollActive]);
 
   useEffect(() => {
     const frame = (myProfile as any)?.activeFrame;
@@ -457,23 +541,26 @@ export default function VoiceRoomScreen() {
   
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
+    if (pass2PollActive) return; // wallet listener DROPPED in pass2 (Postgres is truth)
     return subscribeWalletBalance(myUid, setWalletBalance);
-  }, [myUid]);
+  }, [myUid, pass2PollActive]);
 
   
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
+    if (pass2PollActive) return; // weeklyEarned comes from /wallet/me in pass2
     return onValue(
       ref(database, `wallets/${myUid}/weeklyEarned`),
       (snap) => { setWeeklyEarned(snap.exists() ? (snap.val() as number) : 0); },
       () => { setWeeklyEarned(0); },
     );
-  }, [myUid]);
+  }, [myUid, pass2PollActive]);
 
   
   const invitesPrunedRef = useRef(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous' || !roomId) return;
+    if (pass2PollActive) return; // pass2 REST invites own this (effect below)
     return subscribeSeatInvites(myUid, roomId, (invites) => {
       if (!invitesPrunedRef.current) {
         invitesPrunedRef.current = true;
@@ -489,7 +576,7 @@ export default function VoiceRoomScreen() {
         setPendingSeatInvites(invites);
       }
     });
-  }, [myUid, roomId]);
+  }, [myUid, roomId, pass2PollActive]);
 
   
   useEffect(() => {
@@ -509,7 +596,13 @@ export default function VoiceRoomScreen() {
               const currentIdx = mySeatIdxRef.current;
               if (currentIdx >= 0 && currentIdx !== invite.seatIdx) {
                 try {
-                  await fbLeaveSeat(roomId, currentIdx, myUid);
+                  // Gap 5: the invite flow already leaves first, so the
+                  // REST take below never 409s on already-seated.
+                  if (pass2PollActiveRef.current) {
+                    await sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: currentIdx });
+                  } else {
+                    await fbLeaveSeat(roomId, currentIdx, myUid);
+                  }
                 } catch {
                   Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
                   return;
@@ -517,24 +610,44 @@ export default function VoiceRoomScreen() {
               }
               let result: { success: boolean };
               try {
-                let isVerified = false;
-                try {
-                  const { hasOfficialBadge } = await import('@/src/services/verifiedService');
-                  isVerified = await hasOfficialBadge(myUid);
-                } catch {  }
-                result = await takeSeat(roomId, invite.seatIdx, {
-                  userId: myUid, userName: myName,
-                  initials: myInitials, color: myColor,
-                  muted: false, role: 'member',
-                  ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-                  ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
-                  ...(isVerified ? { verified: true } : {}) });
+                if (pass2PollActiveRef.current) {
+                  // Gap 5: tier builds its own seat record (userId,
+                  // userName, initials, color, seatTs, role, muted) —
+                  // photoURL/frame/verified are dropped (tier gap).
+                  result = await takePass2Seat(roomId, invite.seatIdx);
+                } else {
+                  let isVerified = false;
+                  try {
+                    const { hasOfficialBadge } = await import('@/src/services/verifiedService');
+                    isVerified = await hasOfficialBadge(myUid);
+                  } catch {  }
+                  result = await takeSeat(roomId, invite.seatIdx, {
+                    userId: myUid, userName: myName,
+                    initials: myInitials, color: myColor,
+                    muted: false, role: 'member',
+                    ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+                    ...((myProfile as any)?.activeFrame ? { activeFrame: (myProfile as any).activeFrame } : {}),
+                    ...(isVerified ? { verified: true } : {}) });
+                }
               } catch {
                 Alert.alert(t('voiceRoom.screen.seatNoLongerAvailableTitle'), t('voiceRoom.screen.seatNoLongerAvailableMsg'));
                 return;
               }
               if (result.success) {
-                removeSeatInvite(myUid, invite.id).catch(() => {});
+                if (pass2PollActiveRef.current) {
+                  sendPass2RoomAction(roomId, 'seat_invite_remove', { inviteeUid: myUid, inviteId: invite.id }).catch(() => {});
+                  // Optimistic self seat (tier record shape).
+                  const invRole: Role = (invite.seatIdx === 0 && ownerId === myUid) ? 'host' : 'member';
+                  setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
+                    (i === invite.seatIdx ? {
+                      id: myUid, name: myName, initials: myInitials, color: myColor,
+                      role: invRole, roleLevel: roleToLevel(invRole),
+                      muted: false, speaking: false,
+                    } : s),
+                  ));
+                } else {
+                  removeSeatInvite(myUid, invite.id).catch(() => {});
+                }
                 // 2026-10-26 (boss: invite-accept mic + room-leave laws):
                 // a seat take via invite IS a seat take — it must update
                 // the active-room tracker (else a later room-invite guard
@@ -547,7 +660,7 @@ export default function VoiceRoomScreen() {
                 startPublishing();
                 setMicMuted(false);
                 persistMicIntent(roomId, false).catch(() => {});
-                sendRoomChatMsg(roomId, {
+                sendChatInMode(roomId, {
                   senderId: 'system', senderName: 'System', senderColor: C.gold,
                   text: t('voiceRoom.screen.memberJoinedSeat', { name: myName, number: invite.seatIdx + 1 }),
                   ts: Date.now() }).catch(() => {});
@@ -558,7 +671,13 @@ export default function VoiceRoomScreen() {
           {
             text: t('voiceRoom.screen.decline'),
             style: 'cancel',
-            onPress: () => { removeSeatInvite(myUid, invite.id).catch(() => {}); } },
+            onPress: () => {
+              if (pass2PollActiveRef.current) {
+                sendPass2RoomAction(roomId, 'seat_invite_remove', { inviteeUid: myUid, inviteId: invite.id }).catch(() => {});
+              } else {
+                removeSeatInvite(myUid, invite.id).catch(() => {});
+              }
+            } },
         ],
       );
     });
@@ -567,6 +686,7 @@ export default function VoiceRoomScreen() {
   
   useEffect(() => {
     if (!roomId) return;
+    if (pass2PollActive) return; // reactions come from /events in pass2
     return subscribeRoomEmojiReactions(roomId, (reaction) => {
       if (!reaction) return;
       if (reaction.ts <= lastReactionTsRef.current) return;
@@ -599,7 +719,7 @@ export default function VoiceRoomScreen() {
         });
       }, 3350);
     });
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
 
   
   const [roomTopic,     setRoomTopic]    = useState<string>(t('voiceRoom.creation.defaultTopic'));
@@ -805,6 +925,7 @@ export default function VoiceRoomScreen() {
   const lastEntryTsRef = useRef(0);
   useEffect(() => {
     if (!roomId) return;
+    if (pass2PollActive) return; // entry events come from /events in pass2
     return subscribeRoomEntryEvents(roomId, (entry) => {
       if (!entry) return;
       if (entry.ts <= lastEntryTsRef.current) return;
@@ -816,11 +937,12 @@ export default function VoiceRoomScreen() {
         photoURL: entry.photoURL || null,
         ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
     });
-  }, [roomId, myUid]);
+  }, [roomId, myUid, pass2PollActive]);
 
   const lastGiftTsRef = useRef(0);
   useEffect(() => {
     if (!roomId) return;
+    if (pass2PollActive) return; // gift events come from /events in pass2
     return subscribeRoomGiftEvents(roomId, (event) => {
       if (!event) return;
       if (event.ts <= lastGiftTsRef.current) return;
@@ -844,7 +966,7 @@ export default function VoiceRoomScreen() {
         videoFullscreen: event.videoFullscreen || undefined,
       });
     });
-  }, [roomId, myUid]);
+  }, [roomId, myUid, pass2PollActive]);
 
   useEffect(() => {
     if (!roomId || !myUid || hasJoined || pinGate !== 'passed' || !banCheckDone || voiceBan) return;
@@ -971,6 +1093,7 @@ export default function VoiceRoomScreen() {
   const pairSig = adjacentPairs.map((p) => p.key).join('|');
   useEffect(() => {
     if (!adjacentPairs.length) { setPairData({}); return; }
+    if (pass2PollActive) return; // pairs come from REST 30s in pass2 (effect below)
     const unsubs: (() => void)[] = [];
     for (const p of adjacentPairs) {
       unsubs.push(subscribeIntimacy(p.a, p.b, (rec) => {
@@ -982,7 +1105,7 @@ export default function VoiceRoomScreen() {
     }
     return () => { unsubs.forEach((u) => { try { u(); } catch { /* noop */ } }); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairSig]);
+  }, [pairSig, pass2PollActive]);
 
   const gridWrapRef = useRef<View | null>(null);
   const [cellGeom, setCellGeom] = useState<Record<string, { x: number; y: number; w: number }>>({});
@@ -1055,8 +1178,9 @@ export default function VoiceRoomScreen() {
       setMusic(null);
       return;
     }
+    if (pass2PollActive) return; // music comes from /live in pass2
     return subscribeRoomMusic(roomId, setMusic);
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
   // 2026-10-25 (boss): 1v1 PK — challenge prompt for the opponent.
   const [pkOpen, setPkOpen] = useState(false);
   const [pk, setPk] = useState<RoomPk | null>(null);
@@ -1066,8 +1190,9 @@ export default function VoiceRoomScreen() {
       setPk(null);
       return;
     }
+    if (pass2PollActive) return; // PK comes from /live in pass2
     return subscribeRoomPk(roomId, setPk);
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
   // 2026-10-25 (boss, full Ludu concept): a live Ludu lobby is visible
   // to EVERY room occupant — the strip below renders from this live
   // subscription, so the lobby appears the moment the host creates it
@@ -1078,11 +1203,12 @@ export default function VoiceRoomScreen() {
       setLuduLobby(null);
       return;
     }
+    if (pass2PollActive) return; // games come from /live in pass2
     return subscribeGames(roomId, (games) => {
       const lobby = games.find((g) => g.type === 'ludu' && g.status === 'lobby');
       setLuduLobby(lobby ?? null);
     });
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
   useEffect(() => {
     if (!pk || pk.status !== 'challenge' || pk.opponent.uid !== myUid || pkOpen) return;
     const key = String(pk.challengedAt);
@@ -1104,8 +1230,9 @@ export default function VoiceRoomScreen() {
       setAnnouncement(null);
       return;
     }
+    if (pass2PollActive) return; // announcement comes from /watch in pass2
     return subscribeAnnouncement(roomId, setAnnouncement);
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
   useEffect(() => {
     if (!activeMember) return;
     const fresh =
@@ -1199,7 +1326,12 @@ export default function VoiceRoomScreen() {
       pinGateRef.current = nextGate;
       setPinGate(nextGate);
     }
-    if (info.ownerId && info.ownerId === myUidRef.current) {
+    // Gap 5: SDK-write heals — skipped in pass2 mode (offline). The
+    // owner seat-label heal is unnecessary (myRole is 'host' via
+    // ownerId regardless of the label); the registry heal is UNSAFE
+    // offline (it could resurrect a dismissed admin's powers — the
+    // exact hazard the removeSeat comment warns about).
+    if (!pass2PollActiveRef.current && info.ownerId && info.ownerId === myUidRef.current) {
       const mySeatIdxNow = seatsRef.current.findIndex(
         (s: Participant | null) => s?.id === myUidRef.current,
       );
@@ -1248,9 +1380,9 @@ export default function VoiceRoomScreen() {
   };
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomInfo(roomId, handleRoomInfo);
-  }, [roomId, watcherPollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive]);
 
   const forceLeftRef = useRef(false);
   useEffect(() => {
@@ -1271,6 +1403,7 @@ export default function VoiceRoomScreen() {
   }, [blockedRecs, hasJoined, myUid, stopPublishing, stopUserStream, t]);
 
   useEffect(() => {
+    if (pass2PollActive) return; // blocks come from /watch in pass2
     return subscribeRoomBlocks(roomId, (blocksMap) => {
       const records: BlockRecord[] = Array.from(blocksMap.values()).map((b: RoomBlockRecord) => ({
         id: b.userId,
@@ -1283,12 +1416,12 @@ export default function VoiceRoomScreen() {
         isActive: true }));
       setBlockedRecs(records);
     });
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeSeatRequests(roomId, setPendingRequests);
-  }, [roomId, watcherPollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive]);
 
   // 2026-10-25 (boss: mic drops + re-enables on minimize→return): the
   // seat-sync stop below must NOT fire on a merely not-yet-loaded seats
@@ -1313,9 +1446,65 @@ export default function VoiceRoomScreen() {
 
   useEffect(() => {
     seatsLoadedRef.current = false;
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeSeats(roomId, handleSeats);
-  }, [roomId, watcherPollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive]);
+
+  // 2026-10-29 (boss: slow-network room entry takes far too long) — CACHED-FIRST
+  // ENTRY. Why entry felt slow: seats start as 10 empty pods (line ~454) and the
+  // header starts as a generic default name (line ~725) until the Firebase
+  // subscriptions deliver their first snapshot — on a slow network the WS
+  // connect + auth + first snapshot is exactly the long blank "loading" window.
+  // Fix: paint the last-known header + seat occupants from AsyncStorage the
+  // moment the room opens; live subscriptions replace them on first delivery.
+  // The cache holds DISPLAY/IDENTITY fields only (never muted/speaking) and
+  // seat actions stay server-guarded (takeSeat's transaction aborts on another
+  // occupant), so a tap landing on a stale cached row in the brief pre-live
+  // window fails safely instead of corrupting state.
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+    (async () => {
+      const cached = await getRoomEntryCache(roomId);
+      if (cancelled || !cached) return;
+      if (cached.name) setRoomName(cached.name);
+      if (cached.topic) setRoomTopic(cached.topic);
+      if (cached.imageUri) setRoomImageUri(cached.imageUri);
+      setSeats(cached.seats.map((s) => (s ? {
+        id: s.id, name: s.name, initials: s.initials, color: s.color,
+        photoURL: s.photoURL, speaking: false, muted: false,
+        hostMuted: undefined, role: s.role as Participant['role'],
+        roleLevel: s.roleLevel, activeFrame: s.activeFrame,
+        nobleRankIndex: s.nobleRankIndex,
+      } : null)));
+    })();
+    return () => { cancelled = true; };
+  }, [roomId]);
+
+  // Persist last-known entry data for the NEXT entry — only after live data
+  // has delivered at least once (seatsLoadedRef, set by handleSeats in every
+  // mode incl. watcher/pass2 polls), and only when IDENTITY fields change:
+  // speaking/mute/heartbeat churn must never cause a write.
+  const lastEntrySigRef = useRef('');
+  useEffect(() => {
+    if (!roomId || !seatsLoadedRef.current) return;
+    const sig = seats.map((s) => (s
+      ? `${s.id}|${s.role}|${s.name}|${s.photoURL ?? ''}|${s.activeFrame ?? ''}|${s.nobleRankIndex ?? ''}`
+      : '-')).join(';') + `|${roomName}|${roomTopic}|${roomImageUri ?? ''}`;
+    if (sig === lastEntrySigRef.current) return;
+    lastEntrySigRef.current = sig;
+    void saveRoomEntryCache(roomId, {
+      name: roomName,
+      topic: roomTopic,
+      imageUri: roomImageUri,
+      seats: seats.map((s) => (s ? {
+        id: s.id, name: s.name, initials: s.initials, color: s.color,
+        photoURL: s.photoURL, role: s.role, roleLevel: s.roleLevel,
+        activeFrame: s.activeFrame, nobleRankIndex: s.nobleRankIndex,
+      } : null)),
+      savedAt: 0,
+    });
+  }, [seats, roomName, roomTopic, roomImageUri, roomId]);
 
   const handleAudience = (fbAudience: RoomAudienceMember[]) => {
     const participants = fbAudience.map(fbAudToParticipant);
@@ -1329,17 +1518,17 @@ export default function VoiceRoomScreen() {
   };
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeAudience(roomId, handleAudience);
-  }, [roomId, watcherPollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive]);
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomAdmins(roomId, setRoomAdminUids);
-  }, [roomId, watcherPollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive]);
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     if (!roomId || !myUid) {
       setIsRoomMember(false);
       return;
@@ -1352,7 +1541,7 @@ export default function VoiceRoomScreen() {
       setIsRoomMember(false);
     });
     return () => unsub();
-  }, [roomId, myUid, watcherPollActive]);
+  }, [roomId, myUid, watcherPollActive, pass2PollActive]);
 
   // 2026-10-26 (boss: room chat = session + last 30): the chat view starts
   // fresh on every entry. A stored session survives minimize-return (the
@@ -1387,7 +1576,7 @@ export default function VoiceRoomScreen() {
       ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
     };
     markEchoSendState(msg.id, 'sending');
-    sendRoomChatMsg(roomId, payload, msg.id).then(() => {
+    sendChatInMode(roomId, payload, msg.id).then(() => {
       markEchoSendState(msg.id, undefined);
       void removeOutboxEntry(roomId, msg.id);
     }).catch((err) => {
@@ -1432,7 +1621,7 @@ export default function VoiceRoomScreen() {
         setMessages((prev: ChatMsg[]) => [...prev, echo]);
         // Fire-and-forget re-send of the ORIGINAL payload under the same
         // key; ack clears it, failure marks it for tap-to-retry.
-        sendRoomChatMsg(roomId, entry.payload, entry.id).then(() => {
+        sendChatInMode(roomId, entry.payload, entry.id).then(() => {
           markEchoSendState(entry.id, undefined);
           void removeOutboxEntry(roomId, entry.id);
         }).catch((err) => {
@@ -1477,9 +1666,9 @@ export default function VoiceRoomScreen() {
   };
 
   useEffect(() => {
-    if (watcherPollActive) return;
+    if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomChat(roomId, myUid, handleChat);
-  }, [roomId, myUid, watcherPollActive]);
+  }, [roomId, myUid, watcherPollActive, pass2PollActive]);
 
 
   // Watcher-path cutover flag (fail-closed: fetch failure leaves
@@ -1546,6 +1735,226 @@ export default function VoiceRoomScreen() {
     return subscribeEdgeRoomChat(roomId, (msg) => api.injectEdgeMsg(msg));
   }, [watcherPollActive, watcherFlag, roomId]);
 
+  // ── Pass2 room subscriptions ─────────────────────────────────────────────
+  // Runs when pass2PollActive (staging flags). Mirrors the Firebase
+  // residual handlers above (same ts guards, same TTLs, same local-reaction
+  // dedup) so poll-delivered events render identically. Fallback is
+  // sticky for the stay: it flips the room flag off, which resubscribes
+  // today's Firebase path via the guards above (§3.10).
+  useEffect(() => {
+    if (!pass2PollActive) return;
+    // Mirror of the Firebase seats effect's reset: the mic sync waits
+    // for the first pass2 seats snapshot, not a stale Firebase one.
+    seatsLoadedRef.current = false;
+    const api = subscribePass2RoomPoll(roomId, {
+      myUid,
+      profile: {
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+      },
+      getToken: async () => {
+        try {
+          const t = await auth.currentUser?.getIdToken();
+          return t ?? null;
+        } catch {
+          return null;
+        }
+      },
+      // Beat only when the watcher poll is not already beating (audience
+      // reuses the watcher beat; seated/private need their own, with
+      // seatIdx so the poller refreshes the seat heartbeat, §3.3).
+      beat: !watcherPollActive,
+      getSeatIdx: () => mySeatIdxRef.current,
+    }, {
+      onAnnouncement: (ann) => setAnnouncement(ann),
+      onBlocks: (blocksMap) => {
+        const records: BlockRecord[] = Array.from(blocksMap.values()).map((b) => ({
+          id: b.userId,
+          name: b.userName,
+          initials: b.initials,
+          color: b.color,
+          action: b.action,
+          actionBy: b.byName,
+          timestamp: b.blockedAt,
+          isActive: true }));
+        setBlockedRecs(records);
+      },
+      onDecor: (decor) => { pass2DecorRef.current = decor; },
+      onGrabTop: (value) => { pass2GrabTopRef.current = value; },
+      onLiveFlags: () => {},
+      onReaction: (reaction) => {
+        if (!reaction) return;
+        if (reaction.ts <= lastReactionTsRef.current) return;
+        if (Date.now() - reaction.ts > 5000) return;
+        const local = lastLocalReactionRef.current;
+        if (reaction.byUid === myUid && local && reaction.emoji === local.emoji
+          && Date.now() - local.at < 4000) {
+          lastReactionTsRef.current = reaction.ts;
+          return;
+        }
+        lastReactionTsRef.current = reaction.ts;
+        const senderMember = seatsRef.current.find((m) => m && m.id === reaction.byUid);
+        if (!senderMember) return;
+        const memberId = senderMember.id;
+        const key = reaction.ts;
+        setSeatReactions((prev: Record<string, SeatReaction>) => ({
+          ...prev, [memberId]: { emoji: reaction.emoji, key } }));
+        const old = reactionTimersRef.current[memberId];
+        if (old) clearTimeout(old);
+        reactionTimersRef.current[memberId] = setTimeout(() => {
+          setSeatReactions((prev: Record<string, SeatReaction>) => {
+            if (prev[memberId]?.key !== key) return prev;
+            const n = { ...prev }; delete n[memberId]; return n;
+          });
+        }, 3350);
+      },
+      onEntry: (entry) => {
+        if (!entry) return;
+        if (entry.ts <= lastEntryTsRef.current) return;
+        if (Date.now() - entry.ts > 10000) return;
+        lastEntryTsRef.current = entry.ts;
+        if (entry.uid === myUid) return;
+        setEntryBanner({
+          name: entry.name || 'User',
+          photoURL: entry.photoURL || null,
+          ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
+      },
+      onGift: (event) => {
+        if (!event) return;
+        if (event.ts <= lastGiftTsRef.current) return;
+        if (Date.now() - event.ts > 10000) return;
+        lastGiftTsRef.current = event.ts;
+        if (event.fromUid === myUid) return;
+        giftFlyRef.current?.playFly({
+          fromName: event.fromName,
+          fromAvatar: event.fromAvatar || undefined,
+          toUid: event.toUid,
+          toName: event.toName,
+          toAvatar: event.toAvatar || undefined,
+          giftId: event.giftId,
+          emoji: event.emoji,
+          coins: event.coins,
+          target: null,
+          animationUrl: event.animationUrl || undefined,
+          animationType: event.animationType || undefined,
+          thumbnailUrl: event.thumbnailUrl || undefined,
+          videoSize: event.videoSize || undefined,
+          videoFullscreen: event.videoFullscreen || undefined,
+        });
+      },
+      onLive: (live) => {
+        if (!live) {
+          setPk(null);
+          setMusic(null);
+          setLuduLobby(null);
+          return;
+        }
+        setPk(live.pk);
+        setMusic(live.music);
+        const lobby = live.games.find((g) => g.type === 'ludu' && g.status === 'lobby');
+        setLuduLobby(lobby ?? null);
+      },
+      // Gap 5 base + chat: delivered ONLY when the watcher poll is not
+      // already delivering them (public audience). When the watcher is
+      // off (seated/private pass2), these REPLACE the six Firebase base
+      // subscriptions + the chat subscription (guarded above), so the
+      // room screen keeps rendering while offline. Same handlers as the
+      // watcher effect — identical shapes, no new mapping code.
+      ...(!watcherPollActive ? {
+        onInfo: handleRoomInfo,
+        onSeats: handleSeats,
+        onAudience: handleAudience,
+        onAdmins: (uids: Set<string>) => setRoomAdminUids(uids),
+        onSeatRequests: (reqs: SeatRequest[]) => setPendingRequests(reqs),
+        onMember: (isMember: boolean) => {
+          setIsRoomMember(isMember);
+          if (isMember) setHasJoined(true);
+        },
+        onMemberCount: (count: number) => {
+          if (!showJoinBannerRef.current && !isOwnerOrAdminRef.current) { setJoinedMemberCount(null); return; }
+          setJoinedMemberCount(count);
+        },
+        onChat: handleChat,
+      } : {}),
+      onFallback: () => setPass2Flags((f) => (f ? { ...f, room: false } : f)),
+    });
+    pass2ApiRef.current = api;
+    return () => {
+      api.unsubscribe();
+      if (pass2ApiRef.current === api) pass2ApiRef.current = null;
+    };
+  }, [pass2PollActive, watcherPollActive, roomId, myUid, myName, myInitials, myColor, myPhotoURL]);
+
+  // Pass2 session choreography (§3.8, gap 5 gate): a session goes
+  // offline ONLY when every in-session seat write is REST. Audience:
+  // always offline (chat + presence + gift/reaction are all REST).
+  // Seated MEMBERS: offline — every member-reachable seat write is
+  // routed (take/leave/self-mute/request/invite-accept/cancel).
+  // Seated OWNERS/ADMINS: stay ONLINE — host-mute (muteToggleMember →
+  // setSeatHostMute) has NO tier op and must NOT be mapped to seat_mute
+  // (that would break the host-mute-sticks law: the target could
+  // self-unmute). One tier op away (e.g. seat_host_mute); until it
+  // exists, these sessions keep today's behavior and their writes land
+  // immediately. Role flips re-run this effect (exit → goOnline →
+  // re-enter), so member→admin goes online and admin→member goes
+  // offline. The gate uses ownerId + the admins REGISTRY (the privilege
+  // truth — a stale seat/audience admin label grants nothing, since
+  // both the rules and the tier enforce via the registry).
+  const gateIsOwnerOrAdmin = (ownerId === myUid) || roomAdminUids.has(myUid);
+  useEffect(() => {
+    if (!pass2PollActive) return;
+    enterPass2Mode('room', { offline: mySeatIdx < 0 || !gateIsOwnerOrAdmin });
+    setPass2Seated(mySeatIdx >= 0);
+    return () => {
+      exitPass2Mode('room');
+      setPass2Seated(false);
+    };
+  }, [pass2PollActive, mySeatIdx, gateIsOwnerOrAdmin]);
+
+  // Pass2 profile + wallet (REST + cache; wallet listener DROPPED).
+  // Wallet: one-shot on activation only — no background poll, because
+  // balances change only via actions and actions return the new balance.
+  useEffect(() => {
+    if (!pass2PollActive || !myUid || myUid === 'anonymous') return;
+    const unsub = subscribePass2MyProfile(myUid, (p) => {
+      if (p && p.name) {
+        setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: p.activeFrame || undefined });
+      }
+    });
+    fetchPass2WalletMe().then((w) => {
+      if (w) { setWalletBalance(w.balance); setWeeklyEarned(w.weeklyEarned); }
+    }).catch(() => {});
+    return unsub;
+  }, [pass2PollActive, myUid]);
+
+  // Pass2 seat invites (REST 30s; pruning is server-side, never client).
+  useEffect(() => {
+    if (!pass2PollActive || !myUid || myUid === 'anonymous' || !roomId) return;
+    return subscribePass2SeatInvites((invites) => {
+      setPendingSeatInvites(invites as SeatInvite[]);
+    });
+  }, [pass2PollActive, myUid, roomId]);
+
+  // Pass2 intimacy + handshake pairs (REST 30s, auxiliary keep-last).
+  useEffect(() => {
+    if (!adjacentPairs.length) { setPairData({}); return; }
+    if (!pass2PollActive) return;
+    return subscribePass2Pairs(adjacentPairs, (data) => {
+      setPairData((prev) => {
+        const next = { ...prev };
+        for (const p of adjacentPairs) {
+          if (data[p.key]) next[p.key] = data[p.key];
+        }
+        return next;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pass2PollActive, pairSig]);
+
   useEffect(() => {
     // 2026-10-26 (boss: every genuine entry must show its join line):
     // one line per genuine entry — fresh mount, not a restore, not a
@@ -1565,7 +1974,7 @@ export default function VoiceRoomScreen() {
     const isOwner = ownerId && ownerId === myUid;
     const displayName = isOwner ? `${myName} 👑` : myName;
     addSentJoinMsgKey(`${roomId}:${myUid}`);
-    sendRoomChatMsg(roomId, {
+    sendChatInMode(roomId, {
       senderId: 'system',
       senderName: 'System',
       senderColor: C.gold,
@@ -1599,17 +2008,19 @@ export default function VoiceRoomScreen() {
     myUid !== 'anonymous';
 
   useEffect(() => {
+    if (pass2PollActive) return; // VeeGuard owns server-side sweeps; client sweeps are SDK writes
     sweepStaleSeats(roomId).catch(() => {});
     // 2026-10-20 (boss): ghost-audience sweep on enter (mirror of seats).
     sweepStaleAudience(roomId).catch(() => {});
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
+    if (pass2PollActive) return; // poller beat refreshes the seat server-side (§3.3)
     const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx, myUid, myName).catch(() => {});
     beat(); // immediate first beat on seating
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
-  }, [roomId, mySeatIdx, myUid]);
+  }, [roomId, mySeatIdx, myUid, pass2PollActive]);
 
   // 2026-10-27 (boss: host-seat leave stops music completely, new host
   // sees NO music and must play anew). The TRIGGER is mySeatIdx === 0
@@ -1634,19 +2045,24 @@ export default function VoiceRoomScreen() {
     if (mySeatIdx === 0) return;
     if (!seatsLoadedRef.current) return;
     if (musicState !== 'playing' && musicState !== 'paused') return;
+    // Gap 5: no tier music op — the music bot's seat-0 watcher covers the
+    // stop, so the client write is skipped in pass2 mode (a queued
+    // 'stopped' applying late on goOnline could clobber a new host's music).
+    if (pass2PollActive) return;
     setMusicState(roomId, 'stopped').catch(() => {});
-  }, [mySeatIdx, musicState, roomId]);
+  }, [mySeatIdx, musicState, roomId, pass2PollActive]);
   // 2026-10-20 (boss): audience heartbeat while inside the room — keeps my
   // audience entry provably live; if the app dies, the entry ages out in
   // 5 min and gets swept instead of showing a phantom member forever.
   // Transaction-guarded server-side: no entry (seated/left) = no-op.
   useEffect(() => {
     if (!myUid) return;
+    if (pass2PollActive) return; // beats replace audience heartbeats in pass2 (§3.8)
     const beat = () => refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
     beat();
     const timer = setInterval(beat, 60_000);
     return () => clearInterval(timer);
-  }, [roomId, myUid]);
+  }, [roomId, myUid, pass2PollActive]);
 
   // 2026-10-22 (boss): BACKGROUND-FREEZE RECOVERY. Android (esp. Tecno/HiOS)
   // freezes the app while it sits in a voice room in the background: the JS
@@ -1661,11 +2077,17 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     const recover = () => {
       if (hasLeftRef.current || !presenceReadyRef.current) return;
-      if (mySeatIdxRef.current >= 0) {
-        refreshSeatHeartbeat(roomId, mySeatIdxRef.current, myUid, myName).catch(() => {});
+      if (pass2PollActiveRef.current) {
+        // Poll mode: no SDK heartbeat/presence writes (they would reopen
+        // the socket). Re-beat immediately instead; poll timers continue.
+        pass2ApiRef.current?.beatNow();
+      } else {
+        if (mySeatIdxRef.current >= 0) {
+          refreshSeatHeartbeat(roomId, mySeatIdxRef.current, myUid, myName).catch(() => {});
+        }
+        refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
+        void reRegisterPresenceRef.current?.();
       }
-      refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
-      void reRegisterPresenceRef.current?.();
       if (!voiceJoinedRef.current && voiceErrorRef.current) {
         const now = Date.now();
         if (now - autoVoiceRetryAtRef.current > 15_000) {
@@ -1821,7 +2243,7 @@ export default function VoiceRoomScreen() {
     // fires (prev set) keep normal cross-device sync.
     if (prevFbMutedRef.current === null && fbMuted !== engineMutedRef.current && mySeat.hostMuted !== true) {
       const intent = engineMutedRef.current;
-      setSeatMute(roomId, mySeatIdx, intent)
+      setSeatMuteInMode(roomId, mySeatIdx, intent)
         .then(() => { prevFbMutedRef.current = intent; })
         .catch(() => {});
       return;
@@ -1840,7 +2262,7 @@ export default function VoiceRoomScreen() {
       } else if (fbMuted !== pend.value) {
         if (Date.now() - pend.lastTry >= 3000) {
           pend.lastTry = Date.now();
-          setSeatMute(roomId, mySeatIdx, pend.value).catch(() => {});
+          setSeatMuteInMode(roomId, mySeatIdx, pend.value).catch(() => {});
         }
         return;
       } else {
@@ -1932,7 +2354,10 @@ export default function VoiceRoomScreen() {
       // a locked room keeps the gated path so a rejected user never
       // appears inside it.
       const earlyInfo = pinInfoRef.current;
-      if (earlyInfo && earlyInfo.isLocked !== true) {
+      // Gap 5: audience presence comes from beats in pass2 mode (the
+      // join creates NO membership per the 2026-10-27 law, so skipping
+      // it loses nothing — the beat already runs on subscribe).
+      if (earlyInfo && earlyInfo.isLocked !== true && !pass2PollActiveRef.current) {
         joinRoomAsAudience(roomId, {
           userId: myUid,
           userName: myName,
@@ -1984,14 +2409,24 @@ export default function VoiceRoomScreen() {
         try {
           const persisted = await getPersistedActiveRoom();
           if (persisted && persisted.roomId === roomId && persisted.myUid === myUid && persisted.mySeatIdx >= 0) {
-            const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${persisted.mySeatIdx}`)).catch(() => null);
-            const curSeat = seatSnap?.val() as { userId?: string } | null;
-            if (!curSeat || curSeat.userId === myUid) {
-              const seatData = buildSeatData();
-              const res = await takeSeat(roomId, persisted.mySeatIdx, seatData).catch(() => ({ success: false }));
+            if (pass2PollActiveRef.current) {
+              // Gap 5: no pre-check read (it would hang offline on a
+              // cached-flags mount) — the tier enforces the take.
+              const res = await takePass2Seat(roomId, persisted.mySeatIdx).catch(() => ({ success: false }));
               if (res && res.success) {
                 finalSeatIdx = persisted.mySeatIdx;
                 mySeatIdxRef.current = finalSeatIdx;
+              }
+            } else {
+              const seatSnap = await get(ref(database, `rooms/${roomId}/seats/${persisted.mySeatIdx}`)).catch(() => null);
+              const curSeat = seatSnap?.val() as { userId?: string } | null;
+              if (!curSeat || curSeat.userId === myUid) {
+                const seatData = buildSeatData();
+                const res = await takeSeat(roomId, persisted.mySeatIdx, seatData).catch(() => ({ success: false }));
+                if (res && res.success) {
+                  finalSeatIdx = persisted.mySeatIdx;
+                  mySeatIdxRef.current = finalSeatIdx;
+                }
               }
             }
           }
@@ -2019,7 +2454,7 @@ export default function VoiceRoomScreen() {
         clearCurrentRoom();
       }
 
-      if (finalSeatIdx < 0) {
+      if (finalSeatIdx < 0 && !pass2PollActiveRef.current) {
         joinRoomAsAudience(roomId, {
           userId: myUid,
           userName: myName,
@@ -2042,7 +2477,7 @@ export default function VoiceRoomScreen() {
         // a fresh mount, so this is only a backstop for mounts where
         // site 1 never ran; the ref + key here block any double.
         addSentJoinMsgKey(joinKey);
-        sendRoomChatMsg(roomId, {
+        sendChatInMode(roomId, {
           senderId: 'system',
           senderName: 'System',
           senderColor: C.gold,
@@ -2070,6 +2505,7 @@ export default function VoiceRoomScreen() {
   
   useEffect(() => {
     if (!hasJoined) return;
+    if (pass2PollActive) return; // §3.8: .info/connected dies in poll mode (beats + fast-retry instead)
     const connRef = ref(database, '.info/connected');
     let wasConnected = true;
     let disposed = false;
@@ -2192,7 +2628,7 @@ export default function VoiceRoomScreen() {
       }
     });
     return () => { disposed = true; unsub(); };
-  }, [hasJoined, roomId]);
+  }, [hasJoined, roomId, pass2PollActive]);
 
   
   useEffect(() => {
@@ -2242,9 +2678,10 @@ export default function VoiceRoomScreen() {
   // audience must get the member view. isHostSeat stays for the
   // customize panel (a separate feature, untouched).
   const isHostSeat = myRole === 'host' || mySeatIdx === 0;
-  // 2026-10-25 (boss): the three-dot button itself is host-seat-only —
-  // only an admin/owner SEATED in the host seat (seat 1) sees it.
-  const isHostSeatedOwnerOrAdmin = isOwnerOrAdmin && mySeatIdx === 0;
+  // 2026-10-30 (boss): the room header three-dot is HOST-SEAT-ONLY —
+  // only the occupant of the Host seat (seat index 0) sees it, whatever
+  // their role. An owner/admin NOT on the host seat does NOT see it.
+  const isHostSeatOccupant = mySeatIdx === 0;
 
   // 2026-10-22 (boss): one-time battery-exemption ask. Aggressive OEM power
   // managers kill backgrounded apps even with a foreground service — the
@@ -2280,6 +2717,11 @@ export default function VoiceRoomScreen() {
 
   const showJoinBanner = !isRoomMember && !hasJoined && !isOwnerOrAdmin && mySeatIdx < 0;
 
+  // 2026-10-30 (boss): audience + beside the room name must show for
+  // audience even when SEATED. showJoinBanner requires unseated, so the
+  // member-header + below was dead code. Members/host never see it.
+  const showAudienceJoinPlus = !isRoomMember && !hasJoined && !isOwnerOrAdmin;
+
   // 2026-10-27 (boss, imo audience header): 'Members: N' uses the SAME
   // roomMembers index the Room Info panel subscribes to (never a fake
   // number). Subscribed only while the audience header is shown; null
@@ -2287,8 +2729,13 @@ export default function VoiceRoomScreen() {
   const [joinedMemberCount, setJoinedMemberCount] = useState<number | null>(null);
   useEffect(() => {
     if ((!showJoinBanner && !isOwnerOrAdmin) || !roomId) { setJoinedMemberCount(null); return; }
+    if (pass2PollActive) return; // count comes from pass2 onMemberCount (same condition applied there)
     return subscribeRoomMembers(roomId, (members) => setJoinedMemberCount(members.length));
-  }, [showJoinBanner, isOwnerOrAdmin, roomId]);
+  }, [showJoinBanner, isOwnerOrAdmin, roomId, pass2PollActive]);
+
+  // Gap 5: keep the count refs fresh for the pass2 onMemberCount callback.
+  useEffect(() => { showJoinBannerRef.current = showJoinBanner; }, [showJoinBanner]);
+  useEffect(() => { isOwnerOrAdminRef.current = isOwnerOrAdmin; }, [isOwnerOrAdmin]);
 
   const seatActionMember = seatActionIdx >= 0 ? seats[seatActionIdx] ?? null : null;
 
@@ -2356,7 +2803,11 @@ export default function VoiceRoomScreen() {
     setSeats(prev => prev.map((s, i) =>
       i === mySeatIdx && s ? { ...s, muted: newMuted } : s,
     ));
-    writeSeatMuteReliable(roomId, mySeatIdx, newMuted).catch(() => {});
+    // Gap 5: the reliable writer runs over REST in pass2 mode (same
+    // delays + pending discipline, tier seat_mute/seat_unmute op).
+    (pass2PollActiveRef.current
+      ? writePass2SeatMuteReliable(roomId, mySeatIdx, newMuted)
+      : writeSeatMuteReliable(roomId, mySeatIdx, newMuted)).catch(() => {});
   }, [engineToggleMic, startPublishing, isPublishing, mySeatIdx, roomId, seats, t, voiceJoined, retryConnection]);
 
   const toggleSpeaker = useCallback(() => {
@@ -2389,7 +2840,15 @@ export default function VoiceRoomScreen() {
                 onPress: async () => {
                   try {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    await sendSeatRequest(roomId, {
+                    // Gap 5: the tier builds its own request (userId from
+                    // token, display from profile) and drops seatIdx
+                    // (tier gap — the host must pick a seat at admit
+                    // time until the tier stores it). seatIdx is passed
+                    // for future tier compat.
+                    if (pass2PollActiveRef.current) {
+                      await sendPass2RoomAction(roomId, 'seat_request_send', { seatIdx });
+                    } else {
+                      await sendSeatRequest(roomId, {
                       userId: myUid,
                       userName: myName,
                       initials: myInitials,
@@ -2397,6 +2856,7 @@ export default function VoiceRoomScreen() {
                       seatIdx,
                       ts: Date.now(),
                       hostId: ownerId || myUid });
+                    }
                     Alert.alert(
                       t('voiceRoom.screen.requestSentTitle'),
                       t('voiceRoom.screen.requestSentMsg'),
@@ -2455,6 +2915,11 @@ export default function VoiceRoomScreen() {
       (i === seatIdx && s ? { ...s, hostMuted: newHostMuted } : s),
     ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Gap 5 GATE (deliberate, do NOT "fix" to seat_mute): host-mute has
+    // NO tier op, so this stays on the SDK. Seated owners/admins stay
+    // ONLINE (choreography gate), so it lands immediately. Mapping it
+    // to seat_mute would break the host-mute-sticks law — the target
+    // could self-unmute. Needs a tier seat_host_mute op first.
     setSeatHostMute(roomId, seatIdx, newHostMuted).catch((e: unknown) => {
       setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
         (i === seatIdx && s ? { ...s, hostMuted: prevHostMuted } : s),
@@ -2477,13 +2942,23 @@ export default function VoiceRoomScreen() {
     } else {
       stopUserStream(member.id);
     }
-    fbLeaveSeat(roomId, seatIdx, member.id, {
+    // Gap 5: seat_leave (targetUid) in pass2 mode; the Firebase
+    // leaveSeat's audience re-add is covered by beats (≤60s).
+    (pass2PollActiveRef.current
+      ? sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: seatIdx, targetUid: member.id })
+      : fbLeaveSeat(roomId, seatIdx, member.id, {
       userId: member.id,
       userName: member.name,
       initials: member.initials,
       color: member.color,
       ...(member.photoURL ? { photoURL: member.photoURL } : {}),
-      ...(member.role && member.role !== 'host' ? { role: member.role } : {}) }).then(() => {
+      ...(member.role && member.role !== 'host' ? { role: member.role } : {}) })).then(() => {
+      // Optimistic seat clear in pass2 mode (else ≤30s /watch lag).
+      if (pass2PollActiveRef.current) {
+        setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
+          (i === seatIdx ? null : s),
+        ));
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }).catch((e: unknown) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -2539,10 +3014,49 @@ export default function VoiceRoomScreen() {
     const seatData: NonNullable<RoomSeat> = buildSeatData();
 
     let won = false;
-    try {
-      won = (await takeSeat(roomId, seatIdx, seatData)).success;
-    } catch {
-      won = false; // network/rules failure — keep the current seat
+    // Gap 5: the tier 409s a take while already seated, so the REST move
+    // leaves the old seat FIRST (opposite order from Firebase
+    // claim-first). A failed REST take after a successful leave
+    // best-effort re-takes the old seat, so a failed move never
+    // strands the user seatless.
+    let restMoved = false;
+    if (pass2PollActiveRef.current) {
+      const movingFrom = mySeatIdxRef.current;
+      if (movingFrom >= 0 && movingFrom !== seatIdx) {
+        try {
+          await sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: movingFrom });
+          restMoved = true;
+        } catch (e: unknown) {
+          Alert.alert(
+            t('voiceRoom.screen.error'),
+            t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+          );
+          return;
+        }
+      }
+      won = (await takePass2Seat(roomId, seatIdx)).success;
+      if (!won && restMoved) {
+        sendPass2RoomAction(roomId, 'seat_take', { seatIndex: movingFrom }).catch(() => {});
+      }
+      if (won) {
+        // Optimistic self seat in the TIER record shape (no photoURL /
+        // frame / rank — the tier record carries none, so the /watch
+        // confirm never flashes it down).
+        const optimisticRole: Role = (seatIdx === 0 && ownerId === myUid) ? 'host' : 'member';
+        setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
+          (i === seatIdx ? {
+            id: myUid, name: myName, initials: myInitials, color: myColor,
+            role: optimisticRole, roleLevel: roleToLevel(optimisticRole),
+            muted: false, speaking: false,
+          } : s),
+        ));
+      }
+    } else {
+      try {
+        won = (await takeSeat(roomId, seatIdx, seatData)).success;
+      } catch {
+        won = false; // network/rules failure — keep the current seat
+      }
     }
     if (!won) {
       Alert.alert(t('voiceRoom.screen.seatOccupied'), t('voiceRoom.screen.seatOccupiedFirst'));
@@ -2554,7 +3068,7 @@ export default function VoiceRoomScreen() {
     setCurrentRoom({ id: roomId, myUid, mySeatIdx: seatIdx });
     persistActiveRoom({ roomId, myUid, mySeatIdx: seatIdx }).catch(() => {});
     if (oldIdx >= 0 && oldIdx !== seatIdx) {
-      removeSeat(roomId, oldIdx).catch(() => {});
+      if (!restMoved) removeSeat(roomId, oldIdx).catch(() => {});
     } else if (oldIdx < 0) {
       startPublishing();
       // 2026-10-24 (boss concept): audience → seat starts UNMUTED — the old
@@ -2564,7 +3078,7 @@ export default function VoiceRoomScreen() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData, isOwnerOrAdmin]);
+  }, [seats, myUid, myName, myInitials, myColor, myRole, mySeatIdx, roomId, startPublishing, muted, t, buildSeatData, isOwnerOrAdmin, ownerId]);
 
   // Mirror the latest joinSeat for handleSeatPress (declared above).
   useEffect(() => { joinSeatRef.current = joinSeat; }, [joinSeat]);
@@ -2591,13 +3105,16 @@ export default function VoiceRoomScreen() {
   }, [mySeatIdx, toggleMic, seats, lockedSeats, joinSeat, t, isOwnerOrAdmin]);
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || pass2PollActive) return; // frozen in pass2 mode: /watch carries no lockedSeats (tier gap); takes still 403 server-side when locked
     const unsub = subscribeLockedSeats(roomId, setLockedSeats);
     return unsub;
-  }, [roomId]);
+  }, [roomId, pass2PollActive]);
 
   const lockSeat = useCallback((seatIdx: number) => {
-    fbLockSeat(roomId, seatIdx).then(() => {
+    // Gap 5: seat_lock in pass2 mode (priv enforced server-side).
+    (pass2PollActiveRef.current
+      ? sendPass2RoomAction(roomId, 'seat_lock', { seatIndex: seatIdx })
+      : fbLockSeat(roomId, seatIdx)).then(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }).catch((e: unknown) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -2609,7 +3126,9 @@ export default function VoiceRoomScreen() {
   }, [roomId, t]);
 
   const unlockSeat = useCallback((seatIdx: number) => {
-    fbUnlockSeat(roomId, seatIdx).then(() => {
+    (pass2PollActiveRef.current
+      ? sendPass2RoomAction(roomId, 'seat_unlock', { seatIndex: seatIdx })
+      : fbUnlockSeat(roomId, seatIdx)).then(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }).catch((e: unknown) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -2621,6 +3140,21 @@ export default function VoiceRoomScreen() {
   }, [roomId, t]);
 
   const setAdminRole = useCallback((memberId: string) => {
+    // Gap 5: registry write only in pass2 mode. Seat/audience role
+    // LABELS go stale until rejoin (documented) — the registry is the
+    // privilege truth, so isOwnerOrAdmin stays correct via admin_set.
+    if (pass2PollActiveRef.current) {
+      sendPass2RoomAction(roomId, 'admin_set', { targetUid: memberId }).then(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }).catch((e: unknown) => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+        );
+      });
+      return;
+    }
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
     const writes: Array<Promise<unknown>> = [];
     if (seatIdx >= 0) {
@@ -2647,6 +3181,20 @@ export default function VoiceRoomScreen() {
   }, [seats, audience, roomId, t]);
 
   const dismissAdmin = useCallback((memberId: string) => {
+    // Gap 5: registry write only in pass2 mode (labels stale until
+    // rejoin — documented; privilege follows the registry).
+    if (pass2PollActiveRef.current) {
+      sendPass2RoomAction(roomId, 'admin_dismiss', { targetUid: memberId }).then(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }).catch((e: unknown) => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+        );
+      });
+      return;
+    }
     const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
     const writes: Array<Promise<unknown>> = [];
     if (seatIdx >= 0) {
@@ -2676,6 +3224,28 @@ export default function VoiceRoomScreen() {
    * surface (never a false success) — e.g. a rules denial before the
    * userRooms admin-delete patch lands. */
   const removeMember = useCallback((memberId: string) => {
+    // Gap 5: remove_member + registry dismiss when the target is an
+    // admin (the tier omits the admin revoke). Role labels stale until
+    // rejoin (documented).
+    if (pass2PollActiveRef.current) {
+      const ops: Array<Promise<unknown>> = [
+        sendPass2RoomAction(roomId, 'remove_member', { targetUid: memberId }),
+      ];
+      if (roomAdminUids.has(memberId)) {
+        ops.push(sendPass2RoomAction(roomId, 'admin_dismiss', { targetUid: memberId }).catch(() => {}));
+      }
+      Promise.all(ops).then(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(t('voiceRoom.info.removeSuccess', { defaultValue: 'Member removed from the room.' }));
+      }).catch((e: unknown) => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+        );
+      });
+      return;
+    }
     removeMemberFromRoom(roomId, memberId).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(t('voiceRoom.info.removeSuccess', { defaultValue: 'Member removed from the room.' }));
@@ -2686,7 +3256,7 @@ export default function VoiceRoomScreen() {
         t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
       );
     });
-  }, [roomId, t]);
+  }, [roomId, t, roomAdminUids]);
 
   /** SVIP kick-out privilege state (checked once per room session). */
   const [canSvipKickOut, setCanSvipKickOut] = useState(false);
@@ -2732,6 +3302,39 @@ export default function VoiceRoomScreen() {
 
     const doBlockUser = () => {
     const demoteUid = action === 'room-block' && member.role === 'admin' ? memberId : undefined;
+
+    // Gap 5: tier block covers seat + audience ejection on room-block
+    // only. Comment-block ejects neither server-side, so the seat leave
+    // is sent too (audience ejection on comment-block has no tier op —
+    // beat expiry ≤90s). The tier block record carries no display
+    // fields, so blocked-list rows render blank for tier-blocked users
+    // (tier gap — enforcement/ejection unaffected).
+    if (pass2PollActiveRef.current) {
+      const ops: Array<Promise<unknown>> = [
+        sendPass2RoomAction(roomId, 'block', { targetUid: memberId, action }),
+      ];
+      if (demoteUid) ops.push(sendPass2RoomAction(roomId, 'admin_dismiss', { targetUid: demoteUid }));
+      if (action === 'comment-block' && inSeat) {
+        const seatIdx = seats.findIndex((s: Participant | null) => s?.id === memberId);
+        ops.push(sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: seatIdx, targetUid: memberId }));
+      }
+      Promise.all(ops).then(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          t('voiceRoom.screen.userBlockedDone'),
+          action === 'room-block'
+            ? t('voiceRoom.screen.userRoomBlocked', { name: member.name })
+            : t('voiceRoom.screen.userCommentBlocked', { name: member.name }),
+        );
+      }).catch((e: unknown) => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          t('voiceRoom.screen.error'),
+          t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }),
+        );
+      });
+      return;
+    }
 
     const kick = (async () => {
       if (action === 'room-block') {
@@ -2802,7 +3405,9 @@ export default function VoiceRoomScreen() {
   const unblockUser = useCallback((userId: string) => {
     const record = blockedRecs.find((r: BlockRecord) => r.id === userId && r.isActive);
     if (!record) return;
-    unblockUserInRoom(roomId, userId).then(() => {
+    (pass2PollActiveRef.current
+      ? sendPass2RoomAction(roomId, 'unblock', { targetUid: userId })
+      : unblockUserInRoom(roomId, userId)).then(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }).catch((e: unknown) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -2827,10 +3432,16 @@ export default function VoiceRoomScreen() {
         {
           text: t('voiceRoom.screen.sendInvite'),
           onPress: () => {
-            sendSeatInvite(member.id, {
+            // Gap 5: seat_invite_send takes inviteeUid only — seatIdx is
+            // passed for future tier compat but dropped today (tier
+            // gap: tier-created invites are seat-less, so the accept
+            // flow cannot take the right seat from them).
+            (pass2PollActiveRef.current
+              ? sendPass2RoomAction(roomId, 'seat_invite_send', { inviteeUid: member.id, seatIdx })
+              : sendSeatInvite(member.id, {
               roomId, roomName, seatIdx,
               inviterUid: myUid, inviterName: myName,
-              ts: Date.now() }).then(() => {
+              ts: Date.now() })).then(() => {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }).catch(() => {
               Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.inviteSendError'));
@@ -2852,10 +3463,16 @@ export default function VoiceRoomScreen() {
       // reserved for owner dismiss / kick / block of that user.
       if (mySeatIdx >= 0) {
         try { stopPublishing(); } catch {  }
-        removeSeat(roomId, mySeatIdx).catch(() => {});
-        leaveAudience(roomId, myUid).catch(() => {});
+        if (pass2PollActiveRef.current) {
+          // Session-end: the seat leave lands immediately via REST;
+          // audience presence expires via beats (no tier audience op).
+          sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: mySeatIdx }).catch(() => {});
+        } else {
+          removeSeat(roomId, mySeatIdx).catch(() => {});
+          leaveAudience(roomId, myUid).catch(() => {});
+        }
       } else if (hasJoined) {
-        leaveAudience(roomId, myUid).catch(() => {});
+        if (!pass2PollActiveRef.current) leaveAudience(roomId, myUid).catch(() => {});
       }
     } finally {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -2865,16 +3482,39 @@ export default function VoiceRoomScreen() {
     }
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
 
-  // 2026-10-27 (boss: Room Info Unjoin = full Room Leave): Unjoin removes
-  // membership (leaveRoomCompletely: roomMembers + userRooms + audience)
-  // AND exits the session via the existing handleLeave path. The owner
-  // never gets this path (the panel hides Unjoin for owners).
+  // 2026-10-30 (boss: unjoin = demote to AUDIENCE, never eject): unjoin
+  // removes membership + the admin registry entry (unjoinToAudience) and
+  // leaves the user IN the room as audience — no handleLeave(), no
+  // navigation away. The owner never gets this path (the panel hides
+  // Unjoin for owners). Re-join via the green Join button creates a plain
+  // 'member' record (handleJoinRoom keeps an existing owner/admin role
+  // ONLY when the record still exists — unjoin deleted it — and the
+  // registry entry is gone, so no admin resurrection).
+  // Gap 5 (unchanged): SDK membership/admin writes queue while pass2-offline
+  // and apply on mode-exit goOnline; the seat_leave tier op below releases
+  // the seat immediately in pass2 mode.
   const handleUnjoinRoom = useCallback(async () => {
-    try { await leaveRoomCompletely(roomId, myUid); } catch { /* best-effort */ }
+    if (mySeatIdx >= 0) {
+      try { stopPublishing(); } catch { /* non-critical */ }
+      if (pass2PollActiveRef.current) {
+        sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: mySeatIdx }).catch(() => {});
+      }
+    }
+    try {
+      await unjoinToAudience(roomId, myUid, {
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+      });
+    } catch { /* best-effort — same as before */ }
     setIsRoomMember(false);
     setHasJoined(false);
-    handleLeave();
-  }, [roomId, myUid, handleLeave]);
+    setRoomInfoOpen(false);
+    // NOTE: deliberately NO handleLeave() — the user stays in the room as audience.
+  }, [roomId, myUid, myName, myInitials, myColor, myPhotoURL, mySeatIdx, stopPublishing]);
 
   const handleMinimize = useCallback(() => {
     hasLeftRef.current = true;
@@ -2951,7 +3591,7 @@ export default function VoiceRoomScreen() {
       scrollTimerRef.current = null;
       chatRef.current?.scrollToEnd({ animated: true });
     }, 80);
-    sendRoomChatMsg(roomId, payload, id).then(() => {
+    sendChatInMode(roomId, payload, id).then(() => {
       // Server acked — the echo becomes a normal message (kept in
       // pending until the snapshot delivers it; see markEchoSendState).
       markEchoSendState(id, undefined);
@@ -3005,14 +3645,21 @@ export default function VoiceRoomScreen() {
           }).catch(() => {});
         })
         .catch(() => {});
-      joinRoomAsAudience(roomId, {
-        userId: myUid,
-        userName: myName,
-        initials: myInitials,
-        color: myColor,
-        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
-        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
-      }).catch(() => {});
+      // Gap 5: audience presence comes from beats in pass2 mode. The
+      // membership writes above stay on the SDK — they queue while
+      // offline and apply on the mode-exit goOnline (no
+      // join_membership tier op exists). The optimistic
+      // setHasJoined/setIsRoomMember above already updated the UI.
+      if (!pass2PollActiveRef.current) {
+        joinRoomAsAudience(roomId, {
+          userId: myUid,
+          userName: myName,
+          initials: myInitials,
+          color: myColor,
+          ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+          ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+        }).catch(() => {});
+      }
     }
   }, [roomId, myUid, myName, myInitials, myColor, myPhotoURL]);
 
@@ -3021,7 +3668,12 @@ export default function VoiceRoomScreen() {
     hasLeftRef.current = true;
     stopPublishing();
     try {
-      await disbandRoom(roomId);
+      // Gap 5: disband via REST in pass2 mode (owner only, server-side).
+      if (pass2PollActiveRef.current) {
+        await sendPass2RoomAction(roomId, 'disband', {});
+      } else {
+        await disbandRoom(roomId);
+      }
     } catch {
       Alert.alert('Disband failed', 'Could not delete the room. Please try again.');
       hasLeftRef.current = false;
@@ -3073,7 +3725,7 @@ export default function VoiceRoomScreen() {
     const quantity = info.quantity && info.quantity > 0 ? info.quantity : 1;
     const totalCoins = info.coins * quantity * Math.max(1, info.recipients.length);
     const thumb = info.thumbnailUrl || (info.emoji && info.emoji.startsWith('http') ? info.emoji : null);
-    sendRoomChatMsg(roomId, {
+    sendChatInMode(roomId, {
       senderId: myUid,
       senderName: myName,
       senderColor: myColor,
@@ -3092,7 +3744,7 @@ export default function VoiceRoomScreen() {
       ts: Date.now() }).catch(() => {});
 
     for (const r of info.recipients) {
-      sendRoomGiftEvent(roomId, {
+      sendGiftEventInMode(roomId, {
         giftId: info.giftId,
         emoji: info.emoji,
         coins: info.coins,
@@ -3131,7 +3783,7 @@ export default function VoiceRoomScreen() {
         });
       }, 3350);
     }
-    sendRoomEmojiReaction(roomId, { emoji, byUid: myUid, byName: myName }).catch(() => {});
+    sendReactionInMode(roomId, { emoji, byUid: myUid, byName: myName }).catch(() => {});
     // Chat bubble/sticker: same optimistic echo as text messages.
     const id = createRoomChatKey(roomId);
     const payload: Omit<RoomChatMsg, 'id' | 'isMe'> = {
@@ -3146,7 +3798,7 @@ export default function VoiceRoomScreen() {
     setMessages((prev: ChatMsg[]) => [...prev, echo]);
     // 2026-10-26 (weak network outbox): persist so kill-and-reopen resumes.
     void persistOutboxEntry(roomId, { id, payload });
-    sendRoomChatMsg(roomId, payload, id).then(() => {
+    sendChatInMode(roomId, payload, id).then(() => {
       markEchoSendState(id, undefined);
       void removeOutboxEntry(roomId, id);
     }).catch(() => {
@@ -3417,11 +4069,13 @@ export default function VoiceRoomScreen() {
                   </View>
                 </ScalePress>
               )}
-              <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}>
-                <View style={{ padding: 10 }}>
-                  <TrioIcon kind="dots" size={24} color={themeOnBg} />
-                </View>
-              </ScalePress>
+              {mySeatIdx === 0 && (
+                <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCustomizeOpen(true); }}>
+                  <View style={{ padding: 10 }}>
+                    <TrioIcon kind="dots" size={24} color={themeOnBg} />
+                  </View>
+                </ScalePress>
+              )}
               <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setInviteOpen(true); }}>
                 <View style={{ padding: 10 }}>
                   <TrioIcon kind="share" size={24} color={themeOnBg} />
@@ -3460,10 +4114,10 @@ export default function VoiceRoomScreen() {
             </Pressable>
 
             {}
-            {/* 2026-10-27 (boss): green + button by the room name,
-                audience ONLY (showJoinBanner: non-member, non-owner/admin,
+            {/* 2026-10-30 (boss): green + button by the room name,
+                audience ONLY (non-member, non-owner/admin — seated or
                 unseated). Tap = handleJoinRoom (writes the member record). */}
-            {showJoinBanner && (
+            {showAudienceJoinPlus && (
               <ScalePress onPress={handleJoinRoom}>
                 <View style={{
                   width: 36, height: 36, borderRadius: 18,
@@ -3503,9 +4157,9 @@ export default function VoiceRoomScreen() {
               )}
               {/* 2026-10-27 (boss): settings gear moved into the Room Info
                   panel — no longer duplicated in the room header. */}
-              {/* 2026-10-25 (boss): three-dot customize panel — ONLY an
-                  admin/owner seated in the host seat sees it. */}
-              {isHostSeatedOwnerOrAdmin && (
+              {/* 2026-10-30 (boss): three-dot customize panel — ONLY the
+                  Host-seat occupant sees it. */}
+              {isHostSeatOccupant && (
                 <ScalePress onPress={() => setCustomizeOpen(true)}>
                   <Feather name="more-horizontal" size={22} color={C.sub} />
                 </ScalePress>
@@ -3999,6 +4653,7 @@ export default function VoiceRoomScreen() {
 
       <VoiceRoomModals
         accentColor={accentColor}
+        pass2Active={pass2PollActive}
         roomId={roomId}
         myUid={myUid}
         myName={myName}
@@ -4107,11 +4762,15 @@ export default function VoiceRoomScreen() {
         requests={pendingRequests}
         myUid={myUid}
         isHost={isOwnerOrAdmin}
+        pass2Active={pass2PollActive}
+        audienceUids={new Set(audience.map((m) => m.id))}
         myPosition={myQueuePosition}
         onClose={() => setSeatQueueOpen(false)}
         onCancelMine={() => {
           if (myQueuedRequest) {
-            cancelSeatRequest(roomId, myQueuedRequest.id)
+            (pass2PollActiveRef.current
+              ? sendPass2RoomAction(roomId, 'seat_request_cancel', { requestId: myQueuedRequest.id })
+              : cancelSeatRequest(roomId, myQueuedRequest.id))
               .then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
               .catch((e: unknown) => Alert.alert(t('voiceRoom.screen.error'), getErrorCause(e)));
           }
@@ -4152,7 +4811,10 @@ export default function VoiceRoomScreen() {
           // Optimistic local update + Firebase sync so ALL users see the change.
           activeThemeIdRef.current = newThemeId;
           setActiveThemeId(newThemeId);
-          updateRoomSettings(roomId, { themeId: newThemeId }).catch(() => {
+          // Gap 5: themeId is an INFO_EDIT_FIELD — info_edit in pass2 mode.
+          (pass2PollActiveRef.current
+            ? sendPass2RoomAction(roomId, 'info_edit', { themeId: newThemeId })
+            : updateRoomSettings(roomId, { themeId: newThemeId })).catch(() => {
             Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.screen.settingsSaveError'));
           });
         }}
@@ -4215,6 +4877,7 @@ export default function VoiceRoomScreen() {
         isOwnerOrAdmin={isOwnerOrAdmin}
         myUid={myUid}
         myName={myName}
+        pass2Active={pass2PollActive}
         onClose={() => setAnnouncementOpen(false)}
       />
       <IntimacyModal
