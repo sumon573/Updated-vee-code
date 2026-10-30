@@ -308,7 +308,7 @@ function fmtCompact(n: number): string {
 
 // 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
 // gorgeous, premium look. Same size as LevelBadge.
-function PremiumPill({ label, icon, colors }: { label: string; icon?: string; colors: [string, string] }) {
+function PremiumPill({ label, icon, colors, padH = 8 }: { label: string; icon?: string; colors: [string, string]; padH?: number }) {
   // 2026-10-30 (boss): short pill - hug content (no fixed width) + Lv Max size:
   // height 20, radius 10, paddingHorizontal 8, icon 12, text 11/700. REPLACES the noble-plate banner.
   return (
@@ -318,7 +318,7 @@ function PremiumPill({ label, icon, colors }: { label: string; icon?: string; co
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
-          height: 20, borderRadius: 10, paddingHorizontal: 8,
+          height: 20, borderRadius: 10, paddingHorizontal: padH,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
       >
         {icon && <Text style={{ fontSize: 12, marginRight: 3 }}>{icon}</Text>}
@@ -1543,6 +1543,7 @@ export default function ProfileScreen({
                 Use -> shows, Remove -> hides. Rank alone must not display it. */}
             {nobleState && NOBLE_RANKS[nobleState.rankIndex] && activeNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key ? (
               <PremiumPill
+                padH={NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
                 label={NOBLE_RANKS[nobleState.rankIndex].name.toUpperCase()}
                 icon={nobleThemeFor(nobleState.rankIndex)?.entryIcon}
                 colors={[NOBLE_RANKS[nobleState.rankIndex].color, lightenHex(NOBLE_RANKS[nobleState.rankIndex].color, 60)]}
