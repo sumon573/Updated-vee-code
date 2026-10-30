@@ -6,14 +6,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 // the reward card (Decoration + Honor Nameplate only). ONE pill per reward:
 // rank color + white star + star number (boss's samples: star + number).
 // Ranks without a spec (Knight, and any future rank) render nothing.
-const STAR_SPECS: Record<string, { stars: number; color: string; border?: string }> = {
+const STAR_SPECS: Record<string, { stars: number; color: string; border?: string; colors?: string[]; locations?: number[]; numColor?: string }> = {
   baron: { stars: 1, color: '#26A69A' },
   viscount: { stars: 1, color: '#42A5F5' },
   count: { stars: 2, color: '#7E57C2', border: 'rgba(255,255,255,0.55)' },
   marquis: { stars: 2, color: '#EC407A', border: 'rgba(255,255,255,0.55)' },
   duke: { stars: 2, color: '#FF7043', border: 'rgba(255,255,255,0.55)' },
   royalduke: { stars: 3, color: '#FFA000', border: 'rgba(255,215,0,0.9)' },
-  king: { stars: 5, color: '#FBC02D', border: 'rgba(255,215,0,0.95)' },
+  king: { stars: 5, color: '#FBC02D', border: '#6B4A00',
+    colors: ['#FFF6C8', '#F5C542', '#C9970D', '#F8D95A', '#8A5E00'],
+    locations: [0, 0.28, 0.52, 0.75, 1], numColor: '#4A3200' },
 };
 
 function lighten(hex: string, f: number): string {
@@ -40,7 +42,8 @@ export function NobleStarPill({ grantId }: { grantId: string }) {
   const spec = STAR_SPECS[key];
   return (
     <LinearGradient
-      colors={[lighten(spec.color, 0.45), spec.color]}
+      colors={spec.colors ?? [lighten(spec.color, 0.45), spec.color]}
+      locations={spec.locations}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={{
@@ -50,7 +53,7 @@ export function NobleStarPill({ grantId }: { grantId: string }) {
       }}
     >
       <Text style={{ fontSize: 12, color: '#FFFFFF', marginRight: 3 }}>★</Text>
-      <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>{spec.stars}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '800', color: spec.numColor ?? '#FFFFFF' }}>{spec.stars}</Text>
     </LinearGradient>
   );
 }
