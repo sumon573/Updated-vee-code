@@ -11,7 +11,8 @@
  * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
+import { View, Text, Alert, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
+import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ref, update } from 'firebase/database';
 import { database } from '@/src/config/firebase';

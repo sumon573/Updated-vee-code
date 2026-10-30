@@ -5,7 +5,8 @@
  */
 
 import { memo, useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, FlatList, Pressable, Alert, Platform } from 'react-native';
+import { View, Text, Pressable, Alert, Platform } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { Feather } from '@expo/vector-icons';

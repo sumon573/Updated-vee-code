@@ -9,12 +9,11 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import { ScrollView } from 'react-native';
+import { ScrollView as GHScrollView, RefreshControl } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -723,7 +722,7 @@ export default function VoiceRoomHome({
           Recommended list is long and non-virtualized, so mounting every
           card at once was the main scroll cost. Images are memory-disk
           cached, so clipped cards repaint instantly on scroll-back. */}
-      <ScrollView
+      <GHScrollView
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
@@ -894,7 +893,7 @@ export default function VoiceRoomHome({
                   })
                 : (!recLoading && recLiveRef.current ? <EmptySection message={t('voiceRoom.home.noCategoryRooms')} /> : null)
             )}
-      </ScrollView>
+      </GHScrollView>
 
       {/* Leaderboard Modal */}
       <LeaderboardModal
@@ -938,7 +937,7 @@ export default function VoiceRoomHome({
               </View>
             </View>
             {/* Search results - filter by Room ID only */}
-            <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
+            <GHScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
               {(() => {
                 const q = roomSearchQuery.trim().toLowerCase();
                 if (!q) return (
@@ -965,7 +964,7 @@ export default function VoiceRoomHome({
                   />
                 ));
               })()}
-            </ScrollView>
+            </GHScrollView>
           </SafeAreaView>
         </View>
       </Modal>
