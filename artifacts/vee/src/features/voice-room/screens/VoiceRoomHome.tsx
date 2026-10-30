@@ -723,6 +723,7 @@ export default function VoiceRoomHome({
           card at once was the main scroll cost. Images are memory-disk
           cached, so clipped cards repaint instantly on scroll-back. */}
       <GHScrollView
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}

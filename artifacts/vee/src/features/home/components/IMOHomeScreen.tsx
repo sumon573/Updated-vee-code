@@ -600,7 +600,7 @@ export default function IMOHomeScreen() {
         windowSize={11}
         initialNumToRender={15}
         maxToRenderPerBatch={10}
-        removeClippedSubviews={true}
+        removeClippedSubviews={false}
         nestedScrollEnabled={true}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
