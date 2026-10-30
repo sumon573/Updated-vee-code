@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
@@ -359,6 +359,28 @@ export default function IMOHomeScreen() {
   const handleProfileEdge = useCallback(() => {
     router.push('/profile' as any);
   }, [router]);
+
+  // 2026-10-30 (boss: underline exactly under the active tab, incl.
+  // room entry/return): focus repair. If the UI-thread pager position
+  // and the JS tab ever disagree on return (e.g. a settle callback
+  // dropped across a room/profile push), re-align them to the visual
+  // truth: a small drift snaps the indicator to the JS tab; a full-tab
+  // drift adopts the visible page as the tab (the user is looking at
+  // that page). No-op in the normal case (already aligned).
+  useFocusEffect(
+    useCallback(() => {
+      const p = pagerProgress.value;
+      if (Math.abs(p - pagerIndex) < 0.5) {
+        if (p !== pagerIndex) pagerProgress.value = pagerIndex;
+      } else {
+        const ni = Math.max(0, Math.min(2, Math.round(p)));
+        if (ni !== pagerIndex) {
+          setPagerIndex(ni);
+          setActiveTab(ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts');
+        }
+      }
+    }, [pagerIndex]),
+  );
 
   // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
   // Chat → chats, Voice → rooms tab (inline, bars stay), Contacts → contacts, DP → profile

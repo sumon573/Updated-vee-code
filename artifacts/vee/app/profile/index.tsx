@@ -685,7 +685,7 @@ export default function ProfileScreen({
       setListedVisitorTotal(countListed(map));
     });
   }, [isMe, user?.uid]);
-  // 2026-10-30 (boss, visitors bell): gentle bell sway loop (own profile only).
+  // 2026-10-30 (boss, visitors bell): bell sway loop, stronger +-15deg (own profile only; boss 08:01: clearly visible, still gentle).
   useEffect(() => {
     if (!isMe) return;
     const loop = Animated.loop(Animated.sequence([
@@ -728,7 +728,7 @@ export default function ProfileScreen({
   // 2026-10-30 (boss, imo bell design): beside-number = TOTAL listed visitors
   // (7-day window, same as the Recent Visitors TitleBar count), 99+ cap.
   const [listedVisitorTotal, setListedVisitorTotal] = useState(0);
-  // 2026-10-30 (boss, visitors bell): gentle bell sway value (±6deg).
+  // 2026-10-30 (boss, visitors bell): bell sway value (+-15deg; stronger per boss 08:01).
   const bellSway = useRef(new Animated.Value(0)).current;
   // 2026-10-30 (boss, imo-style overlay header): status-bar inset for the
   // overlay icons (cover reaches the screen top; icons sit below the bar).
@@ -1388,7 +1388,7 @@ export default function ProfileScreen({
             physical left/right so they can never mirror-flip: back left;
             right group left-to-right = bell, gear, three-dot. Bell is white
             outline + plain number beside it (listed total, 99+ cap) + green
-            dot iff unseen; bell sways gently left-right (own only). */}
+            dot iff unseen; bell sways left-right, stronger +-15deg (own only). */}
         <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 56 }}>
           <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
             <Feather name="arrow-left" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
@@ -1396,8 +1396,8 @@ export default function ProfileScreen({
           {isMe ? (
             <Pressable onPress={() => router.push('/profile/visitors')} style={{ position: 'absolute', right: vId ? 84 : 44, top: insets.top + 8, height: 40, flexDirection: 'row', alignItems: 'center' }} hitSlop={8}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={{ transform: [{ rotate: bellSway.interpolate({ inputRange: [-1, 1], outputRange: ['-6deg', '6deg'] }) }] }}>
-                  <Feather name="bell" size={22} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+                <Animated.View style={{ transform: [{ rotate: bellSway.interpolate({ inputRange: [-1, 1], outputRange: ['-15deg', '15deg'] }) }] }}>
+                  <Feather name="bell" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
                 </Animated.View>
                 {unseenVisitorCount > 0 ? (
                   <View style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: C.green, borderWidth: 1, borderColor: C.card }} />

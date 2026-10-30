@@ -58,9 +58,10 @@ const PAGER_FLIP_DIRECTION = false;
 // ─── Settle tuning (single place) ───
 const SETTLE_FRACTION = 0.25; // drag past 25% of a page → settle on the next page
 const FLING_VELOCITY = 800; // px/s — a fast fling settles on the next page even short of 25%
-const PROFILE_EDGE_THRESHOLD = -0.3; // progress past -0.3 from Chat → push /profile on release
+const PROFILE_EDGE_THRESHOLD = -0.25; // 2026-10-30 (boss: Profile swipe must feel identical to the other direction): same 25% effort as SETTLE_FRACTION — the old -0.3 on top of 0.7 resistance needed ~43% of a screen drag
 const EDGE_RESISTANCE_DEAD_END = 0.3; // rubber-band factor past the Contacts end
-const EDGE_RESISTANCE_PROFILE = 0.7; // pull factor toward the Profile edge (a real destination, so it follows the finger more)
+// 2026-10-30 (boss: Profile parity): NO resistance toward Profile — it is a real destination, so the page follows the finger 1:1 exactly like Chat → Voice → Contacts (the old 0.7 made it feel stiff). Pull clamps at one full page (see onUpdate).
+const EDGE_RESISTANCE_PROFILE = 1.0;
 const SPRING_CONFIG = { damping: 30, stiffness: 350, mass: 1, overshootClamping: true };
 
 type HomePagerProps = {
@@ -105,7 +106,7 @@ export default function HomePager({ pages, index, progress, onIndexChange, onPro
       let p = grabProgress.value + (dir * e.translationX) / W;
       // Edge resistance: dead end past Contacts, softer pull toward Profile.
       if (p > last) p = last + (p - last) * EDGE_RESISTANCE_DEAD_END;
-      if (p < 0) p = p * EDGE_RESISTANCE_PROFILE;
+      if (p < 0) p = Math.max(p * EDGE_RESISTANCE_PROFILE, -1);
       progress.value = p;
     })
     .onEnd((e) => {

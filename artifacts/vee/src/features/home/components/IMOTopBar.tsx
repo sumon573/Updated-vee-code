@@ -63,7 +63,11 @@ export default function IMOTopBar({
     const p = pagerProgress.value;
     const w = rowWidth.value;
     const [c0, c1, c2] = tabCenters.value;
-    // Until measured (first frame), fall back to the space-around estimate.
+    // 2026-10-30 (boss: underline must sit exactly under the active tab):
+    // never show the indicator from estimated centers — an estimate is
+    // visibly off-center, and a wrong base/estimate put it a full tab off
+    // on his phone. Centers measure on mount (one frame); until then hide.
+    const isMeasured = w > 0 && c0 > 0 && c1 > 0 && c2 > 0;
     const e0 = c0 || w / 6;
     const e1 = c1 || w / 2;
     const e2 = c2 || (5 * w) / 6;
@@ -75,9 +79,11 @@ export default function IMOTopBar({
     );
     return {
       transform: [{ translateX: center - 16 }],
-      opacity: activeTab === 'none' ? 0 : 1,
+      opacity: activeTab === 'none' || !isMeasured ? 0 : 1,
     };
-  });
+    // Deps refresh the closure when the settled tab changes, so the
+    // opacity (and the none-hide) can never go stale on the UI thread.
+  }, [activeTab]);
   return (
     <View
       style={{
@@ -243,6 +249,11 @@ export default function IMOTopBar({
             style={[
               {
                 position: 'absolute',
+                // 2026-10-30 (boss: exact underline): explicit physical
+                // left anchor — without it the base position is Yoga's
+                // static-flow guess, which shifted the dash a full tab
+                // off on his phone. translateX is measured from here.
+                left: 0,
                 bottom: 10,
                 width: 32,
                 height: 3,
