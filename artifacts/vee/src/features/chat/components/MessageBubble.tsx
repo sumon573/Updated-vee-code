@@ -14,6 +14,7 @@ import * as MediaLibrary from 'expo-media-library';
 // only accepts LOCAL file URIs; passing an https:// URL silently does nothing.
 import { File, Paths } from 'expo-file-system';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Polyline } from 'react-native-svg';
 // 2026-10-25 (boss order): DM long-press Copy — expo-clipboard is
 // already a dependency (InviteModal, VoiceRoomScreen), so no new module.
 import * as Clipboard from 'expo-clipboard';
@@ -287,10 +288,30 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   ) : message.status === 'sending' ? (
     <Feather name="clock" size={12} color={C.muted} />
   ) : message.status === 'delivered' || isPeerOnline ? (
-    <View style={{ flexDirection: 'row' }}>
-      <Feather name="check" size={12} color="#009DFF" />
-      <Feather name="check" size={12} color="#009DFF" />
-    </View>
+    // 2026-10-30 (boss: double tick must match his pictures exactly):
+    // tall steep overlapping checks, measured from his screenshots
+    // (42x26 box, second check offset ~13, bold stroke) — two
+    // separated Feather checks are wide/shallow/gapped and do NOT
+    // match. Color #009DFF sampled from the pictures. Single tick
+    // and circle below are unchanged.
+    <Svg width={14} height={9} viewBox="0 0 42 26">
+      <Polyline
+        points="3,14 11,21 27,3"
+        fill="none"
+        stroke="#009DFF"
+        strokeWidth={5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Polyline
+        points="16,14 24,21 39,3"
+        fill="none"
+        stroke="#009DFF"
+        strokeWidth={5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   ) : (
     <Feather name="check" size={12} color="#009DFF" />
   );

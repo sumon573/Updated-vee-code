@@ -341,15 +341,17 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const typingDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 2026-10-19 (stability): seen-receipt gating — mark seen ONLY while the
-  // user is actually viewing the bottom of the chat (atBottomRef), throttle
-  // marks to one per 5s, and remember the newest key already marked
-  // (lastMarkedKeyRef) so each mark reads only the newer-than-last-seen
-  // delta instead of the last 100 messages every time.
+  // user is actually viewing the bottom of the chat (atBottomRef), and
+  // remember the newest key already marked (lastMarkedKeyRef) so each
+  // mark reads only the newer-than-last-seen delta instead of the last
+  // 100 messages every time.
+  // 2026-10-30 (boss: seen must be INSTANT): NO throttle — the old 5s
+  // throttle deferred a mark up to 5s in rapid back-and-forth, so the
+  // sender's circle appeared seconds late. Every trigger below writes
+  // immediately when at bottom.
   const atBottomRef       = useRef(true);
-  const lastMarkSeenAtRef = useRef(0);
   const lastMarkedKeyRef  = useRef<string | null>(null);
   const markedChatRef     = useRef<string | null>(null);
-  const pendingMarkSeenRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 2026-10-13 (Sumon): inbox খুললে সর্বশেষ message-এ থাকতে হবে। image/media
   // async load হয়ে content height বদলালে scroll position নষ্ট হয় — তাই
   // initial load phase-এ onContentSizeChange-এও scroll to end করি।
@@ -481,30 +483,20 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const isSystemChat = isVeeTeam(effectiveParticipantId);
 
   // ── Mark seen on open ──────────────────────────────────────────────────
-  // 2026-10-19 (stability): throttled + gated — only when the user is
+  // 2026-10-19 (stability): instant + gated — only when the user is
   // actually at the bottom (visible); never while scrolled up reading
   // history (that wrongly cleared the unread badge). Each invocation reads
   // only messages newer than the last marked key.
-  const markSeenThrottled = useCallback(() => {
+  // 2026-10-30 (boss: seen must be INSTANT): writes immediately, no
+  // throttle, no deferred timer. The at-bottom gate stays (never mark
+  // while scrolled up reading history); markAllSeen itself writes only
+  // unmarked peer messages, so a trigger with nothing new writes nothing
+  // new apart from the unread-count reset.
+  const markSeen = useCallback(() => {
     if (!atBottomRef.current) return;
     // Fix #35: the user is viewing this chat right now — dismiss its
-    // system-bar notification(s) at once, even when the Firebase
-    // seen-write below is throttled. Best-effort, never fatal.
+    // system-bar notification(s) at once. Best-effort, never fatal.
     void dismissChatNotifications(chatId);
-    const now = Date.now();
-    if (now - lastMarkSeenAtRef.current < 5000) {
-      // 2026-10-30 (boss: ticks real-time): a throttled mark is deferred, not
-      // dropped — otherwise a message arriving inside the window would never
-      // be marked seen until the next message/scroll.
-      if (!pendingMarkSeenRef.current) {
-        pendingMarkSeenRef.current = setTimeout(() => {
-          pendingMarkSeenRef.current = null;
-          markSeenThrottled();
-        }, 5000 - (now - lastMarkSeenAtRef.current));
-      }
-      return;
-    }
-    lastMarkSeenAtRef.current = now;
     const afterKey = markedChatRef.current === chatId ? lastMarkedKeyRef.current : null;
     markedChatRef.current = chatId;
     // background: safe to swallow — seen receipts are best-effort
@@ -515,11 +507,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       .catch(() => {});
   }, [chatId, myUid]);
 
+  // 2026-10-30 (boss: seen must be INSTANT): trigger on the NEWEST
+  // message key, not just length — subscribeMessages caps at 50, so in
+  // a thread longer than 50 a new message keeps length at 50 and a
+  // length-only effect would never fire (the mark would never be written
+  // while sitting at the bottom). messages are ascending, so the last
+  // element is the newest.
+  const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
     if (messages.length > 0) {
-      markSeenThrottled();
+      markSeen();
     }
-  }, [chatId, myUid, messages.length, markSeenThrottled]);
+  }, [chatId, myUid, messages.length, newestMessageId, markSeen]);
 
   // ── Block status: check on open and refresh when returning ────────────────
   useEffect(() => {
@@ -583,8 +582,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     setShowScrollBtnGuarded(!isAtBottom);
     // 2026-10-19: user scrolled back to the bottom after reading history —
     // messages that arrived meanwhile are now visible; mark them seen.
-    if (isAtBottom && !wasAtBottom) markSeenThrottled();
-  }, [markSeenThrottled, setShowScrollBtnGuarded]);
+    if (isAtBottom && !wasAtBottom) markSeen();
+  }, [markSeen, setShowScrollBtnGuarded]);
 
   const scrollToBottom = useCallback(() => {
     flatRef.current?.scrollToOffset({ offset: 0, animated: true });
