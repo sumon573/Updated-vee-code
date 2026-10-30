@@ -13,6 +13,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ref, update } from 'firebase/database';
+import { database } from '@/src/config/firebase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
@@ -57,6 +59,10 @@ type ContentTab = Exclude<HomeTab, 'me'> | 'voice' | 'profile';
 export default function IMOHomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  // TEMPORARY scroll diagnostic (batch 22, remove after verdict): proves
+  // whether list gestures arrive and whether content exceeds container.
+  const diagRef = useRef<{ chatContentH: number; chatLayout: boolean }>({ chatContentH: 0, chatLayout: false });
+  const diag = (key: string, value: number) => { const uid = user?.uid; if (!uid) return; update(ref(database, `users/${uid}/diagScroll`), { [key]: value }).catch(() => {}); };
   const [activeTab, setActiveTab] = useState<ContentTab>('chats');
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
@@ -581,6 +587,10 @@ export default function IMOHomeScreen() {
         initialNumToRender={15}
         maxToRenderPerBatch={10}
         removeClippedSubviews={false}
+        nestedScrollEnabled={true}
+        onScrollBeginDrag={() => diag('chatsDragAt', Date.now())}
+        onContentSizeChange={(_w, h) => { if (Math.abs(h - diagRef.current.chatContentH) > 50) { diagRef.current.chatContentH = h; diag('chatsContentH', Math.round(h)); } }}
+        onLayout={(e) => { if (!diagRef.current.chatLayout) { diagRef.current.chatLayout = true; diag('chatsLayoutH', Math.round(e.nativeEvent.layout.height)); } }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

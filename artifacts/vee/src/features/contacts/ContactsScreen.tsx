@@ -4,7 +4,7 @@
  * Requests tab split into: People → Me (received) | Me → People (sent).
  */
 
-import { memo, useEffect, useState, useCallback } from 'react';
+import { memo, useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, FlatList, Pressable, Alert, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -276,6 +276,9 @@ type RequestSubTab = 'received' | 'sent';
 
 export default function ContactsScreen() {
   const { user: me } = useAuth();
+  // TEMPORARY scroll diagnostic (batch 22, remove after verdict).
+  const diagCRef = useRef<{ contentH: number; layout: boolean }>({ contentH: 0, layout: false });
+  const diagC = (key: string, value: number) => { const uid = me?.uid; if (!uid) return; update(ref(database, `users/${uid}/diagScroll`), { [key]: value }).catch(() => {}); };
   const { t } = useTranslation();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('friends');
@@ -822,6 +825,7 @@ export default function ContactsScreen() {
                 style={{ flex: 1 }}
                 removeClippedSubviews={false}
                 data={visibleIncoming}
+                nestedScrollEnabled={true}
                 keyExtractor={(item) => item.fromUid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
@@ -848,6 +852,7 @@ export default function ContactsScreen() {
                 style={{ flex: 1 }}
                 removeClippedSubviews={false}
                 data={visibleSent}
+                nestedScrollEnabled={true}
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
@@ -895,6 +900,10 @@ export default function ContactsScreen() {
               style={{ flex: 1 }}
               removeClippedSubviews={false}
               data={visibleContacts}
+              nestedScrollEnabled={true}
+              onScrollBeginDrag={() => diagC('friendsDragAt', Date.now())}
+              onContentSizeChange={(_w, h) => { if (Math.abs(h - diagCRef.current.contentH) > 50) { diagCRef.current.contentH = h; diagC('friendsContentH', Math.round(h)); } }}
+              onLayout={(e) => { if (!diagCRef.current.layout) { diagCRef.current.layout = true; diagC('friendsLayoutH', Math.round(e.nativeEvent.layout.height)); } }}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingBottom: 120 }}
               showsVerticalScrollIndicator={false}
