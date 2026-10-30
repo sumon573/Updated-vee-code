@@ -1221,6 +1221,10 @@ function RootLayoutNav() {
           name="profile/honor"
           options={{ animation: 'slide_from_right' }}
         />
+        <Stack.Screen
+          name="profile/visitors"
+          options={{ animation: 'slide_from_right' }}
+        />
         {/* RC6 fix Issue 8: real 1-to-1 audio call screen */}
         <Stack.Screen
           name="audio-call"

@@ -18,7 +18,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -29,6 +29,7 @@ import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFram
 import { hasOfficialBadge, getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { GrantedBadge } from '@/src/data/honor';
 import { subscribeFollowCounts, followUser, unfollowUser, subscribeIsFollowing } from '@/src/services/followService';
+import { subscribeVisitors, recordVisit, countUnseenListed, countListed } from '@/src/services/visitorService';
 import {
   sendFriendRequest, cancelFriendRequest, acceptFriendRequest, rejectFriendRequest,
   subscribeFriendStatus, FriendStatus } from '@/src/services/friendRequestService';
@@ -666,6 +667,35 @@ export default function ProfileScreen({
     })();
     return () => { cancelled = true; };
   }, [isMe, user?.uid]);
+  // 2026-10-30 (boss, visitors bell): record a visit when viewing ANOTHER
+  // user's profile (once per profile mount); own profile is never recorded.
+  // Write is silent until the profileVisitors rules patch lands (see visitorService).
+  useEffect(() => {
+    if (isMe || !displayUid || !user?.uid) return;
+    void recordVisit(displayUid, user.uid);
+  }, [displayUid, isMe, user?.uid]);
+  // 2026-10-30 (boss, visitors bell + imo bell design): live bell counts
+  // (own profile only; listed 7-day window only, so viewing the list always
+  // clears the dot): beside-number = TOTAL listed visitors; green dot iff
+  // unseen-listed > 0.
+  useEffect(() => {
+    if (!isMe || !user?.uid) { setUnseenVisitorCount(0); setListedVisitorTotal(0); return; }
+    return subscribeVisitors(user.uid, (map) => {
+      setUnseenVisitorCount(countUnseenListed(map));
+      setListedVisitorTotal(countListed(map));
+    });
+  }, [isMe, user?.uid]);
+  // 2026-10-30 (boss, visitors bell): gentle bell sway loop (own profile only).
+  useEffect(() => {
+    if (!isMe) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(bellSway, { toValue: 1, duration: 1100, useNativeDriver: true }),
+      Animated.timing(bellSway, { toValue: -1, duration: 2200, useNativeDriver: true }),
+      Animated.timing(bellSway, { toValue: 0, duration: 1100, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [isMe, bellSway]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
@@ -693,6 +723,16 @@ export default function ProfileScreen({
   // 2026-10-29 (boss, imo mirror): "..." popup, bio More/Collapse, card roles,
   // owner countries, raw profile fields, cover upload state.
   const [showVidPopup, setShowVidPopup] = useState(false);
+  // 2026-10-30 (boss, visitors bell): green dot iff unseen-listed > 0.
+  const [unseenVisitorCount, setUnseenVisitorCount] = useState(0);
+  // 2026-10-30 (boss, imo bell design): beside-number = TOTAL listed visitors
+  // (7-day window, same as the Recent Visitors TitleBar count), 99+ cap.
+  const [listedVisitorTotal, setListedVisitorTotal] = useState(0);
+  // 2026-10-30 (boss, visitors bell): gentle bell sway value (±6deg).
+  const bellSway = useRef(new Animated.Value(0)).current;
+  // 2026-10-30 (boss, imo-style overlay header): status-bar inset for the
+  // overlay icons (cover reaches the screen top; icons sit below the bar).
+  const insets = useSafeAreaInsets();
   const [bioExpanded, setBioExpanded] = useState(false);
   const [roleMap, setRoleMap] = useState<Record<string, string>>({});
   const [ownerCountryMap, setOwnerCountryMap] = useState<Record<string, string>>({});
@@ -1315,39 +1355,18 @@ export default function ProfileScreen({
   const myGenderSym = genderSymbol(extraFields.gender);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['bottom', 'left', 'right']}>
       {/* ─── 2026-10-29 (boss, imo mirror): cover + DP + chips ───
           Cover is fixed 180dp for ALL users; DP is 80dp for ALL users.
           Cover tap (own only) opens the full-screen cover viewer first
           (same viewer as DP, same Change pill); Change opens the change
           option — NOT inside the Edit Profile sub-flow. The whole page scrolls as ONE container (imo-like, 2026-10-29 Fix #4):
           cover, DP, name, chips, bio, sections and the bottom action all scroll;
-          navigation stays reachable via the slim sticky bar. Inline vId +
+          Header is the imo-style overlay (2026-10-30): NO bar, NO name text — white icons sit ON the cover and scroll away with it. Inline vId +
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
-      <ScrollView stickyHeaderIndices={[0]} style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Slim sticky bar (imo scrolled look, 2026-10-29 Fix #4; 2026-10-30 mirror-proof): back + name + gear/"..." — native stickyHeaderIndices, no scroll handlers, no jank.
-            Icon placement is ABSOLUTE with physical left/right offsets (back left:4; three-dot right:4; gear right:44 when the three-dot is also present, else right:4).
-            Physical left/right are never flipped by RTL layout mirroring (unlike flex row order), so gear + three-dot stay on the RIGHT on every phone regardless of layout direction.
-            Name stays flex:1 and centered, with side margins that clear the absolute icons. Bar height, back behavior, gear-only-when-isMe, three-dot-only-when-vId, and the vId popup are all unchanged. */}
-        <View style={{ height: 56, backgroundColor: C.card, borderBottomWidth: 0.5, borderBottomColor: C.border, justifyContent: 'center' }}>
-          <View style={{ flex: 1, marginLeft: 48, marginRight: (isMe ? 40 : 0) + (vId ? 40 : 0) + 8, justifyContent: 'center' }}>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: C.text, textAlign: 'center' }} numberOfLines={1}>{displayName}</Text>
-          </View>
-          <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-            <Feather name="arrow-left" size={24} color={C.text} />
-          </Pressable>
-          {isMe ? (
-            <Pressable onPress={() => router.push('/profile/settings')} style={{ position: 'absolute', right: vId ? 44 : 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-              <Feather name="settings" size={22} color={C.text} />
-            </Pressable>
-          ) : null}
-          {vId ? (
-            <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-              <Feather name="more-horizontal" size={24} color={C.text} />
-            </Pressable>
-          ) : null}
-        </View>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+        <View>
         <Pressable
           onPress={isMe ? handleCoverTap : undefined}
           style={{ height: 180, backgroundColor: '#E8E8ED', alignItems: 'center', justifyContent: 'center' }}
@@ -1363,6 +1382,44 @@ export default function ProfileScreen({
             </View>
           )}
         </Pressable>
+        {/* 2026-10-30 (boss, imo-style overlay header): NO white bar, NO name
+            text — white icons sit ON the cover photo and scroll away with it
+            (like the pre-batch-1 overlay + imo). Icons are ABSOLUTE with
+            physical left/right so they can never mirror-flip: back left;
+            right group left-to-right = bell, gear, three-dot. Bell is white
+            outline + plain number beside it (listed total, 99+ cap) + green
+            dot iff unseen; bell sways gently left-right (own only). */}
+        <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 56 }}>
+          <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Feather name="arrow-left" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+          </Pressable>
+          {isMe ? (
+            <Pressable onPress={() => router.push('/profile/visitors')} style={{ position: 'absolute', right: vId ? 84 : 44, top: insets.top + 8, height: 40, flexDirection: 'row', alignItems: 'center' }} hitSlop={8}>
+              <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <Animated.View style={{ transform: [{ rotate: bellSway.interpolate({ inputRange: [-1, 1], outputRange: ['-6deg', '6deg'] }) }] }}>
+                  <Feather name="bell" size={22} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+                </Animated.View>
+                {unseenVisitorCount > 0 ? (
+                  <View style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: C.green, borderWidth: 1, borderColor: C.card }} />
+                ) : null}
+              </View>
+              {listedVisitorTotal > 0 ? (
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>{listedVisitorTotal > 99 ? '99+' : String(listedVisitorTotal)}</Text>
+              ) : null}
+            </Pressable>
+          ) : null}
+          {isMe ? (
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ position: 'absolute', right: vId ? 44 : 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="settings" size={22} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+            </Pressable>
+          ) : null}
+          {vId ? (
+            <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="more-horizontal" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+            </Pressable>
+          ) : null}
+        </View>
+        </View>
         <View style={{ backgroundColor: C.card, paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ marginTop: -40 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable
@@ -1744,7 +1801,7 @@ export default function ProfileScreen({
           onPress={() => setShowVidPopup(false)}
         />
         <View style={{
-          position: 'absolute', top: 60, right: 16,
+          position: 'absolute', top: insets.top + 56, right: 16,
           flexDirection: 'row', alignItems: 'center',
           backgroundColor: '#FFFFFF', borderRadius: 14,
           paddingHorizontal: 16, paddingVertical: 12,
