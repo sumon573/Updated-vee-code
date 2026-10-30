@@ -1539,7 +1539,9 @@ export default function ProfileScreen({
                 )}
               </View>
             ) : null}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] ? (
+            {/* 2026-10-30 (boss): pill follows the EQUIPPED plate, not just the rank —
+                Use -> shows, Remove -> hides. Rank alone must not display it. */}
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && activeNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key ? (
               <PremiumPill
                 label={NOBLE_RANKS[nobleState.rankIndex].name.toUpperCase()}
                 icon={nobleThemeFor(nobleState.rankIndex)?.entryIcon}
