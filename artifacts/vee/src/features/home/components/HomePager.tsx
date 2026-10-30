@@ -8,14 +8,13 @@
  * Built only on react-native-gesture-handler + react-native-reanimated,
  * both already in package.json.
  *
- * Page order left→right: Profile (route edge) | Chat | Voice | Contacts.
- * This component hosts the three INLINE pages [chats, voice, contacts].
- * Profile is NOT a mounted page here — its screen lives in
- * app/profile/index.tsx (owned by another builder) and embedding it
- * would double the header and break its back button. Instead, dragging
- * from Chat toward Profile pulls the page with the finger and, on
- * release past threshold, fires onProfileEdge — the shell pushes
- * /profile (the same destination as the DP tap).
+ * Page order left→right: Profile | Chat | Voice | Contacts.
+ * 2026-10-30 (boss: profile pre-loaded, slide just opens it): Profile
+ * is a REAL pager page at progress -1 (chats=0, voice=1, contacts=2),
+ * mounted beside the other pages. The slide IS the Chat → Voice
+ * mechanism, mirrored — no route push, no mount, no spring-back
+ * reversal at release, so the old drag-then-push jerk (J2+J3+J4) is
+ * gone. The /profile ROUTE is kept for room entry + deep links.
  *
  * Smoothness:
  * - Finger-follows-the-drag: progress is written directly from the pan
@@ -51,31 +50,34 @@ import Animated, {
 // ─── DIRECTION MAPPING — single flip flag ───
 // STANDARD (false): finger moves LEFT → travel right in the page order
 // (Chat → Voice → Contacts); finger moves RIGHT → travel left
-// (Chat → Profile edge). If the boss corrects the direction, flip this
+// (Chat → Profile page). If the boss corrects the direction, flip this
 // ONE line to true — nothing else changes.
 const PAGER_FLIP_DIRECTION = false;
 
 // ─── Settle tuning (single place) ───
 const SETTLE_FRACTION = 0.25; // drag past 25% of a page → settle on the next page
 const FLING_VELOCITY = 800; // px/s — a fast fling settles on the next page even short of 25%
-const PROFILE_EDGE_THRESHOLD = -0.25; // 2026-10-30 (boss: Profile swipe must feel identical to the other direction): same 25% effort as SETTLE_FRACTION — the old -0.3 on top of 0.7 resistance needed ~43% of a screen drag
 const EDGE_RESISTANCE_DEAD_END = 0.3; // rubber-band factor past the Contacts end
-// 2026-10-30 (boss: Profile parity): NO resistance toward Profile — it is a real destination, so the page follows the finger 1:1 exactly like Chat → Voice → Contacts (the old 0.7 made it feel stiff). Pull clamps at one full page (see onUpdate).
-const EDGE_RESISTANCE_PROFILE = 1.0;
+// 2026-10-30 (boss: profile as pager page): -1 is a REAL page, so the
+// old profile-edge machinery (threshold + resistance + route push) is
+// DELETED. Progress clamps hard to [-1, 2]: rubber band only past the
+// Contacts end, none past the Profile end (a real page needs no edge).
 const SPRING_CONFIG = { damping: 30, stiffness: 350, mass: 1, overshootClamping: true };
 
 type HomePagerProps = {
-  pages: ReactNode[]; // [chats, voice, contacts]
-  index: number; // controlled page index (from shell state)
+  pages: ReactNode[]; // [profile, chats, voice, contacts] — array index = progress + 1
+  index: number; // controlled page index (from shell state): -1 = profile, 0 = chats, 1 = voice, 2 = contacts
   progress: SharedValue<number>; // shared page position — also drives the top-bar underline
   pagerSettled: SharedValue<boolean>; // true only when no pager spring is in flight (screen's focus repair reads it)
   onIndexChange: (index: number) => void;
-  onProfileEdge: () => void; // fired on release past the Profile threshold (shell pushes /profile)
 };
 
-export default function HomePager({ pages, index, progress, pagerSettled, onIndexChange, onProfileEdge }: HomePagerProps) {
+export default function HomePager({ pages, index, progress, pagerSettled, onIndexChange }: HomePagerProps) {
   const { width: W } = useWindowDimensions();
-  const last = pages.length - 1;
+  // Progress domain [-1, 2]: profile is first in the array, so the last
+  // progress value is pages.length - 2, NOT pages.length - 1.
+  const first = -1;
+  const last = pages.length - 2;
   // Page the pager is settled on or animating toward (worklet-side truth;
   // the parent's `index` prop is the JS-side mirror of this).
   const targetSV = useSharedValue(index);
@@ -124,9 +126,10 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       'worklet';
       const dir = PAGER_FLIP_DIRECTION ? 1 : -1;
       let p = grabProgress.value + (dir * e.translationX) / W;
-      // Edge resistance: dead end past Contacts, softer pull toward Profile.
+      // Edge behaviour: rubber band past the Contacts end only; the
+      // Profile end is a real page, so progress clamps hard at -1.
       if (p > last) p = last + (p - last) * EDGE_RESISTANCE_DEAD_END;
-      if (p < 0) p = Math.max(p * EDGE_RESISTANCE_PROFILE, -1);
+      if (p < first) p = first;
       progress.value = p;
     })
     .onEnd((e) => {
@@ -136,19 +139,12 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       const vPx = dir * e.velocityX; // px/s, + = toward Contacts
       const startPage = grabPage.value;
       let target = startPage;
-      let profileEdge = false;
-      if (startPage === 0 && movement < PROFILE_EDGE_THRESHOLD) {
-        // Dragged from Chat past the Profile threshold.
-        profileEdge = true;
-        target = 0;
-      } else if (movement > SETTLE_FRACTION || (vPx > FLING_VELOCITY && movement > 0.05)) {
+      // -1 is a real page now: the settle is the SAME rule in both
+      // directions (25% / fling), no profile-edge special case, no push.
+      if (movement > SETTLE_FRACTION || (vPx > FLING_VELOCITY && movement > 0.05)) {
         target = Math.min(startPage + 1, last);
       } else if (movement < -SETTLE_FRACTION || (vPx < -FLING_VELOCITY && movement < -0.05)) {
-        target = Math.max(startPage - 1, 0);
-      } else if (startPage === 0 && vPx < -FLING_VELOCITY && movement < -0.05) {
-        // Fast short fling from Chat toward Profile.
-        profileEdge = true;
-        target = 0;
+        target = Math.max(startPage - 1, first);
       }
       targetSV.value = target;
       pagerSettled.value = false;
@@ -163,7 +159,6 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
           if (target === targetSV.value) runOnJS(onIndexChange)(target);
         }
       });
-      if (profileEdge) runOnJS(onProfileEdge)();
     })
     .onFinalize((_e, success) => {
       'worklet';
@@ -181,8 +176,10 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       }
     });
 
+  // Row offset +1: the profile page sits at array index 0, so progress
+  // -1 (profile) must translate to 0, progress 0 (chats) to -W, etc.
   const rowStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -progress.value * W }],
+    transform: [{ translateX: -(progress.value + 1) * W }],
   }));
 
   return (

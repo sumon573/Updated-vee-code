@@ -648,8 +648,17 @@ function CardFriendTile({ friendUid, peer, pairValue, onPress }: {
 export default function ProfileScreen({
   onNavigateToContacts,
   targetUid,
-  targetName }: {
+  targetName,
+  embedded }: {
   onNavigateToContacts?: () => void;
+  /** 2026-10-30 (boss: profile as pager page): when true, this screen
+   *  renders as the home pager's profile page — the overlay header's
+   *  back arrow is HIDDEN (back is covered three ways: drag back, Chat
+   *  tab tap, system back via the shell BackHandler). Bell / gear /
+   *  three-dot, bio rows, country pin, sections, subscriptions and
+   *  scroll containers are EXACTLY as in route mode. Route mode
+   *  (embedded unset) is untouched. */
+  embedded?: boolean;
   /** When set, renders ANOTHER user's profile with the IDENTICAL layout.
    *  Only differences: no settings icon, three-dots shows their vId,
    *  bottom action buttons instead of Edit. */
@@ -1404,9 +1413,11 @@ export default function ProfileScreen({
             outline + plain number beside it (listed total, 99+ cap) + green
             dot iff unseen; bell sways left-right, stronger +-15deg (own only). */}
         <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 56 }}>
-          <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
-            <Feather name="arrow-left" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
-          </Pressable>
+          {!embedded && (
+            <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="arrow-left" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+            </Pressable>
+          )}
           {isMe ? (
             <Pressable onPress={() => router.push('/profile/visitors')} style={{ position: 'absolute', right: vId ? 84 : 44, top: insets.top + 8, height: 40, flexDirection: 'row', alignItems: 'center' }} hitSlop={8}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>

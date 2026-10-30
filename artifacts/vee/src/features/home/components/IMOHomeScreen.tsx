@@ -11,7 +11,7 @@
  * Planet: via story strip entry (existing '__planet__' handling).
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar } from 'react-native';
+import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
@@ -48,10 +48,11 @@ import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
+import ProfileScreen from '@/app/profile/index';
 import StoryViewer from '@/src/features/chat/screens/StoryViewer';
 import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
-type ContentTab = Exclude<HomeTab, 'me'> | 'voice';
+type ContentTab = Exclude<HomeTab, 'me'> | 'voice' | 'profile';
 
 export default function IMOHomeScreen() {
   const router = useRouter();
@@ -337,13 +338,13 @@ export default function IMOHomeScreen() {
 
   const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  // 2026-10-30 (boss: home page-swipe, super smooth): pager state.
-  // Page order left→right: Profile (route edge) | Chat | Voice | Contacts.
-  // Pager indices: chats=0, voice=1, contacts=2. Profile is NOT a mounted
-  // pager page (its screen lives in app/profile/index.tsx, owned by
-  // another builder, and embedding it would double the header and break
-  // its back button) — swiping from Chat toward Profile pushes /profile
-  // (the same destination as the DP tap) on release past threshold.
+  // 2026-10-30 (boss: home page-swipe, super smooth; profile as pager
+  // page, 2026-10-30: profile stays LOADED, slide just opens it).
+  // Page order left→right: Profile | Chat | Voice | Contacts.
+  // Pager indices: profile=-1, chats=0, voice=1, contacts=2. Profile IS
+  // a mounted pager page (warm-up mounted, kept forever after) — the
+  // slide is the pager spring itself, so no push, no mount, no reversal
+  // at release: the old drag-then-push jerk (J2+J3+J4) is gone.
   const [pagerIndex, setPagerIndex] = useState(0);
   const pagerProgress = useSharedValue(0);
   // 2026-10-30 (boss: one clean switch per tap, no jitter): settled flag
@@ -355,19 +356,32 @@ export default function IMOHomeScreen() {
   // (Assigned during render so a focus event always sees the fresh tab.)
   const pagerIndexRef = useRef(pagerIndex);
   pagerIndexRef.current = pagerIndex;
+  // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
+  // renders a placeholder for the profile page at home mount, then
+  // mounts the real ProfileScreen once after home settles
+  // (post-interaction, 1500ms fallback) and keeps it mounted forever
+  // after. Home opens fast; every drag after warm-up is jerk-free. A
+  // drag within the first ~second of home open may still show the
+  // placeholder (accepted, disclosed in the scope).
+  const [profileWarmed, setProfileWarmed] = useState(false);
+  useEffect(() => {
+    let done = false;
+    const warm = () => { if (!done) { done = true; setProfileWarmed(true); } };
+    const task = InteractionManager.runAfterInteractions(warm);
+    const fallback = setTimeout(warm, 1500);
+    return () => { done = true; task.cancel(); clearTimeout(fallback); };
+  }, []);
   const goToTab = useCallback((tab: ContentTab) => {
     setActiveTab(tab);
-    if (tab === 'chats') setPagerIndex(0);
+    if (tab === 'profile') setPagerIndex(-1);
+    else if (tab === 'chats') setPagerIndex(0);
     else if (tab === 'voice') setPagerIndex(1);
     else if (tab === 'contacts') setPagerIndex(2);
   }, []);
   const handlePagerIndexChange = useCallback((i: number) => {
     setPagerIndex(i);
-    setActiveTab(i === 0 ? 'chats' : i === 1 ? 'voice' : 'contacts');
+    setActiveTab(i === -1 ? 'profile' : i === 0 ? 'chats' : i === 1 ? 'voice' : 'contacts');
   }, []);
-  const handleProfileEdge = useCallback(() => {
-    router.push('/profile' as any);
-  }, [router]);
 
   // 2026-10-30 (boss: underline exactly under the active tab, incl.
   // room entry/return): focus repair. If the UI-thread pager position
@@ -399,13 +413,36 @@ export default function IMOHomeScreen() {
       if (Math.abs(p - idx) < 0.5) {
         if (p !== idx) pagerProgress.value = idx;
       } else {
-        const ni = Math.max(0, Math.min(2, Math.round(p)));
+        const ni = Math.max(-1, Math.min(2, Math.round(p)));
         if (ni !== idx) {
           setPagerIndex(ni);
-          setActiveTab(ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts');
+          setActiveTab(ni === -1 ? 'profile' : ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts');
         }
       }
     }, []),
+  );
+
+  // 2026-10-30 (boss: profile as pager page): system back from the pager
+  // profile goes to Chat, NOT out of the app. Focus-gated: the listener
+  // lives only while the home shell is focused, so back from a profile
+  // SUB-route (Edit / Visitors / ...) still pops that route natively —
+  // the shell loses focus while a route sits on top (listener removed)
+  // and regains it when the route pops (listener re-added). Press-time
+  // ref read: a pager switch never changes focus, so a listener added
+  // while on Chats still does the right thing once the user slides to
+  // Profile. RN Modal dialogs (story viewer, profile dialogs) add their
+  // own back listener when visible and consume the press first.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (pagerIndexRef.current === -1) {
+          goToTab('chats');
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+    }, [goToTab]),
   );
 
   // 2026-10-26 (boss: imo top bar restored): top-bar tabs drive the home.
@@ -474,6 +511,17 @@ export default function IMOHomeScreen() {
   const handleCallBack = useCallback((entry: CallHistoryEntry) => {
     startCall(entry.remoteUid, entry.remoteName || 'Vee User', entry.remotePhotoURL);
   }, [startCall]);
+
+  // 2026-10-30 (boss: profile pre-loaded): profile page node for the
+  // pager — placeholder until warm-up, then the real screen, mounted
+  // forever after. (If the pager unmounts for the stories/calls tabs,
+  // profileWarmed stays true, so returning mounts the real screen
+  // immediately — no placeholder repeat.)
+  const profilePage = profileWarmed ? (
+    <ProfileScreen key="pager-profile" embedded />
+  ) : (
+    <View key="pager-profile" style={{ flex: 1, backgroundColor: '#FFFFFF' }} />
+  );
 
   // 2026-10-30 (boss: home page-swipe): chat page node for the pager.
   // Content UNCHANGED — moved out of the conditional so the pager can
@@ -552,24 +600,26 @@ export default function IMOHomeScreen() {
       <IMOTopBar
         profilePhotoURL={profile?.photoURL || user?.photoURL || null}
         profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
-        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : 'none'}
+        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : activeTab === 'profile' ? 'profile' : 'none'}
         chatBadgeCount={totalUnread}
         pagerProgress={pagerProgress}
-        onProfilePress={() => router.push('/profile' as any)}
+        onProfilePress={() => goToTab('profile')}
         onTabPress={handleTopBarTab}
       />
-      {/* 2026-10-30 (boss: page-swipe): the three inline pages live in
-          the pager (top bar + bottom bar persist above/below it). Voice
-          still renders inline with no onClose → no header ✕, same as
-          before; switching tabs is the navigation. */}
-      {(activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts') && (
+      {/* 2026-10-30 (boss: page-swipe + profile as pager page): the four
+          inline pages live in the pager (top bar + bottom bar persist
+          above/below it, profile page included — NOT full-screen).
+          Voice still renders inline with no onClose → no header ✕,
+          same as before; switching tabs is the navigation. DP tap from
+          home is a pager switch now, not a route push; the /profile
+          route stays for room entry + deep links. */}
+      {(activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile') && (
         <HomePager
           index={pagerIndex}
           progress={pagerProgress}
           pagerSettled={pagerSettled}
           onIndexChange={handlePagerIndexChange}
-          onProfileEdge={handleProfileEdge}
-          pages={[chatsPage, <VoiceRoomHome key="pager-voice" />, <ContactsScreen key="pager-contacts" />]}
+          pages={[profilePage, chatsPage, <VoiceRoomHome key="pager-voice" />, <ContactsScreen key="pager-contacts" />]}
         />
       )}
 

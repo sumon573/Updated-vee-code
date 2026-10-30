@@ -25,10 +25,15 @@ interface IMOTopBarProps {
   profileInitials?: string;
   // 2026-10-26: 'none' = stories/calls tabs, which have no top-bar tab —
   // renders the bar with no active underline (never a wrong highlight).
-  activeTab: 'chat' | 'voice' | 'contacts' | 'none';
+  // 2026-10-30 (boss: profile as pager page): 'profile' = the pager
+  // profile page — no tab is tinted for it (the DP is not a tinted
+  // tab), and the dash sits at the DP position (see underlineStyle:
+  // progress -1 already interpolates to DP_CENTER_REL, and the opacity
+  // rule already shows for any non-'none' tab — no math change needed).
+  activeTab: 'chat' | 'voice' | 'contacts' | 'none' | 'profile';
   chatBadgeCount?: number;
-  // 2026-10-30 (boss: page-swipe): shared pager position (0 = chat,
-  // 1 = voice, 2 = contacts; negative while dragging toward Profile).
+  // 2026-10-30 (boss: page-swipe; profile page 2026-10-30): shared
+  // pager position (-1 = profile, 0 = chat, 1 = voice, 2 = contacts).
   // When set, the underline below slides WITH the drag instead of
   // jumping at settle. Absent -> old discrete underlines, untouched.
   pagerProgress?: SharedValue<number>;
