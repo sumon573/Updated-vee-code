@@ -100,7 +100,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '🖼️',
       // 2026-10-31 (boss): Count animated leaf frame (server parity).
       designUrl: 'https://vee-club.duckdns.org/m/a9c749f2d2c978b62a9faccc19d80278',
-      config: { seatScale: 1.8, seatDy: 0.04 },
+      config: { seatScale: 1.44, seatDy: 0.04 },
     },
     ripple: null, entryEffect: null,
   },
