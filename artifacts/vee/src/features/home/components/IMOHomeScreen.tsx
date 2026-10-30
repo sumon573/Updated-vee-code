@@ -12,7 +12,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, FlatList, Text, Alert, RefreshControl, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
@@ -43,7 +43,7 @@ import IMOTopBar from '@/src/features/home/components/IMOTopBar';
 import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
 import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
 import HomePager from '@/src/features/home/components/HomePager';
-import { useSharedValue } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
@@ -356,6 +356,44 @@ export default function IMOHomeScreen() {
   // (Assigned during render so a focus event always sees the fresh tab.)
   const pagerIndexRef = useRef(pagerIndex);
   pagerIndexRef.current = pagerIndex;
+  // 2026-10-30 (boss: full-page profile, Phase 2): shell bars collapse
+  // WITH the slide. Heights + opacity animate from the shared pager
+  // progress (UI thread): at progress -1 (profile page) both bars are
+  // height 0 and fully transparent, so the profile page is full-screen
+  // exactly like the route; at progress >= 0 both bars are full height.
+  // Sliding back restores them on the same curve — no cut, no jump.
+  // Full heights are measured from the bars' own layout (the measured
+  // View's height is its natural height, independent of the animated
+  // wrapper's clipped height) over exact-style estimates (top 77 = 16
+  // padding + 60 row + 1 border; bottom 57 = 24 padding + 32 icon + 1
+  // border), so the first frame is right and measurement corrects any
+  // drift. The shell SafeAreaView drops top/bottom edges (bars
+  // self-apply their insets via wrapper padding), so at -1 the pager
+  // truly fills the screen: no status-bar strip, no bottom gap. Other
+  // tabs keep identical total heights (inset + bar), so their geometry
+  // is unchanged. Stories/calls tabs are legacy-unreachable from this
+  // shell, but the guard below restores bars instantly if the pager
+  // ever unmounts (a tab switch is a hard screen change, not a slide).
+  const insets = useSafeAreaInsets();
+  const topBarFullH = useSharedValue(insets.top + 77);
+  const bottomBarFullH = useSharedValue(insets.bottom + 57);
+  const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
+  const topBarWrapStyle = useAnimatedStyle(() => {
+    if (!isPagerTab) return { height: topBarFullH.value, opacity: 1 };
+    const p = pagerProgress.value;
+    return {
+      height: interpolate(p, [-1, 0], [0, topBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+      opacity: interpolate(p, [-1, 0], [0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+    };
+  }, [isPagerTab]);
+  const bottomBarWrapStyle = useAnimatedStyle(() => {
+    if (!isPagerTab) return { height: bottomBarFullH.value, opacity: 1 };
+    const p = pagerProgress.value;
+    return {
+      height: interpolate(p, [-1, 0], [0, bottomBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+      opacity: interpolate(p, [-1, 0], [0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+    };
+  }, [isPagerTab]);
   // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
   // renders a placeholder for the profile page at home mount, then
   // mounts the real ProfileScreen once after home settles
@@ -590,25 +628,33 @@ export default function IMOHomeScreen() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       {/* 2026-10-24 (boss: no more builds): server-driven content surface.
           Renders nothing until RTDB `app_content` carries a 'home' item. */}
       <UniversalContentRenderer location="home" uid={user?.uid} />
       {/* 2026-10-26 (boss: imo top bar restored, 2026-10-10 design): DP +
           Chat / Voice / Contacts tabs + unread badge. Stories/calls tabs
           have no top-bar tab → 'none' (no wrong highlight). */}
-      <IMOTopBar
-        profilePhotoURL={profile?.photoURL || user?.photoURL || null}
-        profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
-        activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : activeTab === 'profile' ? 'profile' : 'none'}
-        chatBadgeCount={totalUnread}
-        pagerProgress={pagerProgress}
-        onProfilePress={() => goToTab('profile')}
-        onTabPress={handleTopBarTab}
-      />
+      <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, topBarWrapStyle]}>
+        <View
+          style={{ paddingTop: insets.top }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) topBarFullH.value = h; }}
+        >
+          <IMOTopBar
+            profilePhotoURL={profile?.photoURL || user?.photoURL || null}
+            profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
+            activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : activeTab === 'profile' ? 'profile' : 'none'}
+            chatBadgeCount={totalUnread}
+            pagerProgress={pagerProgress}
+            onProfilePress={() => goToTab('profile')}
+            onTabPress={handleTopBarTab}
+          />
+        </View>
+      </Animated.View>
       {/* 2026-10-30 (boss: page-swipe + profile as pager page): the four
-          inline pages live in the pager (top bar + bottom bar persist
-          above/below it, profile page included — NOT full-screen).
+          inline pages live in the pager. The shell bars collapse to
+          zero height on the profile page (full-screen, Phase 2) and
+          return on every other page.
           Voice still renders inline with no onClose → no header ✕,
           same as before; switching tabs is the navigation. DP tap from
           home is a pager switch now, not a route push; the /profile
@@ -671,10 +717,17 @@ export default function IMOHomeScreen() {
           the imo "Search chats and settings" page. The old dark network
           overlay is gone — connection status now lives IN this bar
           ("Connecting..." center + green dot on "+"). */}
-      <IMOBottomBar
-        onAddPress={() => goToTab('contacts')}
-        onSearchPress={() => router.push('/search' as any)}
-      />
+      <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, bottomBarWrapStyle]}>
+        <View
+          style={{ paddingBottom: insets.bottom }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) bottomBarFullH.value = h; }}
+        >
+          <IMOBottomBar
+            onAddPress={() => goToTab('contacts')}
+            onSearchPress={() => router.push('/search' as any)}
+          />
+        </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
