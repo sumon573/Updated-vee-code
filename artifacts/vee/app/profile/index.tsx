@@ -738,6 +738,7 @@ export default function ProfileScreen({
   const [ownerCountryMap, setOwnerCountryMap] = useState<Record<string, string>>({});
   const [extraFields, setExtraFields] = useState<{
     city?: string; hometown?: string; birthday?: string; gender?: string; country?: string;
+    language?: string; profession?: string;
   }>({});
   const [uploadingCover, setUploadingCover] = useState(false);
   // NOTE 7 (2026-10-11): real granted badges from Firebase (official/event only)
@@ -935,6 +936,7 @@ export default function ProfileScreen({
           setExtraFields({
             city: pick('city'), hometown: pick('hometown'),
             birthday: pick('birthday'), gender: pick('gender'), country: pick('country'),
+            language: pick('language'), profession: pick('profession'),
           });
         });
       } catch {}
@@ -1352,6 +1354,8 @@ export default function ProfileScreen({
   const myCountry = extraFields.country ?? '';
   const myCity = extraFields.city ?? '';
   const myHometown = extraFields.hometown ?? '';
+  const myLanguage = extraFields.language ?? '';
+  const myProfession = extraFields.profession ?? '';
   const myGenderSym = genderSymbol(extraFields.gender);
 
   return (
@@ -1528,11 +1532,39 @@ export default function ProfileScreen({
               </LightChip>
             ) : null}
           </View>
+          {/* 2026-10-30 (boss): bio rows use one premium Feather icon set — same size/alignment/spacing. */}
           {myCity ? (
-            <Text style={{ fontSize: 14, color: C.text, marginTop: 8 }}>🏙 {myCity}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <View style={{ width: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="map-pin" size={16} color={C.text} />
+              </View>
+              <Text style={{ fontSize: 14, color: C.text, flexShrink: 1 }}>{myCity}</Text>
+            </View>
           ) : null}
           {myHometown ? (
-            <Text style={{ fontSize: 14, color: C.text, marginTop: 4 }}>🏠 {myHometown}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <View style={{ width: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="home" size={16} color={C.text} />
+              </View>
+              <Text style={{ fontSize: 14, color: C.text, flexShrink: 1 }}>{myHometown}</Text>
+            </View>
+          ) : null}
+          {/* 2026-10-30 (boss): Language + Profession rows, same style/place as city/hometown. */}
+          {myLanguage ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <View style={{ width: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="globe" size={16} color={C.text} />
+              </View>
+              <Text style={{ fontSize: 14, color: C.text, flexShrink: 1 }}>{myLanguage}</Text>
+            </View>
+          ) : null}
+          {myProfession ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <View style={{ width: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="briefcase" size={16} color={C.text} />
+              </View>
+              <Text style={{ fontSize: 14, color: C.text, flexShrink: 1 }}>{myProfession}</Text>
+            </View>
           ) : null}
           {bio ? (
             <View style={{ marginTop: 8 }}>
