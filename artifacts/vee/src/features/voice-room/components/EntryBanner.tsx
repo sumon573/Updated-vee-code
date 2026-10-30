@@ -103,6 +103,10 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   }, []);
 
   const initials = (name || '?').trim().charAt(0).toUpperCase() || '?';
+  // 2026-10-30 (boss): entry banner shows name only, never the rank.
+  // Long names truncate to first 7 chars + '..' ('Muhammad' -> 'Muhamma..').
+  const rawName = name || '';
+  const displayName = rawName.length > 7 ? rawName.slice(0, 7) + '..' : rawName;
 
   // 2026-10-24 (Sumon): ENTRY ART branch — full animated banner art with
   // live DP + name composited into the art's own slots. Geometry is the
@@ -334,7 +338,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
           </View>
         )}
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} numberOfLines={1}>
-          {isNoble ? `${theme!.entryIcon} ${name} • ${rankName}` : `${name} is Coming`}
+          {displayName} is coming
         </Text>
       </LinearGradient>
     </Animated.View>
