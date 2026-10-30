@@ -14,8 +14,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, Alert, TouchableOpacity, Image, Platform, StatusBar, BackHandler, InteractionManager } from 'react-native';
 import { FlatList, RefreshControl } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ref, update } from 'firebase/database';
-import { database } from '@/src/config/firebase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
@@ -60,12 +58,6 @@ type ContentTab = Exclude<HomeTab, 'me'> | 'voice' | 'profile';
 export default function IMOHomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  // TEMPORARY scroll diagnostic (batch 22, remove after verdict): proves
-  // whether list gestures arrive and whether content exceeds container.
-  const diagRef = useRef<{ chatContentH: number; chatLayout: boolean }>({ chatContentH: 0, chatLayout: false });
-  const diag = (key: string, value: number) => { const uid = user?.uid; if (!uid) return; update(ref(database, `users/${uid}/diagScroll`), { [key]: value }).catch(() => {}); };
-  // TEMPORARY D1 (2026-10-30): home-mount marker + re-fire stored chats content height once uid is available.
-  useEffect(() => { if (!user?.uid) return; diag('homeMountedAt', Date.now()); if (diagRef.current.chatContentH > 0) diag('chatsContentH', Math.round(diagRef.current.chatContentH)); }, [user?.uid]);
   const [activeTab, setActiveTab] = useState<ContentTab>('chats');
   const [chats, setChats] = useState<Chat[]>([]);
   const [profile, setProfile] = useState<VeeUser | null>(null);
@@ -232,11 +224,19 @@ export default function IMOHomeScreen() {
   // (2026-10-11 Issue #4).
   // 2026-10-19 perf: useMemo'd — the old inline map rebuilt fresh object
   // identities on EVERY parent render, defeating row memoization.
-  const imoChats: IMOChat[] = useMemo(() => chats
+  // 2026-10-30 smoothness: reuse the previous item object when every field is
+  // unchanged, so memo()'d rows skip re-render on unrelated updates (a new message
+  // in one chat no longer re-renders all rows). The compare is exact: every item
+  // field is a primitive, and the cache is rebuilt from current ids each run.
+  const imoChatsCacheRef = useRef(new Map<string, IMOChat>());
+  const imoChats: IMOChat[] = useMemo(() => {
+    const imoChatsPrevCache = imoChatsCacheRef.current;
+    const imoChatsNextCache = new Map<string, IMOChat>();
+    const out = chats
     .filter((c) => !(c as any).isHidden) // hidden chats don't show in list
     .map((c) => {
     const live = c.participantId ? liveProfiles[c.participantId] : undefined;
-    return {
+    const item: IMOChat = {
       id: c.id,
       // 2026-10-13 (Sumon): NEVER show 'Unknown' — use 'Vee User' as fallback.
       // Root cause: test users with empty profiles; production users always have names.
@@ -252,9 +252,20 @@ export default function IMOHomeScreen() {
       isOnline: c.participantId ? (onlineMap[c.participantId] ?? false) : false,
       hasUnseenStory: c.participantId ? unseenStoryUids.has(c.participantId) : false,
     };
-  }), [chats, liveProfiles, avatarCache, onlineMap, unseenStoryUids]);
+    const hit = imoChatsPrevCache.get(item.id);
+    if (hit && hit.id === item.id && hit.name === item.name && hit.photoURL === item.photoURL && hit.lastMessage === item.lastMessage && hit.lastMessageTime === item.lastMessageTime && hit.unreadCount === item.unreadCount && hit.isPinned === item.isPinned && hit.isMuted === item.isMuted && hit.participantId === item.participantId && hit.isOnline === item.isOnline && hit.hasUnseenStory === item.hasUnseenStory && hit.isVoiceClub === item.isVoiceClub) { imoChatsNextCache.set(item.id, hit); return hit; }
+    imoChatsNextCache.set(item.id, item);
+    return item;
+    });
+    imoChatsCacheRef.current = imoChatsNextCache;
+    return out;
+  }, [chats, liveProfiles, avatarCache, onlineMap, unseenStoryUids]);
+  // 2026-10-30 smoothness: latest-list ref so row callbacks keep stable identity
+  // (row memo holds across chats updates); handlers resolve fresh data at tap time.
+  const imoChatsRef = useRef(imoChats);
+  imoChatsRef.current = imoChats;
 
-  // 2026-10-19 perf: fixed row heights (76px; 84px for the taller voice-club
+  // 2026-10-19 perf: fixed row heights (77px; 81px for the taller voice-club
   // ring rows) with memoized prefix-sum offsets, so FlatList can skip
   // per-row measurement. No scrollToIndex is used on this list; the layout
   // only feeds the renderer's windowing math.
@@ -263,21 +274,21 @@ export default function IMOHomeScreen() {
     let y = 0;
     for (let i = 0; i < imoChats.length; i += 1) {
       offsets[i] = y;
-      y += (imoChats[i].isVoiceClub || imoChats[i].hasUnseenStory) ? 84 : 76;
+      y += (imoChats[i].isVoiceClub || imoChats[i].hasUnseenStory) ? 81 : 77;
     }
     return offsets;
   }, [imoChats]);
   const getRowLayout = useCallback((_data: ArrayLike<IMOChat> | null | undefined, index: number) => {
-    const h = (_data?.[index]?.isVoiceClub || _data?.[index]?.hasUnseenStory) ? 84 : 76;
-    return { length: h, offset: rowOffsets[index] ?? index * 76, index };
+    const h = (_data?.[index]?.isVoiceClub || _data?.[index]?.hasUnseenStory) ? 81 : 77;
+    return { length: h, offset: rowOffsets[index] ?? index * 77, index };
   }, [rowOffsets]);
 
   // LONG-PRESS MENU (2026-10-11 Issue #6): imo-style context menu state.
   const [menuChat, setMenuChat] = useState<IMOChat | null>(null);
   const handleLongPress = useCallback((chatId: string) => {
-    const chat = imoChats.find((c) => c.id === chatId);
+    const chat = imoChatsRef.current.find((c) => c.id === chatId);
     if (chat) setMenuChat(chat);
-  }, [imoChats]);
+  }, []);
   const closeMenu = useCallback(() => setMenuChat(null), []);
   const runMenuAction = useCallback(async (fn: () => Promise<void>) => {
     const uid = user?.uid;
@@ -524,7 +535,7 @@ export default function IMOHomeScreen() {
 
   const handleChatPress = useCallback((chatId: string) => {
     // Find the chat to get participant details for the inbox header
-    const chat = imoChats.find((c) => c.id === chatId);
+    const chat = imoChatsRef.current.find((c) => c.id === chatId);
     if (chat) {
       const params = new URLSearchParams({
         participantId: chat.participantId || '',
@@ -535,7 +546,7 @@ export default function IMOHomeScreen() {
     } else {
       router.push(`/inbox/${chatId}` as any);
     }
-  }, [router, imoChats]);
+  }, [router]);
 
   // Shared call starter — used by chat-row call buttons and call-history call-back.
   const startCall = useCallback((participantId: string, name: string, photoURL?: string | null) => {
@@ -589,11 +600,8 @@ export default function IMOHomeScreen() {
         windowSize={11}
         initialNumToRender={15}
         maxToRenderPerBatch={10}
-        removeClippedSubviews={false}
+        removeClippedSubviews={true}
         nestedScrollEnabled={true}
-        onScrollBeginDrag={() => diag('chatsDragAt', Date.now())}
-        onContentSizeChange={(_w, h) => { if (Math.abs(h - diagRef.current.chatContentH) > 50) { diagRef.current.chatContentH = h; diag('chatsContentH', Math.round(h)); } }}
-        onLayout={(e) => { if (!diagRef.current.chatLayout) { diagRef.current.chatLayout = true; diag('chatsLayoutH', Math.round(e.nativeEvent.layout.height)); } }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

@@ -116,7 +116,7 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
                   borderRadius: 28,
                   borderWidth: 2,
                   // Voice club keeps its blue ring; unseen story gets imo's
-                  // green ring. Same geometry, so row height stays 84.
+                  // green ring. Same geometry, so row height stays 81.
                   borderColor: chat.isVoiceClub ? '#2196F3' : '#4CAF50',
                   padding: 2,
                 }
@@ -126,6 +126,7 @@ export default memo(function IMOChatListItem({ chat, onPress, onLongPress, onCal
           {displayPhotoURL ? (
             <Image
               source={{ uri: displayPhotoURL }}
+              cachePolicy="memory-disk"
               style={{ width: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, height: chat.isVoiceClub || chat.hasUnseenStory ? 48 : 52, borderRadius: chat.isVoiceClub || chat.hasUnseenStory ? 24 : 26 }}
             />
           ) : (
