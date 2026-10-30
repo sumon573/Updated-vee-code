@@ -413,19 +413,19 @@ export default function IMOHomeScreen() {
   const bottomBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: bottomBarFullH.value, opacity: 1 };
     const p = pagerProgress.value;
-    const h = interpolate(p, [-1, 0], [0, bottomBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
-    // Floor (belt-and-braces, 2026-10-30 regression): on any settled
-    // tab (p >= 0 — chats, voice, contacts) the bar can never be
-    // shorter than its true content height 57 + clearance, even if
-    // bottomBarFullH were ever stale. At p >= 0 the correct height
-    // already equals the floor, so this changes nothing when healthy
-    // and rescues the bar when not. During a profile drag (p < 0)
-    // the smooth shrink is preserved, and at p = -1 the height is
-    // exactly 0, so the profile-page collapse is untouched.
-    return {
-      height: p >= 0 ? Math.max(h, 57 + bottomClearance) : h,
-      opacity: interpolate(p, [-1, 0], [0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
-    };
+    // 2026-10-30 (boss: NO bottom bar on the voice page ONLY): knots are
+    // profile -1, chats 0, voice 1, contacts 2. Height + opacity follow
+    // the live drag progress, so chats<->voice and voice<->contacts
+    // fade + shrink smoothly with the finger — never a flash or pop.
+    // The true-height floor (belt-and-braces from the 16:11/14:56
+    // measurement flaws) is applied to `full` BEFORE interpolation, so
+    // the curve stays continuous and settled chats/contacts keep their
+    // exact old height (57 + clearance). Profile edge (-1 -> 0) and
+    // the profile-page collapse (height exactly 0 at -1) are unchanged.
+    const full = Math.max(bottomBarFullH.value, 57 + bottomClearance);
+    const h = interpolate(p, [-1, 0, 1, 2], [0, full, 0, full], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
+    const o = interpolate(p, [-1, 0, 1, 2], [0, 1, 0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
+    return { height: h, opacity: o };
   }, [isPagerTab, bottomClearance]);
   // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
   // renders a placeholder for the profile page at home mount, then

@@ -12,7 +12,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScrollView as GHScrollView, RefreshControl } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -138,7 +138,7 @@ function goToRoom(id: string, userName?: string) {
 function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 14 }}>
       <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
       {onSeeAll && (
         <ScalePress onPress={onSeeAll}>
@@ -232,6 +232,9 @@ export default function VoiceRoomHome({
   onClose }: VoiceRoomHomeProps = {}) {
   const { user } = useAuth();
   const { t } = useTranslation();
+  // 2026-10-30 (boss: voice page full display, no shell bar here):
+  // the page's own scroll padding reserves only the OS gesture zone.
+  const insets = useSafeAreaInsets();
 
   // My Rooms — owned by me (seeded from cache: tab switches render
   // instantly, no loader flash — live subscriptions refresh underneath).
@@ -554,9 +557,10 @@ export default function VoiceRoomHome({
     return unsub;
   }, [user?.uid, refreshTick, pass2HomeActive]);
 
-  // Directory feed: public rooms from the edge. Polls every 30s; the
-  // tier serves its 60s cache, so origin load stays ~1 refresh/min no
-  // matter how many phones poll.
+  // Directory feed: public rooms from the edge. Polls every 15s
+  // (2026-10-30: Trending real-time — halves the poll-phase lag; the
+  // edge 3s cache absorbs the rate and Fix #23 dedupes identical
+  // payloads, so no re-render churn and no extra origin load).
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -593,7 +597,7 @@ export default function VoiceRoomHome({
       }
     };
     load();
-    timer = setInterval(load, 30000);
+    timer = setInterval(load, 15000);
     return () => { cancelled = true; if (timer) clearInterval(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTick]);
@@ -672,7 +676,13 @@ export default function VoiceRoomHome({
     // liveCount of 1 (one ghost listener in the directory snapshot).
     // active:false rooms are excluded from every tab. (Missing flag is
     // NOT treated as closed — only explicit active:false is dropped.)
-    const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => r.active !== false && liveAudience(r) > 0);
+    // 2026-10-30 (boss: Trending sometimes not showing): liveCount is a
+    // swept value, so a snapshot can carry liveCount 0 for a room whose
+    // members are already seated (sweep pending) — the old single-signal
+    // test dropped such rooms from every tab. Accept EITHER occupancy
+    // signal from the same snapshot; a room with zero in every signal
+    // still hides, so the live-only rule is intact. Ranking untouched.
+    const onlyLive = (rooms: RoomInfo[]) => rooms.filter(r => r.active !== false && (liveAudience(r) > 0 || (r.memberCount ?? 0) + (r.listenerCount ?? 0) > 0));
     // TRENDING RANK (2026-10-11): most live audience first, then most diamonds
     // sent. Global — every user worldwide sees the same Firebase-driven order.
     const byTrendingRank = (rooms: RoomInfo[]) =>
@@ -726,7 +736,10 @@ export default function VoiceRoomHome({
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+        // 2026-10-30 (boss: no shell bar on this page): the old 120
+        // cleared a bar that no longer renders here; reserve only the
+        // OS gesture zone + breathing room so rooms fill the display.
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}
         // 2026-10-30 (boss video: voice page scrolls EXACTLY like imo):
         // the Recommended header + chips dock at the top once reached
         // and stay while cards flow beneath. Direct-child index map:
