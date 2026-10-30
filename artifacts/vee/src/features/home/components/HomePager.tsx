@@ -190,7 +190,11 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       <GestureDetector gesture={pan}>
         <Animated.View style={[{ flex: 1, flexDirection: 'row' }, rowStyle]}>
           {pages.map((page, i) => (
-            <View key={i} style={{ width: W }}>
+            /* 2026-10-30 (contacts scroll round 2): explicit page height —
+               the wrapper previously relied on the row's implicit cross-axis
+               stretch for its height; height: '100%' states the same value
+               explicitly so the page height never depends on a default. */
+            <View key={i} style={{ width: W, height: '100%' }}>
               {page}
             </View>
           ))}

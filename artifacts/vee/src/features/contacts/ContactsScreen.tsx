@@ -856,7 +856,11 @@ export default function ContactsScreen() {
         </View>
       ) : (
         /* ── FRIENDS TAB ── */
-        <>
+        /* 2026-10-30 (contacts scroll round 2): explicit flex:1 container —
+           the Friends list previously hung off a bare fragment while the
+           chats page and the Requests tab both hang off an explicit
+           flex:1 View; this makes the Friends chain structurally identical. */
+        <View style={{ flex: 1 }}>
           {visibleContacts.length === 0 ? (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 }}>
               <View style={{
@@ -895,7 +899,7 @@ export default function ContactsScreen() {
               renderItem={renderContact}
               />
           )}
-        </>
+        </View>
       )}
 
       {/* Find People Modal */}
