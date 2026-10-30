@@ -27,10 +27,11 @@
  * badge detail modal is unchanged (IMO exact). All logic unchanged.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { checkNobleMaintenance } from '@/src/services/nobleService';
-import { resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
+import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
+import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { View, Text, ScrollView, Pressable, Modal, Alert, Animated } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -45,6 +46,52 @@ import {
   type GrantedNameplate } from '@/src/services/badgeService';
 import type { GrantedBadge } from '@/src/data/honor';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+
+/** Lighten a hex color - second stop of the pill gradient (same helper as profile + Decoration). */
+function lightenHex(hex: string, amt: number): string {
+  const n = hex.replace('#', '');
+  const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
+  const num = parseInt(full, 16);
+  if (!Number.isFinite(num)) return hex;
+  const r = Math.min(255, ((num >> 16) & 0xff) + amt);
+  const g = Math.min(255, ((num >> 8) & 0xff) + amt);
+  const b = Math.min(255, (num & 0xff) + amt);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+/* 2026-10-30 (boss): noble-plate thumbnails show the short pill, not the
+   squeezed banner image - same design as the profile header + Decoration
+   cards. Mist plates (Viscount+ with a catalog mistColor) and unresolvable
+   ids fall back to today's rendering, unchanged. */
+function NoblePlatePill({ itemId, icon, imageStyle, textStyle, pillWrapStyle }: {
+  itemId: string; icon: string;
+  imageStyle: object; textStyle: object; pillWrapStyle?: object;
+}) {
+  const mistColor = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === itemId)?.nameplate.mistColor;
+  const rankIndex = NOBLE_RANKS.findIndex((r) => r.key === itemId.slice('noble-plate-'.length));
+  if (mistColor || rankIndex < 0) {
+    return /^https?:\/\//i.test(icon || '') ? (
+      <Image source={{ uri: icon }} style={imageStyle} contentFit="contain" />
+    ) : (
+      <Text style={textStyle}>{icon}</Text>
+    );
+  }
+  const rank = NOBLE_RANKS[rankIndex];
+  const entryIcon = nobleThemeFor(rankIndex)?.entryIcon;
+  return (
+    <View style={pillWrapStyle}>
+      <LinearGradient
+        colors={[rank.color, lightenHex(rank.color, 60)]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ height: 20, borderRadius: 10, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+      >
+        {entryIcon ? <Text style={{ fontSize: 12, marginRight: 3 }}>{entryIcon}</Text> : null}
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{rank.name.toUpperCase()}</Text>
+      </LinearGradient>
+    </View>
+  );
+}
 
 // IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
 // primary text #25292d, secondary #788187. Boss button standard #E3F2FD/#007AFF kept.
@@ -254,15 +301,13 @@ export default function HonorScreen() {
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
               borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3,
               flexDirection: 'row', alignItems: 'center' }}>
-              {/^https?:\/\//i.test(activePlate.icon || '') ? (
-                <Image
-                  source={{ uri: activePlate.icon }}
-                  style={{ width: 60, height: 12, marginRight: 6 }}
-                  contentFit="contain"
-                />
-              ) : (
-                <Text style={{ fontSize: 12, marginRight: 4 }}>{activePlate.icon}</Text>
-              )}
+              <NoblePlatePill
+                itemId={activePlate.id}
+                icon={activePlate.icon}
+                imageStyle={{ width: 60, height: 12, marginRight: 6 }}
+                textStyle={{ fontSize: 12, marginRight: 4 }}
+                pillWrapStyle={{ marginRight: 6 }}
+              />
               <Text style={{ fontSize: 12, fontWeight: '700', color: C.goldText }}>
                 {activePlate.name}
               </Text>
@@ -337,15 +382,12 @@ export default function HonorScreen() {
                     <View style={{
                       width: 80, height: 44, alignItems: 'center', justifyContent: 'center',
                       backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 8 }}>
-                      {/^https?:\/\//i.test(n.icon || '') ? (
-                        <Image
-                          source={{ uri: n.icon }}
-                          style={{ width: 80, height: 16 }}
-                          contentFit="contain"
-                        />
-                      ) : (
-                        <Text style={{ fontSize: 30 }}>{n.icon}</Text>
-                      )}
+                      <NoblePlatePill
+                        itemId={n.id}
+                        icon={n.icon}
+                        imageStyle={{ width: 80, height: 16 }}
+                        textStyle={{ fontSize: 30 }}
+                      />
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
