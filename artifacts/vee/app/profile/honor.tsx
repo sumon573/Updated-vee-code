@@ -35,6 +35,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { NobleStarPill } from '@/src/components/NobleStarPill';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, VeeUser } from '@/src/services/userService';
@@ -390,9 +391,12 @@ export default function HonorScreen() {
                       />
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
-                        {n.name}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, flexShrink: 1 }}>
+                          {n.name}
+                        </Text>
+                        <NobleStarPill grantId={n.id} />
+                      </View>
                       {/* Obtained date — visible to everyone */}
                       <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
                         {isActive ? 'Equipped' : `First obtained on ${formatObtainedDate(n.obtainedAt)}`}

@@ -89,6 +89,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
+import { NobleStarPill } from '@/src/components/NobleStarPill';
 
 /** Lighten a hex color - second stop of the pill gradient (same helper as profile's PremiumPill). */
 function lightenHex(hex: string, amt: number): string {
@@ -331,12 +332,13 @@ export default function DecorationScreen() {
       <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} itemId={item.id} />
       <View style={{ flex: 1, marginLeft: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text }} numberOfLines={1}>{item.name}</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text, flexShrink: 1 }} numberOfLines={1}>{item.name}</Text>
           {item.source === 'noble' && (
             <View style={{ marginLeft: 8, backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
               <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>NOBEL</Text>
             </View>
           )}
+          <NobleStarPill grantId={item.id} />
         </View>
         <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
           Obtained {formatObtainedDate(item.obtainedAt)} · {sourceLabel}

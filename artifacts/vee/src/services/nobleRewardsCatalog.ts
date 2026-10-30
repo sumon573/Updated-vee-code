@@ -191,36 +191,6 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     ripple: { fallbackIcon: '🌊', config: { colors: ['#FBC02D', '#F9A825'] } },
     entryEffect: { fallbackIcon: '✨' },
   },
-  {
-    rankKey: 'sking', rankName: 'SKing', rankColor: '#E65100',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-sking.png?v=2',
-      fallbackIcon: '👑',
-    },
-    frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-sking.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
-      fallbackIcon: '🖼️',
-    },
-    ripple: { fallbackIcon: '🌊', config: { colors: ['#E65100', '#BF360C'] } },
-    entryEffect: { fallbackIcon: '✨' },
-  },
-  {
-    rankKey: 'ssking', rankName: 'SSKing', rankColor: '#BF360C',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-ssking.png?v=2',
-      fallbackIcon: '👑',
-    },
-    frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-ssking.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
-      fallbackIcon: '🖼️',
-    },
-    ripple: { fallbackIcon: '🌊', config: { colors: ['#BF360C', '#880E4F'] } },
-    entryEffect: { fallbackIcon: '✨' },
-  },
 ];
 
 /**

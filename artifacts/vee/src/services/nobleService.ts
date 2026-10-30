@@ -8,7 +8,7 @@
  * Data model — users/{uid}/noble (single node, updated in ONE atomic
  * runTransaction per gift, so concurrent gifts can never double-count):
  *   xp                   lifetime XP (diamonds sent, excl. self-gifts)
- *   rankIndex            highest achieved rank (0=Knight … 9=SSKing)
+ *   rankIndex            highest achieved rank (0=Knight … 7=King)
  *   maintenanceRequired  XP that must be sent inside the current window
  *                        to keep the rank secured (= ceil(rankMinXP / 2);
  *                        e.g. Baron 1260 → 630, matching the IMO reference)
@@ -81,7 +81,7 @@ export interface NobleRank {
 /**
  * Rank thresholds. Anchor points come from the IMO reference video
  * (Baron 1260~8399, Marquis 252000~587999, Royal Duke 1260K~4200K,
- * SSKing 42000K~1000000000000K); the in-between ranks interpolate
+ * King 4200K~42000K); the in-between ranks interpolate
  * those anchors with non-overlapping contiguous ranges.
  */
 export const NOBLE_RANKS: NobleRank[] = [
@@ -93,9 +93,6 @@ export const NOBLE_RANKS: NobleRank[] = [
   { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
   { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
   { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 41999999,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
-  { key: 'sking',     name: 'SKing',      minXP: 42000000,  maxXP: 419999999, color: '#E65100', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
-  { key: 'ssking',    name: 'SSKing',     minXP: 420000000, maxXP: Number.MAX_SAFE_INTEGER, color: '#BF360C',
-    privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin', 'seatPriority'] },
 ];
 
 let nobleRanksLoadAttempted = false;
@@ -195,8 +192,6 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
   themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F'], 'coins', 4),
   themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B'], 'crowns', 4),
-  themeFor('#E65100', '\uD83D\uDCA5', ['\uD83D\uDCA5', '\uD83D\uDD25', '⚡'], 'sparks', 5),
-  themeFor('#BF360C', '\uD83D\uDC8E', ['\uD83D\uDC8E', '\uD83D\uDC51', '✨'], 'diamonds', 5),
 ];
 export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
   if (rankIndex < 0 || rankIndex >= NOBLE_THEMES.length) return null;
