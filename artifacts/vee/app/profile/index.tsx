@@ -1488,9 +1488,12 @@ export default function ProfileScreen({
                       // 2026-10-15 (Sumon): Nobel frame 110px — fits DP without looking oversized
                       // 2026-10-16 (Sumon): Nobel frames have COUNT text + crown ON TOP.
                       // Shift UP 8.25px so the frame covers the DP fully (no white space on top).
+                      // 2026-10-30 (boss): Baron crystal frame ONLY — centered (offset 0),
+                      // i.e. 8.25px DOWN from the up-shift: the up-shift left empty space
+                      // above the DP. Profile only; seats untouched.
                       const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                       const frameSize = isNobleFrame ? 110 : 92;
-                      const nobleOffsetY = isNobleFrame ? -8.25 : 0;
+                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (isNobleFrame ? -8.25 : 0);
                       return (
                         <Image
                           source={{ uri: activeFrameObj.icon }}
