@@ -139,7 +139,7 @@ function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => voi
   const { t } = useTranslation();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
-      <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
       {onSeeAll && (
         <ScalePress onPress={onSeeAll}>
           <View style={{
@@ -727,6 +727,14 @@ export default function VoiceRoomHome({
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+        // 2026-10-30 (boss video: voice page scrolls EXACTLY like imo):
+        // the Recommended header + chips dock at the top once reached
+        // and stay while cards flow beneath. Direct-child index map:
+        // 0 My Rooms header, 1 My Rooms carousel, 2 empty-state wrapper
+        // (always rendered, zero-height when non-empty), 3 Leaderboard,
+        // 4 Recommended wrapper (STICKY), 5+ room list. Preceding
+        // children are unconditional so index 4 can never shift.
+        stickyHeaderIndices={[4]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -734,7 +742,15 @@ export default function VoiceRoomHome({
             {/* ═══ MY ROOMS ═══ (2026-10-26: NO loader, ever — the shell +
                 cached lists render instantly; live feeds refresh underneath) */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
-              <Text style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{t('voiceRoom.home.myRooms')}</Text>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{t('voiceRoom.home.myRooms')}</Text>
+              {/* 2026-10-30 (boss: trophy at top of Room page): the reference
+                  header row (Room | Explore + chart icon) does not exist in
+                  Vee — no Explore tab in the tree — so the Leaderboard
+                  trophy sits here, first among the page header icons, and
+                  opens the same LeaderboardModal as the banner below. */}
+              <ScalePress onPress={() => setLeaderboardOpen(true)} style={{ padding: 8 }}>
+                <TrophyIcon size={24} />
+              </ScalePress>
               {/* Room ID search (Sumon 2026-10-12) */}
               <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
                 <Feather name="search" size={22} color={C.text} />
@@ -772,6 +788,9 @@ export default function VoiceRoomHome({
               ))}
             </GHScrollView>
 
+            {/* Always rendered (zero-height when non-empty) so the sticky
+                child index below can never shift on conditional content. */}
+            <View>
             {myRooms.length === 0 && !myLoading && (
               <View style={{
                 backgroundColor: C.surface, borderRadius: 14,
@@ -782,6 +801,7 @@ export default function VoiceRoomHome({
                 </Text>
               </View>
             )}
+            </View>
 
             {/* ═══ LEADERBOARD ENTRY POINT ═══ */}
             <ScalePress onPress={() => setLeaderboardOpen(true)}>
@@ -805,7 +825,8 @@ export default function VoiceRoomHome({
               </View>
             </ScalePress>
 
-            {/* ═══ RECOMMENDED ROOMS ═══ */}
+            {/* ═══ RECOMMENDED ROOMS ═══ (sticky child #4: docks at top) */}
+            <View style={{ backgroundColor: '#FFFFFF' }}>
             <SectionTitle title={t('voiceRoom.home.recommended')} />
 
             {/* Category tabs */}
@@ -830,6 +851,7 @@ export default function VoiceRoomHome({
                 />
               ))}
             </GHScrollView>
+            </View>
 
             {/* Room list for active tab */}
             {/* Fix 6: Show location states for nearby tab */}

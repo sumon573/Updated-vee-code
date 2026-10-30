@@ -101,7 +101,7 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
               <LockIcon size={13} />
             </View>
           )}
-          <Text numberOfLines={1} style={{
+          <Text numberOfLines={1} ellipsizeMode="tail" style={{
             color: '#000000', fontSize: 13, fontWeight: '800', flex: 1,
           }}>
             {room.name}

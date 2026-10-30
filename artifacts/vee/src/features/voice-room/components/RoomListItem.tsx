@@ -95,7 +95,7 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               ) : (
                 <Feather name="globe" size={13} color="#10B981" />
               )}
-              <Text numberOfLines={1} style={{ color: C.text, fontSize: 16, fontWeight: '800', flex: 1 }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: C.text, fontSize: 16, fontWeight: '800', flex: 1 }}>
                 {room.name}
               </Text>
             </View>
