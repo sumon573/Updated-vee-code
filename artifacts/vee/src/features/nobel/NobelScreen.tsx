@@ -332,7 +332,9 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               </Text>
             </View>
 
-            {/* Rank tabs — IMO: crown icon + name, orange selected */}
+            {/* Rank tabs — 2026-10-30 (Sumon): OWNED ONLY. Decoration shows
+                only what the user owns, so the strip lists the user's own rank
+                only; other ranks' rewards (unowned) are never shown. */}
             <View style={{ borderTopWidth: 8, borderTopColor: '#F7F7F7', marginTop: 16 }} />
             <ScrollView
               horizontal
@@ -341,6 +343,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
               style={{ borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}
             >
               {NOBLE_RANKS.map((r, idx) => {
+                if (idx !== rankIdx) return null;
                 const activeTab = idx === selectedRankIdx;
                 const crown = rankCrownSource(r.key);
                 return (
