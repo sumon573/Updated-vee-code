@@ -1940,6 +1940,12 @@ export type RoomEntryEvent = {
    * (Replaces the old boolean fancyEntry.)
    */
   nobleRankIndex?: number;
+  /**
+   * 2026-10-30 (boss): the joiner's EQUIPPED entry effect id
+   * (users/{uid}/activeEntryEffect) - receivers gate the Baron grand entry
+   * on it. Absent = old sender (rank-based fallback). Empty = none equipped.
+   */
+  activeEntryEffect?: string;
 };
 
 /**

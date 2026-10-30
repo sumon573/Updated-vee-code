@@ -473,7 +473,7 @@ export default function VoiceRoomScreen() {
     ),
     [blockedRecs, myUid],
   );
-  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number } | null>(null);
+  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   // 2026-10-19 (IMO waiting queue): 1-based position of my own pending seat
   // request in the time-ordered queue, or null when I'm not queued.
@@ -909,15 +909,19 @@ export default function VoiceRoomScreen() {
             }
           } catch {  }
         }
+        const myEffect = (myProfile as any)?.activeEntryEffect;
+        const effectField = myEffect !== undefined ? { activeEntryEffect: myEffect || '' } : {};
         setEntryBanner({
           name: displayName,
           photoURL: myPhotoURL || null,
-          ...(myRank != null ? { nobleRankIndex: myRank } : {}) });
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
+          ...effectField });
         sendRoomEntryEvent(roomId, {
           uid: myUid,
           name: displayName,
           photoURL: myPhotoURL || null,
-          ...(myRank != null ? { nobleRankIndex: myRank } : {}) }).catch(() => {});
+          ...(myRank != null ? { nobleRankIndex: myRank } : {}),
+          ...effectField }).catch(() => {});
       })();
     }
   }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate, isReturnFromMinimize, isRestore]);
@@ -935,7 +939,8 @@ export default function VoiceRoomScreen() {
       setEntryBanner({
         name: entry.name || 'User',
         photoURL: entry.photoURL || null,
-        ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
+        ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
+        ...((entry as any).activeEntryEffect !== undefined ? { activeEntryEffect: (entry as any).activeEntryEffect } : {}) });
     });
   }, [roomId, myUid, pass2PollActive]);
 
@@ -1821,7 +1826,8 @@ export default function VoiceRoomScreen() {
         setEntryBanner({
           name: entry.name || 'User',
           photoURL: entry.photoURL || null,
-          ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}) });
+          ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
+          ...((entry as any).activeEntryEffect !== undefined ? { activeEntryEffect: (entry as any).activeEntryEffect } : {}) });
       },
       onGift: (event) => {
         if (!event) return;
