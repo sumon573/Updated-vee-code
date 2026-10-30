@@ -583,6 +583,15 @@ export async function healMissingNobleItems(uid: string): Promise<void> {
     if (staleRanks.length) {
       await revokeNobleRanksExcept(uid, state.rankIndex, staleRanks);
     }
+    // 2026-10-31 (boss): noble plates auto-use — the current rank's plate is
+    // ALWAYS the active nameplate; there is no remove option for it.
+    try {
+      const plateId = `noble-plate-${rank.key}`;
+      const activeSnap = await get(ref(database, `users/${uid}/activeNameplate`)).catch(() => null);
+      if (activeSnap?.val() !== plateId) {
+        await set(ref(database, `users/${uid}/activeNameplate`), plateId);
+      }
+    } catch { /* non-critical — profile display derives from rank anyway */ }
   } catch {
     // Non-critical — will retry on next refresh
   }

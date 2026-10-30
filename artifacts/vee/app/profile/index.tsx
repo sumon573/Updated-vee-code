@@ -1335,10 +1335,17 @@ export default function ProfileScreen({
   const bio = profile?.bio || '';
   /* 2026-10-15 (Sumon): ONE active nameplate shows below the name on profile */
   const activeNameplate = grantedNameplates.find((n) => n.id === (profile as any)?.activeNameplate) || null;
+  /* 2026-10-31 (boss): noble plates auto-use — the profile ALWAYS shows the
+     current rank's plate (grant, else catalog art); the pointer only matters
+     for non-noble plates. There is no remove option for noble plates. */
+  const nobleRankKey = nobleState && NOBLE_RANKS[nobleState.rankIndex] ? NOBLE_RANKS[nobleState.rankIndex].key : null;
+  const rankPlateGrant = nobleRankKey ? grantedNameplates.find((n) => n.id === 'noble-plate-' + nobleRankKey) || null : null;
+  const rankPlateCatalog = nobleRankKey ? getActiveCatalog().find((r) => r.rankKey === nobleRankKey)?.nameplate : undefined;
+  const displayNameplate = rankPlateGrant || (nobleRankKey && rankPlateCatalog ? { id: 'noble-plate-' + nobleRankKey, icon: (rankPlateCatalog as any).designUrl || (rankPlateCatalog as any).fallbackIcon || '' } as GrantedNameplate : null) || activeNameplate;
   /* Mist color for Viscount+ nameplates */
   const nameplateMist = (() => {
-    if (!activeNameplate) return null;
-    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === activeNameplate.id);
+    if (!displayNameplate) return null;
+    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === displayNameplate.id);
     return entry?.nameplate.mistColor || null;
   })();
   const giftEntries = Object.entries(receivedGifts);
@@ -1526,25 +1533,27 @@ export default function ProfileScreen({
             ) : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-            {activeNameplate && /^https?:\/\//i.test(activeNameplate.icon) && !(nobleState && NOBLE_RANKS[nobleState.rankIndex] && activeNameplate.id.startsWith('noble-plate-')) ? (
+            {displayNameplate && /^https?:\/\//i.test(displayNameplate.icon) && !(nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate.id.startsWith('noble-plate-')) ? (
               <View style={{ marginRight: 6 }}>
                 {nameplateMist ? (
                   <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} fit="cover" />
                 ) : (
                   <Image
-                    source={{ uri: activeNameplate.icon }}
+                    source={{ uri: displayNameplate.icon }}
                     style={{ width: 100, height: 20 }}
                     contentFit="cover"
                   />
                 )}
               </View>
             ) : null}
+            {/* 2026-10-31 (boss): tapping the NOBLE plate opens the Nobel page. */}
+            <Pressable onPress={() => router.push('/profile/nobel')} hitSlop={4}>
             {/* 2026-10-31 (boss): Count plate ART on the profile at LevelBadge
                 height (20), replacing the pill — Count only, URL icon only. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'count' && activeNameplate?.id === 'noble-plate-count' && /^https?:\/\//i.test(activeNameplate.icon || '') ? (
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'count' && displayNameplate?.id === 'noble-plate-count' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
               <View style={{ marginRight: 6 }}>
                 <Image
-                  source={{ uri: activeNameplate.icon }}
+                  source={{ uri: displayNameplate.icon }}
                   style={{ width: 74, height: 20 }}
                   contentFit="contain"
                 />
@@ -1552,7 +1561,7 @@ export default function ProfileScreen({
             ) : null}
             {/* 2026-10-30 (boss): pill follows the EQUIPPED plate, not just the rank —
                 Use -> shows, Remove -> hides. Rank alone must not display it. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && activeNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !(NOBLE_RANKS[nobleState.rankIndex].key === 'count' && /^https?:\/\//i.test(activeNameplate.icon || '')) ? (
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !(NOBLE_RANKS[nobleState.rankIndex].key === 'count' && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
               <PremiumPill
                 padH={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 5 : NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
                 fontSize={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 9 : 11}
@@ -1561,6 +1570,7 @@ export default function ProfileScreen({
                 colors={[NOBLE_RANKS[nobleState.rankIndex].color, lightenHex(NOBLE_RANKS[nobleState.rankIndex].color, 60)]}
               />
             ) : null}
+            </Pressable>
             <LevelBadge level={userLevel} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>

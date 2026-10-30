@@ -1,7 +1,7 @@
 /**
  * Profile — Decoration Screen (2026-10-15, Sumon).
  *
- * LUXURY unified collection: Nobel | Frames | Nameplates | Ripples | Entry FX
+ * LUXURY unified collection: Frames | Nameplates | Ripples | Entry FX
  * - Shows ONLY owned items (no badges — badges live in Honor section)
  * - Tap to equip, "✓ USING" indicator on active item
  * - Nobel rewards auto-grant on rank-up (healMissingNobleItems)
@@ -10,9 +10,9 @@
  * Light mode only. All data is real — no demo content.
  *
  * 2026-10-19: restyled to IMO Me-tab design language (#F4F5F5 bg, white
- * cards, 56dp title bar). The orange Nobel tab button (his reference design)
- * and the gold luxury identity are kept verbatim; item rows are now white
- * cards with gold accents. All equip/remove/store logic unchanged.
+ * cards, 56dp title bar). Item rows are white cards with gold accents.
+ * 2026-10-31 (boss): Nobel tab removed from Decoration (Nobel page now opens
+ * from the profile nameplate); noble rank plates auto-use, no remove option.
  */
 import { useEffect, useState } from 'react';
 import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
@@ -38,7 +38,6 @@ import {
   type GrantedEntryEffect } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import * as Haptics from 'expo-haptics';
-import NobelScreen from '@/src/features/nobel/NobelScreen';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 
 // IMO BIUI light tokens (2026-10-19, Me-tab spec): bg #f4f5f5, white cards,
@@ -77,10 +76,9 @@ function TitleBar({ title }: { title: string }) {
   );
 }
 
-type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx' | 'nobel';
+type TabKey = 'frames' | 'nameplates' | 'ripples' | 'entryfx';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'nobel', label: 'Noble', icon: '♛' }, // 2026-10-16: custom orange button (special-cased below)
   { key: 'frames', label: 'Frames', icon: '🖼️' },
   { key: 'nameplates', label: 'Nameplates', icon: '📛' },
   { key: 'ripples', label: 'Ripples', icon: '🌊' },
@@ -189,10 +187,7 @@ function LuxuryEmptyState({ tab }: { tab: TabKey }) {
     nameplates: { icon: '📛', title: 'No Nameplates Yet', subtitle: 'Nameplates', desc: 'Earn nameplates through Nobel ranks and special events.' },
     ripples: { icon: '🌊', title: 'No Ripples Yet', subtitle: 'Sound Ripples', desc: 'Unlock speaking ripples from Nobel ranks and events.' },
     entryfx: { icon: '✨', title: 'No Entry Effects Yet', subtitle: 'Entry Effects', desc: 'Make a grand entrance — unlock effects from Nobel and events.' },
-    nobel: { icon: '👑', title: '', subtitle: '', desc: '' },
   }[tab];
-
-  if (tab === 'nobel') return null;
 
   return (
     <View style={{ flex: 1, alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 }}>
@@ -258,7 +253,7 @@ export default function DecorationScreen() {
   const [entryEffects, setEntryEffects] = useState<GrantedEntryEffect[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>('nobel'); // 2026-10-16 (Sumon): Nobel is first tab → default
+  const [tab, setTab] = useState<TabKey>('frames'); // 2026-10-31 (boss): Nobel tab removed; Frames is first
 
   useEffect(() => {
     if (!targetUid) { setLoading(false); return; }
@@ -309,25 +304,37 @@ export default function DecorationScreen() {
     }
   };
 
+  // 2026-10-31 (boss): noble plates auto-use — the current rank's plate is
+  // ALWAYS in use on the profile; no remove option for it. Other items unchanged.
+  const nobleRankKey = (() => {
+    const ri = (profile as any)?.noble?.rankIndex;
+    return typeof ri === 'number' && NOBLE_RANKS[ri] ? NOBLE_RANKS[ri].key : null;
+  })();
+
   const renderItemRow = (
     item: { id: string; name: string; icon: string; obtainedAt: number; validity: 'permanent' | number; source: string },
     isActive: boolean,
     field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect',
     sourceLabel: string,
-  ) => (
+  ) => {
+    // 2026-10-31 (boss): current rank's noble plate counts as active even if
+    // the pointer is stale (heal syncs it); its Remove button is hidden below.
+    const isRankPlate = field === 'activeNameplate' && nobleRankKey && item.id === 'noble-plate-' + nobleRankKey;
+    const showActive = isActive || isRankPlate;
+    return (
     <View
       key={item.id}
       style={{
         flexDirection: 'row', alignItems: 'center',
         backgroundColor: C.card, borderRadius: 12, padding: 14, marginBottom: 10,
         marginHorizontal: 15,
-        borderWidth: isActive ? 2 : 0.5,
-        borderColor: isActive ? C.gold : C.border,
-        shadowColor: isActive ? C.gold : 'transparent',
-        shadowOpacity: isActive ? 0.25 : 0,
-        shadowRadius: isActive ? 12 : 0,
+        borderWidth: showActive ? 2 : 0.5,
+        borderColor: showActive ? C.gold : C.border,
+        shadowColor: showActive ? C.gold : 'transparent',
+        shadowOpacity: showActive ? 0.25 : 0,
+        shadowRadius: showActive ? 12 : 0,
         shadowOffset: { width: 0, height: 4 },
-        elevation: isActive ? 4 : 0 }}
+        elevation: showActive ? 4 : 0 }}
     >
       <ItemIcon icon={item.icon} frameId={field === 'activeFrame' ? item.id : undefined} frameName={item.name} itemId={item.id} />
       <View style={{ flex: 1, marginLeft: 14 }}>
@@ -350,17 +357,19 @@ export default function DecorationScreen() {
         )}
       </View>
       {isMe ? (
-        isActive ? (
+        showActive ? (
           <View style={{ alignItems: 'center' }}>
             <View style={{ backgroundColor: C.successBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: C.success }}>✓ USING</Text>
             </View>
+            {!isRankPlate && (
             <Pressable
               style={{ backgroundColor: C.errorBg, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
               onPress={() => handleRemove(field)}
             >
               <Text style={{ fontSize: 13, fontWeight: '700', color: C.errorText }}>Remove</Text>
             </Pressable>
+            )}
           </View>
         ) : (
           <Pressable
@@ -370,22 +379,16 @@ export default function DecorationScreen() {
             <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Use</Text>
           </Pressable>
         )
-      ) : isActive ? (
+      ) : showActive ? (
         <View style={{ backgroundColor: C.blueLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 }}>
           <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue }}>Active</Text>
         </View>
       ) : null}
     </View>
-  );
+    );
+  };
 
   const renderTabContent = () => {
-    if (tab === 'nobel') {
-      return (
-        <View style={{ flex: 1 }}>
-          <NobelScreen embedded />
-        </View>
-      );
-    }
 
     const data = {
       frames: { items: frames, field: 'activeFrame' as const, active: profile?.activeFrame, label: 'Official' },
@@ -416,7 +419,7 @@ export default function DecorationScreen() {
     );
   };
 
-  const visibleTabs = isMe ? TABS : TABS.filter((t) => t.key !== 'nobel');
+  const visibleTabs = TABS; // 2026-10-31 (boss): Nobel tab removed from Decoration
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -435,44 +438,6 @@ export default function DecorationScreen() {
             : t.key === 'nameplates' ? nameplates.length
             : t.key === 'ripples' ? ripples.length
             : t.key === 'entryfx' ? entryEffects.length : 0;
-          // 2026-10-16 (Sumon): Nobel tab — his reference design, polished:
-          // orange circle with white crown+diamond glyph + "Noble" on white.
-          if (t.key === 'nobel') {
-            return (
-              <Pressable
-                key={t.key}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setTab(t.key); }}
-                style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  paddingHorizontal: 14, marginRight: 8,
-                  height: 48, borderRadius: 24,
-                  backgroundColor: '#FFFFFF',
-                  borderWidth: isActive ? 2 : 1,
-                  borderColor: isActive ? C.gold : C.border,
-                  shadowColor: isActive ? C.gold : '#000',
-                  shadowOpacity: isActive ? 0.35 : 0.06,
-                  shadowRadius: isActive ? 10 : 6,
-                  shadowOffset: { width: 0, height: isActive ? 4 : 2 },
-                  elevation: isActive ? 4 : 2 }}
-              >
-                <View style={{
-                  width: 28, height: 28, borderRadius: 14, backgroundColor: '#FF9800',
-                  alignItems: 'center', justifyContent: 'center', marginRight: 8,
-                  shadowColor: '#FF9800', shadowOpacity: 0.4, shadowRadius: 6,
-                  shadowOffset: { width: 0, height: 2 },
-                }}>
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', lineHeight: 15 }}>♛</Text>
-                  <View style={{
-                    width: 7, height: 7, backgroundColor: '#fff',
-                    transform: [{ rotate: '45deg' }], marginTop: 1,
-                  }} />
-                </View>
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#111111' }}>
-                  Noble
-                </Text>
-              </Pressable>
-            );
-          }
           return (
             <Pressable
               key={t.key}
@@ -545,7 +510,7 @@ export default function DecorationScreen() {
 
       {/* Store button — bottom (2026-10-16, Sumon): polished white button,
           blue circle bag icon + "Store" — per his reference screenshot. */}
-      {isMe && tab !== 'nobel' && (
+      {isMe && (
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: C.card, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/store' as any); }}
