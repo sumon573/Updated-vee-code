@@ -4,7 +4,7 @@
  * - Typing: Firebase with 4s auto-clear
  * - Presence: Firebase users/{uid}/online
  * - Media: Cloudinary upload → URL stored in Firebase
- * - Video: type-detected viewer with native open
+ * - Video: inline expo-video viewer (autoplay, native controls, download)
  * - "..." More options: Block (working), Report, Clear Chat
  *
  * RC8-A changes:
@@ -35,7 +35,7 @@
 
 import {
   useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, Animated, Dimensions, Alert, Modal, Image, Linking } from 'react-native';
+import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, Animated, Dimensions, Alert, Modal, Image, ActivityIndicator, InteractionManager } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -69,6 +69,7 @@ import { useVoiceRecorder, formatVoiceDuration, MAX_VOICE_SEC } from '../hooks/u
 // (disk cache + native downsampling). RN core Image decodes full-resolution
 // originals (Telegram serves originals; 20–50MB photos → OOM). Same size.
 import { Image as ExpoImage } from 'expo-image';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/src/context/AuthContext';
 import { submitReport } from '@/src/services/reportService';
 // RC6 fix Issue 5 + Issue 8
@@ -182,51 +183,101 @@ function TypingDots() {
 }
 
 // ── Video viewer overlay ────────────────────────────────────────────────────────
+// 2026-10-30 (boss: professional superfast media viewer): INLINE
+// expo-video playback — autoplay on open, progressive streaming (never
+// waits for a full download), native controls, fullscreen + PiP. A small
+// buffering indicator shows only while status is loading (never a
+// full-screen loader); a failed load shows an error + tap-to-retry
+// (player.replay, play fallback). Pause on unmount so audio never leaks
+// after close (mirror StoryViewer cleanup). Download reuses the photo
+// viewer's save-to-gallery path + strings. The old placeholder + "Open
+// in device" browser hop is DELETED.
 function VideoViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
   const { t } = useTranslation();
-
-  const handleOpen = useCallback(() => {
-    Linking.openURL(uri).catch(() => {
-      Alert.alert(t('chat.error'), t('chat.videoOpenError'));
+  const player = useVideoPlayer(uri, (p) => {
+    p.play();
+  });
+  const [status, setStatus] = useState<string>('loading');
+  useEffect(() => {
+    try { setStatus(player.status); } catch { /* ignore */ }
+    const sub = player.addListener('statusChange', (e) => {
+      setStatus(e.status);
     });
-  }, [uri, t]);
+    return () => { sub.remove(); };
+  }, [player]);
+  useEffect(() => {
+    return () => { try { player.pause(); } catch { /* ignore */ } };
+  }, [player]);
+
+  const handleRetry = useCallback(() => {
+    try { player.replay(); } catch { try { player.play(); } catch { /* ignore */ } }
+  }, [player]);
+
+  // 2026-10-30 (boss: download must feel instant): the download
+  // itself starts on tap with no confirm step; this spinner only makes
+  // its speed visible, and the guard stops double-tap double downloads.
+  const [downloading, setDownloading] = useState(false);
+  const handleDownload = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await saveRemoteMediaToGallery(uri, {
+        permissionRequired: t('chat.permissionRequired'),
+        galleryPermission: 'Gallery access is needed to save media.',
+        saved: t('chat.saved'),
+        msgSaveToGallery: t('chat.msgSaveToGallery') + ' successfully.',
+        error: t('chat.error'),
+        saveToGalleryFailed: t('chat.saveToGalleryFailed') });
+    } finally {
+      setDownloading(false);
+    }
+  }, [uri, t, downloading]);
 
   return (
-    <View style={{
-      flex: 1, backgroundColor: '#000',
-      alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+      <VideoView
+        player={player}
+        style={{ flex: 1, width: '100%' }}
+        contentFit="contain"
+        nativeControls
+        allowsFullscreen
+        allowsPictureInPicture
+      />
+      {status === 'loading' && (
+        <View pointerEvents="none" style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      )}
+      {status === 'error' && (
+        <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+            {t('chat.sendError')}
+          </Text>
+          <Pressable
+            onPress={handleRetry}
+            style={{ backgroundColor: C.primary, borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+      {/* Close button (kept) */}
       <Pressable
         style={{ position: 'absolute', top: 55, right: 20, zIndex: 10, padding: 8 }}
         onPress={onClose}
       >
         <Feather name="x" size={28} color="#fff" />
       </Pressable>
-
-      {/* Video icon */}
-      <View style={{
-        width: 120, height: 120, borderRadius: 60,
-        backgroundColor: 'rgba(255,255,255,0.12)',
-        alignItems: 'center', justifyContent: 'center',
-        borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
-        marginBottom: 24 }}>
-        <Feather name="play-circle" size={56} color="#fff" />
-      </View>
-
-      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, marginBottom: 24 }}>
-        {t('chat.videoMessage')}
-      </Text>
-
+      {/* Download button (same as the photo viewer) */}
       <Pressable
-        onPress={handleOpen}
-        style={{
-          backgroundColor: C.primary, borderRadius: 14,
-          paddingHorizontal: 28, paddingVertical: 14,
-          flexDirection: 'row', alignItems: 'center', gap: 8 }}
+        style={{ position: 'absolute', top: 55, left: 20, zIndex: 10, padding: 8 }}
+        onPress={handleDownload}
       >
-        <Feather name="external-link" size={18} color="#fff" />
-        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
-          {t('chat.openInDevice')}
-        </Text>
+        {downloading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Feather name="download" size={24} color="#fff" />
+        )}
       </Pressable>
     </View>
   );
@@ -309,6 +360,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [lastSeen, setLastSeen]             = useState<number | null>(null);
   const [mediaViewerUri, setMediaViewerUri] = useState<string | null>(null);
   const [mediaViewerType, setMediaViewerType] = useState<'image' | 'video'>('image');
+  // 2026-10-30 (boss: download must feel instant): spinner state for
+  // the photo viewer download button — same rule as video: download
+  // starts on tap with no confirm step; the spinner only makes its
+  // speed visible.
+  const [photoDownloading, setPhotoDownloading] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   // 2026-10-18 (Sumon): media send confirmation — select → preview + OK → send.
   // Multi-select supported. Pending assets shown in confirmation modal.
@@ -335,6 +391,28 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const [showQuickReactions, setShowQuickReactions] = useState(true);
 
   const flatRef         = useRef<FlatList>(null);
+  // 2026-10-30 (boss: reply-quote tap jumps to the original):
+  // id of the bubble currently flashing after a quote jump (cleared
+  // after ~1.5s); retry flag for scrollToIndex windowing failures.
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jumpRetryRef = useRef(false);
+  // 2026-10-30 (boss: inbox open must be fully smooth): the slide
+  // animation shares its window with every mount subscription, and
+  // each first callback re-renders the list — that pile-up is the
+  // hitch. Non-content subscriptions (typing, presence, peer
+  // profile below) wait for this flag, so the animation window
+  // only renders content. The 1200ms fallback bounds the wait even
+  // if the interaction queue stalls; content + markSeen are never
+  // gated (see the message subscription + markSeen effects).
+  const [transitionDone, setTransitionDone] = useState(false);
+  useEffect(() => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; setTransitionDone(true); } };
+    const task = InteractionManager.runAfterInteractions(finish);
+    const timer = setTimeout(finish, 1200);
+    return () => { task.cancel(); clearTimeout(timer); };
+  }, []);
   const inputRef        = useRef<TextInput>(null);
   const lastNotifId     = useRef<string>('');
   const shouldScrollRef = useRef(true);
@@ -427,13 +505,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
   useEffect(() => {
+    if (!transitionDone) return;
     if (!effectiveParticipantId) return;
     const unsub = subscribeTyping(chatId, effectiveParticipantId, setIsTypingRemote);
     return unsub;
-  }, [chatId, effectiveParticipantId]);
+  }, [chatId, effectiveParticipantId, transitionDone]);
 
   // ── Subscribe to presence (respects target's privacy settings) ────────────
+  // 2026-10-30 (boss: smooth open): gated on transitionDone — its
+  // first callback flips extraData and re-renders every row, which
+  // must not land inside the slide animation.
   useEffect(() => {
+    if (!transitionDone) return;
     if (!effectiveParticipantId) return;
     let unsub: (() => void) | null = null;
     let cancelled = false;
@@ -458,19 +541,24 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }, privacy);
     })();
     return () => { cancelled = true; unsub?.(); };
-  }, [effectiveParticipantId]);
+  }, [effectiveParticipantId, transitionDone]);
 
   // RC6 fix Issue 5: subscribe to participant's RTDB profile for live photoURL.
   // 2026-10-13 (Sumon): live নামও নিই — header/push/alert-এ stale নাম দেখাতো।
   const [participantLiveName, setParticipantLiveName] = useState<string>('');
+  // 2026-10-30 (boss: smooth open): gated on transitionDone — its
+  // first callback flips avatar/name props and re-renders every row,
+  // which must not land inside the slide animation. The header shows
+  // the param name meanwhile.
   useEffect(() => {
+    if (!transitionDone) return;
     if (!effectiveParticipantId) return;
     return subscribeUser(effectiveParticipantId, (profile) => {
       if (profile?.photoURL) setParticipantPhotoURL(profile.photoURL);
       // || ব্যবহার (?? নয়) — Google user-এর নাম empty string হতে পারে
       if (profile?.name) setParticipantLiveName(profile.name);
     });
-  }, [effectiveParticipantId]);
+  }, [effectiveParticipantId, transitionDone]);
 
   // 2026-10-15 (Sumon): NEVER show "Unknown" — live নাম থাকলে সেটাই,
   // নইলে prop-এর নাম ("Unknown" হলে বাদ), সবশেষে "Vee User" fallback.
@@ -1030,6 +1118,45 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     inputRef.current?.focus();
   }, []);
 
+  // 2026-10-30 (boss: reply-quote tap jumps to the original): find the
+  // quoted message in the currently rendered rows (chatRows is the
+  // reversed, separator-interleaved array the inverted FlatList
+  // renders, so its index IS the scrollToIndex index). Found -> scroll
+  // to the middle + flash the target ~1.5s. Not found (outside the
+  // loaded window, or deleted) -> brief Alert, existing pattern, no
+  // new strings. scrollToIndex can fail while the target row is not
+  // laid out yet (windowing) -> onScrollToIndexFailed retries once,
+  // then Alerts. (chatRows is declared below; this closure only runs
+  // on tap, long after it is initialized.)
+  const jumpToMessage = useCallback((messageId: string) => {
+    jumpRetryRef.current = false;
+    const idx = chatRows.findIndex((r) => r.kind === 'msg' && r.message.id === messageId);
+    if (idx === -1) {
+      Alert.alert('Original message not available');
+      return;
+    }
+    flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+    setHighlightedId(messageId);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedId(null), 1500);
+  }, [chatRows]);
+
+  useEffect(() => () => {
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+  }, []);
+
+  const handleScrollToIndexFailed = useCallback((info: { index: number }) => {
+    if (jumpRetryRef.current) {
+      jumpRetryRef.current = false;
+      Alert.alert('Original message not available');
+      return;
+    }
+    jumpRetryRef.current = true;
+    setTimeout(() => {
+      flatRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 });
+    }, 500);
+  }, []);
+
   // ── Reaction ──────────────────────────────────────────────────────────────
   const handleReaction = useCallback((messageId: string, emoji: string) => {
     addReaction(chatId, messageId, myUid, emoji).catch(() => {
@@ -1186,9 +1313,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         myPhotoURL={user?.photoURL ?? null}
         isPeerOnline={isOnline}
         onCallBack={stableCallBack}
+        onQuotePress={jumpToMessage}
+        isHighlighted={highlightedId === msg.id}
       />
     );
-  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack]);
+  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack, jumpToMessage, highlightedId]);
 
   const keyExtractor = useCallback((item: ChatRow) => (
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
@@ -1442,12 +1571,22 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               data={chatRows}
               // 2026-10-30 (boss: ticks real-time): rows depend on isOnline
               // via MessageBubble's isPeerOnline — re-render on presence change.
-              extraData={isOnline}
+              // 2026-10-30 (boss: quote-jump highlight): rows also depend
+              // on highlightedId — encoded as a string so it stays
+              // referentially stable when neither value changes (a fresh
+              // object literal here would re-render every row on every
+              // parent render).
+              extraData={isOnline ? `on-${highlightedId ?? ''}` : `off-${highlightedId ?? ''}`}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               contentContainerStyle={{ paddingVertical: 12 }}
               removeClippedSubviews
-              initialNumToRender={20}
+              // 2026-10-30 (boss: smooth open): 10 initial rows instead
+              // of 20 — the viewport shows ~10 bubbles, so the slide
+              // window lays out half the work; windowing renders the
+              // rest right after. Batching/window/clipping untouched.
+              initialNumToRender={10}
               maxToRenderPerBatch={20}
               windowSize={15}
               showsVerticalScrollIndicator={false}
@@ -1842,17 +1981,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             <Pressable
               style={{ position: 'absolute', top: 55, left: 20, zIndex: 10, padding: 8 }}
               onPress={async () => {
-                if (!mediaViewerUri) return;
-                await saveRemoteMediaToGallery(mediaViewerUri, {
-                  permissionRequired: t('chat.permissionRequired'),
-                  galleryPermission: 'Gallery access is needed to save media.',
-                  saved: t('chat.saved'),
-                  msgSaveToGallery: t('chat.msgSaveToGallery') + ' successfully.',
-                  error: t('chat.error'),
-                  saveToGalleryFailed: t('chat.saveToGalleryFailed') });
+                if (!mediaViewerUri || photoDownloading) return;
+                setPhotoDownloading(true);
+                try {
+                  await saveRemoteMediaToGallery(mediaViewerUri, {
+                    permissionRequired: t('chat.permissionRequired'),
+                    galleryPermission: 'Gallery access is needed to save media.',
+                    saved: t('chat.saved'),
+                    msgSaveToGallery: t('chat.msgSaveToGallery') + ' successfully.',
+                    error: t('chat.error'),
+                    saveToGalleryFailed: t('chat.saveToGalleryFailed') });
+                } finally {
+                  setPhotoDownloading(false);
+                }
               }}
             >
-              <Feather name="download" size={24} color="#fff" />
+              {photoDownloading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="download" size={24} color="#fff" />
+              )}
             </Pressable>
             {mediaViewerUri && (
               <ExpoImage

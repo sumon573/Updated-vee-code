@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useRef, useState, useEffect } from 'react';
 import {
   View, Text, Pressable, Animated, Alert, Modal,
   ActionSheetIOS, Platform, Dimensions,
@@ -72,7 +72,10 @@ function formatMsgTime(ts: number): string {
   }
   const h12 = d.getHours() % 12 || 12;
   const ampm = d.getHours() < 12 ? 'AM' : 'PM';
-  return `${h12}:${m} ${ampm}`;
+  // 2026-10-30 (boss: Telegram corner time): the 12h parts are joined
+  // with a NON-BREAKING space so "3:26 PM" can never split across
+  // lines (the old "3:26" / "PM" wrap). 24h output has no space.
+  return `${h12}:${m}\u00A0${ampm}`;
 }
 
 // Fix #31 (imo-exact call durations): "2 min 6 sec" / "44 sec".
@@ -96,6 +99,10 @@ type Props = {
   myPhotoURL?: string | null;
   isPeerOnline?: boolean;
   onCallBack?: () => void;
+  // 2026-10-30 (boss: reply-quote tap jumps to the original): parent
+  // passes the jump handler + whether this bubble is the jump target.
+  onQuotePress?: (messageId: string) => void;
+  isHighlighted?: boolean;
 };
 
 /**
@@ -169,7 +176,7 @@ export async function saveRemoteMediaToGallery(
 }
 
 // Memoized: the DM thread FlatList renders one of these per message.
-function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack }: Props) {
+function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack, onQuotePress, isHighlighted }: Props) {
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const [showReactions, setShowReactions] = useState(false);
@@ -217,6 +224,23 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
       opacity: t, transform: [{ scale: 0.6 + 0.4 * t }],
     };
   });
+
+  // 2026-10-30 (boss: Telegram reaction pill): pop animation —
+  // fires only when the reaction set CHANGES while this bubble is
+  // mounted (first mount never pops, so scrolling never re-pops old
+  // pills). The key is derived from message.reactions directly so
+  // these hooks can sit here, above the deletedForMe early return.
+  const pillPop = useRef(new Animated.Value(1)).current;
+  const pillMounted = useRef(false);
+  const reactionsKey = message.reactions
+    ? Object.values(message.reactions).sort().join('|')
+    : '';
+  useEffect(() => {
+    if (!pillMounted.current) { pillMounted.current = true; return; }
+    if (!message.reactions || Object.keys(message.reactions).length === 0) return;
+    pillPop.setValue(0.5);
+    Animated.spring(pillPop, { toValue: 1, useNativeDriver: true, tension: 300, friction: 12 }).start();
+  }, [reactionsKey]);
 
   // Swipe reply: both sides now (incoming right, own left); never
   // deleted messages (nothing to quote).
@@ -376,43 +400,13 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
     <Feather name="check" size={12} color="#009DFF" />
   );
 
-  // 2026-10-30 (boss: bubble must hug the message, Telegram-style):
-  // INLINE tick for text messages only. Same mapping as tickMark above
-  // (seen = circle, sending = clock, delivered-or-peer-online = the
-  // picture-exact double Svg, offline sent = single check); seen always
-  // wins; stored delivered is a floor. Feather icons are Text-based so
-  // they nest directly; the Svg rides in an explicit 14x9 View in the
-  // text flow (an Svg cannot nest in Text). PHONE-VERDICT RISK: the
-  // inline View's vertical alignment on Android is unverified — if the
-  // double tick sits low vs the time text, that is the thing to fix.
-  const tickInline = message.status === 'seen' ? (
-    <Feather name="circle" size={12} color="#009DFF" />
-  ) : message.status === 'sending' ? (
-    <Feather name="clock" size={12} color={C.muted} />
-  ) : message.status === 'delivered' || isPeerOnline ? (
-    <View style={{ width: 14, height: 9 }}>
-      <Svg width={14} height={9} viewBox="0 0 42 26">
-        <Polyline
-          points="3,14 11,21 27,3"
-          fill="none"
-          stroke="#009DFF"
-          strokeWidth={5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <Polyline
-          points="16,14 24,21 39,3"
-          fill="none"
-          stroke="#009DFF"
-          strokeWidth={5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </View>
-  ) : (
-    <Feather name="check" size={12} color="#009DFF" />
-  );
+  // 2026-10-30 (boss: Telegram corner time): the old INLINE tick
+  // (tickInline) is GONE — text time+tick now live in the absolute
+  // corner View inside the bubble (see text branch below), so the
+  // double-tick Svg sits in a normal row View again and the old
+  // inline-Svg-in-Text alignment risk is gone with it. tickMark
+  // (above) serves the corner + the photo/video/voice/call/sticker
+  // rows, artwork byte-identical as always.
 
   // Fix #31 (imo-exact call card copy): missed → "Missed Audio Call" +
   // "Tap to call back"; canceled (outgoing) → "Canceled" + "Tap to call
@@ -488,10 +482,20 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
 
   const bubbleBody = (
       <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg ? width * 0.78 : BUBBLE_MAX }}>
-        {/* Reply preview inside bubble */}
+        {/* Reply preview inside bubble — 2026-10-30 (boss: quote
+            tap jumps to the original): tappable. This Pressable is a
+            SIBLING of the main bubble Pressable, not nested inside it,
+            so bubble taps/long-press are untouched. Long-press on the
+            quote was already a dead zone (quote sits outside the main
+            Pressable) and stays one — tap now jumps, long-press still
+            does nothing there. */}
         {message.replyTo && !message.deletedForEveryone && (
-          <View style={{
-            backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 10,
+          <Pressable
+            onPress={() => {
+              if (message.replyTo && onQuotePress) onQuotePress(message.replyTo.messageId);
+            }}
+            style={{
+              backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 10,
             paddingHorizontal: 10, paddingVertical: 6,
             marginBottom: 4, borderLeftWidth: 3, borderLeftColor: C.seen,
           }}>
@@ -503,7 +507,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
                 ? (message.replyTo.type === 'voice' ? '🎤 Voice message' : '📷 Media')
                 : message.replyTo.preview}
             </Text>
-          </View>
+          </Pressable>
         )}
 
         {/* Main bubble — NOTE 12: video/sticker skip bubble chrome; photos get the bubble frame below */}
@@ -646,21 +650,25 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               </Text>
             )
           ) : (
-            // 2026-10-30 (boss: bubble must hug the message, Telegram-
-            // style): the time (+tick for own messages) renders INLINE
-            // at the end of the last text line, inside this Text — no
-            // separate row below, so no dead band under the text. The
-            // nested time Text sets fontSize 12 only and inherits
-            // lineHeight 22, so the last line keeps its height; bubble
-            // padding (14/11), radius, colours and text size are all
-            // unchanged. Incoming text gets time only, exactly as today.
+            // 2026-10-30 (boss: Telegram corner time): the time
+            // (+tick for own) sits as ONE unit at the bubble's
+            // BOTTOM-RIGHT corner (absolute View below) — never split,
+            // never a dead band. The text carries an INVISIBLE trailing
+            // spacer (transparent NBSP run, sized generously past the
+            // corner unit) so the last line always reserves the corner
+            // zone and no text ever runs under the time. Bubble height
+            // is still text-only (absolute time adds no height);
+            // padding (14/11), radius, colours and text size are
+            // unchanged. Incoming text gets time only, exactly as
+            // today. Edge case: if the last line is nearly full, the
+            // last word + spacer wrap together to a new line — the
+            // bubble gains one line, but the time never splits and
+            // never covers text.
             <Text style={{ color: textColor, fontSize: 16, lineHeight: 22 }}>
               {message.content}
-              <Text style={{ color: timeColor, fontSize: 12 }}>
-                {'  '}{formatMsgTime(message.createdAt)}
+              <Text style={{ color: 'transparent', fontSize: 12 }}>
+                {'\u00A0'.repeat(isMe ? 32 : 26)}
               </Text>
-              {isMe && ' '}
-              {isMe && tickInline}
             </Text>
           )}
 
@@ -693,49 +701,86 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             </View>
           ))}
           {isMe && message.sendState === 'failed' && (
-            <Text style={{ color: '#D32F2F', fontSize: 12, marginTop: 4, textAlign: 'right' }}>
+            <Text style={{ color: '#D32F2F', fontSize: 12, marginTop: 4, textAlign: 'right', paddingRight: 80 }}>
               Not sent — tap to retry
             </Text>
           )}
+          {/* 2026-10-30 (boss: Telegram corner time, TEXT only): one
+              non-splitting time+tick unit pinned to the bubble's
+              bottom-right corner, inside the padding. Absolute, so it
+              adds no height; the text's invisible NBSP spacer reserves
+              this zone. The tick here is tickMark in a normal row View
+              — same artwork as always, no inline-Svg-in-Text anymore. */}
+          {message.type === 'text' && !message.deletedForEveryone && (
+            <View style={{ position: 'absolute', right: 12, bottom: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ color: timeColor, fontSize: 12 }}>
+                {formatMsgTime(message.createdAt)}
+              </Text>
+              {isMe && tickMark}
+            </View>
+          )}
         </Pressable>
 
-        {/* Reactions display */}
+        {/* 2026-10-30 (boss: quote-jump highlight): brief flash
+            over the whole bubble when jumped to (cleared by the parent
+            after ~1.5s). pointerEvents none — taps pass through.
+            Shape/padding untouched; radius matches the bubble type. */}
+        {isHighlighted && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+              backgroundColor: 'rgba(33,150,243,0.15)',
+              borderRadius: noChrome ? 16 : 20,
+            }}
+          />
+        )}
+        {/* 2026-10-30 (boss: Telegram reaction pill): the old row
+            BELOW the bubble is DELETED. Reactions now ride as ONE blue
+            pill OVERLAPPING the bubble's bottom-LEFT edge (time is
+            bottom-right, so no collision), for both sides. Pill is
+            DISPLAY-only (pointerEvents none — taps/long-press pass to
+            the bubble); toggling still happens via the long-press
+            picker, whose handleReaction -> addReaction already toggles
+            (same emoji removes it — service verified, no change). The
+            pill pops (scale spring) when the set changes while
+            mounted. Total count shows when >1 (per-emoji counts stay
+            grouped in `reactions` above). */}
         {reactions.length > 0 && (
-          <View style={{
-            flexDirection: 'row', flexWrap: 'wrap', gap: 4,
-            marginTop: 4, justifyContent: isMe ? 'flex-end' : 'flex-start',
-          }}>
-            {reactions.map(([emoji, count]) => (
-              <Pressable
-                key={emoji}
-                onPress={() => handleReaction(emoji)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 3,
-                  backgroundColor: C.reactionBg, borderRadius: 14,
-                  paddingHorizontal: 8, paddingVertical: 4,
-                  borderWidth: 1,
-                  borderColor: message.reactions?.[myUid] === emoji
-                    ? 'rgba(124,58,237,0.6)'
-                    : '#E5E5EA',
-                }}
-              >
-                <Text style={{ fontSize: 13 }}>{emoji}</Text>
-                {count > 1 && (
-                  <Text style={{ color: C.muted, fontSize: 11, fontWeight: '700' }}>{count}</Text>
-                )}
-              </Pressable>
-            ))}
-          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute', left: 8, bottom: -12,
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              backgroundColor: '#2196F3', borderRadius: 14,
+              paddingHorizontal: 8, paddingVertical: 3,
+              shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4,
+              shadowOffset: { width: 0, height: 2 }, elevation: 3,
+              transform: [{ scale: pillPop }],
+            }}
+          >
+            <Text style={{ fontSize: 13 }}>
+              {reactions.map(([emoji]) => emoji).join(' ')}
+            </Text>
+            {reactions.reduce((n, [, c]) => n + c, 0) > 1 && (
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                {reactions.reduce((n, [, c]) => n + c, 0)}
+              </Text>
+            )}
+          </Animated.View>
         )}
 
       </Animated.View>
   );
 
+  // 2026-10-30 (boss: Telegram reaction pill): the pill overlaps 12dp
+  // below the bubble edge, so the row gap grows to 16dp only when a
+  // pill is present — 4dp clearance to the next row.
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'flex-end',
       justifyContent: align,
-      marginHorizontal: 12, marginBottom: 8, gap: 8 }}>
+      marginHorizontal: 12, marginBottom: reactions.length > 0 ? 16 : 8, gap: 8 }}>
       {!isMe && avatar(peerPhotoURL, !!isPeerOnline)}
       {swipeable ? (
         <GestureDetector gesture={swipePan}>
