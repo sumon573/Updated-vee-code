@@ -14,6 +14,8 @@ import * as MediaLibrary from 'expo-media-library';
 // only accepts LOCAL file URIs; passing an https:// URL silently does nothing.
 import { File, Paths } from 'expo-file-system';
 import { Feather } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import Svg, { Polyline } from 'react-native-svg';
 // 2026-10-25 (boss order): DM long-press Copy — expo-clipboard is
 // already a dependency (InviteModal, VoiceRoomScreen), so no new module.
@@ -160,7 +162,35 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const bubbleRef = useRef<View>(null);
 
+  // 2026-10-30 (boss: swipe-to-reply on incoming): hold a FRIEND's
+  // message and drag it RIGHT -> reply, same onReply flow as
+  // long-press (quote in composer). Pan stays undetermined for taps
+  // and long-presses (no movement) and fails fast on vertical drags
+  // (failOffsetY), so thread scroll + long-press menu are untouched.
+  // Only right drags move the bubble (clamped 0..72); past 48 on
+  // release -> reply + spring back, else spring back silently.
+  const swipeX = useSharedValue(0);
+  const swipePan = Gesture.Pan()
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-12, 12])
+    .onUpdate((e) => { swipeX.value = Math.max(0, Math.min(e.translationX, 72)); })
+    .onEnd(() => {
+      if (swipeX.value > 48) runOnJS(onReply)(message);
+      swipeX.value = withSpring(0, { damping: 20, stiffness: 300 });
+    })
+    .onFinalize(() => { swipeX.value = withSpring(0, { damping: 20, stiffness: 300 }); });
+  const swipeTranslateStyle = useAnimatedStyle(() => ({ transform: [{ translateX: swipeX.value }] }));
+  const swipeIconStyle = useAnimatedStyle(() => {
+    const t = Math.max(0, Math.min(swipeX.value / 48, 1));
+    return {
+      position: 'absolute', left: 0, top: '50%', marginTop: -14,
+      opacity: t, transform: [{ scale: 0.6 + 0.4 * t }],
+    };
+  });
+
   const isMe = message.senderId === myUid;
+  // Swipe reply: incoming only, never deleted messages (nothing to quote).
+  const swipeable = !isMe && !message.deletedForEveryone;
 
   if (message.deletedForMe) return null;
 
@@ -388,12 +418,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
     </View>
   );
 
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'flex-end',
-      justifyContent: align,
-      marginHorizontal: 12, marginBottom: 8, gap: 8 }}>
-      {!isMe && avatar(peerPhotoURL, !!isPeerOnline)}
+  const bubbleBody = (
       <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg ? width * 0.78 : BUBBLE_MAX }}>
         {/* Reply preview inside bubble */}
         {message.replyTo && !message.deletedForEveryone && (
@@ -619,6 +644,28 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
         )}
 
       </Animated.View>
+  );
+
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'flex-end',
+      justifyContent: align,
+      marginHorizontal: 12, marginBottom: 8, gap: 8 }}>
+      {!isMe && avatar(peerPhotoURL, !!isPeerOnline)}
+      {swipeable ? (
+        <GestureDetector gesture={swipePan}>
+          <Reanimated.View style={{ position: 'relative' }}>
+            <Reanimated.View style={swipeIconStyle}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#E9E9EB', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="corner-up-left" size={16} color="#2196F3" />
+              </View>
+            </Reanimated.View>
+            <Reanimated.View style={swipeTranslateStyle}>
+              {bubbleBody}
+            </Reanimated.View>
+          </Reanimated.View>
+        </GestureDetector>
+      ) : bubbleBody}
       {/* Fix #31 (imo-exact): faint heart outline at the right edge of
           incoming call cards, exactly as imo shows it. */}
       {!isMe && isCallMsg && (

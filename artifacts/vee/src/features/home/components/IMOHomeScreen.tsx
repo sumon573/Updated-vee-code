@@ -369,7 +369,9 @@ export default function IMOHomeScreen() {
   // ever unmounts (a tab switch is a hard screen change, not a slide).
   const insets = useSafeAreaInsets();
   const topBarFullH = useSharedValue(insets.top + 77);
-  const bottomBarFullH = useSharedValue(insets.bottom + 57);
+  // 2026-10-30 (boss: bottom +/search icons slightly cut): first-frame
+  // height carries the same +12 slack as the measured padding below.
+  const bottomBarFullH = useSharedValue(insets.bottom + 69);
   const topBarMeasured = useRef(false);
   const bottomBarMeasured = useRef(false);
   const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
@@ -711,8 +713,14 @@ export default function IMOHomeScreen() {
           overlay is gone — connection status now lives IN this bar
           ("Connecting..." center + green dot on "+"). */}
       <Animated.View style={[{ overflow: 'hidden', backgroundColor: '#FFFFFF' }, bottomBarWrapStyle]}>
+        {/* 2026-10-30 (boss: bottom +/search icons slightly cut at the
+            screen edge): +12dp slack below the bar so both icons sit
+            fully visible with breathing room. The measured height
+            grows equally, so the animated wrapper grows with it;
+            the pager flex absorbs the 12dp; bar look/position/actions
+            unchanged. */}
         <View
-          style={{ paddingBottom: insets.bottom }}
+          style={{ paddingBottom: insets.bottom + 12 }}
           onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && !bottomBarMeasured.current) { bottomBarMeasured.current = true; bottomBarFullH.value = h; } }}
         >
           <IMOBottomBar
