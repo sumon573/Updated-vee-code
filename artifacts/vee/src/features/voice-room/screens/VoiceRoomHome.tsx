@@ -9,11 +9,11 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, Alert, Modal, TextInput, Pressable, Linking, FlatList, RefreshControl } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import { ScrollView as GHScrollView, FlatList } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -140,7 +140,7 @@ function goToRoom(id: string, userName?: string) {
 function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 14 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 0, marginBottom: 14 }}>
       <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
       {onSeeAll && (
         <ScalePress onPress={onSeeAll}>
@@ -809,7 +809,7 @@ export default function VoiceRoomHome({
   const homeSticky = pageTab === 'room' ? [1] : [0];
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
       {/* Fix #23: clip off-screen native views while scrolling — the
           Recommended list is long and non-virtualized, so mounting every
           card at once was the main scroll cost. Images are memory-disk
@@ -845,6 +845,10 @@ export default function VoiceRoomHome({
           No getItemLayout: card heights vary (topic / member rows), and
           FlatList still virtualizes without it. removeClippedSubviews stays
           OFF: it can unstick sticky headers on Android. */}
+      {/* 2026-10-31 (scroll fix): GH FlatList + nestedScrollEnabled -
+          the RN FlatList did not scroll inside HomePager's Pan
+          GestureDetector (chats/contacts use GH FlatList and scroll);
+          the flex:1 wrapper mirrors the chats page structure. */}
       <FlatList
         style={{ flex: 1 }}
         data={homeItems}
@@ -852,10 +856,11 @@ export default function VoiceRoomHome({
         stickyHeaderIndices={homeSticky}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={false}
+        nestedScrollEnabled={true}
         initialNumToRender={12}
         maxToRenderPerBatch={8}
         windowSize={10}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
           if (item.type === 'myrooms') {
@@ -864,7 +869,7 @@ export default function VoiceRoomHome({
                 <GHScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingBottom: 8, paddingTop: 12 }}
+                  contentContainerStyle={{ paddingBottom: 0, paddingTop: 12, paddingHorizontal: 16 }}
                   scrollEventThrottle={16}
                   bounces={false}
                   onScrollBeginDrag={onLockParentScroll}
@@ -879,7 +884,7 @@ export default function VoiceRoomHome({
                   ))}
                 </GHScrollView>
                 {myRooms.length === 0 && !myLoading && (
-                  <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 18, marginBottom: 8, alignItems: 'center' }}>
+                  <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 18, marginBottom: 8, marginHorizontal: 16, alignItems: 'center' }}>
                     <Feather name="mic" size={24} color={C.muted} />
                     <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
                       {t('voiceRoom.home.noMyRooms')}
@@ -891,7 +896,7 @@ export default function VoiceRoomHome({
           }
           if (item.type === 'recheader') {
             return (
-              <View style={{ backgroundColor: '#FFFFFF' }}>
+              <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 16 }}>
                 <SectionTitle title={t('voiceRoom.home.recommended')} />
                 <GHScrollView
                   horizontal
@@ -919,6 +924,7 @@ export default function VoiceRoomHome({
           }
           if (item.type === 'room' && item.room) {
             return (
+              <View style={{ paddingHorizontal: 16 }}>
               <RoomListItem
                 room={voiceRoomOf(item.room)}
                 liveCount={liveAudienceOf(item.room)}
@@ -926,6 +932,7 @@ export default function VoiceRoomHome({
                 onPress={pressFor(item.room.id)}
                 hideLiveBadge
               />
+              </View>
             );
           }
           if (item.type === 'nearbyLoading') {
@@ -1146,6 +1153,6 @@ export default function VoiceRoomHome({
           goToRoom(roomId, user?.displayName ?? user?.uid);
         }}
       />
-    </>
+    </View>
   );
 }
