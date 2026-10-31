@@ -734,13 +734,20 @@ export default function VoiceRoomHome({
   const [followingsOpen, setFollowingsOpen] = useState(false);
   const [activeFollowings, setActiveFollowings] = useState<ActiveFollowing[]>([]);
   useEffect(() => {
+    // Part 2b: skipped in pass2 home mode — the loaders read Firebase
+    // and would serve stale cache while offline; the bar hides
+    // automatically since the list stays empty (the sheet opens only
+    // from the bar). Full parity needs a tier "active followings"
+    // endpoint (per-room audience would need a poller /watch per
+    // room — expensive).
+    if (pass2HomeActive) { setActiveFollowings([]); return; }
     if (!user?.uid) return;
     let cancelled = false;
     loadActiveFollowings(user.uid, [...roomsByIdRef.current.keys()])
       .then((list) => { if (!cancelled) setActiveFollowings(list); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [user?.uid]);
+  }, [user?.uid, pass2HomeActive]);
 
   // FlatList model (chat-list pattern): data items keep sticky indices
   // stable by construction — myrooms = 0, recheader = 1 (sticky), rooms = 2+.

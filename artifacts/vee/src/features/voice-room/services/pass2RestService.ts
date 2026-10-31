@@ -167,7 +167,10 @@ let flagsCache: { at: number; flags: Pass2Flags } | null = null;
 export async function fetchPass2Flags(): Promise<Pass2Flags> {
   if (flagsCache && Date.now() - flagsCache.at < 60_000) return flagsCache.flags;
   try {
-    const r = await fetchJson(`${PASS2_TIER_BASE}/pass2/flags`);
+    // 2026-10-31 (Part 2b): the tier gates /pass2/flags behind auth
+    // (unauthenticated GET 401s, verified via VPS loopback), so flags
+    // must be fetched authed — otherwise no pass2 mode can ever turn on.
+    const r = await authedFetchJson('/pass2/flags');
     if (!r.ok || !r.json || typeof r.json !== 'object') return PASS2_FLAGS_OFF;
     const j = r.json as Record<string, unknown>;
     const flags: Pass2Flags = {
@@ -355,6 +358,25 @@ export async function sendPass2SeatMute(roomId: string, seatIndex: number, muted
   await sendPass2RoomAction(roomId, muted ? 'seat_mute' : 'seat_unmute', { seatIndex });
 }
 
+/**
+ * Seat host-mute (Part 2b): tier op seat_host_mute, DISTINCT from
+ * seat_mute — writes hostMuted ONLY, so the target's own mic button
+ * can never clear it (host-mute-sticks law). Priv-only server-side.
+ * Throws on failure (caller reverts its optimistic seat state).
+ */
+export async function sendPass2SeatHostMute(
+  roomId: string,
+  seatIndex: number,
+  hostMuted: boolean,
+  targetUid?: string,
+): Promise<void> {
+  await sendPass2RoomAction(roomId, 'seat_host_mute', {
+    seatIndex,
+    ...(targetUid ? { targetUid } : {}),
+    hostMuted,
+  });
+}
+
 // Pending seat-mute (REST mirror of firebaseRoomService's pending mechanism:
 // one global pending; a newer request supersedes an older one's retries).
 let pendingSeatMute: { roomId: string; seatIdx: number; value: boolean } | null = null;
@@ -511,4 +533,192 @@ export function subscribePass2Pairs(
   };
   void poll();
   return s.stop;
+}
+
+// ─── DM (Part 2b, 100k closure) ─────────────────────────────────────────────
+// Tier :3010 DM endpoints (verified in the tier source — no others are
+// invented here). Same discipline as the rest of this file: authedFetchJson
+// (Firebase ID token Bearer, 5s timeout), keep-last on polls (deliver only
+// on success), 5 consecutive dead rounds (or a 403) on a fatal poll stops
+// it and calls onFallback (the screen flips its dm flag off, sticky, and
+// resubscribes today's Firebase path).
+//
+// DELIBERATELY NOT WIRED (tier gaps, reported by the caller task):
+//   - no mark-read endpoint (markAllSeen stays on the SDK, queued while
+//     offline, applies on mode exit);
+//   - no chat-list pin endpoint (tier pin pins a MESSAGE, not a chat);
+//   - no clear-chat endpoint; no single-message delete endpoint (tier
+//     delete is chat-level); no typing endpoint (typing is DROPPED in
+//     poll mode by design); no FCM-on-DM-send (messages arrive via the
+//     5s poll).
+
+export type Pass2DmMessage = {
+  id: string;
+  senderId: string;
+  senderName?: string;
+  text: string;
+  ts: number;
+  type: string;
+  reactions?: Record<string, string>;
+  [key: string]: unknown;
+};
+
+export type Pass2InboxChat = {
+  chatId: string;
+  peerUid?: string;
+  lastMessage?: string;
+  lastMessageAt?: number;
+  unreadCount?: number;
+  muted?: boolean;
+  hidden?: boolean;
+  peerProfile?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type Pass2DmWindow = {
+  messages: Pass2DmMessage[];
+  cursor: string | null;
+  resync: boolean;
+};
+
+const DM_INBOX_POLL_MS = 30_000;
+const DM_MESSAGES_POLL_MS = 5000;
+
+/** One-shot inbox read. Null = failure, caller keeps last. */
+export async function fetchPass2Inbox(): Promise<Pass2InboxChat[] | null> {
+  const r = await authedFetchJson('/chats/inbox');
+  if (!r.ok || !Array.isArray(r.json?.chats)) return null;
+  return r.json.chats as Pass2InboxChat[];
+}
+
+/** Inbox list, 30s, keep-last, fallback after 5 dead rounds. */
+export function subscribePass2Inbox(
+  cb: (chats: Pass2InboxChat[]) => void,
+  onFallback: () => void,
+): () => void {
+  const s = makeStopper();
+  let deadRounds = 0;
+  const poll = async () => {
+    if (s.closed) return;
+    const chats = await fetchPass2Inbox();
+    if (s.closed) return;
+    if (chats === null) {
+      deadRounds++;
+      if (deadRounds >= MAX_CONSEC_FAILURES) { s.stop(); onFallback(); return; }
+    } else {
+      deadRounds = 0;
+      cb(chats);
+    }
+    if (!s.closed) s.timers.push(setTimeout(poll, DM_INBOX_POLL_MS));
+  };
+  void poll();
+  return s.stop;
+}
+
+/** One-shot DM window. Null = failure, caller keeps last. */
+export async function fetchPass2DmMessages(
+  chatId: string,
+  since?: string | null,
+): Promise<Pass2DmWindow | null> {
+  const q = since ? `?since=${encodeURIComponent(since)}` : '';
+  const r = await authedFetchJson(`/dm/${encodeURIComponent(chatId)}/messages${q}`);
+  if (!r.ok || !Array.isArray(r.json?.messages)) return null;
+  const j = r.json as Record<string, unknown>;
+  return {
+    messages: j.messages as Pass2DmMessage[],
+    cursor: typeof j.cursor === 'string' ? j.cursor : null,
+    resync: j.resync === true,
+  };
+}
+
+/**
+ * DM thread window, 5s, keep-last + fallback discipline. Mirrors the room
+ * /chat discipline in pass2PollService: cursor = latest id, resync:true
+ * clears the accumulated map, dedupe by id, and the callback always gets
+ * the FULL accumulated window sorted by id (push keys are chronological,
+ * so id order is time order). A failed poll delivers nothing.
+ */
+export function subscribePass2DmMessages(
+  chatId: string,
+  cb: (messages: Pass2DmMessage[]) => void,
+  onFallback: () => void,
+): () => void {
+  const s = makeStopper();
+  let deadRounds = 0;
+  let latestId: string | null = null;
+  const byId = new Map<string, Pass2DmMessage>();
+  const deliver = () => {
+    cb([...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+  };
+  const poll = async () => {
+    if (s.closed) return;
+    const win = await fetchPass2DmMessages(chatId, latestId);
+    if (s.closed) return;
+    if (win === null) {
+      deadRounds++;
+      if (deadRounds >= MAX_CONSEC_FAILURES) { s.stop(); onFallback(); return; }
+      if (!s.closed) s.timers.push(setTimeout(poll, DM_MESSAGES_POLL_MS));
+      return;
+    }
+    deadRounds = 0;
+    if (win.resync) byId.clear();
+    for (const m of win.messages) {
+      if (m && typeof m.id === 'string' && !byId.has(m.id)) byId.set(m.id, m);
+    }
+    if (win.cursor) latestId = win.cursor;
+    else if (win.messages.length > 0) {
+      const last = win.messages[win.messages.length - 1];
+      if (last && typeof last.id === 'string') latestId = last.id;
+    }
+    deliver();
+    if (!s.closed) s.timers.push(setTimeout(poll, DM_MESSAGES_POLL_MS));
+  };
+  void poll();
+  return s.stop;
+}
+
+/** DM text send (TEXT ONLY — no replyTo, media, voice, or custom id). Throws on non-2xx. */
+export async function sendPass2DmMessage(
+  chatId: string,
+  text: string,
+): Promise<Pass2DmMessage> {
+  const r = await authedFetchJson(`/dm/${encodeURIComponent(chatId)}/message`, {
+    method: 'POST',
+    body: { text },
+  });
+  if (!r.ok || !r.json || typeof r.json.message !== 'object') {
+    throw new Error(`pass2 dm send failed (${r.status})`);
+  }
+  return r.json.message as Pass2DmMessage;
+}
+
+/**
+ * DM ops: react | pin | mute | hide | delete. Throws on non-2xx.
+ * NOTE: pin pins a MESSAGE (chats/:id/pinned/:messageId) — it is NOT
+ * chat-list pinning. delete is CHAT-level (removes the caller's userChat
+ * entry) — it is NOT single-message delete.
+ */
+export async function sendPass2DmOp(
+  chatId: string,
+  op: 'react' | 'pin' | 'mute' | 'hide' | 'delete',
+  body?: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const r = await authedFetchJson(`/dm/${encodeURIComponent(chatId)}/${op}`, {
+    method: 'POST',
+    body: body ?? {},
+  });
+  if (!r.ok) throw new Error(`pass2 dm ${op} failed (${r.status})`);
+  return (r.json as Record<string, unknown> | null) ?? null;
+}
+
+/** Create-or-get a DM chat. Returns the chatId (sorted uids joined with '_'). Throws on failure. */
+export async function createPass2Dm(peerUid: string): Promise<string> {
+  const r = await authedFetchJson('/dm/create', {
+    method: 'POST',
+    body: { peerUid },
+  });
+  if (!r.ok || typeof r.json?.chatId !== 'string') {
+    throw new Error(`pass2 dm create failed (${r.status})`);
+  }
+  return r.json.chatId as string;
 }

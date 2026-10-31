@@ -54,6 +54,15 @@ import {
   addReaction, deleteMessage, clearChat,
   subscribeUserChats, subscribePinnedMessage, setPinnedMessage,
   loadOlderMessages, DM_PAGE_SIZE } from '../services/firebaseDmService';
+// Pass2 DM (Part 2b, staging build): REST thread/inbox/presence/ops. Every
+// use below is gated on pass2DmActive, so with flags off this import is inert.
+import {
+  fetchPass2Flags, type Pass2Flags,
+  subscribePass2Inbox, subscribePass2DmMessages,
+  sendPass2DmMessage, sendPass2DmOp, fetchPass2Online,
+  type Pass2DmMessage, type Pass2InboxChat,
+} from '@/src/features/voice-room/services/pass2RestService';
+import { enterPass2Mode, exitPass2Mode } from '@/src/features/voice-room/services/pass2SessionMode';
 import type { Chat } from '../types/index';
 // 2026-10-13 (Sumon): showNotification সরানো হলো — InAppNotification কোথাও
 // mount করা নেই (dead code), আর খোলা chat-এ banner+haptic শুধু বিরক্তি; নতুন
@@ -104,6 +113,68 @@ const { width, height } = Dimensions.get('window');
 // different threads never interfere, and sequential open → back →
 // reopen counts cleanly (1 → 0 → 1).
 const liveThreadMounts = new Map<string, number>();
+
+// Pass2 DM (Part 2b): chatIds opened this session, for the session-local
+// unread overlay in the pass2 list callback (markAllSeen has no REST
+// equivalent, so the server badge only catches up when the queued SDK mark
+// applies on mode exit; locally opened chats read 0 meanwhile).
+const pass2DmOpenedChats = new Set<string>();
+
+// Tier DM message -> screen DmMessage. The tier window is text-shaped
+// (id/senderId/text/ts/type); anything outside the known types renders as
+// text, exactly like the Firebase snapToMessage default.
+function pass2DmToDmMessage(m: Pass2DmMessage, chatId: string): DmMessage {
+  const known: Array<DmMessage['type']> = ['text', 'image', 'video', 'voice', 'call', 'sticker', 'story_share'];
+  return {
+    id: m.id,
+    chatId,
+    senderId: m.senderId,
+    type: known.includes(m.type as DmMessage['type']) ? (m.type as DmMessage['type']) : 'text',
+    content: typeof m.text === 'string' ? m.text : '',
+    createdAt: typeof m.ts === 'number' ? m.ts : Date.now(),
+    status: 'sent',
+    reactions: m.reactions ?? {},
+    ...(typeof m.replyTo === 'object' && m.replyTo !== null ? { replyTo: m.replyTo as DmReplyPreview } : {}),
+    ...(typeof m.cloudinaryId === 'string' ? { cloudinaryId: m.cloudinaryId } : {}),
+    ...(typeof m.durationSec === 'number' ? { durationSec: m.durationSec } : {}),
+    ...(m.deletedForMe === true ? { deletedForMe: true } : {}),
+    ...(m.deletedForEveryone === true ? { deletedForEveryone: true } : {}),
+  };
+}
+
+// Tier inbox row -> screen Chat. The tier returns userChat fields plus
+// peerProfile; the Firebase sanitizeChat defaults are mirrored (name
+// 'Vee User', no story, not pinned/muted/hidden unless flagged).
+function pass2InboxToChat(c: Pass2InboxChat, myUid: string): Chat {
+  const prof = (c.peerProfile ?? {}) as Record<string, unknown>;
+  const profUid = typeof prof.uid === 'string' ? prof.uid : undefined;
+  const profName = typeof prof.name === 'string' ? prof.name : undefined;
+  const profAvatar = typeof prof.photoURL === 'string' ? prof.photoURL
+    : (typeof prof.avatar === 'string' ? prof.avatar : undefined);
+  let participantId = typeof c.peerUid === 'string' ? c.peerUid : (profUid ?? '');
+  if (!participantId && typeof c.chatId === 'string') {
+    participantId = c.chatId.split('_').find((p) => p !== myUid && p.length > 0) ?? '';
+  }
+  const lastTime = typeof c.lastMessageAt === 'number' ? c.lastMessageAt
+    : (typeof c.lastMessageTime === 'number' ? c.lastMessageTime : 0);
+  return {
+    id: c.chatId,
+    participantId,
+    participantName: profName ?? (typeof c.participantName === 'string' ? c.participantName : 'Vee User'),
+    participantAvatar: profAvatar ?? (typeof c.participantAvatar === 'string' ? c.participantAvatar : undefined),
+    lastMessage: typeof c.lastMessage === 'string' ? c.lastMessage : '',
+    lastMessageType: (typeof c.lastMessageType === 'string' ? c.lastMessageType : 'text') as Chat['lastMessageType'],
+    lastMessageTime: lastTime,
+    unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+    isOnline: c.isOnline === true,
+    hasStory: c.hasStory === true,
+    storySeen: c.storySeen === true,
+    isPinned: c.isPinned === true,
+    isMuted: c.muted === true || c.isMuted === true,
+    isHidden: c.hidden === true || c.isHidden === true,
+    isTyping: false,
+  };
+}
 
 const C = {
   bg: '#ECECF0',
@@ -319,6 +390,34 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     return other ?? '';
   }, [participantId, chatId, myUid]);
 
+  // ── Pass2 DM mode (Part 2b, staging build) ──────────────────────────────
+  // Same pattern as VoiceRoomScreen: local flags state + ref mirror (so
+  // callbacks defined once stay current). Every pass2 branch below is
+  // gated on pass2DmActive, so with flags off the screen runs today's
+  // Firebase path byte-identically. NOTE: this file is the THREAD screen
+  // only (there is no main inbox list in it) — the single thread mount
+  // owns the 'dm' mode entry; if a future inbox-list screen also enters
+  // 'dm', an inbox<->thread switch would exit + re-enter the mode (a
+  // brief online flap on switch; steady-state is unaffected).
+  const [pass2Flags, setPass2Flags] = useState<Pass2Flags | null>(null);
+  const pass2DmActive = pass2Flags?.enabled === true && pass2Flags?.dm === true && myUid !== 'unknown';
+  const pass2DmActiveRef = useRef(pass2DmActive);
+  useEffect(() => { pass2DmActiveRef.current = pass2DmActive; }, [pass2DmActive]);
+  const pass2DmFallback = useCallback(() => {
+    setPass2Flags((f) => (f ? { ...f, dm: false } : f));
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPass2Flags().then((f) => { if (!cancelled) setPass2Flags(f); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!pass2DmActive) return;
+    pass2DmOpenedChats.add(chatId);
+    enterPass2Mode('dm', { offline: true });
+    return () => { exitPass2Mode('dm'); };
+  }, [pass2DmActive, chatId]);
+
   // ── State ──────────────────────────────────────────────────────────────────
   const [messages, setMessages]             = useState<DmMessage[]>([]);
   // 2026-10-19 perf: optimistic sends — bubbles with status:'sending' shown
@@ -478,6 +577,35 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }
     });
 
+    // Pass2 DM: 5s REST window instead of subscribeMessages. Same callback
+    // shape (msgs + oldestKey), same cache write, same new-message scroll
+    // logic. Pagination is NOT available here: the REST window is the last
+    // 50 only, so hasMoreOlder stays false and handleLoadOlder / the
+    // quote-jump pager are backstopped to no-op in pass2 mode (their
+    // Firebase path only runs when the flag is off).
+    if (pass2DmActive) {
+      const unsubPass2 = subscribePass2DmMessages(chatId, (restMsgs) => {
+        if (cancelled) return;
+        const mapped = restMsgs
+          .map((m) => pass2DmToDmMessage(m, chatId))
+          .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        setMessages(mapped);
+        setOldestRecentKey(mapped.length > 0 ? mapped[0].id : null);
+        saveChatMessages(chatId, mapped);
+        setInitialLoading(false);
+        setHasMoreOlder(false);
+        const latest = mapped[mapped.length - 1];
+        if (latest && latest.senderId !== myUid && latest.id !== lastNotifId.current) {
+          lastNotifId.current = latest.id;
+          if (atBottomRef.current) shouldScrollRef.current = true;
+        }
+      }, pass2DmFallback);
+      return () => {
+        cancelled = true;
+        unsubPass2();
+      };
+    }
+
     const unsubMsgs = subscribeMessages(chatId, myUid, (msgs, oldestKey) => {
       if (cancelled) return;
       setMessages(msgs);
@@ -506,16 +634,19 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       cancelled = true;
       unsubMsgs();
     };
-  }, [chatId, myUid]);
+  }, [chatId, myUid, pass2DmActive, pass2DmFallback]);
 
 
   // ── Subscribe to typing ──────────────────────────────────────────────────
   useEffect(() => {
+    // Pass2 DM: typing is DROPPED by design (no tier endpoint) — neither
+    // subscribe nor write; the indicator simply does not appear.
+    if (pass2DmActive) return;
     if (!transitionDone) return;
     if (!effectiveParticipantId) return;
     const unsub = subscribeTyping(chatId, effectiveParticipantId, setIsTypingRemote);
     return unsub;
-  }, [chatId, effectiveParticipantId, transitionDone]);
+  }, [chatId, effectiveParticipantId, transitionDone, pass2DmActive]);
 
   // ── Subscribe to presence (respects target's privacy settings) ────────────
   // 2026-10-30 (boss: smooth open): gated on transitionDone — its
@@ -524,6 +655,29 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   useEffect(() => {
     if (!transitionDone) return;
     if (!effectiveParticipantId) return;
+    // Pass2 DM: 30s fetchPass2Online poll instead of subscribePresence.
+    // The SDK privacy read is skipped too (it would reopen the socket).
+    // Mapped to the same (online, seen) shape; privacy masking is NOT
+    // applied in pass2 mode (the tier has no privacy input for it).
+    if (pass2DmActive) {
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const poll = async () => {
+        if (stopped) return;
+        const res = await fetchPass2Online([effectiveParticipantId]);
+        if (stopped) return;
+        if (res) {
+          const p = res[effectiveParticipantId];
+          if (p) {
+            setIsOnline(p.online === true);
+            setLastSeen(typeof p.lastSeen === 'number' ? p.lastSeen : null);
+          }
+        }
+        if (!stopped) timer = setTimeout(poll, 30000);
+      };
+      void poll();
+      return () => { stopped = true; if (timer !== null) clearTimeout(timer); };
+    }
     let unsub: (() => void) | null = null;
     let cancelled = false;
     (async () => {
@@ -547,7 +701,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       }, privacy);
     })();
     return () => { cancelled = true; unsub?.(); };
-  }, [effectiveParticipantId, transitionDone]);
+  }, [effectiveParticipantId, transitionDone, pass2DmActive]);
 
   // RC6 fix Issue 5: subscribe to participant's RTDB profile for live photoURL.
   // 2026-10-13 (Sumon): live নামও নিই — header/push/alert-এ stale নাম দেখাতো।
@@ -688,6 +842,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Load older messages (pagination) ─────────────────────────────────────
   // RC8-A: cursor-based "load more" using the oldest key in the current window.
   const handleLoadOlder = useCallback(async () => {
+    // Pass2 DM backstop: the REST window cannot serve older-than-50
+    // pagination, and the button is hidden in pass2 mode (hasMoreOlder
+    // false) — never let a stale call hit the SDK mid-mode.
+    if (pass2DmActiveRef.current) return;
     // Determine cursor: if we already have older messages loaded, use the
     // oldest of those; otherwise use the oldest key from the live subscription.
     const cursor = olderMessages.length > 0
@@ -731,7 +889,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     if (msg.type !== 'text' || msg.sendState !== 'failed' || msg.senderId !== myUid) return;
     setPendingMsgs((prev) => prev.map((m) => (m.id === msg.id ? { ...m, sendState: 'sending' as const } : m)));
     try {
-      await sendMessage(chatId, myUid, effectiveParticipantId, msg.content, 'text', msg.replyTo, undefined, myRealName || user?.displayName || undefined, msg.id);
+      // Pass2 DM: plain-text retry via REST (reply retries stay on the SDK
+      // — the tier send takes text only, no replyTo; the queued SDK write
+      // applies on mode exit). Same success/failure handling either way.
+      if (pass2DmActiveRef.current && !msg.replyTo) {
+        await sendPass2DmMessage(chatId, msg.content);
+      } else {
+        await sendMessage(chatId, myUid, effectiveParticipantId, msg.content, 'text', msg.replyTo, undefined, myRealName || user?.displayName || undefined, msg.id);
+      }
       setPendingMsgs((prev) => prev.filter((m) => m.id !== msg.id));
       void clearDmOutboxEntry(chatId, msg.id);
     } catch (e) {
@@ -772,7 +937,11 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
       });
       for (const e of entries) {
         try {
-          await sendMessage(chatId, myUid, effectiveParticipantId, e.text, 'text', e.replyTo, undefined, myRealName || user?.displayName || undefined, e.id);
+          if (pass2DmActiveRef.current && !e.replyTo) {
+            await sendPass2DmMessage(chatId, e.text);
+          } else {
+            await sendMessage(chatId, myUid, effectiveParticipantId, e.text, 'text', e.replyTo, undefined, myRealName || user?.displayName || undefined, e.id);
+          }
           setPendingMsgs((prev) => prev.filter((m) => m.id !== e.id));
           void clearDmOutboxEntry(chatId, e.id);
         } catch (err) {
@@ -852,10 +1021,21 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     setInputText('');
     setReplyTarget(null);
     shouldScrollRef.current = true;
-    setTyping(chatId, myUid, false);
+    if (!pass2DmActiveRef.current) setTyping(chatId, myUid, false);
 
     try {
-      await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined, messageKey);
+      // Pass2 DM: plain text with no replyTo goes via REST. The tier
+      // assigns the server id, so the optimistic bubble (client key) is
+      // dropped on success and the 5s poll delivers the real message.
+      // Media / voice / reply sends stay on the SDK: while offline they
+      // QUEUE and apply on mode exit — they do not fail, they land late.
+      // REST sends also skip the SDK sendMessage block check (the tier
+      // is the enforcement point for pass2 sends).
+      if (pass2DmActiveRef.current && !replyPreview) {
+        await sendPass2DmMessage(chatId, text);
+      } else {
+        await sendMessage(chatId, myUid, effectiveParticipantId, text, 'text', replyPreview, undefined, myRealName || user?.displayName || undefined, messageKey);
+      }
       // Success — the live subscription delivers the real message under the
       // same id; drop the optimistic copy (the id-dedupe is the backstop).
       setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
@@ -911,10 +1091,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     };
     setPendingMsgs((prev) => [...prev, optimistic]);
     void saveDmOutboxEntry(chatId, { id: messageKey, text: emoji, createdAt: Date.now() });
-    setTyping(chatId, myUid, false);
+    if (!pass2DmActiveRef.current) setTyping(chatId, myUid, false);
     shouldScrollRef.current = true;
     try {
-      await sendMessage(chatId, myUid, effectiveParticipantId, emoji, 'text', undefined, undefined, myRealName || user?.displayName || undefined, messageKey);
+      if (pass2DmActiveRef.current) {
+        await sendPass2DmMessage(chatId, emoji);
+      } else {
+        await sendMessage(chatId, myUid, effectiveParticipantId, emoji, 'text', undefined, undefined, myRealName || user?.displayName || undefined, messageKey);
+      }
       setPendingMsgs((prev) => prev.filter((m) => m.id !== messageKey));
       void clearDmOutboxEntry(chatId, messageKey);
     } catch (e) {
@@ -1012,6 +1196,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // ── Typing detection ──────────────────────────────────────────────────────
   const handleInputChange = useCallback((text: string) => {
     setInputText(text);
+    // Pass2 DM: typing writes dropped by design (no tier endpoint).
+    if (pass2DmActiveRef.current) return;
     if (typingDebounce.current) clearTimeout(typingDebounce.current);
     if (text.length > 0) {
       setTyping(chatId, myUid, true);
@@ -1129,6 +1315,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     if (!myUid || myUid === 'unknown') return;
     return subscribePinnedMessage(chatId, myUid, (id) => setPinnedMessageId(id));
   }, [chatId, myUid]);
+  // Pass2 DM: pinning STAYS on the SDK — shape mismatch. The screen's pin
+  // is per-user userChats/{uid}/{chatId}/pinnedMessageId (string|null),
+  // while the tier pin writes a shared chats/{id}/pinned/{messageId} map;
+  // routing it would change what the other side sees. Reported as a gap.
   const handleTogglePin = useCallback((msg: DmMessage) => {
     const next = pinnedMessageId === msg.id ? null : msg.id;
     void setPinnedMessage(chatId, myUid, effectiveParticipantId, next).catch(() => {
@@ -1149,10 +1339,25 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   }, []);
   useEffect(() => {
     if (!forwardTarget) return;
+    // NOTE: this file is the thread screen — this forward-picker list is
+    // its ONLY inbox-list subscription (there is no main inbox list here).
+    // Pass2 DM: REST inbox poll instead of subscribeUserChats; the
+    // session-local unread overlay zeroes badges for chats opened this
+    // session (markAllSeen has no REST equivalent; the server badge
+    // catches up when the queued SDK mark applies on mode exit).
+    if (pass2DmActive) {
+      return subscribePass2Inbox((rows) => {
+        const mapped = rows
+          .map((c) => pass2InboxToChat(c, myUid))
+          .filter((c) => !c.isHidden)
+          .map((c) => (pass2DmOpenedChats.has(c.id) ? { ...c, unreadCount: 0 } : c));
+        setForwardChats(mapped);
+      }, pass2DmFallback);
+    }
     return subscribeUserChats(myUid, (chats) => {
       setForwardChats(chats.filter((c) => !c.isHidden));
     });
-  }, [forwardTarget, myUid]);
+  }, [forwardTarget, myUid, pass2DmActive, pass2DmFallback]);
   const handleForwardSend = useCallback(async (targetChat: Chat) => {
     const src = forwardTarget;
     if (!src || forwardSending) return;
@@ -1238,6 +1443,10 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     // markSeen is untouched: it is at-bottom gated and keyed on the
     // NEWEST message, so older pages never trigger a mark.
     if (jumpLoadingRef.current || loadingOlder) return;
+    // Pass2 DM: no older-than-50 pagination over REST — a quoted message
+    // outside the window cannot be paged to without the SDK, so report it
+    // missing rather than reopening the socket mid-mode.
+    if (pass2DmActiveRef.current) { Alert.alert('Original message not available'); return; }
     jumpLoadingRef.current = true;
     setLoadingOlder(true);
     try {
@@ -1312,12 +1521,21 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   // ── Reaction ──────────────────────────────────────────────────────────────
   const handleReaction = useCallback((messageId: string, emoji: string) => {
+    // Pass2 DM: tier react op (same toggle surface as addReaction).
+    if (pass2DmActiveRef.current) {
+      sendPass2DmOp(chatId, 'react', { messageId, emoji }).catch(() => {
+        Alert.alert(t('chat.error'), t('chat.reactionError'));
+      });
+      return;
+    }
     addReaction(chatId, messageId, myUid, emoji).catch(() => {
       Alert.alert(t('chat.error'), t('chat.reactionError'));
     });
   }, [chatId, myUid, t]);
 
   // ── Delete ────────────────────────────────────────────────────────────────
+  // Pass2 DM: message deletes STAY on the SDK — the tier delete is
+  // CHAT-level (removes the caller's userChat entry), not single-message.
   const handleDelete = useCallback((messageId: string, forEveryone: boolean) => {
     deleteMessage(chatId, messageId, myUid, forEveryone).catch(() => {
       Alert.alert(t('chat.error'), t('chat.deleteError'));

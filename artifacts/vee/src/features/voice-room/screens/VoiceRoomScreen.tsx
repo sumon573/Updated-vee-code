@@ -128,11 +128,13 @@ import {
   sendPass2RoomAction,
   takePass2Seat,
   sendPass2SeatMute,
+  sendPass2SeatHostMute,
   writePass2SeatMuteReliable,
   type Pass2Flags } from '../services/pass2RestService';
 import {
   enterPass2Mode,
   exitPass2Mode,
+  isAnyPass2ModeActive,
   setPass2Seated } from '../services/pass2SessionMode';
 import { subscribeEdgeRoomChat } from '../services/edgeRoomChatService';
 
@@ -300,6 +302,10 @@ export default function VoiceRoomScreen() {
     const frame = (myProfile as any)?.activeFrame;
     const seatIdx = mySeatIdxRef.current;
     if (!roomId || seatIdx < 0 || !myUid) return;
+    // Part 2b: skipped in pass2 mode (same queueing reason as the
+    // profile-name patch); the frame applies on the next seat claim
+    // via buildSeatData.
+    if (pass2PollActiveRef.current) return;
     if (frame) {
       update(ref(database, `rooms/${roomId}/seats/${seatIdx}`), { activeFrame: frame })
         .then(() => console.log(`[VoiceRoom] ✅ Seat ${seatIdx} frame synced: ${frame}`))
@@ -372,7 +378,15 @@ export default function VoiceRoomScreen() {
       // admin who left and re-entered came back as a plain member. Admin is
       // removed only by the owner (dismissAdmin) or a kick/block of that user.
       if (prev.mySeatIdx >= 0) {
-        removeSeat(prev.id, prev.mySeatIdx).catch(() => {});
+        // Part 2b: when any pass2 mode is active the session may be
+        // offline, so a queued SDK seat remove would linger until mode
+        // exit — remove via REST instead (tier enforces the holder
+        // match; 404 if not seated is swallowed like before).
+        if (isAnyPass2ModeActive()) {
+          sendPass2RoomAction(prev.id, 'seat_leave', { seatIndex: prev.mySeatIdx }).catch(() => {});
+        } else {
+          removeSeat(prev.id, prev.mySeatIdx).catch(() => {});
+        }
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
       } else {
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
@@ -786,6 +800,11 @@ export default function VoiceRoomScreen() {
 
   useEffect(() => {
     if (!myProfile?.name || !roomId || !myUid || myUid === 'anonymous') return;
+    // Part 2b: skipped in pass2 mode — beats carry the profile
+    // (name/photo) for audience viewers, and the seat record is
+    // re-stamped on the next take; an SDK patch here would queue
+    // while offline (and could patch a stale cached record).
+    if (pass2PollActiveRef.current) return;
     let cancelled = false;
     (async () => {
       const patch: Record<string, unknown> = {
@@ -1900,12 +1919,14 @@ export default function VoiceRoomScreen() {
   // always offline (chat + presence + gift/reaction are all REST).
   // Seated MEMBERS: offline — every member-reachable seat write is
   // routed (take/leave/self-mute/request/invite-accept/cancel).
-  // Seated OWNERS/ADMINS: stay ONLINE — host-mute (muteToggleMember →
-  // setSeatHostMute) has NO tier op and must NOT be mapped to seat_mute
-  // (that would break the host-mute-sticks law: the target could
-  // self-unmute). One tier op away (e.g. seat_host_mute); until it
-  // exists, these sessions keep today's behavior and their writes land
-  // immediately. Role flips re-run this effect (exit → goOnline →
+  // Seated OWNERS/ADMINS: stay ONLINE — host-mute is now REST-routed
+  // (muteToggleMember → sendPass2SeatHostMute, tier op seat_host_mute
+  // verified in the staging tier; mapping it to seat_mute is still
+  // forbidden — that would break the host-mute-sticks law). The gate
+  // stays because music/PK/game/decor writes have NO tier op (the tier
+  // 400s them as deferred), so these sessions keep the socket and
+  // those controls keep working. Role flips re-run this effect
+  // (exit → goOnline →
   // re-enter), so member→admin goes online and admin→member goes
   // offline. The gate uses ownerId + the admins REGISTRY (the privilege
   // truth — a stale seat/audience admin label grants nothing, since
@@ -2454,7 +2475,12 @@ export default function VoiceRoomScreen() {
       const prevActive = getCurrentRoom();
       if (prevActive && prevActive.id !== roomId) {
         if (prevActive.mySeatIdx >= 0) {
-          removeSeat(prevActive.id, prevActive.mySeatIdx).catch(() => {});
+          // Part 2b: same offline reason as the minimized cleanup above.
+          if (isAnyPass2ModeActive()) {
+            sendPass2RoomAction(prevActive.id, 'seat_leave', { seatIndex: prevActive.mySeatIdx }).catch(() => {});
+          } else {
+            removeSeat(prevActive.id, prevActive.mySeatIdx).catch(() => {});
+          }
         }
         leaveAudience(prevActive.id, prevActive.myUid || myUid).catch(() => {});
         clearCurrentRoom();
@@ -2511,7 +2537,16 @@ export default function VoiceRoomScreen() {
       if (hasLeftRef.current) return;
       hasLeftRef.current = true;
       if (mySeatIdxRef.current >= 0) {
-        removeSeat(roomId, mySeatIdxRef.current).catch(() => {});
+        // Part 2b: in pass2 mode the seat node was tier-written, so
+        // remove it via REST (an SDK remove would queue while offline
+        // and linger until mode exit). The leaveAudience call below is
+        // a no-op for pass2 joiners (beat-only presence) and still
+        // applies for Firebase joiners.
+        if (pass2PollActiveRef.current) {
+          sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: mySeatIdxRef.current }).catch(() => {});
+        } else {
+          removeSeat(roomId, mySeatIdxRef.current).catch(() => {});
+        }
         leaveAudience(roomId, myUid).catch(() => {});
       } else {
         leaveAudience(roomId, myUid).catch(() => {});
@@ -2934,12 +2969,14 @@ export default function VoiceRoomScreen() {
       (i === seatIdx && s ? { ...s, hostMuted: newHostMuted } : s),
     ));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Gap 5 GATE (deliberate, do NOT "fix" to seat_mute): host-mute has
-    // NO tier op, so this stays on the SDK. Seated owners/admins stay
-    // ONLINE (choreography gate), so it lands immediately. Mapping it
-    // to seat_mute would break the host-mute-sticks law — the target
-    // could self-unmute. Needs a tier seat_host_mute op first.
-    setSeatHostMute(roomId, seatIdx, newHostMuted).catch((e: unknown) => {
+    // Part 2b: host-mute routes via REST in pass2 mode (tier op
+    // seat_host_mute — writes hostMuted ONLY). Mapping it to seat_mute
+    // is still forbidden: the target could self-unmute (host-mute-
+    // sticks law). Seated owners/admins stay ONLINE (choreography
+    // gate) only because music/PK/game/decor ops are still deferred.
+    (pass2PollActiveRef.current
+      ? sendPass2SeatHostMute(roomId, seatIdx, newHostMuted, memberId)
+      : setSeatHostMute(roomId, seatIdx, newHostMuted)).catch((e: unknown) => {
       setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) =>
         (i === seatIdx && s ? { ...s, hostMuted: prevHostMuted } : s),
       ));
@@ -3484,7 +3521,9 @@ export default function VoiceRoomScreen() {
         try { stopPublishing(); } catch {  }
         if (pass2PollActiveRef.current) {
           // Session-end: the seat leave lands immediately via REST;
-          // audience presence expires via beats (no tier audience op).
+          // audience presence expires via beats (the tier
+          // audience_remove op is owner/admin-only ejection, so
+          // self-leave cannot use it — beats are the self path).
           sendPass2RoomAction(roomId, 'seat_leave', { seatIndex: mySeatIdx }).catch(() => {});
         } else {
           removeSeat(roomId, mySeatIdx).catch(() => {});
@@ -3652,22 +3691,30 @@ export default function VoiceRoomScreen() {
           const keepRole = existing?.role === 'owner' || existing?.role === 'admin';
           const joinedAt = typeof existing?.joinedAt === 'number' && existing.joinedAt > 0 ? existing.joinedAt : Date.now();
           const role = keepRole ? (existing!.role as string) : 'member';
-          set(memberRef, {
-            role,
-            joinedAt,
-            name: myName,
-          }).catch(() => {});
-          const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
-          set(userRoomRef, {
-            joinedAt,
-            role,
-          }).catch(() => {});
+          // Part 2b: in pass2 mode membership goes through the tier
+          // join_membership op (same merge rule: never downgrade
+          // owner/admin, never reset joinedAt; name resolved
+          // server-side). The SDK sets below stay for Firebase mode.
+          if (pass2PollActiveRef.current) {
+            sendPass2RoomAction(roomId, 'join_membership', {}).catch(() => {});
+          } else {
+            set(memberRef, {
+              role,
+              joinedAt,
+              name: myName,
+            }).catch(() => {});
+            const userRoomRef = ref(database, `userRooms/${myUid}/${roomId}`);
+            set(userRoomRef, {
+              joinedAt,
+              role,
+            }).catch(() => {});
+          }
         })
         .catch(() => {});
       // Gap 5: audience presence comes from beats in pass2 mode. The
-      // membership writes above stay on the SDK — they queue while
-      // offline and apply on the mode-exit goOnline (no
-      // join_membership tier op exists). The optimistic
+      // membership writes above route via the tier join_membership op
+      // in pass2 mode (Part 2b); the SDK sets stay for Firebase mode.
+      // The optimistic
       // setHasJoined/setIsRoomMember above already updated the UI.
       if (!pass2PollActiveRef.current) {
         joinRoomAsAudience(roomId, {

@@ -15,10 +15,51 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { Chat } from '@/src/features/chat/types';
 import { subscribeUserChats } from '@/src/features/chat/services/firebaseDmService';
+// Pass2 DM (Part 2b, staging build): REST inbox list under the dm flag.
+// This screen never enters pass2 mode (no goOffline here) — the list poll
+// only replaces the list read; its DP-hydration effect below stays on the
+// SDK as before. Every branch below is gated on pass2DmActive.
+import {
+  fetchPass2Flags, type Pass2Flags,
+  subscribePass2Inbox, type Pass2InboxChat,
+} from '@/src/features/voice-room/services/pass2RestService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { subscribeLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { useEffect } from 'react';
+
+// Tier inbox row -> Chat (same defaults as the Firebase sanitizeChat path:
+// name 'Vee User', no story, not pinned/muted/hidden unless flagged).
+function pass2InboxToChat(c: Pass2InboxChat, myUid: string): Chat {
+  const prof = (c.peerProfile ?? {}) as Record<string, unknown>;
+  const profUid = typeof prof.uid === 'string' ? prof.uid : undefined;
+  const profName = typeof prof.name === 'string' ? prof.name : undefined;
+  const profAvatar = typeof prof.photoURL === 'string' ? prof.photoURL
+    : (typeof prof.avatar === 'string' ? prof.avatar : undefined);
+  let participantId = typeof c.peerUid === 'string' ? c.peerUid : (profUid ?? '');
+  if (!participantId && typeof c.chatId === 'string') {
+    participantId = c.chatId.split('_').find((p) => p !== myUid && p.length > 0) ?? '';
+  }
+  const lastTime = typeof c.lastMessageAt === 'number' ? c.lastMessageAt
+    : (typeof c.lastMessageTime === 'number' ? c.lastMessageTime : 0);
+  return {
+    id: c.chatId,
+    participantId,
+    participantName: profName ?? (typeof c.participantName === 'string' ? c.participantName : 'Vee User'),
+    participantAvatar: profAvatar ?? (typeof c.participantAvatar === 'string' ? c.participantAvatar : undefined),
+    lastMessage: typeof c.lastMessage === 'string' ? c.lastMessage : '',
+    lastMessageType: (typeof c.lastMessageType === 'string' ? c.lastMessageType : 'text') as Chat['lastMessageType'],
+    lastMessageTime: lastTime,
+    unreadCount: typeof c.unreadCount === 'number' ? c.unreadCount : 0,
+    isOnline: c.isOnline === true,
+    hasStory: c.hasStory === true,
+    storySeen: c.storySeen === true,
+    isPinned: c.isPinned === true,
+    isMuted: c.muted === true || c.isMuted === true,
+    isHidden: c.hidden === true || c.isHidden === true,
+    isTyping: false,
+  };
+}
 
 export default function IMOSearchScreen() {
   const router = useRouter();
@@ -27,11 +68,33 @@ export default function IMOSearchScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
 
+  // Pass2 DM flags (same fail-closed fetch as the room/thread screens).
+  const [pass2Flags, setPass2Flags] = useState<Pass2Flags | null>(null);
+  const pass2DmActive = pass2Flags?.enabled === true && pass2Flags?.dm === true;
+  useEffect(() => {
+    let cancelled = false;
+    fetchPass2Flags().then((f) => { if (!cancelled) setPass2Flags(f); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!user?.uid) return;
+    // Pass2 DM: 30s REST inbox poll instead of subscribeUserChats;
+    // fallback flips dm off (sticky) and resubscribes Firebase. The tier
+    // list is already newest-first; the defensive sort + hidden filter
+    // mirror the Firebase path's contract.
+    if (pass2DmActive) {
+      return subscribePass2Inbox((rows) => {
+        const mapped = rows
+          .map((c) => pass2InboxToChat(c, user.uid))
+          .filter((c) => !c.isHidden)
+          .sort((a, b) => (b.lastMessageTime ?? 0) - (a.lastMessageTime ?? 0));
+        setChats(mapped);
+      }, () => setPass2Flags((f) => (f ? { ...f, dm: false } : f)));
+    }
     const unsub = subscribeUserChats(user.uid, setChats);
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, pass2DmActive]);
 
   // DP HYDRATION (2026-10-10): Fetch missing DPs from RTDB
   // 2026-10-19 perf: reuse the module-level ref-counted profile cache
