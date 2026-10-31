@@ -8,7 +8,7 @@
  * Data model — users/{uid}/noble (single node, updated in ONE atomic
  * runTransaction per gift, so concurrent gifts can never double-count):
  *   xp                   lifetime XP (diamonds sent, excl. self-gifts)
- *   rankIndex            highest achieved rank (0=Knight … 7=King)
+ *   rankIndex            highest achieved rank (0=Knight … 6=King)
  *   maintenanceRequired  XP that must be sent inside the current window
  *                        to keep the rank secured (= ceil(rankMinXP / 2);
  *                        e.g. Baron 1260 → 630, matching the IMO reference)
