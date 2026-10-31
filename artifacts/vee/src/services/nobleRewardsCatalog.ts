@@ -113,7 +113,8 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       // (ribbons flow, gold sheen, gems glow; the word stays stable).
       // v2 = faster tempo (3 cycles/4s) per his note. Approved final
       // 2026-10-24 ("nameplate এটাই ফাইনাল"). Animated WebP on VPS static.
-      designUrl: 'https://vee-club.duckdns.org/static/nameplates/marquis-nameplate-v2.webp',
+      designUrl: 'https://vee-club.duckdns.org/m/395385a00d0411d2666ffc420317ab2b',
+      mistColor: '#EC407A',
       fallbackIcon: '🎖️',
     },
     badge: {
@@ -123,7 +124,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       // slots on his phone. v2 = the same locked design A "Heraldic" art
       // (burgundy enamel disc, rose-gold riveted rim, gold fleur-de-lis)
       // as a 512x512 lossless static WebP (256KB) on the VPS static host.
-      designUrl: 'https://vee-club.duckdns.org/static/badges/marquis-badge-v2.webp',
+      designUrl: 'https://vee-club.duckdns.org/m/a32e7617f23d7ee3be3b7d873a62cc7e',
       fallbackIcon: '👑',
     },
     frame: {
