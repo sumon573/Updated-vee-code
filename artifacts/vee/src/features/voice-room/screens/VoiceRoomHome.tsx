@@ -32,6 +32,7 @@ import {
   subscribeActiveRooms,
   subscribeMyRoomsCombined,
   subscribePrivateActiveRooms,
+  subscribeSelfRoomLeft, stripSelfFromRoom,
   verifyRoomPin,
   setPinVerifiedForSession,
   type RoomInfo } from '../services/firebaseRoomService';
@@ -558,6 +559,27 @@ export default function VoiceRoomHome({
     return unsub;
   }, [user?.uid, refreshTick, pass2HomeActive]);
 
+  // 2026-10-31 (boss: stale avatar + count after exit, PERMANENT):
+  // the moment a true leave fires, strip self from both lists at once
+  // (plus the persisted cache) — no waiting for the next 15s poll or
+  // the 60s tier refresh. The directory poll keeps the veil for 90s
+  // (see the directory load above) so a tier-cached payload cannot
+  // re-add self; a re-join clears the marker (see VoiceRoomScreen).
+  useEffect(() => {
+    if (!user?.uid) return;
+    const uid = user.uid;
+    return subscribeSelfRoomLeft((m) => {
+      if (m.uid !== uid) return;
+      const strip = (r: RoomInfo): RoomInfo => (r.id === m.roomId ? stripSelfFromRoom(r, uid) : r);
+      const nextAll = allRoomsRef.current.map(strip);
+      const nextMy = myRoomsRef.current.map(strip);
+      allRoomsSigRef.current = roomsSignature(nextAll);
+      setAllRooms(nextAll);
+      setMyRooms(nextMy);
+      cacheRooms(uid, nextMy, nextAll);
+    });
+  }, [user?.uid, roomsSignature]);
+
   // Directory feed: public rooms from the edge. Polls every 15s
   // (2026-10-30: Trending real-time — halves the poll-phase lag; the
   // edge 3s cache absorbs the rate and Fix #23 dedupes identical
@@ -579,7 +601,13 @@ export default function VoiceRoomHome({
         directoryRoomsRef.current = mapped;
         directoryIdsRef.current = new Set(mapped.map((r) => r.id));
         directoryEverOkRef.current = true;
-        const merged = mergeDirectoryRooms(mapped, privateRoomsRef.current);
+        const mergedRaw = mergeDirectoryRooms(mapped, privateRoomsRef.current);
+        // 2026-10-31 (boss: stale avatar + count after exit, PERMANENT):
+        // veil self from tier-cached directory payloads for 90s after a
+        // true leave — the tier cache (60s) would otherwise re-add the
+        // leaver on the next poll. Live Firebase feeds are NOT veiled
+        // (they update on leave in real time).
+        const merged = user?.uid ? mergedRaw.map((r) => stripSelfFromRoom(r, user.uid)) : mergedRaw;
         recLiveRef.current = true;
         // Fix #23: identical poll result → no set, no re-render, no cache
         // churn. The refresh spinner still stops via finishRefresh().
@@ -609,7 +637,8 @@ export default function VoiceRoomHome({
     if (pass2HomeActive) return; // pass2 REST lists own this feed
     const unsub = subscribePrivateActiveRooms((rooms) => {
       privateRoomsRef.current = rooms;
-      const merged = mergeDirectoryRooms(directoryRoomsRef.current, rooms);
+      const mergedRaw = mergeDirectoryRooms(directoryRoomsRef.current, rooms);
+      const merged = user?.uid ? mergedRaw.map((r) => stripSelfFromRoom(r, user.uid)) : mergedRaw;
       setAllRooms(merged);
       cacheRooms(user?.uid ?? '', myRoomsRef.current, merged);
     }, () => {

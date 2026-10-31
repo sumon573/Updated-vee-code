@@ -112,7 +112,8 @@ import {
   setPinVerifiedForSession as setPinVerified,
   sendRoomEntryEvent, subscribeRoomEntryEvents,
   sendRoomGiftEvent, subscribeRoomGiftEvents,
-  leaveRoomCompletely, unjoinToAudience, removeMemberFromRoom, subscribeRoomMembers } from '../services/firebaseRoomService';
+  leaveRoomCompletely, unjoinToAudience, removeMemberFromRoom, subscribeRoomMembers,
+  notifySelfRoomLeft, clearSelfRoomLeft } from '../services/firebaseRoomService';
 import {
   subscribeRoomChat, sendRoomChatMsg, createRoomChatKey,
   type RoomChatMsg } from '../services/firebaseRoomChatService';
@@ -391,6 +392,12 @@ export default function VoiceRoomScreen() {
       } else {
         leaveAudience(prev.id, prev.myUid || myUid).catch(() => {});
       }
+      // Same veil as handleLeave: switching rooms leaves the previous
+      // room, so its card must stop showing self at once.
+      notifySelfRoomLeft(prev.id, prev.myUid || myUid, prev.mySeatIdx >= 0, {
+        photoURL: myPhotoURL,
+        initials: getInitials(voiceUserName),
+      });
       setMinimizedRoom(null);
     })();
   }, [roomId]);
@@ -2353,6 +2360,9 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if (!roomId || !myUid || pinGate !== 'passed') return;
     hasLeftRef.current = false;
+    // A (re-)join clears the leave veil for this room, so the Room page
+    // shows self again as soon as the directory reflects the join.
+    clearSelfRoomLeft(roomId, myUid);
     let cancelled = false;
 
     (async () => {
@@ -3533,12 +3543,23 @@ export default function VoiceRoomScreen() {
         if (!pass2PollActiveRef.current) leaveAudience(roomId, myUid).catch(() => {});
       }
     } finally {
+      // 2026-10-31 (boss: stale avatar + count after exit, PERMANENT):
+      // veil self from the Room page lists at once — the directory tier
+      // cache (60s) + page poll (15s) would otherwise keep showing the
+      // pre-leave snapshot for up to ~75s (the 18:38 screenshot: seat
+      // freed 18:38:16, card still showed live 2 + avatar). Works in
+      // pass2 mode too (audience presence there expires via beats, so
+      // the display veil is the only immediate removal).
+      notifySelfRoomLeft(roomId, myUid, mySeatIdx >= 0, {
+        photoURL: myPhotoURL,
+        initials: getInitials(voiceUserName),
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       setExitModalOpen(false);
       if (router.canGoBack()) router.back();
       else router.replace('/home');
     }
-  }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing]);
+  }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing, myPhotoURL, voiceUserName]);
 
   // 2026-10-30 (boss: unjoin = demote to AUDIENCE, never eject): unjoin
   // removes membership + the admin registry entry (unjoinToAudience) and

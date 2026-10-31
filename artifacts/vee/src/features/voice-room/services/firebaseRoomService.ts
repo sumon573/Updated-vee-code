@@ -889,6 +889,94 @@ export function subscribeRoomAdmins(
 // ─── Audience ─────────────────────────────────────────────────────────────────
 
 /** Add user to audience when they enter the room. */
+// -- Self-leave presence veil (2026-10-31, boss: stale avatar + count after exit) --
+// Root cause of the 18:38 screenshot: the server data was ALREADY correct
+// (the seat was freed at 18:38:16) but the Room page showed the pre-leave
+// directory snapshot (tier 60s cache + 15s page poll). The tier cache is
+// deliberate (scale) and stays. So the veil is client-side: a true leave
+// fires a marker; the Room page strips self from its lists at once AND
+// filters self out of directory payloads for 90s (tier 60s + poll 15s +
+// margin). A join clears the marker, so re-entry displays correctly.
+// Trade-off (bounded, self-correcting): an audience leave has no preview
+// evidence, so its count strip can undercount OTHER users by 1 on the
+// leaver's phone for up to 90s when the tier already refreshed; the next
+// poll after marker expiry restores the truth via the signature check.
+export interface SelfLeaveMarker {
+  roomId: string;
+  uid: string;
+  wasSeated: boolean;
+  photoURL?: string;
+  initials?: string;
+  leftAt: number;
+}
+
+const selfLeaveMarkers = new Map<string, SelfLeaveMarker>();
+const selfLeaveListeners = new Set<(m: SelfLeaveMarker) => void>();
+const selfLeaveKey = (uid: string, roomId: string): string => `${uid}:${roomId}`;
+const SELF_LEAVE_VEIL_MS = 90_000;
+
+export function notifySelfRoomLeft(
+  roomId: string,
+  uid: string,
+  wasSeated: boolean,
+  selfPreview?: { photoURL?: string; initials?: string },
+): void {
+  const m: SelfLeaveMarker = {
+    roomId, uid, wasSeated,
+    photoURL: selfPreview?.photoURL,
+    initials: selfPreview?.initials,
+    leftAt: Date.now(),
+  };
+  selfLeaveMarkers.set(selfLeaveKey(uid, roomId), m);
+  selfLeaveListeners.forEach((l) => { try { l(m); } catch { /* ignore */ } });
+}
+
+export function subscribeSelfRoomLeft(listener: (m: SelfLeaveMarker) => void): () => void {
+  selfLeaveListeners.add(listener);
+  return () => { selfLeaveListeners.delete(listener); };
+}
+
+export function clearSelfRoomLeft(roomId: string, uid: string): void {
+  selfLeaveMarkers.delete(selfLeaveKey(uid, roomId));
+}
+
+// Strip the leaver's own presence from one RoomInfo. Returns the input
+// unchanged when no live marker exists (list identity stays stable).
+// Seated: remove the one preview matching the leaver (photoURL first,
+// initials fallback) and decrement memberCount + liveCount. Audience:
+// no preview exists — decrement listenerCount + liveCount (floored).
+export function stripSelfFromRoom<T extends RoomInfo>(room: T, uid: string): T {
+  const key = selfLeaveKey(uid, room.id);
+  const m = selfLeaveMarkers.get(key);
+  if (!m) return room;
+  if (Date.now() - m.leftAt > SELF_LEAVE_VEIL_MS) {
+    selfLeaveMarkers.delete(key);
+    return room;
+  }
+  let memberPreviews = room.memberPreviews ?? [];
+  if (m.wasSeated) {
+    const idx = memberPreviews.findIndex((p) =>
+      (m.photoURL && p.photoURL && p.photoURL === m.photoURL) ||
+      (m.initials && p.initials === m.initials));
+    if (idx >= 0) {
+      memberPreviews = [...memberPreviews.slice(0, idx), ...memberPreviews.slice(idx + 1)];
+    }
+  }
+  const memberCount = m.wasSeated ? Math.max(0, (room.memberCount ?? 0) - 1) : (room.memberCount ?? 0);
+  const listenerCount = m.wasSeated ? (room.listenerCount ?? 0) : Math.max(0, (room.listenerCount ?? 0) - 1);
+  const nextLive = typeof room.liveCount === 'number' ? Math.max(0, room.liveCount - 1) : undefined;
+  const previewsChanged = memberPreviews !== (room.memberPreviews ?? []);
+  if (!previewsChanged && memberCount === room.memberCount && listenerCount === room.listenerCount
+    && (nextLive === undefined || nextLive === room.liveCount)) return room;
+  return {
+    ...room,
+    memberPreviews,
+    memberCount,
+    listenerCount,
+    ...(nextLive !== undefined ? { liveCount: nextLive } : {}),
+  };
+}
+
 export async function joinRoomAsAudience(
   roomId: string,
   member: RoomAudienceMember,
