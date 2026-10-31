@@ -39,7 +39,7 @@ type FlowerParticle = {
   fSize: number; char: string; spin: number;
 };
 
-function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleColors }: { size: number; visible: boolean; nobleRankIndex?: number; activeRipple?: string; rippleColors?: string[] }) {
+export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, rippleColors }: { size: number; visible: boolean; nobleRankIndex?: number; activeRipple?: string; rippleColors?: string[] }) {
   // 2026-10-15 (Sumon): equipped ripple takes priority — if user equipped a
   // ripple from Decoration, use its design. Else fallback to per-rank theme.
   // Non-nobles get the default premium theme.
