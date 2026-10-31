@@ -12,7 +12,6 @@ const STAR_SPECS: Record<string, { stars: number; color: string; border?: string
   count: { stars: 3, color: '#7E57C2', border: 'rgba(255,255,255,0.55)' },
   marquis: { stars: 4, color: '#EC407A', border: 'rgba(255,255,255,0.55)' },
   duke: { stars: 4, color: '#FF7043', border: 'rgba(255,255,255,0.55)' },
-  royalduke: { stars: 3, color: '#FFA000', border: 'rgba(255,215,0,0.9)' },
   king: { stars: 5, color: '#FBC02D', border: '#6B4A00',
     colors: ['#FFF6C8', '#F5C542', '#C9970D', '#F8D95A', '#8A5E00'],
     locations: [0, 0.28, 0.52, 0.75, 1], numColor: '#4A3200' },
@@ -27,7 +26,7 @@ function lighten(hex: string, f: number): string {
   return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
 }
 
-// Grant ids look like noble-frame-viscount, noble-badge-royal-duke, ...;
+// Grant ids look like noble-frame-viscount, noble-badge-duke, ...;
 // non-noble ids (vee-official-frame, zen-g-frame) match nothing -> null.
 export function nobleRankKeyFromGrantId(id: string): string | null {
   const m = /^noble-(?:frame|badge|plate|ripple|effect)-(.+)$/.exec(id || '');

@@ -164,21 +164,6 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
     entryEffect: { fallbackIcon: '✨' },
   },
   {
-    rankKey: 'royalDuke', rankName: 'Royal Duke', rankColor: '#FFA000',
-    nameplate: { fallbackIcon: '🎖️' },
-    badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-royalduke.png?v=2',
-      fallbackIcon: '👑',
-    },
-    frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-royalduke.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
-      fallbackIcon: '🖼️',
-    },
-    ripple: { fallbackIcon: '🌊', config: { colors: ['#FFA000', '#FF8F00'] } },
-    entryEffect: { fallbackIcon: '✨' },
-  },
-  {
     rankKey: 'king', rankName: 'King', rankColor: '#FBC02D',
     nameplate: { fallbackIcon: '🎖️' },
     badge: {
@@ -330,8 +315,8 @@ export function rewardsForRankKey(rankKey: string): RankRewards | null {
   const catalog = getActiveCatalog();
   // 2026-10-20 FIX (boss: noble frame missing on voice-room seats): exact
   // match first, then a case-insensitive match. Two key conventions
-  // coexist — NOBLE_RANKS / catalog rankKey 'royalDuke' vs the item/asset
-  // id suffix 'royalduke' (designUrls, admin-granted ids). A frame id in
+  // coexist — NOBLE_RANKS / catalog rankKey camelCase vs the item/asset
+  // id suffix lowercased (designUrls, admin-granted ids). A frame id in
   // the other convention's case resolved to NO entry, and callers fell
   // back to full-size frame art (Avatar seat ring) or lost designUrls.
   return (

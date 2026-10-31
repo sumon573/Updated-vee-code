@@ -80,7 +80,7 @@ export interface NobleRank {
 
 /**
  * Rank thresholds. Anchor points come from the IMO reference video
- * (Baron 1260~8399, Marquis 252000~587999, Royal Duke 1260K~4200K,
+ * (Baron 1260~8399, Marquis 252000~587999,
  * King 4200K~42000K); the in-between ranks interpolate
  * those anchors with non-overlapping contiguous ranges.
  */
@@ -90,8 +90,7 @@ export const NOBLE_RANKS: NobleRank[] = [
   { key: 'viscount',  name: 'Viscount',   minXP: 8400,      maxXP: 41999,      color: '#42A5F5', privileges: ['nameplate', 'badge', 'gift', 'entryEffects'] },
   { key: 'count',     name: 'Count',      minXP: 42000,     maxXP: 251999,     color: '#7E57C2', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame'] },
   { key: 'marquis',   name: 'Marquis',    minXP: 252000,    maxXP: 587999,    color: '#EC407A', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects'] },
-  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 1259999,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
-  { key: 'royalDuke', name: 'Royal Duke', minXP: 1260000,   maxXP: 4200000,   color: '#FFA000', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
+  { key: 'duke',      name: 'Duke',       minXP: 588000,    maxXP: 4200000,   color: '#FF7043', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'upgradeBanner'] },
   { key: 'king',      name: 'King',       minXP: 4200001,   maxXP: 41999999,  color: '#FBC02D', privileges: ['nameplate', 'badge', 'gift', 'avatarFrame', 'entryEffects', 'micRipple', 'upgradeBanner', 'homepageSkin'] },
 ];
 
@@ -201,7 +200,6 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   { entryGradient: ['#7E57C2', lightenHex('#7E57C2', 60)], entryIcon: '\uD83D\uDD2E', rippleWave: '#7E57C2', rippleMist: ['#7E57C2', '#FFD700', '#CE93D8'], rippleParticles: ['✨', '🌟', '⭐'], rippleEffect: 'stars', rippleWaveCount: 3, rippleParticleSize: 12, rippleSpeedMul: 1.5 },
   themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
   themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
-  themeFor('#FFA000', '\uD83E\uDE99', ['\uD83E\uDE99', '✨', '\uD83C\uDF1F'], 'coins', 4),
   themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B'], 'crowns', 4),
 ];
 export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
