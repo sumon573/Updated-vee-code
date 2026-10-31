@@ -150,18 +150,27 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'duke', rankName: 'Duke', rankColor: '#FF7043',
-    nameplate: { fallbackIcon: '🎖️' },
+    nameplate: {
+      // 2026-10-31 (batch45): server parity - live transparent Drive art.
+      designUrl: 'https://vee-club.duckdns.org/m/d0f5f591c9a7dae15d31efbb4b4611f2',
+      mistColor: '#FF7043',
+      fallbackIcon: '🎖️',
+    },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-duke.png?v=2',
+      designUrl: 'https://vee-club.duckdns.org/m/364dc4e34c208050b06d54d8f244ba01',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-duke.png?v=2',
+      designUrl: 'https://vee-club.duckdns.org/m/1c33046f7e1120d1117cf53519ab014c',
       config: { seatScale: 1.44, seatDy: 0 },
       fallbackIcon: '🖼️',
     },
-    ripple: null,
-    entryEffect: { fallbackIcon: '✨' },
+    ripple: { fallbackIcon: '✨', config: { colors: ['#FF7043', '#FFD700'] } },
+    entryEffect: {
+      // 2026-10-31 (batch45): server parity - live cleaned transparent art.
+      designUrl: 'https://vee-club.duckdns.org/m/654b3712dbd227c2d8e21d265c56e7f5',
+      fallbackIcon: '✨',
+    },
   },
   {
     rankKey: 'king', rankName: 'King', rankColor: '#FBC02D',

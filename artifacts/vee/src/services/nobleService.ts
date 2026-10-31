@@ -199,7 +199,10 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   // Waves/mist Count purple+gold. Entry gradient/icon unchanged.
   { entryGradient: ['#7E57C2', lightenHex('#7E57C2', 60)], entryIcon: '\uD83D\uDD2E', rippleWave: '#7E57C2', rippleMist: ['#7E57C2', '#FFD700', '#CE93D8'], rippleParticles: ['✨', '🌟', '⭐'], rippleEffect: 'stars', rippleWaveCount: 3, rippleParticleSize: 12, rippleSpeedMul: 1.5 },
   themeFor('#EC407A', '\uD83C\uDF39', ['\uD83C\uDF38', '\uD83D\uDC97', '\uD83E\uDD69'], 'petals', 3),
-  themeFor('#FF7043', '\uD83D\uDD25', ['\uD83D\uDD25', '\uD83E\uDDE1', '⚡'], 'flames', 4),
+  // 2026-10-31 (batch45, boss): Duke sound ripple - premium sparkling:
+  // gold sparkles + stars (not flames), bigger glints, faster twinkle.
+  // Waves/mist Duke orange+gold. Entry gradient/icon unchanged.
+  { entryGradient: ['#FF7043', lightenHex('#FF7043', 60)], entryIcon: '\uD83D\uDD25', rippleWave: '#FF7043', rippleMist: ['#FF7043', '#FFD700', lightenHex('#FF7043', 80)], rippleParticles: ['✨', '🌟', '⭐'], rippleEffect: 'stars', rippleWaveCount: 4, rippleParticleSize: 12, rippleSpeedMul: 1.5 },
   themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B'], 'crowns', 4),
 ];
 export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
