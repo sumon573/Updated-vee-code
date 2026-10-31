@@ -1499,9 +1499,13 @@ export default function ProfileScreen({
                       // 2026-10-30 (boss): Baron crystal frame ONLY — centered (offset 0),
                       // i.e. 8.25px DOWN from the up-shift: the up-shift left empty space
                       // above the DP. Profile only; seats untouched.
+                      // 2026-10-31 (boss): Duke frame ONLY - ring center measured at 47.83%
+                      // of art height (circle fit on the transparent source), so the -8.25
+                      // up-shift leaves the ring 10.64px ABOVE the DP center. Offset +2.4
+                      // centers the ring on the DP (10.64px DOWN). Profile only; seats untouched.
                       const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                       const frameSize = isNobleFrame ? 110 : 92;
-                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (isNobleFrame ? -8.25 : 0);
+                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (isNobleFrame ? -8.25 : 0));
                       return (
                         <Image
                           source={{ uri: activeFrameObj.icon }}
