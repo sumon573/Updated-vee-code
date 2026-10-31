@@ -859,7 +859,7 @@ export default function VoiceRoomHome({
         nestedScrollEnabled={true}
         initialNumToRender={12}
         maxToRenderPerBatch={8}
-        windowSize={10}
+        windowSize={21}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
@@ -898,13 +898,14 @@ export default function VoiceRoomHome({
             return (
               <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 16 }}>
                 <SectionTitle title={t('voiceRoom.home.recommended')} />
+                {/* 2026-10-31 (batch47 full display): chips window full-bleed (-16 cancels parent padding) + content padding 12 + chip margin 4 = first/last chip visual at 16; mid-scroll clips at screen edges like the top row. */}
                 <GHScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingBottom: 14 }}
+                  contentContainerStyle={{ paddingBottom: 14, paddingHorizontal: 12 }}
                   scrollEventThrottle={16}
                   bounces={false}
-                  style={{ marginHorizontal: -4 }}
+                  style={{ marginHorizontal: -16 }}
                   onScrollBeginDrag={onLockParentScroll}
                   onScrollEndDrag={onUnlockParentScroll}
                   onMomentumScrollEnd={onUnlockParentScroll}
