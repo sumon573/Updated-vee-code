@@ -387,6 +387,9 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   const [results, setResults] = useState<Record<string, DeliciousResult>>({});
   const [myBets, setMyBets] = useState<Record<string, DeliciousBet>>({});
   const [myPayout, setMyPayout] = useState<number | null>(null);
+  // REAL-TIME (boss 2026-10-31): last played round outcome, persistent
+  // (unlike the result pop-up, which only shows during its window).
+  const [lastResult, setLastResult] = useState<{ n: number; spent: number; won: number } | null>(null);
   const [todayPrize, setTodayPrize] = useState<number>(0);
   // BOTTOM REWORK 2026-10-26: everyone's todayPrize (strip), the
   // bot's per-food totals (Hot), the viewer's streak bonus (pop-up),
@@ -697,6 +700,38 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
 
   const phase = round?.phase ?? null;
   const bettingOpen = phase === 'betting';
+  // REAL-TIME HEADER (boss 2026-10-31): the pill shows the live balance
+  // MINUS still-unresolved optimistic taps, so a bet drops the number the
+  // instant it is tapped (not 1-3s later when the mirror lands). The
+  // derivation nets pending against paid growth, so a confirm can never
+  // double-count (same mechanism as displayBetByTarget).
+  const optimisticPending = useMemo(() => Object.keys(displayBetByTarget).reduce((s, k) => s + Math.max(0, (displayBetByTarget[k] ?? 0) - (myBetByTarget[k] ?? 0)), 0), [displayBetByTarget, myBetByTarget]);
+  const headerBalance = Math.max(0, balance - optimisticPending);
+  // REAL-TIME (boss 2026-10-31): record the current round outcome the
+  // moment its payout resolves, so it stays visible after the pop-up.
+  useEffect(() => {
+    if (phase !== 'result' || myPaidTotal <= 0 || myPayout == null || roundN == null) return;
+    setLastResult((prev) => (prev && prev.n === roundN && prev.spent === myPaidTotal && prev.won === myPayout ? prev : { n: roundN, spent: myPaidTotal, won: myPayout }));
+  }, [phase, myPaidTotal, myPayout, roundN]);
+  // REAL-TIME (boss 2026-10-31): on open, recover the latest played
+  // round outcome, so a result is visible even when the sheet was
+  // closed during its result window. Only newer rounds replace it.
+  useEffect(() => {
+    if (!visible || !myUid || todayRounds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const h of todayRounds) {
+        const bets = await getMyDeliciousBetsOnce(h.n, myUid);
+        const played = !!bets && Object.values(bets).some((b) => b.status === 'confirmed' || b.status === 'debited');
+        if (!played) continue;
+        const spent = Object.values(bets).filter((b) => b.status === 'confirmed' || b.status === 'debited').reduce((s, b) => s + b.amount, 0);
+        const won = (await getMyDeliciousPayoutOnce(h.n, myUid)) ?? 0;
+        if (!cancelled) setLastResult((prev) => (prev && prev.n >= h.n ? prev : { n: h.n, spent, won }));
+        break;
+      }
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, myUid, todayRounds]);
   // FREEZE FIX: once the betting clock hits zero the sheet must never
   // sit on a frozen "0s" with a "tap to bet" hint. Past endsAt, betting
   // is treated as closed (spinner + elapsed timer, closed hint, no new
@@ -1083,10 +1118,21 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
             borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#FF6B6B55',
           }}>
             <DiamondIcon size={18} />
-            <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '800', marginLeft: 6 }}>{formatNum(balance)}</Text>
+            <Text style={{ color: '#FFF', fontSize: 17, fontWeight: '800', marginLeft: 6 }}>{formatNum(headerBalance)}</Text>
           </View>
         </View>
 
+        {/* REAL-TIME (boss 2026-10-31): last played round outcome, always
+            visible until the next result replaces it. */}
+        {lastResult != null && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+            <Text style={{ color: '#FFD9D9', fontSize: 12, fontWeight: '700' }}>Round {lastResult.n}: spent </Text>
+            <DiamondIcon size={12} />
+            <Text style={{ color: '#FFD9D9', fontSize: 12, fontWeight: '700' }}> {formatNum(lastResult.spent)}  -  won </Text>
+            <DiamondIcon size={12} />
+            <Text style={{ color: lastResult.won > 0 ? '#FFD43B' : '#FFD9D9', fontSize: 12, fontWeight: '800' }}> {formatNum(lastResult.won)}</Text>
+          </View>
+        )}
         {/* F1 rejection notice: brief, non-blocking, auto-dismisses. */}
         {rejectNotice != null && (
           <View pointerEvents="none" style={{ position: 'absolute', top: 52, left: 0, right: 0, alignItems: 'center', zIndex: 5 }}>
