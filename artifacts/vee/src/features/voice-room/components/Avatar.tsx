@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Text, Animated, Easing, View } from 'react-native';
 import { Image } from 'expo-image';
 import AnimatedFrame from '../../../components/AnimatedFrame';
@@ -60,6 +60,11 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
   const w3 = useRef(new Animated.Value(0)).current;
   const w4 = useRef(new Animated.Value(0)).current;
   const w5 = useRef(new Animated.Value(0)).current;
+  // 2026-10-31 (boss): graceful fade-out - when talking stops, the ripple
+  // dissolves over 350ms instead of vanishing instantly. Ripple only: the
+  // seat box, frame and ring code below are untouched.
+  const fadeAnim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const [fadeHidden, setFadeHidden] = useState(!visible);
   // 2026-10-16 (Sumon): Per-rank wave count — higher rank = more waves
   const themeWaveCount = theme?.rippleWaveCount ?? 2;
   // 2026-10-16 (Sumon): SIMPLE ripple for normal users — waves only.
@@ -133,7 +138,17 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
     const all: Animated.Value[] = [w1, w2, w3, w4, w5,
       ...(particles ? particles.map((p) => p.anim) : []),
       ...(flowers ? flowers.map((f) => f.anim) : [])];
-    if (!visible) { all.forEach((a) => a.setValue(0)); return; }
+    if (!visible) {
+      const fade = Animated.timing(fadeAnim, {
+        toValue: 0, duration: 350, easing: Easing.out(Easing.ease), useNativeDriver: true,
+      });
+      fade.start(({ finished }) => {
+        if (finished) { all.forEach((a) => a.setValue(0)); setFadeHidden(true); }
+      });
+      return () => { fade.stop(); };
+    }
+    setFadeHidden(false);
+    fadeAnim.setValue(1);
     const wave = (anim: Animated.Value, delay: number, dur: number) =>
       Animated.loop(Animated.sequence([
         Animated.delay(delay),
@@ -153,7 +168,7 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
     return () => { loops.forEach((l) => l.stop()); };
   }, [visible]);
 
-  if (!visible) return null;
+  if (fadeHidden) return null;
 
   const area = size * 2.7;    // ripple playground — covers the max expansion
   const waveD = size * 1.28;  // wave ring diameter — starts OUTSIDE the 1.15x frame
@@ -226,11 +241,12 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
   };
 
   return (
-    <View
+    <Animated.View
       style={{
         position: 'absolute',
         width: area, height: area,
         alignItems: 'center', justifyContent: 'center',
+        opacity: fadeAnim,
       }}
       pointerEvents="none"
     >
@@ -241,7 +257,7 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
       {themeWaveCount >= 5 && renderWave(w5, 'w5')}
       {particles && particles.map((p, i) => renderMist(p, `m${i}`))}
       {flowers && flowers.map((f, i) => renderFlower(f, `f${i}`))}
-    </View>
+    </Animated.View>
   );
 }
 

@@ -174,18 +174,18 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
   },
   {
     rankKey: 'king', rankName: 'King', rankColor: '#FBC02D',
-    nameplate: { fallbackIcon: '🎖️' },
+    nameplate: { designUrl: 'https://vee-club.duckdns.org/m/6d3ea3b3755687929ce1a052f343b875', mistColor: '#FBC02D', fallbackIcon: '🎖️' },
     badge: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-badge-king.png?v=2',
+      designUrl: 'https://vee-club.duckdns.org/m/2d9f5e15292451bc0aee66a85fc82616',
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://cdn.jsdelivr.net/gh/sumon573/vee-admin-dashboard@main/public/nobel/noble-frame-king.png?v=2',
-      config: { seatScale: 1.44, seatDy: 0 },
+      designUrl: 'https://vee-club.duckdns.org/m/7976cd66fe4818953f12eac01fc104cc',
+      config: { seatScale: 1.44, seatDy: 0.03 },
       fallbackIcon: '🖼️',
     },
-    ripple: { fallbackIcon: '🌊', config: { colors: ['#FBC02D', '#F9A825'] } },
-    entryEffect: { fallbackIcon: '✨' },
+    ripple: { fallbackIcon: '👑', config: { colors: ['#FBC02D', '#F9A825', '#FFE082'] } },
+    entryEffect: { designUrl: 'https://vee-club.duckdns.org/m/a0ea34e1ad972b5ae069f0d5c4fcc5b1', fallbackIcon: '✨' },
   },
 ];
 

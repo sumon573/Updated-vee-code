@@ -203,7 +203,10 @@ export const NOBLE_THEMES: NobleVisualTheme[] = [
   // gold sparkles + stars (not flames), bigger glints, faster twinkle.
   // Waves/mist Duke orange+gold. Entry gradient/icon unchanged.
   { entryGradient: ['#FF7043', lightenHex('#FF7043', 60)], entryIcon: '\uD83D\uDD25', rippleWave: '#FF7043', rippleMist: ['#FF7043', '#FFD700', lightenHex('#FF7043', 80)], rippleParticles: ['✨', '🌟', '⭐'], rippleEffect: 'stars', rippleWaveCount: 4, rippleParticleSize: 12, rippleSpeedMul: 1.5 },
-  themeFor('#FBC02D', '\uD83D\uDC51', ['\uD83D\uDC51', '✨', '\uD83D\uDC9B'], 'crowns', 4),
+  // 2026-10-31 (boss): King sound ripple - MAXIMUM premium for the highest
+  // rank: gold crown + star sparkles, bigger glints, fastest twinkle.
+  // Waves gold; mist gold shades. Entry gradient/icon unchanged.
+  { entryGradient: ['#FBC02D', lightenHex('#FBC02D', 60)], entryIcon: '\uD83D\uDC51', rippleWave: '#FBC02D', rippleMist: ['#FBC02D', '#F9A825', '#FFE082'], rippleParticles: ['\uD83D\uDC51', '✨', '\uD83C\uDF1F', '⭐'], rippleEffect: 'stars', rippleWaveCount: 4, rippleParticleSize: 14, rippleSpeedMul: 1.5 },
 ];
 export function nobleThemeFor(rankIndex: number): NobleVisualTheme | null {
   if (rankIndex < 0 || rankIndex >= NOBLE_THEMES.length) return null;

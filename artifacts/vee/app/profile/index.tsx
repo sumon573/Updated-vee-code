@@ -1505,7 +1505,8 @@ export default function ProfileScreen({
                       // centers the ring on the DP (10.64px DOWN). Profile only; seats untouched.
                       const isNobleFrame = activeFrameId.startsWith('noble-frame-');
                       const frameSize = isNobleFrame ? 110 : 92;
-                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (isNobleFrame ? -8.25 : 0));
+                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (activeFrameId === 'noble-frame-king' ? -3.5 : (isNobleFrame ? -8.25 : 0)));
+                      // King frame ring center y-frac 0.5315 on the 962x1096 source -> offset -3.5 centers it on DP 46 (55 - 110*0.5315).
                       return (
                         <Image
                           source={{ uri: activeFrameObj.icon }}
@@ -1579,9 +1580,15 @@ export default function ProfileScreen({
                 <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#FF7043'} width={74} height={20} fit="cover" />
               </View>
             ) : null}
+            {/* King plate ART on the profile at LevelBadge height (20) + width 74, radius 10 — same box as Duke's art. Mist #FBC02D. */}
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'king' && displayNameplate?.id === 'noble-plate-king' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
+              <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
+                <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#FBC02D'} width={74} height={20} fit="cover" />
+              </View>
+            ) : null}
             {/* 2026-10-30 (boss): pill follows the EQUIPPED plate, not just the rank —
                 Use -> shows, Remove -> hides. Rank alone must not display it. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !((NOBLE_RANKS[nobleState.rankIndex].key === 'count' || NOBLE_RANKS[nobleState.rankIndex].key === 'marquis' || NOBLE_RANKS[nobleState.rankIndex].key === 'duke') && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !((NOBLE_RANKS[nobleState.rankIndex].key === 'count' || NOBLE_RANKS[nobleState.rankIndex].key === 'marquis' || NOBLE_RANKS[nobleState.rankIndex].key === 'duke' || NOBLE_RANKS[nobleState.rankIndex].key === 'king') && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
               <PremiumPill
                 padH={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 5 : NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
                 fontSize={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 9 : 11}
