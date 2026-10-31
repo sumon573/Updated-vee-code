@@ -60,12 +60,13 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   const hasEntryArt = !!entryUrl;
   const isViscountArt = hasEntryArt && rankKey === 'viscount';
   const isCountArt = hasEntryArt && rankKey === 'count';
+  const isDukeArt = hasEntryArt && rankKey === 'duke';
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (hasEntryArt) {
-      if (isViscountArt || isCountArt) {
+      if (isViscountArt || isCountArt || isDukeArt) {
         // Viscount/Count: static banner art — slide in from the right, stop
         // dead-center, hold ~4s, fade out. Timing (no bounce): a clean stop.
         slideAnim.setValue(Dimensions.get('window').width);
@@ -154,16 +155,18 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // Count canvas 1922x586: DP center (18.7% W, 46.1% H), disc 17.2% of W;
   // name slot starts at 33.0% W, top 32.4% H (gold name + white 'is coming...' below).
   // name slot starts at 31.5% W (gold name + white 'is coming...' below).
+  // Duke canvas 2007x638: DP center (14.7% W, 44.7% H), disc 16.4% of W;
+  // name slot starts at 34.9% W, top 31% H (gold name + white 'is coming...' below at 53% H).
   if (hasEntryArt && theme) {
     const bannerW = Math.min(Dimensions.get('window').width * 0.94, 470);
     // Viscount canvas is 1903x826 (own banner art); Marquis is 1600x533.
-    const bannerH = isViscountArt ? (bannerW * 826) / 1903 : isCountArt ? (bannerW * 586) / 1922 : (bannerW * 533) / 1600;
-    const dpSize = isViscountArt ? bannerW * 0.1923 : isCountArt ? bannerW * 0.1717 : bannerW * 0.127;
-    const nameFont = isViscountArt || isCountArt ? bannerW * 0.042 : bannerW * 0.043;
+    const bannerH = isViscountArt ? (bannerW * 826) / 1903 : isCountArt ? (bannerW * 586) / 1922 : isDukeArt ? (bannerW * 638) / 2007 : (bannerW * 533) / 1600;
+    const dpSize = isViscountArt ? bannerW * 0.1923 : isCountArt ? bannerW * 0.1717 : isDukeArt ? bannerW * 0.164 : bannerW * 0.127;
+    const nameFont = isViscountArt || isCountArt || isDukeArt ? bannerW * 0.042 : bannerW * 0.043;
     return (
       <Animated.View
         style={{
-          ...((isViscountArt || isCountArt) ? { transform: [{ translateX: slideAnim }] } : {}),
+          ...((isViscountArt || isCountArt || isDukeArt) ? { transform: [{ translateX: slideAnim }] } : {}),
           opacity: opacityAnim,
           position: 'absolute',
           top: '42%',
@@ -185,8 +188,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
             source={{ uri: photoURL }}
             style={{
               position: 'absolute',
-              left: isViscountArt ? bannerW * 0.0799 : isCountArt ? bannerW * 0.1009 : bannerW * 0.1788,
-              top: isViscountArt ? bannerH * 0.2723 : isCountArt ? bannerH * 0.1792 : bannerH * 0.295,
+              left: isViscountArt ? bannerW * 0.0799 : isCountArt ? bannerW * 0.1009 : isDukeArt ? bannerW * 0.065 : bannerW * 0.1788,
+              top: isViscountArt ? bannerH * 0.2723 : isCountArt ? bannerH * 0.1792 : isDukeArt ? bannerH * 0.189 : bannerH * 0.295,
               width: dpSize,
               height: dpSize,
               borderRadius: dpSize / 2,
@@ -196,8 +199,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
           <View
             style={{
               position: 'absolute',
-              left: isViscountArt ? bannerW * 0.0799 : isCountArt ? bannerW * 0.1009 : bannerW * 0.1788,
-              top: isViscountArt ? bannerH * 0.2723 : isCountArt ? bannerH * 0.1792 : bannerH * 0.295,
+              left: isViscountArt ? bannerW * 0.0799 : isCountArt ? bannerW * 0.1009 : isDukeArt ? bannerW * 0.065 : bannerW * 0.1788,
+              top: isViscountArt ? bannerH * 0.2723 : isCountArt ? bannerH * 0.1792 : isDukeArt ? bannerH * 0.189 : bannerH * 0.295,
               width: dpSize,
               height: dpSize,
               borderRadius: dpSize / 2,
@@ -294,6 +297,50 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
                 textShadowOffset: { width: 0, height: 1 },
                 textShadowRadius: 3,
                 marginTop: bannerH * 0.060,
+              }}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
+              is coming...
+            </Text>
+          </View>
+        ) : isDukeArt ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: bannerW * 0.349,
+              top: bannerH * 0.31,
+              width: bannerW * 0.251,
+            }}
+          >
+            <Text
+              style={{
+                color: '#FFD94D',
+                fontSize: nameFont,
+                lineHeight: nameFont * 1.05,
+                fontWeight: '800',
+                fontFamily: 'serif',
+                textShadowColor: 'rgba(30,10,0,0.85)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              allowFontScaling={false}
+            >
+              {name}
+            </Text>
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: bannerW * 0.030,
+                lineHeight: bannerW * 0.030 * 1.1,
+                fontWeight: '700',
+                fontFamily: 'serif',
+                textShadowColor: 'rgba(30,10,0,0.85)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+                marginTop: bannerH * 0.081,
               }}
               numberOfLines={1}
               allowFontScaling={false}

@@ -1567,9 +1567,17 @@ export default function ProfileScreen({
                 <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#EC407A'} width={74} height={20} fit="cover" />
               </View>
             ) : null}
+            {/* 2026-10-31 (boss): Duke plate ART on the profile at LevelBadge
+                height (20) + width 74, radius 10 — same box as Count's/Marquis's art.
+                Light animation via MistNameplate mist particles (#FF7043). */}
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'duke' && displayNameplate?.id === 'noble-plate-duke' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
+              <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
+                <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#FF7043'} width={74} height={20} fit="cover" />
+              </View>
+            ) : null}
             {/* 2026-10-30 (boss): pill follows the EQUIPPED plate, not just the rank —
                 Use -> shows, Remove -> hides. Rank alone must not display it. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !((NOBLE_RANKS[nobleState.rankIndex].key === 'count' || NOBLE_RANKS[nobleState.rankIndex].key === 'marquis') && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
+            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !((NOBLE_RANKS[nobleState.rankIndex].key === 'count' || NOBLE_RANKS[nobleState.rankIndex].key === 'marquis' || NOBLE_RANKS[nobleState.rankIndex].key === 'duke') && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
               <PremiumPill
                 padH={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 5 : NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
                 fontSize={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 9 : 11}
