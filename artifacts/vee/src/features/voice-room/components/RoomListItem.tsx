@@ -14,11 +14,10 @@
 // re-downloaded and re-decoded them. expo-image memory-disk cache
 // fixes that; art now survives restarts without re-fetching.
 import { memo, useState, useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import ScalePress from '@/components/ScalePress';
 import { VoiceRoom } from '../types/room';
 
 const C = {
@@ -55,29 +54,28 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
   // 2026-10-11 Issue #1: show the TRUE live audience (everyone who entered,
   // seat not required) — never the stale cached seat-only count.
 
+  // 2026-10-31 (boss: room page EXACTLY like imo): completely flat —
+  // no scale press, no shadow, no float. The card sits on the
+  // background with only a hairline border, like imo.
   return (
-    <ScalePress onPress={onPress}>
+    <Pressable onPress={onPress}>
       <View style={{
-        borderRadius: 18, padding: 14, marginBottom: 12,
+        borderRadius: 14, padding: 12, marginBottom: 10,
         backgroundColor: C.surface,
         borderWidth: 1, borderColor: C.border,
-        shadowColor: '#8B5CF6', shadowOpacity: 0.12,
-        shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {/* Room cover tile */}
           <View style={{
-            width: 50, height: 50, borderRadius: 14,
+            width: 44, height: 44, borderRadius: 12,
             backgroundColor: room.themeColor,
             alignItems: 'center', justifyContent: 'center',
             marginRight: 12, overflow: 'hidden',
-            shadowColor: room.themeColor, shadowOpacity: 0.4,
-            shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
           }}>
             {room.coverImageUrl && !imgFailed ? (
               <Image
                 source={{ uri: room.coverImageUrl }}
-                style={{ width: 50, height: 50 }}
+                style={{ width: 44, height: 44 }}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 onError={() => setImgFailed(true)}
@@ -98,21 +96,23 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: C.text, fontSize: 16, fontWeight: '800', flex: 1 }}>
                 {room.name}
               </Text>
-            </View>
-            {/* Live member count under the name */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
-              <Feather name="users" size={12} color={C.muted} />
-              <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600' }}>
-                {t('voiceRoom.listItem.members', { count: liveCount ?? room.liveCount ?? room.memberCount })}
-              </Text>
+              {/* imo-style member count pill, top-right (replaces the
+                  members line under the name). */}
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                backgroundColor: '#F2F2F7', borderRadius: 999,
+                paddingHorizontal: 8, paddingVertical: 3,
+              }}>
+                <Feather name="users" size={11} color={C.muted} />
+                <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
+                  {liveCount ?? room.liveCount ?? room.memberCount}
+                </Text>
+              </View>
               {/* Nearby distance (2026-10-11): REAL owner distance from viewer */}
               {distanceKm !== undefined && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6, gap: 3 }}>
-                  <Feather name="map-pin" size={11} color="#7C3AED" />
-                  <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '700' }}>
-                    {formatDistance(distanceKm)}
-                  </Text>
-                </View>
+                <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '700', marginLeft: 6 }}>
+                  {formatDistance(distanceKm)}
+                </Text>
               )}
             </View>
           </View>
@@ -127,25 +127,15 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               topic, avatars untouched. */}
         </View>
 
-        {/* Topic text ONLY — 2026-10-27 (boss): the extra "Topic" label
-            chip is gone; the freed width goes to the actual topic, one
-            line, slightly bigger. (The top My Rooms strip still uses
-            RoomCard's label chip — untouched.) */}
+        {/* Topic as plain text (imo): no banner chip, just the line. */}
         {!!room.topic && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-            <View style={{
-              backgroundColor: 'rgba(249,115,22,0.10)', borderRadius: 8,
-              paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1,
-            }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: '#9A3412', fontSize: 14, fontWeight: '600' }}>
-                {room.topic}
-              </Text>
-            </View>
-          </View>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: C.sub, fontSize: 14, fontWeight: '600', marginTop: 8 }}>
+            {room.topic}
+          </Text>
         )}
 
         {/* Bottom row: real member DPs (up to 6) + private badge */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
           {previews.length > 0 ? (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {previews.map((p, i) =>
@@ -209,6 +199,6 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
           )}
         </View>
       </View>
-    </ScalePress>
+    </Pressable>
   );
 });

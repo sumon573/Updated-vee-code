@@ -3,10 +3,9 @@
 // and re-decoded all covers. expo-image memory-disk cache fixes that;
 // covers now survive restarts and re-renders without re-fetching.
 import { memo, useState, useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
-import ScalePress from '@/components/ScalePress';
 import { LockIcon } from '@/src/components/LockIcon';
 import { VoiceRoom } from '../types/room';
 
@@ -28,7 +27,7 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
   const previews = room.memberPreviews?.slice(0, 4) ?? [];
 
   return (
-    <ScalePress onPress={onPress}>
+    <Pressable onPress={onPress}>
       <View style={{ width: 82, marginRight: 8 }}>
         <View style={{
           width: SIZE, height: SIZE, borderRadius: 16,
@@ -109,6 +108,6 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
         </View>
 
       </View>
-    </ScalePress>
+    </Pressable>
   );
 });

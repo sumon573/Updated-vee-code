@@ -9,11 +9,11 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking, FlatList, RefreshControl } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScrollView as GHScrollView, RefreshControl } from 'react-native-gesture-handler';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -25,6 +25,7 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import ScalePress from '@/components/ScalePress';
 import RoomCard from '../components/RoomCard';
 import RoomListItem from '../components/RoomListItem';
+import { ActiveFollowingsBar, ActiveFollowingsSheet, loadActiveFollowings, type ActiveFollowing } from '../components/ActiveFollowingsSheet';
 import RoomCreationModal from './RoomCreationModal';
 import { LeaderboardModal } from './LeaderboardModal';
 import {
@@ -166,19 +167,17 @@ function SectionTitle({ title, onSeeAll }: { title: string; onSeeAll?: () => voi
 // border, faint shadow. The "+" stays as the create cue. No new text.
 function CreateRoomTile({ onPress }: { onPress: () => void }) {
   return (
-    <ScalePress onPress={onPress}>
+    <Pressable onPress={onPress}>
       <View style={{ width: 82, marginRight: 8 }}>
         <View style={{
           width: 68, height: 68, borderRadius: 16,
           backgroundColor: 'rgba(139,92,246,0.08)',
           borderWidth: 1, borderColor: 'rgba(139,92,246,0.30)',
-          shadowColor: '#8B5CF6', shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.12, shadowRadius: 6, elevation: 2,
           alignItems: 'center', justifyContent: 'center' }}>
           <Feather name="plus" size={24} color={C.glow} />
         </View>
       </View>
-    </ScalePress>
+    </Pressable>
   );
 }
 
@@ -189,23 +188,25 @@ function CategoryChip({
   active?: boolean;
   onPress: () => void;
 }) {
+  // 2026-10-31 (boss: imo-identical pills): solid black active, light-gray
+  // inactive, no border, no scale press — completely flat like imo.
   return (
-    <ScalePress onPress={onPress}>
+    <Pressable onPress={onPress}>
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 6,
         paddingHorizontal: 14, paddingVertical: 8, marginHorizontal: 4,
         borderRadius: 999,
-        backgroundColor: active ? C.chipBgActive : C.chipBg,
-        borderWidth: 1,
-        borderColor: active ? C.glow : 'rgba(139,92,246,0.25)' }}>
+        backgroundColor: active ? '#000000' : '#F2F2F7',
+      }}>
         <Feather name={icon} size={13} color={active ? '#fff' : C.muted} />
         <Text style={{ color: active ? '#fff' : C.muted, fontSize: 13, fontWeight: '700' }}>
           {label}
         </Text>
       </View>
-    </ScalePress>
+    </Pressable>
   );
 }
+
 
 function EmptySection({ message }: { message: string }) {
   return (
@@ -726,135 +727,183 @@ export default function VoiceRoomHome({
     return byActivity(onlyLive(allRooms).filter(r => r.category === activeTab));
   }, [allRooms, activeTab, liveAudienceOf, userLocation]);
 
+  // ── 2026-10-31 (boss: room page EXACTLY like imo) ─────────────────────
+  // Room | Explore tabs (Explore = discovery without the My Rooms strip,
+  // until the boss specifies Explore content) + Active Followings pill.
+  const [pageTab, setPageTab] = useState<'room' | 'explore'>('room');
+  const [followingsOpen, setFollowingsOpen] = useState(false);
+  const [activeFollowings, setActiveFollowings] = useState<ActiveFollowing[]>([]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    loadActiveFollowings(user.uid, [...roomsByIdRef.current.keys()])
+      .then((list) => { if (!cancelled) setActiveFollowings(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  // FlatList model (chat-list pattern): data items keep sticky indices
+  // stable by construction — myrooms = 0, recheader = 1 (sticky), rooms = 2+.
+  type HomeItem = {
+    key: string;
+    type: 'myrooms' | 'recheader' | 'room' | 'nearbyLoading' | 'nearbyDenied' | 'empty';
+    room?: RoomInfo;
+    distanceKm?: number;
+  };
+  const homeItems = useMemo<HomeItem[]>(() => {
+    const items: HomeItem[] = [];
+    if (pageTab === 'room') items.push({ key: 'myrooms', type: 'myrooms' });
+    items.push({ key: 'recheader', type: 'recheader' });
+    if (activeTab === 'nearby' && locationLoading) {
+      items.push({ key: 'nearby-loading', type: 'nearbyLoading' });
+    } else if (activeTab === 'nearby' && locationDenied) {
+      items.push({ key: 'nearby-denied', type: 'nearbyDenied' });
+    } else if (recommended.length > 0) {
+      for (const r of recommended) {
+        const distanceKm = activeTab === 'nearby' && userLocation && r.location
+          ? haversineKm(userLocation.lat, userLocation.lng, r.location.lat, r.location.lng)
+          : undefined;
+        items.push({ key: 'room-' + r.id, type: 'room', room: r, distanceKm });
+      }
+    } else if (!recLoading && recLiveRef.current) {
+      items.push({ key: 'empty', type: 'empty' });
+    }
+    return items;
+  }, [pageTab, activeTab, locationLoading, locationDenied, recommended, recLoading, userLocation]);
+  const homeSticky = pageTab === 'room' ? [1] : [0];
+
   return (
     <>
       {/* Fix #23: clip off-screen native views while scrolling — the
           Recommended list is long and non-virtualized, so mounting every
           card at once was the main scroll cost. Images are memory-disk
           cached, so clipped cards repaint instantly on scroll-back. */}
-      <GHScrollView
+      {/* 2026-10-31 (boss: imo-identical header): Room | Explore tabs stay
+          fixed above the list; trophy + search + close move here from the
+          old My Rooms header row (imo has no My Rooms title row). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, backgroundColor: '#FFFFFF' }}>
+        <Pressable onPress={() => setPageTab('room')} hitSlop={6} style={{ marginRight: 20, alignItems: 'center' }}>
+          <Text style={{ color: pageTab === 'room' ? '#000000' : '#8E8E93', fontSize: 17, fontWeight: pageTab === 'room' ? '800' : '600' }}>Room</Text>
+          <View style={{ height: 3, width: 24, borderRadius: 2, backgroundColor: pageTab === 'room' ? '#2196F3' : 'transparent', marginTop: 4 }} />
+        </Pressable>
+        <Pressable onPress={() => setPageTab('explore')} hitSlop={6} style={{ alignItems: 'center' }}>
+          <Text style={{ color: pageTab === 'explore' ? '#000000' : '#8E8E93', fontSize: 17, fontWeight: pageTab === 'explore' ? '800' : '600' }}>Explore</Text>
+          <View style={{ height: 3, width: 24, borderRadius: 2, backgroundColor: pageTab === 'explore' ? '#2196F3' : 'transparent', marginTop: 4 }} />
+        </Pressable>
+        <View style={{ flex: 1 }} />
+        <Pressable onPress={() => setLeaderboardOpen(true)} hitSlop={8} style={{ padding: 8 }}>
+          <TrophyIcon size={24} />
+        </Pressable>
+        <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
+          <Feather name="search" size={22} color={C.text} />
+        </Pressable>
+        {onClose && (
+          <Pressable onPress={onClose} hitSlop={8} style={{ width: 34, height: 34, borderRadius: 17, marginLeft: 2, backgroundColor: 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="x" size={18} color={C.text} />
+          </Pressable>
+        )}
+      </View>
+      {/* 2026-10-31 (boss: chat-list/contacts scroll here): the page scroll
+          is a virtualized FlatList (chat-list pattern) — the old GHScrollView
+          mounted every Recommended card at once, which was the scroll jank.
+          No getItemLayout: card heights vary (topic / member rows), and
+          FlatList still virtualizes without it. removeClippedSubviews stays
+          OFF: it can unstick sticky headers on Android. */}
+      <FlatList
         style={{ flex: 1 }}
+        data={homeItems}
+        keyExtractor={(item) => item.key}
+        stickyHeaderIndices={homeSticky}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews
-        // 2026-10-30 (boss: no shell bar on this page): the old 120
-        // cleared a bar that no longer renders here; reserve only the
-        // OS gesture zone + breathing room so rooms fill the display.
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}
-        // 2026-10-30 (boss video: voice page scrolls EXACTLY like imo):
-        // the Recommended header + chips dock at the top once reached
-        // and stay while cards flow beneath. Direct-child index map:
-        // 0 My Rooms header, 1 My Rooms carousel, 2 empty-state wrapper
-        // (always rendered, zero-height when non-empty), 3 Recommended wrapper (STICKY), 4+ room list.
-        // Preceding children are unconditional so index 3 can never shift.
-        stickyHeaderIndices={[3]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-            {/* ═══ MY ROOMS ═══ (2026-10-26: NO loader, ever — the shell +
-                cached lists render instantly; live feeds refresh underneath) */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 14 }}>
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, color: C.text, fontSize: 20, fontWeight: '900' }}>{t('voiceRoom.home.myRooms')}</Text>
-              {/* 2026-10-30 (boss: trophy at top of Room page): the reference
-                  header row (Room | Explore + chart icon) does not exist in
-                  Vee — no Explore tab in the tree — so the Leaderboard
-                  trophy sits here, first among the page header icons, and
-                  is now the ONLY leaderboard entry on this page (the gold banner was
-                  removed 2026-10-30) and opens the LeaderboardModal. */}
-              <ScalePress onPress={() => setLeaderboardOpen(true)} style={{ padding: 8 }}>
-                <TrophyIcon size={24} />
-              </ScalePress>
-              {/* Room ID search (Sumon 2026-10-12) */}
-              <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
-                <Feather name="search" size={22} color={C.text} />
-              </Pressable>
-              {/* 2026-10-23 (Sumon): close sits IN the header row, right of
-                  the search icon, neatly fitted — no more floating corner
-                  button over the status bar. */}
-              {onClose && (
-                <Pressable onPress={onClose} hitSlop={8} style={{
-                  width: 34, height: 34, borderRadius: 17, marginLeft: 2,
-                  backgroundColor: 'rgba(0,0,0,0.06)',
-                  alignItems: 'center', justifyContent: 'center' }}>
-                  <Feather name="x" size={18} color={C.text} />
-                </Pressable>
-              )}
-            </View>
-
-            <GHScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 8 }}
-              scrollEventThrottle={16}
-              bounces={false}
-              onScrollBeginDrag={onLockParentScroll}
-              onScrollEndDrag={onUnlockParentScroll}
-              onMomentumScrollEnd={onUnlockParentScroll}
-            >
-              {/* Create room tile always first */}
-              <CreateRoomTile onPress={() => setCreateModalOpen(true)} />
-
-              {myRooms.map((r) => (
-                <View key={r.id} style={{ marginRight: 10 }}>
-                  <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} />
-                </View>
-              ))}
-            </GHScrollView>
-
-            {/* Always rendered (zero-height when non-empty) so the sticky
-                child index below can never shift on conditional content. */}
-            <View>
-            {myRooms.length === 0 && !myLoading && (
-              <View style={{
-                backgroundColor: C.surface, borderRadius: 14,
-                padding: 18, marginBottom: 8, alignItems: 'center' }}>
-                <Feather name="mic" size={24} color={C.muted} />
-                <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-                  {t('voiceRoom.home.noMyRooms')}
-                </Text>
+        removeClippedSubviews={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={10}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        renderItem={({ item }) => {
+          if (item.type === 'myrooms') {
+            return (
+              <View>
+                <GHScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 8, paddingTop: 12 }}
+                  scrollEventThrottle={16}
+                  bounces={false}
+                  onScrollBeginDrag={onLockParentScroll}
+                  onScrollEndDrag={onUnlockParentScroll}
+                  onMomentumScrollEnd={onUnlockParentScroll}
+                >
+                  <CreateRoomTile onPress={() => setCreateModalOpen(true)} />
+                  {myRooms.map((r) => (
+                    <View key={r.id} style={{ marginRight: 10 }}>
+                      <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} />
+                    </View>
+                  ))}
+                </GHScrollView>
+                {myRooms.length === 0 && !myLoading && (
+                  <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 18, marginBottom: 8, alignItems: 'center' }}>
+                    <Feather name="mic" size={24} color={C.muted} />
+                    <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                      {t('voiceRoom.home.noMyRooms')}
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
-            </View>
-
-            {/* ═══ RECOMMENDED ROOMS ═══ (sticky child #3: docks at top) */}
-            <View style={{ backgroundColor: '#FFFFFF' }}>
-            <SectionTitle title={t('voiceRoom.home.recommended')} />
-
-            {/* Category tabs */}
-            <GHScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 14 }}
-              scrollEventThrottle={16}
-              bounces={false}
-              style={{ marginHorizontal: -4 }}
-              onScrollBeginDrag={onLockParentScroll}
-              onScrollEndDrag={onUnlockParentScroll}
-              onMomentumScrollEnd={onUnlockParentScroll}
-            >
-              {RECOMMENDED_TABS.map((tab) => (
-                <CategoryChip
-                  key={tab.key}
-                  label={tab.label}
-                  icon={tab.icon}
-                  active={activeTab === tab.key}
-                  onPress={() => setActiveTab(tab.key)}
-                />
-              ))}
-            </GHScrollView>
-            </View>
-
-            {/* Room list for active tab */}
-            {/* Fix 6: Show location states for nearby tab */}
-            {activeTab === 'nearby' && locationLoading && (
+            );
+          }
+          if (item.type === 'recheader') {
+            return (
+              <View style={{ backgroundColor: '#FFFFFF' }}>
+                <SectionTitle title={t('voiceRoom.home.recommended')} />
+                <GHScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingBottom: 14 }}
+                  scrollEventThrottle={16}
+                  bounces={false}
+                  style={{ marginHorizontal: -4 }}
+                  onScrollBeginDrag={onLockParentScroll}
+                  onScrollEndDrag={onUnlockParentScroll}
+                  onMomentumScrollEnd={onUnlockParentScroll}
+                >
+                  {RECOMMENDED_TABS.map((tab) => (
+                    <CategoryChip
+                      key={tab.key}
+                      label={tab.label}
+                      icon={tab.icon}
+                      active={activeTab === tab.key}
+                      onPress={() => setActiveTab(tab.key)}
+                    />
+                  ))}
+                </GHScrollView>
+              </View>
+            );
+          }
+          if (item.type === 'room' && item.room) {
+            return (
+              <RoomListItem
+                room={voiceRoomOf(item.room)}
+                liveCount={liveAudienceOf(item.room)}
+                distanceKm={item.distanceKm}
+                onPress={pressFor(item.room.id)}
+                hideLiveBadge
+              />
+            );
+          }
+          if (item.type === 'nearbyLoading') {
+            return (
               <View style={{ alignItems: 'center', paddingVertical: 28 }}>
                 <PremiumLoader size="medium" />
                 <Text style={{ color: C.muted, fontSize: 13, marginTop: 10 }}>
                   {t('voiceRoom.home.gettingLocation')}
                 </Text>
               </View>
-            )}
-            {activeTab === 'nearby' && !locationLoading && locationDenied && (
+            );
+          }
+          if (item.type === 'nearbyDenied') {
+            return (
               <View style={{ alignItems: 'center', paddingVertical: 28 }}>
                 <Feather name="map-pin" size={30} color={C.muted} />
                 <Text style={{ color: C.muted, fontSize: 14, marginTop: 10, textAlign: 'center' }}>
@@ -886,28 +935,28 @@ export default function VoiceRoomHome({
                   </Pressable>
                 </View>
               </View>
-            )}
-            {!(activeTab === 'nearby' && (locationLoading || locationDenied)) && (
-              recommended.length > 0
-                ? recommended.map((r) => {
-                    // Nearby: compute REAL owner distance for the card (2026-10-11)
-                    const distanceKm = activeTab === 'nearby' && userLocation && r.location
-                      ? haversineKm(userLocation.lat, userLocation.lng, r.location.lat, r.location.lng)
-                      : undefined;
-                    return (
-                      <RoomListItem
-                        key={r.id}
-                        room={voiceRoomOf(r)}
-                        liveCount={liveAudienceOf(r)}
-                        distanceKm={distanceKm}
-                        onPress={pressFor(r.id)}
-                        hideLiveBadge
-                      />
-                    );
-                  })
-                : (!recLoading && recLiveRef.current ? <EmptySection message={t('voiceRoom.home.noCategoryRooms')} /> : null)
-            )}
-      </GHScrollView>
+            );
+          }
+          return (<EmptySection message={t('voiceRoom.home.noCategoryRooms')} />);
+        }}
+      />
+      {activeFollowings.length > 0 && (
+        <View style={{ position: 'absolute', left: 16, right: 16, bottom: insets.bottom + 70 }}>
+          <ActiveFollowingsBar active={activeFollowings} onPress={() => setFollowingsOpen(true)} />
+        </View>
+      )}
+      <ActiveFollowingsSheet
+        visible={followingsOpen}
+        onClose={() => setFollowingsOpen(false)}
+        myUid={user?.uid}
+        roomIds={[...allRooms, ...myRooms].map((r) => r.id)}
+        onJoinRoom={(roomId) => {
+          setFollowingsOpen(false);
+          const fresh = roomsByIdRef.current.get(roomId);
+          if (fresh) void handleRoomPressRef.current(fresh);
+          else goToRoom(roomId, user?.displayName ?? user?.uid);
+        }}
+      />
 
       {/* Leaderboard Modal */}
       <LeaderboardModal
