@@ -8,10 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 // Ranks without a spec (Knight, and any future rank) render nothing.
 const STAR_SPECS: Record<string, { stars: number; color: string; border?: string; colors?: string[]; locations?: number[]; numColor?: string }> = {
   baron: { stars: 1, color: '#26A69A' },
-  viscount: { stars: 1, color: '#42A5F5' },
-  count: { stars: 2, color: '#7E57C2', border: 'rgba(255,255,255,0.55)' },
-  marquis: { stars: 2, color: '#EC407A', border: 'rgba(255,255,255,0.55)' },
-  duke: { stars: 2, color: '#FF7043', border: 'rgba(255,255,255,0.55)' },
+  viscount: { stars: 2, color: '#42A5F5' },
+  count: { stars: 3, color: '#7E57C2', border: 'rgba(255,255,255,0.55)' },
+  marquis: { stars: 4, color: '#EC407A', border: 'rgba(255,255,255,0.55)' },
+  duke: { stars: 4, color: '#FF7043', border: 'rgba(255,255,255,0.55)' },
   royalduke: { stars: 3, color: '#FFA000', border: 'rgba(255,215,0,0.9)' },
   king: { stars: 5, color: '#FBC02D', border: '#6B4A00',
     colors: ['#FFF6C8', '#F5C542', '#C9970D', '#F8D95A', '#8A5E00'],
