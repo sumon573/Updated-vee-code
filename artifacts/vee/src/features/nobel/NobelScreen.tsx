@@ -30,9 +30,10 @@ import { Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
-  NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef,
+  NOBLE_RANKS, PRIVILEGES, NobleState, PrivilegeDef, nobleThemeFor,
   subscribeNoble, formatXP, formatDeadline, refreshNobleState } from '@/src/services/nobleService';
 import RewardPreview from './RewardPreview';
+import { NobleStarPill } from '@/src/components/NobleStarPill';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 
 const { width } = Dimensions.get('window');
@@ -185,8 +186,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
     : `Need 👑${formatXP(remaining)} to secure your current noble level ${rank.name} ${ROMAN[sub - 1]} (Deadline: ${formatDeadline(noble.maintenanceDeadline)})`;
 
   // 2026-10-31 (boss): reward tiles = every reward the selected rank actually
-  // grants (catalog slots) + gift + remaining privilege keys. Each card opens
-  // a SINGLE-reward live preview (RewardPreview) — only the tapped reward.
+  // grants (catalog slots) + remaining privilege keys. The Noble Gift card is
+  // HIDDEN on this page per his 2026-10-31 order (gift itself unchanged).
   const selectedCat = rewardsForRankKey(selectedRank.key);
   const tileKeys: string[] = [];
   if (selectedCat?.nameplate) tileKeys.push('nameplate');
@@ -194,7 +195,6 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
   if (selectedCat?.frame?.designUrl) tileKeys.push('avatarFrame');
   if (selectedCat?.ripple) tileKeys.push('micRipple');
   if (selectedCat?.entryEffect?.designUrl) tileKeys.push('entryEffects');
-  if (selectedRank.privileges.includes('gift')) tileKeys.push('gift');
   for (const k of selectedRank.privileges) {
     if (!tileKeys.includes(k) && !['nameplate', 'badge', 'avatarFrame', 'micRipple', 'entryEffects', 'gift'].includes(k)) tileKeys.push(k);
   }
@@ -210,6 +210,21 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
       : def.key === 'entryEffects' ? rankCat?.entryEffect?.designUrl
       : undefined;
     const art = perRankUrl ? { uri: perRankUrl } : PRIV_ART[def.key];
+    // 2026-10-31 (boss): nameplate cards show the CURRENT plate — the short
+    // pill everywhere else shows (profile/Decoration/Honor) — whenever the
+    // rank has no mist. The old catalog pill image shows only for mist ranks
+    // (Count), where the art is the current look.
+    const isNameplatePill = def.key === 'nameplate' && !((rankCat?.nameplate as any)?.mistColor);
+    const themeIcon = nobleThemeFor(selectedRankIdx)?.entryIcon;
+    // 2026-10-31 (boss): every Nobel reward card carries its rank's star
+    // (same NobleStarPill as Decoration/Honor; Knight has no spec -> none).
+    const grantType = def.key === 'nameplate' ? 'plate'
+      : def.key === 'badge' ? 'badge'
+      : def.key === 'avatarFrame' ? 'frame'
+      : def.key === 'micRipple' ? 'ripple'
+      : def.key === 'entryEffects' ? 'effect'
+      : null;
+    const starGrantId = grantType ? `noble-${grantType}-${selectedRank.key}` : null;
     return (
       <Pressable
         key={def.key}
@@ -222,7 +237,20 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
         }}
       >
         <View style={{ opacity: rankLocked ? 0.35 : 1, alignItems: 'center' }}>
-          {art ? (
+          {isNameplatePill ? (
+            <View style={{ width: 84, height: 84, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{
+                height: 20, borderRadius: 10,
+                paddingHorizontal: selectedRank.key === 'viscount' ? 5 : selectedRank.key === 'knight' ? 7 : 8,
+                backgroundColor: selectedRank.color, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {themeIcon ? <Text style={{ fontSize: 12, marginRight: 3 }}>{themeIcon}</Text> : null}
+                <Text style={{ fontSize: selectedRank.key === 'viscount' ? 9 : 11, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>
+                  {selectedRank.name.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          ) : art ? (
             <Image source={art} style={{ width: 84, height: 84 }} contentFit="contain" />
           ) : (
             <View style={{
@@ -246,6 +274,11 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
         <Text style={{ fontSize: 13, fontWeight: '700', color: '#007AFF', marginTop: 4 }}>
           Preview ›
         </Text>
+        {starGrantId && (
+          <View style={{ marginTop: 8, opacity: rankLocked ? 0.35 : 1 }}>
+            <NobleStarPill grantId={starGrantId} />
+          </View>
+        )}
       </Pressable>
     );
   };

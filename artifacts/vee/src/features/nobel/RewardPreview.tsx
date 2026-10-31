@@ -80,7 +80,7 @@ export default function RewardPreview({
               {userName}
             </Text>
             <View style={{ marginTop: 6 }}>
-              {np.designUrl ? (
+              {(np as any).mistColor && np.designUrl ? (
                 <Image
                   source={{ uri: np.designUrl }}
                   style={{ width: 100, height: 20 }}
@@ -89,11 +89,12 @@ export default function RewardPreview({
               ) : (
                 <View
                   style={{
-                    height: 20, borderRadius: 10, paddingHorizontal: 8,
+                    height: 20, borderRadius: 10,
+                    paddingHorizontal: rank.key === 'viscount' ? 5 : rank.key === 'knight' ? 7 : 8,
                     backgroundColor: rank.color, alignItems: 'center', justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>
+                  <Text style={{ fontSize: rank.key === 'viscount' ? 9 : 11, fontWeight: '700', color: '#fff' }}>
                     {rank.name.toUpperCase()}
                   </Text>
                 </View>
