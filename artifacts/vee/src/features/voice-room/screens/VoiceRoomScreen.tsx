@@ -2491,6 +2491,19 @@ export default function VoiceRoomScreen() {
           ts: Date.now() }).catch(() => {});
       }
       presenceReadyRef.current = true;
+      // 2026-10-31 (boss: join count sometimes 0): show self in the
+      // audience count the moment entry completes, instead of waiting
+      // for the first audience snapshot (slow links left the pill at 0
+      // even with the join banner visible). Self-correcting: the next
+      // snapshot replaces the list wholesale via handleAudience.
+      setAudience((prev) => prev.some((q) => q.id === myUid) ? prev : [...prev, fbAudToParticipant({
+        userId: myUid,
+        userName: myName,
+        initials: myInitials,
+        color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+      })]);
     })();
 
     return () => {
