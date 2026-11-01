@@ -23,6 +23,7 @@ import { submitReport } from '@/src/services/reportService';
 
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { useSafeKeepAwake } from '@/src/hooks/useSafeKeepAwake';
+import { useKeyboardDockPadding } from '@/src/hooks/useKeyboardDockPadding';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   isBatteryExempt, requestBatteryExemption,
@@ -210,6 +211,8 @@ export default function VoiceRoomScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { t } = useTranslation();
+  // 2026-11-01 (keyboard dock fix): measured column padding, 0 when visible.
+  const { dockPad, composerRef } = useKeyboardDockPadding();
 
   const roomId = paramRoomId ?? '';
   // 2026-10-22 (boss): the display must never sleep while the user is
@@ -4132,6 +4135,9 @@ export default function VoiceRoomScreen() {
       // per-cycle jump). iOS keeps KAV as before.
       // 2026-11-01 (resize): window is now adjustResize (app.json) -
       // same OFF rule (resize + KAV would double-shift, not pan + KAV).
+      // 2026-11-01 (dock fix): resize does not shrink the layout here
+      // (edge-to-edge), so docking is via useKeyboardDockPadding
+      // (measured padding on the content column, 0 when visible).
       // on the KAV itself paints any transient frame in theme color.
       enabled={Platform.OS !== 'android'}
     >
@@ -4436,7 +4442,7 @@ export default function VoiceRoomScreen() {
       </SafeAreaView>
 
       {}
-      <View style={{ flex: 1, paddingHorizontal: 14, paddingBottom: BOTTOM_BAR_H }}>
+      <View style={{ flex: 1, paddingHorizontal: 14, paddingBottom: BOTTOM_BAR_H + dockPad }}>
 
         {}
         {/* 2026-10-27 (boss): big join banner card REMOVED — the green
@@ -4605,6 +4611,7 @@ export default function VoiceRoomScreen() {
               (content padding 14 + 4 here). */}
           <FlatList<ChatMsg>
             ref={chatRef}
+            style={{ flex: 1 }}
             data={messages}
             keyExtractor={(item: ChatMsg) => item.id}
             renderItem={renderChatMessage}
@@ -4724,7 +4731,7 @@ export default function VoiceRoomScreen() {
               path. No smiley/@ buttons here (screenshots): @-mention still
               works by typing @ (same dropdown); smiley lives in the bottom
               row (reactions). */}
-          <View style={{
+          <View ref={composerRef} style={{
             flexDirection: 'row', alignItems: 'center', gap: 10,
             marginHorizontal: -14,
             paddingHorizontal: 14, paddingVertical: 10,

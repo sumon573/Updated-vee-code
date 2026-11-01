@@ -37,6 +37,7 @@ import {
   useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform, Animated, Dimensions, Alert, Modal, Image, ActivityIndicator, InteractionManager } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+import { useKeyboardDockPadding } from '@/src/hooks/useKeyboardDockPadding';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -368,6 +369,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   const { user } = useAuth();
   const { t } = useTranslation();
   const myUid = user?.uid ?? 'unknown';
+  // 2026-11-01 (keyboard dock fix): measured column padding, 0 when visible.
+  const { dockPad, composerRef } = useKeyboardDockPadding();
 
   // 2026-10-12 (Sumon): notification title must show the account's REAL name.
   // user.displayName (Firebase Auth) can be empty/stale (Google-login bug
@@ -2023,7 +2026,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView
-            style={{ flex: 1 }}
+            style={{ flex: 1, paddingBottom: dockPad }}
             // 2026-10-26 (typing-jitter fix): Android is adjustPan — the OS
             // already keeps the input visible, so KAV must stay OFF there
             // (KAV + pan double-shifted the layout on every keyboard cycle).
@@ -2031,12 +2034,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             // 2026-11-01 (resize): window is now adjustResize (app.json) -
             // KAV stays OFF on Android (resize + KAV would double-shift;
             // the window shrink itself docks the composer).
+            // 2026-11-01 (dock fix): resize does NOT shrink the layout
+            // here (edge-to-edge), so the composer sat behind the keys;
+            // dockPad (measured, see useKeyboardDockPadding) lifts it
+            // only when actually covered - pan binaries measure visible
+            // and stay at 0, so no double-shift there.
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             enabled={Platform.OS !== 'android'}
           >
             <FlatList
               ref={flatRef}
+              style={{ flex: 1 }}
               inverted
               data={chatRows}
               // 2026-10-30 (boss: ticks real-time): rows depend on isOnline
@@ -2247,7 +2256,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               </Pressable>
             </View>
             ) : (
-            <View style={{
+            <View ref={composerRef} style={{
               flexDirection: 'row', alignItems: 'flex-end',
               paddingHorizontal: 12, paddingVertical: 10,
               borderTopWidth: 1, borderTopColor: C.border,
