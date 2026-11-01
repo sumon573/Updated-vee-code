@@ -7,7 +7,7 @@
  * gate, NO blocking spinner, NO timers. Live subscriptions update the
  * content in place when data arrives; missing data renders as the
  * unpaired / empty state, never as a spinner. All subscriptions are
- * event-driven (no polling), and the art is static code-drawn visuals
+ * event-driven (no polling), and the art is static premium image art
  * (no animation loops) — the page stays smooth and heat-safe.
  *
  * COUPLE MODEL (boss spec 2026-11-01 — replaces the old 5000-diamond /
@@ -15,7 +15,7 @@
  *   - Couple tab: trio header (self + crystal motif + partner slot),
  *     Overall Intimacy Level + roadmap progress, Level-Up Costs
  *     (Lv2 2000, Lv3 3500, Lv4 5000, Lv5 7000 Max), Level-Up Progress &
- *     Reward Roadmap (one code-drawn house per level + Claim buttons),
+ *     Reward Roadmap (one house image per level + Claim buttons),
  *     Privilege Showcase (Lv.1-2) + High Level Privileges (Lv.3-5) with
  *     one frame + one entry-effect preview per level, the detailed
  *     reward list in Bengali (verbatim), and a Buy Diamonds pill.
