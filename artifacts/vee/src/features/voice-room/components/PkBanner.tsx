@@ -29,11 +29,16 @@ export function PkBanner({
   onPress,
   challengerPhotoURL,
   opponentPhotoURL,
+  canRetry,
+  onRetry,
 }: {
   pk: RoomPk;
   onPress: () => void;
   challengerPhotoURL?: string | null;
   opponentPhotoURL?: string | null;
+  /** Retry (rematch) is battlers + host only — audience sees no button. */
+  canRetry?: boolean;
+  onRetry?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
   // 2026-11-01 (batch56): King gold + shimmer on both PK names.
@@ -48,6 +53,10 @@ export function PkBanner({
   const challengerScore = pkScoreOf(pk, pk.challenger.uid);
   const opponentScore = pkScoreOf(pk, pk.opponent.uid);
   const isChallenge = pk.status === 'challenge';
+  // 2026-11-02 (PK real): ended branch — WIN crown badge on the winner's
+  // avatar, final compact scores, centered Retry (battlers + host only).
+  const isEnded = pk.status === 'ended';
+  const winnerUid = isEnded && !pk.draw ? pk.winnerUid : null;
   const remainingMs = Math.max(0, pk.endsAt - now);
   const remainingText = `${Math.floor(remainingMs / 60000)}:${String(
     Math.floor((remainingMs % 60000) / 1000),
@@ -98,13 +107,25 @@ export function PkBanner({
             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>
               Waiting for {pk.opponent.name}…
             </Text>
+          ) : isEnded ? (
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
+              {pk.draw ? 'Draw' : 'Ended'}
+            </Text>
           ) : (
             <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>{remainingText}</Text>
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {avatar(pk.challenger.name, '#7C3AED', challengerPhotoURL)}
+            <View style={{ position: 'relative' }}>
+              {avatar(pk.challenger.name, '#7C3AED', challengerPhotoURL)}
+              {winnerUid === pk.challenger.uid && (
+                <View style={{ position: 'absolute', top: -16, left: 0, right: 0, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>👑</Text>
+                  <Text style={{ color: '#FBC02D', fontSize: 9, fontWeight: '900' }}>WIN</Text>
+                </View>
+              )}
+            </View>
             <Text numberOfLines={1} style={{ color: isChallengerKing ? KING_GOLD : '#FFF', fontSize: 13, fontWeight: '700', flex: 1 }}>
               {pk.challenger.name}
             </Text>
@@ -122,13 +143,28 @@ export function PkBanner({
               {pk.opponent.name}
             </Text>
             {isOpponentKing ? <KingSparkle /> : null}
-            {avatar(pk.opponent.name, '#05B5FA', opponentPhotoURL)}
+            <View style={{ position: 'relative' }}>
+              {avatar(pk.opponent.name, '#05B5FA', opponentPhotoURL)}
+              {winnerUid === pk.opponent.uid && (
+                <View style={{ position: 'absolute', top: -16, left: 0, right: 0, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>👑</Text>
+                  <Text style={{ color: '#FBC02D', fontSize: 9, fontWeight: '900' }}>WIN</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
         {!isChallenge && (
           <View style={{ marginTop: 8 }}>
             <PkScoreBar challengerScore={challengerScore} opponentScore={opponentScore} height={10} />
           </View>
+        )}
+        {isEnded && canRetry && onRetry && (
+          <Pressable
+            onPress={onRetry}
+            style={{ alignSelf: 'center', marginTop: 10, backgroundColor: '#EF4444', paddingVertical: 8, paddingHorizontal: 30, borderRadius: 999 }}>
+            <Text style={{ color: '#FFF', fontWeight: '800' }}>Retry</Text>
+          </Pressable>
         )}
       </View>
     </Pressable>

@@ -51,6 +51,7 @@ import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
 import { MusicFlowModal } from '../components/music/MusicFlowModal';
 import { FloatingMusicIcon } from '../components/FloatingMusicIcon';
 import { PkModal } from '../components/PkModal';
+import { PkResultPopup } from '../components/PkResultPopup';
 import { PkBanner } from '../components/PkBanner';
 import { LuduLobbyStrip } from '../components/LuduLobbyStrip';
 import { SeatActionSheet } from '../components/SeatActionSheet';
@@ -76,7 +77,7 @@ import {
   subscribeRoomMusic, setMusicState, type RoomMusic,
 } from '../services/roomMusicService';
 import {
-  subscribeRoomPk, acceptPk, removePk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
+  subscribeRoomPk, acceptPk, removePk, rematchPk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
 } from '../services/roomPkService';
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
@@ -1241,6 +1242,28 @@ export default function VoiceRoomScreen() {
     if (pass2PollActive) return; // PK comes from /live in pass2
     return subscribeRoomPk(roomId, setPk);
   }, [roomId, pass2PollActive]);
+  // 2026-11-02 (PK real): result popup — opens ONCE per battle for room
+  // members present when the battle flips active -> ended. The ended
+  // snapshot is frozen into local state so the card survives the bot's
+  // 3-minute ended-node cleanup. Joining an already-ended battle does
+  // NOT auto-open it (the ended banner + modal still show the result).
+  const [pkResult, setPkResult] = useState<RoomPk | null>(null);
+  const pkResultShownRef = useRef('');
+  const pkPrevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    pkPrevStatusRef.current = null;
+    pkResultShownRef.current = '';
+    setPkResult(null);
+  }, [roomId]);
+  useEffect(() => {
+    const prev = pkPrevStatusRef.current;
+    pkPrevStatusRef.current = pk?.status ?? null;
+    if (!pk || pk.status !== 'ended' || prev !== 'active') return;
+    const key = `${roomId}:${pk.endsAt}:${pk.winnerUid ?? 'draw'}`;
+    if (pkResultShownRef.current === key) return;
+    pkResultShownRef.current = key;
+    setPkResult(pk);
+  }, [pk, roomId]);
   // 2026-10-25 (boss, full Ludu concept): a live Ludu lobby is visible
   // to EVERY room occupant — the strip below renders from this live
   // subscription, so the lobby appears the moment the host creates it
@@ -4497,13 +4520,19 @@ export default function VoiceRoomScreen() {
             room, above the seats — never buried under the seats/announcement
             inside the comment box. Tap opens the PK modal. Shown for active
             battles AND pending challenges. */}
-        {pk && (pk.status === 'active' || pk.status === 'challenge') && (
+        {pk && (pk.status === 'active' || pk.status === 'challenge' || pk.status === 'ended') && (
           <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 6 }}>
             <PkBanner
               pk={pk}
               onPress={() => setPkOpen(true)}
               challengerPhotoURL={seats.find((s) => s?.id === pk.challenger.uid)?.photoURL}
               opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
+              canRetry={pk.challenger.uid === myUid || pk.opponent.uid === myUid || isOwnerOrAdmin}
+              onRetry={() => {
+                rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000).catch(() => {
+                  Alert.alert('Error', 'Could not start a rematch.');
+                });
+              }}
             />
           </View>
         )}
@@ -5067,6 +5096,14 @@ export default function VoiceRoomScreen() {
         mySeatIdx={mySeatIdx}
         seats={seats}
         isOwnerOrAdmin={isOwnerOrAdmin}
+      />
+      <PkResultPopup
+        visible={!!pkResult}
+        pk={pkResult}
+        onClose={() => setPkResult(null)}
+        challengerPhotoURL={pkResult ? seats.find((s) => s?.id === pkResult.challenger.uid)?.photoURL : undefined}
+        opponentPhotoURL={pkResult ? seats.find((s) => s?.id === pkResult.opponent.uid)?.photoURL : undefined}
+        roomName={roomName}
       />
       <RoomRankModal
         visible={rankOpen}

@@ -8,7 +8,9 @@ import {
   challengeToPk,
   acceptPk,
   removePk,
+  rematchPk,
   pkScoreOf,
+  pkTopDonor,
   formatPkScore,
   formatPkDuration,
   PK_CHALLENGE_TIMEOUT_MS,
@@ -87,6 +89,7 @@ export function PkModal({
 
   const challengerScore = pk ? pkScoreOf(pk, pk.challenger.uid) : 0;
   const opponentScore = pk ? pkScoreOf(pk, pk.opponent.uid) : 0;
+  const topDonor = pk ? pkTopDonor(pk) : null;
   const totalScore = Math.max(1, challengerScore + opponentScore);
   const remainingMs = pk && pk.status === 'active' ? Math.max(0, pk.endsAt - now) : 0;
   const remainingText = `${Math.floor(remainingMs / 60000)}:${String(
@@ -357,6 +360,20 @@ export function PkModal({
               <Text style={{ color: C.sub, fontSize: 14, fontWeight: '700', marginTop: 8 }}>
                 {pk.challenger.name} {formatPkScore(challengerScore)} — {formatPkScore(opponentScore)} {pk.opponent.name}
               </Text>
+              {topDonor && (
+                <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 6 }}>
+                  Top donor: {topDonor.name} • {formatPkScore(topDonor.total)}
+                </Text>
+              )}
+              {(iAmChallenger || iAmOpponent || isOwnerOrAdmin) && (
+                <Pressable
+                  onPress={() => act(() => rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000), 'Could not start a rematch.')}
+                  disabled={busy}
+                  style={{ marginTop: 16, backgroundColor: C.red, borderRadius: 14,
+                    paddingVertical: 12, paddingHorizontal: 32, alignItems: 'center' }}>
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>Retry</Text>
+                </Pressable>
+              )}
               {canClear && (
                 <Pressable
                   onPress={() => act(() => removePk(roomId), 'Could not clear.')}

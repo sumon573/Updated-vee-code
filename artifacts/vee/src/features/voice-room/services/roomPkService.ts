@@ -12,7 +12,8 @@
  *   status: 'challenge' | 'active' | 'ended'
  *   challenger / opponent: { uid, name }
  *   createdAt, challengedAt, startedAt?, endsAt?
- *   scores: { totals: { uid: number }, scored: { giftKey: true } } (bot-only)
+ *   scores: { totals: { uid: number }, scored: { giftKey: true },
+ *     donors: { uid: { name, photoURL?, total } } } (bot-only)
  *   winnerUid?: string | null, draw?: boolean (bot-only)
  * One PK per room at a time (rules: create only when no node exists).
  * Challenge expires after 60s, ended nodes are cleaned up by the scorer.
@@ -33,8 +34,17 @@ export interface PkUser {
   name: string;
 }
 
+export interface PkDonor {
+  uid: string;
+  name: string;
+  photoURL?: string | null;
+  total: number;
+}
+
 export interface PkScores {
   totals: Record<string, number>;
+  /** Bot-written per-donor totals (from giftFeed fromUid/fromName/fromAvatar). */
+  donors?: Record<string, { name: string; photoURL?: string | null; total: number }>;
 }
 
 export interface RoomPk {
@@ -132,6 +142,35 @@ export function myPkUser(myUid: string, myName: string): PkUser {
 
 export function pkScoreOf(pk: RoomPk | null, uid: string): number {
   return pk?.scores?.totals?.[uid] ?? 0;
+}
+
+/** Top donor across both sides (bot-written donors map), or null. */
+export function pkTopDonor(pk: RoomPk | null): PkDonor | null {
+  const donors = pk?.scores?.donors;
+  if (!donors) return null;
+  let best: PkDonor | null = null;
+  for (const uid of Object.keys(donors)) {
+    const d = donors[uid];
+    if (!d || typeof d.total !== 'number') continue;
+    if (!best || d.total > best.total) {
+      best = { uid, name: d.name || '', photoURL: d.photoURL ?? null, total: d.total };
+    }
+  }
+  return best && best.total > 0 ? best : null;
+}
+
+/** Rematch: clear the ended node FIRST, then challenge the same pair.
+ * Ordering matters — the one-PK-per-room rules backstop rejects a
+ * challenge while the ended node still exists, so the remove must
+ * complete before the challenge is written. */
+export async function rematchPk(
+  roomId: string,
+  challenger: PkUser,
+  opponent: PkUser,
+  durationMs: number,
+): Promise<void> {
+  await removePk(roomId);
+  await challengeToPk(roomId, challenger, opponent, durationMs);
 }
 
 /** Compact diamond count, matching the gift cards (1.2k / 1.5k). */
