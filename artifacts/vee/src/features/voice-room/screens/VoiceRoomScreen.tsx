@@ -3690,7 +3690,7 @@ export default function VoiceRoomScreen() {
       senderColor: myColor,
       text,
       ts: now,
-      ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color } } : {}),
+      ...(replyingTo ? { replyTo: { sender: replyingTo.sender, text: replyingTo.text, color: replyingTo.color, senderId: replyingTo.senderId } } : {}),
     };
     const echo: ChatMsg = { ...fbChatToMsg({ ...payload, id, isMe: true }), sendState: 'sending' };
     pendingEchoesRef.current = [...pendingEchoesRef.current, echo];

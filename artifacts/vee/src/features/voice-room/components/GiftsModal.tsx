@@ -44,6 +44,9 @@ import { useTranslation } from 'react-i18next';
 import { ref, push, get, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Participant, GiftSentInfo } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import {
   sendGift, getBalance, getWalletBalance, canSelfSend,
   InsufficientFundsError, NetworkError,
@@ -189,6 +192,38 @@ const GiftTile = memo(function GiftTile({
 });
 
 /* ── Component ──────────────────────────────────────────────── */
+
+/* 2026-11-01 (batch56): gift-recipient names — own tiny components
+   because the rows render inline in maps. */
+function PickerName({ uid, name, isSel }: { uid: string; name: string; isSel: boolean }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+      <Text style={{ color: isKing ? KING_GOLD : (isSel ? IMO_TITLE : IMO_SUB), fontSize: 10, fontWeight: isSel ? '700' : '400', textAlign: 'center', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+function PickerListName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: isKing ? KING_GOLD : IMO_TITLE, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+function ChipName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
+      <Text style={{ color: isKing ? KING_GOLD : IMO_TITLE, fontSize: 12, fontWeight: '700', maxWidth: 80, flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
 
 export function GiftsModal({
   visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
@@ -793,14 +828,7 @@ export function GiftsModal({
                           <Text style={{ color: m.color, fontSize: 14, fontWeight: '800' }}>{m.initials}</Text>
                         )}
                       </View>
-                      <Text
-                        style={{
-                          color: isSel ? IMO_TITLE : IMO_SUB, fontSize: 10,
-                          fontWeight: isSel ? '700' : '400', marginTop: 3, textAlign: 'center',
-                        }}
-                        numberOfLines={1}>
-                        {m.name || 'User'}
-                      </Text>
+                      <PickerName uid={m.id} name={m.name || 'User'} isSel={isSel} />
                     </Pressable>
                   );
                 })}
@@ -838,9 +866,7 @@ export function GiftsModal({
                         <Text style={{ color: m.color, fontSize: 11, fontWeight: '800' }}>{m.initials}</Text>
                       </View>
                     )}
-                    <Text style={{ color: IMO_TITLE, fontSize: 12, fontWeight: '700', marginLeft: 6, maxWidth: 80 }} numberOfLines={1}>
-                      {m.name || 'User'}
-                    </Text>
+                    <ChipName uid={m.id} name={m.name || 'User'} />
                     <Feather name="x" size={12} color={IMO_SUB} style={{ marginLeft: 4 }} />
                   </Pressable>
                 ))}
@@ -886,7 +912,7 @@ export function GiftsModal({
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ color: IMO_TITLE, fontSize: 14, fontWeight: '700' }}>{m.name || 'User'}</Text>
+                      <PickerListName uid={m.id} name={m.name || 'User'} />
                       <Text style={{ color: IMO_SUB, fontSize: 11, marginTop: 1 }}>{roleLabelFor(m)}</Text>
                     </View>
                     <View style={{

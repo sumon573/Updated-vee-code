@@ -6,6 +6,9 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
 /* Thin white outline line-icons matching imo's seat-menu glyphs (never emoji). */
@@ -64,6 +67,8 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   anchor?: { x: number; y: number; width: number; height: number } | null;
 }) {
   const { t } = useTranslation();
+  // 2026-11-01 (batch56): King gold + shimmer on the member name.
+  const isKing = useIsKing(member?.id);
   // 2026-10-27 (boss): the imo popup is CONTENT-SIZED, not fixed-width —
   // the card measures itself (onLayout) and is then placed centered on the
   // tapped seat's column with the measured width. Hidden (opacity 0) until
@@ -327,7 +332,10 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
                   )}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>{member.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ color: isKing ? KING_GOLD : C.text, fontSize: 16, fontWeight: '900', flexShrink: 1 }}>{member.name}</Text>
+                    {isKing ? <KingSparkle /> : null}
+                  </View>
                   <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
                     {t('voiceRoom.seatAction.seatLabel', { number: seatIdx + 1 })}
                     {' · '}

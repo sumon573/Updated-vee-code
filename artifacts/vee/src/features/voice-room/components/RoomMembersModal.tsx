@@ -21,6 +21,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import type { Participant } from '@/src/features/voice-room/types/room';
 import { VerifiedName } from '@/src/components/VerifiedName';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import { C } from '../constants/theme';
 
 type Props = {
@@ -78,6 +81,8 @@ const MemberRow = memo(function MemberRow({
   item: Participant;
   onPress: (p: Participant) => void;
 }) {
+  // 2026-11-01 (batch56): King gold + shimmer on member names.
+  const isKing = useIsKing((item as any).uid || item.id);
   return (
     <Pressable
       onPress={() => onPress(item)}
@@ -90,12 +95,15 @@ const MemberRow = memo(function MemberRow({
       <MemberAvatar p={item} />
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <VerifiedName
-            name={item.name}
-            uid={(item as any).uid || (item as any).id}
-            nameStyle={{ color: C.text, fontSize: 15, fontWeight: '700' }}
-            logoSize={15}
-          />
+          <View style={{ flexShrink: 1 }}>
+            <VerifiedName
+              name={item.name}
+              uid={(item as any).uid || (item as any).id}
+              nameStyle={{ color: isKing ? KING_GOLD : C.text, fontSize: 15, fontWeight: '700', flexShrink: 1 }}
+              logoSize={15}
+            />
+          </View>
+          {isKing ? <KingSparkle /> : null}
           <RoleBadge role={item.role} />
         </View>
         <Text style={{ color: C.sub, fontSize: 12, marginTop: 2 }}>

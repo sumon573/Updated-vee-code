@@ -29,6 +29,9 @@ import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import { GiftLuxuryEffect } from './GiftLuxuryEffects';
 import { database } from '@/src/config/firebase';
 
@@ -117,6 +120,7 @@ type QueuedShow = {
   emoji: string;
   coins: number;
   fromName: string;
+  fromUid: string;
   fromAvatar?: string;
   animationUrl?: string;
   animationType?: string;
@@ -143,6 +147,9 @@ const MAX_QUEUED_SHOWS = 3;
 // only when its own show object changes (which is exactly when the combo
 // count grows, via setActive({...active}) in enqueueOrMerge).
 const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: QueuedShow; onDone: () => void }) {
+  // 2026-11-01 (batch56): King gold + shimmer on the banner sender name.
+  // fromUid is the displayed sender (combos keep the first sender's name).
+  const isKing = useIsKing(show.fromUid);
   const { width: W, height: H } = Dimensions.get('window');
   const { t } = useTranslation();
   // 2026-10-27 (boss): kiss is 1 diamond → NO center animation, ONLY fly.
@@ -342,7 +349,8 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
       }}>
         <View style={[styles.banner, { maxWidth: W - 48 }]}>
           <GiftAvatar photoURL={show.fromAvatar} name={show.fromName} size={24} />
-          <Text style={styles.bannerName} numberOfLines={1}>{show.fromName}</Text>
+          <Text style={[styles.bannerName, isKing ? { color: KING_GOLD } : null]} numberOfLines={1}>{show.fromName}</Text>
+          {isKing ? <KingSparkle /> : null}
           <Text style={styles.bannerArrow}>→</Text>
           <AnimatedGift
             giftId={show.giftId} emoji={show.emoji} size={24}
@@ -409,7 +417,7 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
     // MAX_QUEUED_SHOWS: the oldest pending show drops, never the live one).
     const fresh: QueuedShow = {
       giftId: e.giftId, emoji: e.emoji, coins: e.coins,
-      fromName: e.fromName, fromAvatar: e.fromAvatar,
+      fromName: e.fromName, fromAvatar: e.fromAvatar, fromUid: e.fromUid,
       animationUrl: e.animationUrl, animationType: e.animationType,
       thumbnailUrl: e.thumbnailUrl,
       videoSize: e.videoSize, videoFullscreen: e.videoFullscreen,

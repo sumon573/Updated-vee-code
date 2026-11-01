@@ -7,6 +7,9 @@ import {
   type RoomPk,
 } from '../services/roomPkService';
 import { PkScoreBar } from './PkScoreBar';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 
 /* ─────────────────────── Realtime PK banner ─────────────────────── */
 
@@ -33,6 +36,9 @@ export function PkBanner({
   opponentPhotoURL?: string | null;
 }) {
   const [now, setNow] = useState(Date.now());
+  // 2026-11-01 (batch56): King gold + shimmer on both PK names.
+  const isChallengerKing = useIsKing(pk.challenger.uid);
+  const isOpponentKing = useIsKing(pk.opponent.uid);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -99,9 +105,10 @@ export function PkBanner({
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {avatar(pk.challenger.name, '#7C3AED', challengerPhotoURL)}
-            <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 13, fontWeight: '700', flex: 1 }}>
+            <Text numberOfLines={1} style={{ color: isChallengerKing ? KING_GOLD : '#FFF', fontSize: 13, fontWeight: '700', flex: 1 }}>
               {pk.challenger.name}
             </Text>
+            {isChallengerKing ? <KingSparkle /> : null}
             <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '900' }}>
               {formatPkScore(challengerScore)}
             </Text>
@@ -111,9 +118,10 @@ export function PkBanner({
             <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '900' }}>
               {formatPkScore(opponentScore)}
             </Text>
-            <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' }}>
+            <Text numberOfLines={1} style={{ color: isOpponentKing ? KING_GOLD : '#FFF', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' }}>
               {pk.opponent.name}
             </Text>
+            {isOpponentKing ? <KingSparkle /> : null}
             {avatar(pk.opponent.name, '#05B5FA', opponentPhotoURL)}
           </View>
         </View>

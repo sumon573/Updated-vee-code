@@ -9,6 +9,9 @@ import { Avatar } from './Avatar';
 import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { truncateTo12 } from '@/src/utils/truncateName';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import MistNameplate from '@/src/components/MistNameplate';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 import { ref, get } from 'firebase/database';
@@ -44,6 +47,8 @@ export function MemberManageModal({
   isSeated?: boolean;
 }) {
   const { t } = useTranslation();
+  // 2026-11-01 (batch56): King gold + shimmer on the header name.
+  const isKing = useIsKing(member?.id);
 
   // 2026-10-15 (Sumon, URGENT): Rules of Hooks — ALL hooks must run before
   // any early return. Previously `if (!member) return null` sat ABOVE these
@@ -144,7 +149,8 @@ export function MemberManageModal({
             />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>{truncateTo12(member.name)}</Text>
+            <Text style={{ color: isKing ? KING_GOLD : C.text, fontSize: 20, fontWeight: '900' }}>{truncateTo12(member.name)}</Text>
+            {isKing ? <KingSparkle /> : null}
             {hasVerifiedBadge && badgeIconUrl && (
               <Image
                 source={{ uri: badgeIconUrl }}

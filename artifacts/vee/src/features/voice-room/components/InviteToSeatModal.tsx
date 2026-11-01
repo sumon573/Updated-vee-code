@@ -4,8 +4,23 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 
 /* ─────────────────────────── Invite to Seat Modal ─────────────────────────── */
+/* 2026-11-01 (batch56): invite candidate name — own tiny component
+   because the rows render inline in a map. */
+function InviteName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: isKing ? KING_GOLD : C.text, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
 export function InviteToSeatModal({ visible, audience, seatIdx, onClose, onInvite, accent }: {
   visible: boolean; audience: Participant[]; seatIdx: number;
   onClose: () => void; onInvite: (memberId: string) => void;
@@ -48,7 +63,7 @@ export function InviteToSeatModal({ visible, audience, seatIdx, onClose, onInvit
                   <Text style={{ color: m.color, fontSize: 15, fontWeight: '800' }}>{m.initials}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{m.name}</Text>
+                  <InviteName uid={m.id} name={m.name} />
                   <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
                     {t('voiceRoom.inviteToSeat.inAudience')}
                   </Text>

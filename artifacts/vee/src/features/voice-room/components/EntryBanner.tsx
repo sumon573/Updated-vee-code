@@ -18,6 +18,7 @@ import { View, Text, Image, Animated, Dimensions, Easing } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
+import { KingSparkle } from './KingShimmerName';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
 
 interface EntryBannerProps {
@@ -360,23 +361,30 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
               width: bannerW * 0.302,
             }}
           >
-            <Text
-              style={{
-                color: '#FFD94D',
-                fontSize: nameFont,
-                lineHeight: nameFont * 1.05,
-                fontWeight: '800',
-                fontFamily: 'serif',
-                textShadowColor: 'rgba(30,10,0,0.85)',
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 3,
-              }}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              allowFontScaling={false}
-            >
-              {name}
-            </Text>
+            {/* 2026-11-01 (batch56): King art name is already gold by art
+                design; the sparkle joins it (slot width unchanged, the
+                name shrinks so the star never leaves the art). */}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text
+                style={{
+                  color: '#FFD94D',
+                  fontSize: nameFont,
+                  lineHeight: nameFont * 1.05,
+                  fontWeight: '800',
+                  fontFamily: 'serif',
+                  textShadowColor: 'rgba(30,10,0,0.85)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3,
+                  flexShrink: 1,
+                }}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                allowFontScaling={false}
+              >
+                {name}
+              </Text>
+              {nobleRankIndex === 6 ? <KingSparkle /> : null}
+            </View>
             <Text
               style={{
                 color: '#FFD94D',

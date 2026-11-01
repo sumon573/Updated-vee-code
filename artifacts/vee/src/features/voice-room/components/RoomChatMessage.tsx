@@ -80,6 +80,11 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
   // plain-text comments only. Gift cards, stickers, system pills and the
   // reply-to quote keep today's rendering untouched.
   const isKing = useIsKing(item.senderId);
+  // 2026-11-01 (batch56): gift receiver (single-recipient card only) +
+  // reply-to quote author, same server rank gate. Called unconditionally
+  // here (never inside a branch) so hook order is stable per row.
+  const isGiftReceiverKing = useIsKing(item.gift?.recipients?.[0]?.uid);
+  const isReplyToKing = useIsKing(item.replyTo?.senderId);
   const isSystem = item.sender === 'System';
 
   /* ── System messages: centered pill ── */
@@ -133,9 +138,10 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
               (~30% shorter than the first compact pass). Same design. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <CardAvatar name={item.sender} photoURL={g.senderAvatar} color={item.color} size={17} />
-            <Text style={{ color: '#7C2D12', fontSize: 10, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
+            <Text style={{ color: isKing ? KING_GOLD : '#7C2D12', fontSize: 10, fontWeight: '800', flexShrink: 1 }} numberOfLines={1}>
               {truncateTo12(item.sender)}
             </Text>
+            {isKing ? <KingSparkle /> : null}
             <Text style={{ color: '#9A3412', fontSize: 9, fontWeight: '600' }}>
               {t('voiceRoom.chat.giftSent')}
             </Text>
@@ -201,9 +207,18 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
                 </View>
               )}
             </View>
-            <Text style={{ color: '#7C2D12', fontSize: 10, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
-              {truncateTo12(recipientNames)}
-            </Text>
+            {recipients.length === 1 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+                <Text style={{ color: isGiftReceiverKing ? KING_GOLD : '#7C2D12', fontSize: 10, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+                  {truncateTo12(recipientNames)}
+                </Text>
+                {isGiftReceiverKing ? <KingSparkle /> : null}
+              </View>
+            ) : (
+              <Text style={{ color: '#7C2D12', fontSize: 10, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+                {truncateTo12(recipientNames)}
+              </Text>
+            )}
           </View>
         </LinearGradient>
 
@@ -229,7 +244,18 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
         }}
         style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
       >
-        {!item.isMe && (
+        {!item.isMe && (isKing ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3, marginLeft: 4 }}>
+            <Text style={{
+              color: KING_GOLD,
+              fontSize: 11, fontWeight: '800',
+              letterSpacing: 0.2,
+            }}>
+              {truncateTo12(item.sender)}
+            </Text>
+            <KingSparkle />
+          </View>
+        ) : (
           <Text style={{
             color: item.color,
             fontSize: 11, fontWeight: '800',
@@ -238,7 +264,7 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
           }}>
             {truncateTo12(item.sender)}
           </Text>
-        )}
+        ))}
         <Image
           source={{ uri: stickerUrl(item.text)! }}
           style={{ width: 64, height: 64 }}
@@ -312,12 +338,15 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
             backgroundColor: 'rgba(15,23,42,0.06)',
             borderRadius: 8, padding: 6,
           }}>
-            <Text style={{
-              color: item.replyTo.color,
-              fontSize: 10, fontWeight: '800', marginBottom: 2,
-            }}>
-              ↩ {truncateTo12(item.replyTo.sender)}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+              <Text style={{
+                color: isReplyToKing ? KING_GOLD : item.replyTo.color,
+                fontSize: 10, fontWeight: '800',
+              }}>
+                ↩ {truncateTo12(item.replyTo.sender)}
+              </Text>
+              {isReplyToKing ? <KingSparkle /> : null}
+            </View>
             <Text style={{ color: C.sub, fontSize: 11 }} numberOfLines={2}>
               {isStickerText(item.replyTo.text) ? stickerLabel(item.replyTo.text) : item.replyTo.text}
             </Text>

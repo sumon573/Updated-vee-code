@@ -7,6 +7,9 @@ import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { Participant, Role } from '../types/room';
 import { VerifiedName } from '@/src/components/VerifiedName';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { truncateTo12 } from '@/src/utils/truncateName';
 
@@ -30,6 +33,8 @@ const AudienceRow = memo(function AudienceRow({
   adminBadge: string;
   onManage: (m: Participant) => void;
 }) {
+  // 2026-11-01 (batch56): King gold + shimmer on audience names.
+  const isKing = useIsKing((m as any).uid || m.id);
   return (
     <Pressable
       onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onManage(m); }}
@@ -63,12 +68,17 @@ const AudienceRow = memo(function AudienceRow({
         )}
       </View>
       <View style={{ flex: 1 }}>
-        <VerifiedName
-          name={truncateTo12(m.name)}
-          uid={(m as any).uid || (m as any).id}
-          nameStyle={{ color: C.text, fontSize: 14, fontWeight: '700' }}
-          logoSize={14}
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexShrink: 1 }}>
+            <VerifiedName
+              name={truncateTo12(m.name)}
+              uid={(m as any).uid || (m as any).id}
+              nameStyle={{ color: isKing ? KING_GOLD : C.text, fontSize: 14, fontWeight: '700', flexShrink: 1 }}
+              logoSize={14}
+            />
+          </View>
+          {isKing ? <KingSparkle /> : null}
+        </View>
         <Text style={{ color: C.muted, fontSize: 11, marginTop: 1 }}>
           {audienceLabel}
         </Text>

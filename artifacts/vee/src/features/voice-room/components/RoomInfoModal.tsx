@@ -7,6 +7,9 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { Participant } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import { uploadRoomCover } from '@/src/services/cloudinaryService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoomService';
@@ -92,6 +95,8 @@ type MemberRowProps = {
 const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, rowIsOwner,
   onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember }: MemberRowProps) {
   const { t } = useTranslation();
+  // 2026-11-01 (batch56): King gold + shimmer on member names.
+  const isKing = useIsKing(m.id);
   const lastSeen = useMemberLastSeen(m.id);
   // Role badge = status-icon COLOR (boss rule 2026-10-27, CORRECTED):
   // GOLD = room owner ONLY (uid === ownerId, or role 'host' from the
@@ -138,8 +143,11 @@ const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, row
       <View style={{ flex: 1 }}>
         {/* Real nickname ONLY — "Op Assistant" / star prefixes in imo are
             nickname text, never badges; nothing is added here. */}
-        <Text numberOfLines={1} ellipsizeMode="tail"
-          style={{ color: TEXT, fontSize: 16, fontWeight: '600' }}>{m.name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text numberOfLines={1} ellipsizeMode="tail"
+            style={{ color: isKing ? KING_GOLD : TEXT, fontSize: 16, fontWeight: '600', flexShrink: 1 }}>{m.name}</Text>
+          {isKing ? <KingSparkle /> : null}
+        </View>
         {status && (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 }}>
             <Feather name="user" size={12} color={roleColor} />

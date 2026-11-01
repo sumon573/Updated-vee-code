@@ -18,6 +18,9 @@ import {
   intimacyLevelFor, intimacyProgress, INTIMACY_LEVELS,
   type IntimacyEntry,
 } from '../services/intimacyService';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 
 interface Props {
   visible: boolean;
@@ -56,11 +59,25 @@ function PuzzleHearts({ progress }: { progress: number }) {
   );
 }
 
+/* 2026-11-01 (batch56): intimacy peer name — own tiny component because
+   the rows render inline in a map. */
+function IntimacyName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ fontSize: 15, fontWeight: '700', color: isKing ? KING_GOLD : '#111', flexShrink: 1 }}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
 export function IntimacyModal({ visible, myUid, onClose }: Props) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<IntimacyEntry[] | null>(null);
   const [peers, setPeers] = useState<Record<string, PeerInfo>>({});
   const [selected, setSelected] = useState<IntimacyEntry | null>(null);
+  // 2026-11-01 (batch56): detail-view peer name gate (top level, unconditional).
+  const isDetailKing = useIsKing(selected?.otherUid);
   const [liveValue, setLiveValue] = useState(0);
 
   useEffect(() => {
@@ -136,9 +153,12 @@ export function IntimacyModal({ visible, myUid, onClose }: Props) {
             <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
               <View style={{ alignItems: 'center' }}>
                 <PeerAvatar uri={selPeer?.photoURL ?? null} name={selPeer?.name || ''} size={84} />
-                <Text style={{ fontSize: 17, fontWeight: '800', color: '#111', marginTop: 10 }}>
-                  {selPeer?.name || t('voiceRoom.intimacy.someone')}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: isDetailKing ? KING_GOLD : '#111' }}>
+                    {selPeer?.name || t('voiceRoom.intimacy.someone')}
+                  </Text>
+                  {isDetailKing ? <KingSparkle /> : null}
+                </View>
                 <View style={{
                   marginTop: 8, backgroundColor: '#FFF3E0', borderRadius: 20,
                   paddingHorizontal: 14, paddingVertical: 6,
@@ -206,9 +226,7 @@ export function IntimacyModal({ visible, myUid, onClose }: Props) {
                     >
                       <PeerAvatar uri={p?.photoURL ?? null} name={p?.name || ''} size={48} />
                       <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#111' }}>
-                          {p?.name || t('voiceRoom.intimacy.someone')}
-                        </Text>
+                        <IntimacyName uid={e.otherUid} name={p?.name || t('voiceRoom.intimacy.someone')} />
                         <Text style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
                           {t('voiceRoom.intimacy.level', { n: lv.id })} · {e.value.toLocaleString()} {t('voiceRoom.intimacy.points')}
                         </Text>

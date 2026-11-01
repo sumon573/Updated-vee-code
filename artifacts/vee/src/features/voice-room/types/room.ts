@@ -165,7 +165,7 @@ export type ChatMsg = {
       only on the sender's own echoes; delivered messages never carry it. */
   sendState?: 'sending' | 'failed';
   ts: number;
-  replyTo?: { sender: string; text: string; color: string };
+  replyTo?: { sender: string; text: string; color: string; senderId?: string };
   /** 'gift' renders the highlight gift card instead of a plain bubble. */
   kind?: string;
   gift?: GiftChatInfo;

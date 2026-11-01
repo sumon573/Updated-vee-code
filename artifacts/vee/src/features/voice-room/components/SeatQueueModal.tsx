@@ -18,6 +18,9 @@ import { useTranslation } from 'react-i18next';
 import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import {
   takeSeat,
   approveSeatRequest,
@@ -25,6 +28,11 @@ import {
   type SeatRequest,
 } from '../services/firebaseRoomService';
 import { sendRoomChatMsg } from '../services/firebaseRoomChatService';
+import {
+  sendPass2RoomAction,
+  sendPass2RoomChat,
+  approvePass2SeatRequest,
+} from '../services/pass2RestService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
 export type AdmitResult = { ok: true } | { ok: false; title: string; message: string };
@@ -34,7 +42,48 @@ export async function admitSeatRequest(
   roomId: string,
   req: SeatRequest,
   t: (k: string, o?: Record<string, unknown>) => string,
+  opts?: { pass2?: boolean; audienceUids?: Set<string> },
 ): Promise<AdmitResult> {
+  // Gap 5 REST admit: the tier enforces seat-empty (409) + locked (403)
+  // server-side, so the client checks only what the tier does NOT —
+  // the requester still being in audience (poll-delivered uids). The
+  // tier approve sets muted:false (Firebase admit sets muted:true —
+  // tier gap, admitted users start unmuted via REST). A tier-created
+  // request has NO seatIdx (tier gap) — admit cannot proceed.
+  if (opts?.pass2) {
+    try {
+      if (typeof req.seatIdx !== 'number') {
+        return { ok: false, title: t('voiceRoom.screen.error'), message: t('voiceRoom.screen.muteFailedWithCause', { cause: 'seat_request_no_seat' }) };
+      }
+      if (opts.audienceUids && !opts.audienceUids.has(req.userId)) {
+        await sendPass2RoomAction(roomId, 'seat_request_reject', { requestId: req.id }).catch(() => {});
+        return { ok: false, title: t('voiceRoom.screen.error'), message: t('voiceRoom.screen.userLeftRoom', { name: req.userName }) };
+      }
+      const approved = await approvePass2SeatRequest(roomId, req.id, req.seatIdx);
+      if (!approved.ok) {
+        await sendPass2RoomAction(roomId, 'seat_request_reject', { requestId: req.id }).catch(() => {});
+        if (approved.status === 409) {
+          return { ok: false, title: t('voiceRoom.screen.seatNoLongerEmpty'), message: t('voiceRoom.screen.seatNoLongerEmptyMsg') };
+        }
+        if (approved.status === 403) {
+          return { ok: false, title: t('voiceRoom.screen.seatLocked'), message: t('voiceRoom.screen.seatLockedMsg') };
+        }
+        return { ok: false, title: t('voiceRoom.screen.error'), message: t('voiceRoom.screen.muteFailedWithCause', { cause: `approve ${approved.status}` }) };
+      }
+      await sendPass2RoomChat(roomId, {
+        senderId: 'system',
+        senderName: 'System',
+        senderColor: C.gold,
+        text: t('voiceRoom.screen.memberJoinedSeatApproved', { name: req.userName, number: req.seatIdx + 1 }),
+        ts: Date.now(),
+      }).catch(() => {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return { ok: true };
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return { ok: false, title: t('voiceRoom.screen.error'), message: t('voiceRoom.screen.muteFailedWithCause', { cause: getErrorCause(e) }) };
+    }
+  }
   try {
     const [seatsSnap, lockedSnap] = await Promise.all([
       get(ref(database, `rooms/${roomId}/seats/${req.seatIdx}`)),
@@ -86,7 +135,22 @@ function waitingMinutes(ts: number): string {
   return m < 1 ? '1m' : `${m}m`;
 }
 
-export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPosition, onClose, onCancelMine }: {
+/* 2026-11-01 (batch56): queue entry name — own tiny component because
+   the rows render inline in a map (hooks cannot live in the map). */
+function QueueName({ userId, userName, isMe }: { userId: string; userName?: string; isMe: boolean }) {
+  const { t } = useTranslation();
+  const isKing = useIsKing(userId);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: isKing ? KING_GOLD : '#000', fontSize: 15, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+        {userName || t('voiceRoom.queue.anonymous')}{isMe ? ` (${t('voiceRoom.queue.you')})` : ''}
+      </Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPosition, onClose, onCancelMine, pass2Active, audienceUids }: {
   visible: boolean;
   roomId: string;
   requests: SeatRequest[];
@@ -96,13 +160,17 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
   myPosition: number | null;
   onClose: () => void;
   onCancelMine: () => void;
+  /** Gap 5: pass2 mode routes admit/reject through REST (screen passes it). */
+  pass2Active?: boolean;
+  /** Poll-delivered audience uids, for the REST admit's presence check. */
+  audienceUids?: Set<string>;
 }) {
   const { t } = useTranslation();
   const ordered = useMemo(() => [...requests].sort((a, b) => a.ts - b.ts), [requests]);
 
   const handleAdmit = async (req: SeatRequest) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const res = await admitSeatRequest(roomId, req, t as (k: string, o?: Record<string, unknown>) => string);
+    const res = await admitSeatRequest(roomId, req, t as (k: string, o?: Record<string, unknown>) => string, { pass2: pass2Active, audienceUids });
     if (!res.ok) Alert.alert(res.title, res.message);
   };
 
@@ -174,11 +242,10 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
                     <Text style={{ color: req.color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{req.initials || '?'}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#000', fontSize: 15, fontWeight: '700' }} numberOfLines={1}>
-                      {req.userName || t('voiceRoom.queue.anonymous')}{isMe ? ` (${t('voiceRoom.queue.you')})` : ''}
-                    </Text>
+                    <QueueName userId={req.userId} userName={req.userName} isMe={isMe} />
                     <Text style={{ color: '#8E8E93', fontSize: 12, marginTop: 2 }}>
-                      {t('voiceRoom.queue.wantsSeat', { n: req.seatIdx + 1 })} · {waitingMinutes(req.ts)}
+                      {/* Gap 5: tier-created requests carry no seatIdx (tier gap) — '?' beats NaN. */}
+                      {t('voiceRoom.queue.wantsSeat', { n: typeof req.seatIdx === 'number' ? req.seatIdx + 1 : '?' })} · {waitingMinutes(req.ts)}
                     </Text>
                   </View>
                   {isHost && !isMe && (
@@ -186,7 +253,12 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
                       <Pressable
                         onPress={() => {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          rejectSeatRequest(roomId, req.id).catch(() => {});
+                          // Gap 5: reject via REST in pass2 mode.
+                          if (pass2Active) {
+                            sendPass2RoomAction(roomId, 'seat_request_reject', { requestId: req.id }).catch(() => {});
+                          } else {
+                            rejectSeatRequest(roomId, req.id).catch(() => {});
+                          }
                         }}
                         style={{ paddingHorizontal: 10, paddingVertical: 8 }}
                       >

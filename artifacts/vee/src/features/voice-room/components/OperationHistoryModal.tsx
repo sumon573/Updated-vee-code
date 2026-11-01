@@ -4,6 +4,9 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { BlockRecord } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 import { fmtTime } from '../utils/format';
 
 /* ─────────────────────────── Operation History Modal ─────────────────────────── */
@@ -20,6 +23,9 @@ export function OperationHistoryModal({ visible, onClose, records, onUnblock, ac
     const actionLabel = r.action === 'room-block'
       ? t('voiceRoom.opHistory.roomBlockLabel')
       : t('voiceRoom.opHistory.commentBlockLabel');
+    // 2026-11-01 (batch56): BlockRecord.id is the target uid (built as
+    // id: b.userId upstream), so the target name gates on King directly.
+    const isKing = useIsKing(r.id);
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
         borderBottomWidth: 1, borderBottomColor: C.borderFaint }}>
@@ -29,7 +35,10 @@ export function OperationHistoryModal({ visible, onClose, records, onUnblock, ac
           <Text style={{ color: r.color, fontSize: 14, fontWeight: '800' }}>{r.initials}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>{r.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ color: isKing ? KING_GOLD : C.text, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>{r.name}</Text>
+            {isKing ? <KingSparkle /> : null}
+          </View>
           <Text style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
             {actionLabel} · {t('voiceRoom.opHistory.byLabel', { name: r.actionBy })}
           </Text>

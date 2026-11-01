@@ -20,6 +20,9 @@ import { useTranslation } from 'react-i18next';
 import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+
 
 export interface RankMember {
   uid: string;
@@ -81,6 +84,37 @@ function NobleMark({ rankIndex }: { rankIndex: number }) {
   );
 }
 
+/* 2026-11-01 (batch56): rank row — own component because the rows render
+   via a map function (hooks cannot live in the map). King gold + shimmer
+   on the name; the noble mark beside it is untouched. */
+function RankRow({ uid, name, photoURL, color, initials, rank, right, nobleIdx }: {
+  uid: string; name: string; photoURL?: string | null; color?: string; initials?: string;
+  rank: number; right: string; nobleIdx: number;
+}) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+      borderBottomWidth: 0.5, borderBottomColor: '#E5E5EA',
+    }}>
+      <RankBadge rank={rank} />
+      {photoURL ? (
+        <Image source={{ uri: photoURL }} style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: '#F2F2F7' }} />
+      ) : (
+        <View style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: (color || '#05b5fa') + '22', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{initials || '?'}</Text>
+        </View>
+      )}
+      <View style={{ flex: 1, marginLeft: 12, flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: isKing ? KING_GOLD : '#000', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+        {isKing ? <KingSparkle /> : null}
+        {nobleIdx >= 0 && <NobleMark rankIndex={nobleIdx} />}
+      </View>
+      <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>{right}</Text>
+    </View>
+  );
+}
+
 export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
   visible: boolean;
   roomId: string;
@@ -90,6 +124,7 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const isMyRowKing = useIsKing(myUid);
   const [tab, setTab] = useState<'contribution' | 'online'>('contribution');
   const TAB_NAMES: Record<'contribution' | 'online', string> = {
     contribution: t('voiceRoom.rank.tab_contribution'),
@@ -156,29 +191,9 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
 
   const myRow = myRank > 0 ? rows[myRank - 1] : null;
 
-  const renderRow = (uid: string, name: string, photoURL: string | null | undefined, color: string | undefined, initials: string | undefined, rank: number, right: string) => {
-    const nobleIdx = nobleRanks.get(uid) ?? -1;
-    return (
-      <View key={uid} style={{
-        flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-        borderBottomWidth: 0.5, borderBottomColor: '#E5E5EA',
-      }}>
-        <RankBadge rank={rank} />
-        {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: '#F2F2F7' }} />
-        ) : (
-          <View style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: (color || '#05b5fa') + '22', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{initials || '?'}</Text>
-          </View>
-        )}
-        <View style={{ flex: 1, marginLeft: 12, flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#000', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
-          {nobleIdx >= 0 && <NobleMark rankIndex={nobleIdx} />}
-        </View>
-        <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>{right}</Text>
-      </View>
-    );
-  };
+  const renderRow = (uid: string, name: string, photoURL: string | null | undefined, color: string | undefined, initials: string | undefined, rank: number, right: string) => (
+    <RankRow key={uid} uid={uid} name={name} photoURL={photoURL} color={color} initials={initials} rank={rank} right={right} nobleIdx={nobleRanks.get(uid) ?? -1} />
+  );
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -238,9 +253,10 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
             padding: 10, flexDirection: 'row', alignItems: 'center',
           }}>
             <Text style={{ color: '#007AFF', fontSize: 13, fontWeight: '800', marginRight: 8 }}>#{myRank}</Text>
-            <Text style={{ flex: 1, color: '#000', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
+            <Text style={{ flex: 1, color: isMyRowKing ? KING_GOLD : '#000', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
               {myRow.member?.name || t('voiceRoom.rank.you')}
             </Text>
+            {isMyRowKing ? <KingSparkle /> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <DiamondIcon size={14} />
               <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '800', marginLeft: 3 }}>{fmtCompact(myRow.coins)}</Text>

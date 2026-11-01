@@ -13,6 +13,8 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { subscribeLevel, getLevelFromXP } from '@/src/services/levelService';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from '@/src/features/voice-room/components/KingShimmerName';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -674,6 +676,9 @@ export default function ProfileScreen({
   // The UID whose profile data we display (own or another user's)
   const displayUid = targetUid ?? user?.uid;
   const isMe = !targetUid || targetUid === user?.uid;
+  // 2026-11-01 (batch56, boss): King gold + shimmer on the profile name.
+  // The verified badge below stays exactly as-is (same spot, same art).
+  const isKing = useIsKing(displayUid);
 
   // 2026-10-16 (Sumon): Enforce 30-day Nobel maintenance on profile load.
   // Inactive users don't keep their rank forever — check on every visit.
@@ -1528,7 +1533,7 @@ export default function ProfileScreen({
             </Pressable>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-            <Text style={{ fontSize: 18, fontWeight: '500', color: C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
+            <Text style={{ fontSize: 18, fontWeight: '500', color: isKing ? KING_GOLD : C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
             {(profile?.officialBadge || isOfficial) ? (
               <Image
                 source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
@@ -1536,6 +1541,7 @@ export default function ProfileScreen({
                 resizeMode="contain"
               />
             ) : null}
+            {isKing ? <KingSparkle /> : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
             {displayNameplate && /^https?:\/\//i.test(displayNameplate.icon) && !(nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate.id.startsWith('noble-plate-')) ? (
