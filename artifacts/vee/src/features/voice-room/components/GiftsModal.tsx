@@ -41,6 +41,7 @@ import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ref, push, get, serverTimestamp } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { Participant, GiftSentInfo } from '../types/room';
@@ -263,6 +264,10 @@ export function GiftsModal({
   mySeatIdx?: number;
 }) {
   const { t } = useTranslation();
+  // 2026-11-01 (nav-bar fix): sheet is absolute bottom:0 under
+  // edge-to-edge, so the footer sat behind the system nav bar on
+  // 3-button phones. Bottom spacer carries the nav inset.
+  const insets = useSafeAreaInsets();
   const [sending, setSending] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1060,7 +1065,7 @@ export function GiftsModal({
             </Pressable>
           </View>
         </View>
-        <View style={{ height: 10 }} />
+        <View style={{ height: 10 + insets.bottom }} />
       </View>
     </Modal>
   );
