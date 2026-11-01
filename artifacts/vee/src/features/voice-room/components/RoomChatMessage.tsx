@@ -10,6 +10,8 @@ import { ChatMsg } from '../types/room';
 import { fmt } from '../utils/format';
 import { MsgText } from './Avatar';
 import { truncateTo12 } from '@/src/utils/truncateName';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
 import { isStickerText, stickerLabel, stickerUrl } from '../services/stickerCatalog';
 
 type Props = {
@@ -74,6 +76,10 @@ function CardAvatar({ name, photoURL, color, size }: {
  */
 function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Props) {
   const { t } = useTranslation();
+  // 2026-11-01 (batch55, boss: King names gold + chik chik on comments):
+  // plain-text comments only. Gift cards, stickers, system pills and the
+  // reply-to quote keep today's rendering untouched.
+  const isKing = useIsKing(item.senderId);
   const isSystem = item.sender === 'System';
 
   /* ── System messages: centered pill ── */
@@ -267,7 +273,18 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
       style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
     >
       {/* Sender name (other users only) */}
-      {!item.isMe && (
+      {!item.isMe && (isKing ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3, marginLeft: 4 }}>
+          <Text style={{
+            color: KING_GOLD,
+            fontSize: 11, fontWeight: '800',
+            letterSpacing: 0.2,
+          }}>
+            {truncateTo12(item.sender)}
+          </Text>
+          <KingSparkle />
+        </View>
+      ) : (
         <Text style={{
           color: item.color,
           fontSize: 11, fontWeight: '800',
@@ -276,7 +293,7 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
         }}>
           {truncateTo12(item.sender)}
         </Text>
-      )}
+      ))}
 
       <View style={{
         backgroundColor: bubbleBg,

@@ -155,6 +155,9 @@ export type GiftChatInfo = {
 export type ChatMsg = {
   id: string;
   sender: string;
+  /** 2026-11-01 (batch55): sender uid for the King-name lookup. Optional:
+      echoes built before this field existed simply render as non-King. */
+  senderId?: string;
   color: string;
   text: string;
   isMe: boolean;

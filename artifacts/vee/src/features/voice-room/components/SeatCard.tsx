@@ -13,6 +13,8 @@ import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 import { useActiveRipple } from '@/src/hooks/useActiveRipple';
 import { useEventEffects, getActiveEffect, effectColor } from '@/src/hooks/useEventEffects';
 import { useActiveMicSticker } from '@/src/hooks/useStoreItems';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
 import { seatName } from '@/src/utils/truncateName';
 import { stickerUrl } from '../services/stickerCatalog';
 
@@ -154,6 +156,10 @@ export const SeatCard = memo(function SeatCard({
   const liveRipple = useActiveRipple(member?.id);
   // 2026-10-16 (Sumon): Store mic sticker — equipped sticker badge on the seat.
   const micSticker = useActiveMicSticker(member?.id);
+  // 2026-11-01 (batch55, boss: King names gold + chik chik): live noble
+  // rank for this seat's user. King ONLY (rankIndex 6) gets the gold
+  // name + sparkle; every other user keeps today's name color exactly.
+  const isKing = useIsKing(member?.id);
   // 2026-10-26 (Event Engine v1): live event effects (vibe/ripple) — same
   // direct-hook architecture as frames, never a seat copy.
   const eventEffects = useEventEffects(member?.id);
@@ -354,9 +360,10 @@ export const SeatCard = memo(function SeatCard({
               and the Text shrinks with tail ellipsis inside its own column. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5, width: '100%' }}>
             <Text style={{
-              color: nameColor ?? C.text, fontSize: 11.5, fontWeight: '700',
+              color: isKing ? KING_GOLD : (nameColor ?? C.text), fontSize: 11.5, fontWeight: '700',
               textAlign: 'center', flexShrink: 1,
             }} numberOfLines={1} ellipsizeMode="tail">{seatName(member.name)}</Text>
+            {isKing ? <KingSparkle /> : null}
             {vibeArtUrl ? <VibeHandFx artUrl={vibeArtUrl} /> : null}
           </View>
 

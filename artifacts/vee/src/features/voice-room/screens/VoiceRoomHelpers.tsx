@@ -97,6 +97,7 @@ export function fbChatToMsg(m: RoomChatMsg): ChatMsg {
   return {
     id: m.id,
     sender: m.senderName,
+    senderId: m.senderId,
     color: m.senderColor,
     text: m.text,
     isMe: m.isMe ?? false,
