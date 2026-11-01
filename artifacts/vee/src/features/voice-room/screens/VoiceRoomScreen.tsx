@@ -4,7 +4,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { ref, get, onValue, update, set, serverTimestamp } from 'firebase/database';
+import { ref, get, onValue, update, set, serverTimestamp, goOffline, goOnline, onDisconnect } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -485,6 +485,20 @@ export default function VoiceRoomScreen() {
   // re-render it triggers — when nothing visible actually changed.
   const seatsSigRef = useRef('');
   const audienceSigRef = useRef('');
+  // 2026-11-01 (batch60, boss: yesterday's seats must never render as
+  // live): live-feed freshness + heal state. The 2026-10-26
+  // keep-last-known rule has no bound - on a dead socket the last
+  // snapshot shows forever, and nothing ever resubscribed on
+  // foreground. lastSeats/lastAudience snap times prove the socket is
+  // alive (handlers run on every snapshot, even sig-identical heartbeat
+  // ones); liveRefreshKey forces the feed effects to resubscribe; the
+  // heal (below) force-reconnects when the feeds go quiet.
+  const [liveRefreshKey, setLiveRefreshKey] = useState(0);
+  const lastSeatsSnapAtRef = useRef(0);
+  const lastAudienceSnapAtRef = useRef(0);
+  const liveSubsStartedAtRef = useRef(0);
+  const lastLiveHealAtRef = useRef(0);
+  const prevLiveRoomIdRef = useRef<string | null>(null);
   const [blockedRecs,   setBlockedRecs]  = useState<BlockRecord[]>([]);
   
   const amChatBlocked = useMemo(
@@ -1413,7 +1427,7 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomInfo(roomId, handleRoomInfo);
-  }, [roomId, watcherPollActive, pass2PollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive, liveRefreshKey]);
 
   const forceLeftRef = useRef(false);
   useEffect(() => {
@@ -1461,6 +1475,7 @@ export default function VoiceRoomScreen() {
   const seatsLoadedRef = useRef(false);
   const handleSeats = (fbSeats: Array<RoomSeat | null>) => {
     seatsLoadedRef.current = true;
+    lastSeatsSnapAtRef.current = Date.now();
     const mapped = fbSeats.map(seat =>
       seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
     );
@@ -1477,9 +1492,22 @@ export default function VoiceRoomScreen() {
 
   useEffect(() => {
     seatsLoadedRef.current = false;
+    seatsSigRef.current = '';
+    liveSubsStartedAtRef.current = Date.now();
+    // 2026-11-01 (batch60): a new room must never briefly wear the old
+    // room's seats/audience - reset before live data arrives. The
+    // cached-first paint below (TTL-gated) repaints fresh data after
+    // this. Heal resubscribes (liveRefreshKey bumps) do NOT reset: the
+    // grid stays up while the heal reconnects, and the fresh snapshot
+    // replaces it - no mid-conversation vanishing on transient stalls.
+    if (prevLiveRoomIdRef.current !== roomId) {
+      prevLiveRoomIdRef.current = roomId;
+      setSeats(Array(10).fill(null));
+      setAudience([]);
+    }
     if (watcherPollActive || pass2PollActive) return;
     return subscribeSeats(roomId, handleSeats);
-  }, [roomId, watcherPollActive, pass2PollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive, liveRefreshKey]);
 
   // 2026-10-29 (boss: slow-network room entry takes far too long) — CACHED-FIRST
   // ENTRY. Why entry felt slow: seats start as 10 empty pods (line ~454) and the
@@ -1538,6 +1566,7 @@ export default function VoiceRoomScreen() {
   }, [seats, roomName, roomTopic, roomImageUri, roomId]);
 
   const handleAudience = (fbAudience: RoomAudienceMember[]) => {
+    lastAudienceSnapAtRef.current = Date.now();
     const participants = fbAudience.map(fbAudToParticipant);
     // Perf guard (2026-10-22): same heartbeat-skip as seats above.
     const sig = participants.map(m =>
@@ -1549,9 +1578,11 @@ export default function VoiceRoomScreen() {
   };
 
   useEffect(() => {
+    audienceSigRef.current = '';
+    liveSubsStartedAtRef.current = Date.now();
     if (watcherPollActive || pass2PollActive) return;
     return subscribeAudience(roomId, handleAudience);
-  }, [roomId, watcherPollActive, pass2PollActive]);
+  }, [roomId, watcherPollActive, pass2PollActive, liveRefreshKey]);
 
   useEffect(() => {
     if (watcherPollActive || pass2PollActive) return;
@@ -2040,6 +2071,8 @@ export default function VoiceRoomScreen() {
     mySeatIdx < 0 &&
     ownerId !== myUid &&
     myUid !== 'anonymous';
+  const watcherPollActiveRef = useRef(watcherPollActive);
+  useEffect(() => { watcherPollActiveRef.current = watcherPollActive; }, [watcherPollActive]);
 
   useEffect(() => {
     if (pass2PollActive) return; // VeeGuard owns server-side sweeps; client sweeps are SDK writes
@@ -2121,6 +2154,35 @@ export default function VoiceRoomScreen() {
   // someone else took it), and auto-retry the voice connection when the
   // engine died while backgrounded — no dead Retry button left to find.
   const autoVoiceRetryAtRef = useRef(0);
+  // 2026-11-01 (batch60): live-data heal - see the comment on
+  // liveRefreshKey above. Drops + reopens the socket (all active
+  // listeners re-attach and deliver current snapshots) and resubscribes
+  // the room feeds. Own disconnect arms are cancelled first so
+  // goOffline() cannot mark this live user connDead (a sweep could
+  // then delete a genuinely present user whose LiveKit is also down);
+  // the next beat (<=20s) re-arms them - beats re-arm on every success.
+  const healLiveData = useCallback(() => {
+    if (hasLeftRef.current) return;
+    if (pass2PollActiveRef.current) return;
+    if (watcherPollActiveRef.current) return;
+    if (isAnyPass2ModeActive()) return;
+    const now = Date.now();
+    if (now - lastLiveHealAtRef.current < 30_000) return;
+    const lastSnap = Math.max(lastSeatsSnapAtRef.current, lastAudienceSnapAtRef.current);
+    if (lastSnap > 0) {
+      if (now - lastSnap < 30_000) return;
+    } else if (liveSubsStartedAtRef.current === 0 || now - liveSubsStartedAtRef.current < 60_000) {
+      return; // first-delivery grace on a slow network
+    }
+    lastLiveHealAtRef.current = now;
+    try { void onDisconnect(ref(database, `rooms/${roomId}/audience/${myUid}`)).cancel(); } catch { /* noop */ }
+    if (mySeatIdxRef.current >= 0) {
+      try { void onDisconnect(ref(database, `rooms/${roomId}/seats/${mySeatIdxRef.current}`)).cancel(); } catch { /* noop */ }
+    }
+    try { goOffline(database); } catch { /* noop */ }
+    try { goOnline(database); } catch { /* noop */ }
+    setLiveRefreshKey((k) => k + 1);
+  }, [roomId, myUid]);
   useEffect(() => {
     const recover = () => {
       if (hasLeftRef.current || !presenceReadyRef.current) return;
@@ -2135,6 +2197,10 @@ export default function VoiceRoomScreen() {
         refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
         void reRegisterPresenceRef.current?.();
       }
+      // 2026-11-01 (batch60): foreground return also heals the live
+      // feeds - a socket that died while backgrounded must not keep
+      // showing yesterday's seats. healLiveData no-ops when data flows.
+      healLiveData();
       if (!voiceJoinedRef.current && voiceErrorRef.current) {
         const now = Date.now();
         if (now - autoVoiceRetryAtRef.current > 15_000) {
@@ -2147,7 +2213,18 @@ export default function VoiceRoomScreen() {
       if (next === 'active') recover();
     });
     return () => sub.remove();
-  }, [roomId, myUid]);
+  }, [roomId, myUid, healLiveData]);
+
+  // 2026-11-01 (batch60): snapshot watchdog - the subscriptions above
+  // have no liveness bound (a dead socket delivers nothing, errors
+  // nothing, and keep-last-known shows the last snapshot forever).
+  // Every 20s, if the room feeds have gone quiet, run the heal. The
+  // heal itself throttles (30s) and no-ops on healthy connections, so
+  // this interval costs nothing when data flows.
+  useEffect(() => {
+    const timer = setInterval(() => { healLiveData(); }, 20_000);
+    return () => clearInterval(timer);
+  }, [roomId, healLiveData]);
 
   
   // 2026-10-24 (boss: mic must NEVER cycle off→on on return): when
@@ -2824,8 +2901,12 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if ((!showJoinBanner && !isOwnerOrAdmin) || !roomId) { setJoinedMemberCount(null); return; }
     if (pass2PollActive) return; // count comes from pass2 onMemberCount (same condition applied there)
+    // 2026-11-01 (batch60): never show a previous room's / pre-heal
+    // count as current - null until this subscription's first snapshot
+    // lands (the header line renders only once counted).
+    setJoinedMemberCount(null);
     return subscribeRoomMembers(roomId, (members) => setJoinedMemberCount(members.length));
-  }, [showJoinBanner, isOwnerOrAdmin, roomId, pass2PollActive]);
+  }, [showJoinBanner, isOwnerOrAdmin, roomId, pass2PollActive, liveRefreshKey]);
 
   // Gap 5: keep the count refs fresh for the pass2 onMemberCount callback.
   useEffect(() => { showJoinBannerRef.current = showJoinBanner; }, [showJoinBanner]);

@@ -1275,6 +1275,7 @@ export async function refreshSeatHeartbeat(
   // heartbeat carries the fresh name so renames converge within ~60s
   // instead of lingering until the user re-takes the seat.
   userName?: string,
+  retryOnce = true,
 ): Promise<void> {
   try {
     const beatResult = await runTransaction(
@@ -1294,6 +1295,13 @@ export async function refreshSeatHeartbeat(
       onDisconnect(ref(database, `rooms/${roomId}/seats/${seatIndex}`)).update({ connDead: true }).catch(() => {});
     }
   } catch {
+    // 2026-11-01 (batch60): slow/flaky network — one delayed retry so a
+    // single timed-out beat does not age the entry toward a sweep.
+    // Same guarded transaction: a swept/kicked entry is never recreated.
+    if (retryOnce) {
+      await new Promise((r) => setTimeout(r, 5000));
+      return refreshSeatHeartbeat(roomId, seatIndex, userId, userName, false);
+    }
     // background: safe to swallow — a missed beat just ages the seat
   }
 }
@@ -1361,6 +1369,7 @@ export async function sweepStaleSeats(roomId: string): Promise<void> {
 export async function refreshAudienceHeartbeat(
   roomId: string,
   userId: string,
+  retryOnce = true,
 ): Promise<void> {
   try {
     const beatResult = await runTransaction(
@@ -1376,6 +1385,13 @@ export async function refreshAudienceHeartbeat(
       onDisconnect(ref(database, `rooms/${roomId}/audience/${userId}`)).update({ connDead: true }).catch(() => {});
     }
   } catch {
+    // 2026-11-01 (batch60): slow/flaky network — one delayed retry so a
+    // single timed-out beat does not age the entry toward a sweep.
+    // Same guarded transaction: a swept/kicked entry is never recreated.
+    if (retryOnce) {
+      await new Promise((r) => setTimeout(r, 5000));
+      return refreshAudienceHeartbeat(roomId, userId, false);
+    }
     // background: safe to swallow — a missed beat just ages the entry
   }
 }

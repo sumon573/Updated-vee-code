@@ -47,6 +47,9 @@ export type RoomEntryCache = {
 
 const keyFor = (roomId: string) => `vee_room_entry_v1_${roomId}`;
 
+/** 2026-11-01 (batch60): cached-first seed lifetime - see getRoomEntryCache. */
+const ROOM_ENTRY_CACHE_TTL_MS = 10 * 60 * 1000;
+
 function isValidSeat(s: unknown): s is CachedSeatOccupant {
   if (!s || typeof s !== 'object') return false;
   const o = s as Record<string, unknown>;
@@ -62,6 +65,14 @@ export async function getRoomEntryCache(roomId: string): Promise<RoomEntryCache 
     const raw = await AsyncStorage.getItem(keyFor(roomId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<RoomEntryCache>;
+    // 2026-11-01 (batch60): the cache is display seed ONLY while fresh.
+    // Yesterday's seats must never paint as current: on a slow network
+    // the live subscriptions can take a while, and an unexpired cache
+    // would sit on screen as if live. 10 min covers minimize-return
+    // (seconds/minutes) while killing overnight ghosts. A missing or
+    // zero savedAt is unprovable freshness, so it counts as stale.
+    if (typeof parsed.savedAt !== 'number' || parsed.savedAt <= 0 ||
+        Date.now() - parsed.savedAt > ROOM_ENTRY_CACHE_TTL_MS) return null;
     if (!Array.isArray(parsed.seats)) return null;
     const seats: Array<CachedSeatOccupant | null> = [];
     for (let i = 0; i < 10; i++) {
