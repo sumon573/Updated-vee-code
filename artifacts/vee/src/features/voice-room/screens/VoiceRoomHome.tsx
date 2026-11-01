@@ -1273,6 +1273,16 @@ export default function VoiceRoomHome({
         onClose={() => setCreateModalOpen(false)}
         onRoomCreated={(roomId) => {
           setCreateModalOpen(false);
+          // 2026-11-01 (boss: switch popup covers create-room too):
+          // minimized in another room -> ask first, never join directly.
+          // Name falls back to the id (same as the followings unknown-ID
+          // path); the room was just created, so no directory entry yet.
+          const min = getMinimizedRoom();
+          if (min && min.id !== roomId) {
+            setPendingSwitchFrom(min);
+            setPendingSwitchRoom({ id: roomId, name: roomId, isPublic: true } as RoomInfo);
+            return;
+          }
           goToRoom(roomId, user?.displayName ?? user?.uid);
         }}
       />
