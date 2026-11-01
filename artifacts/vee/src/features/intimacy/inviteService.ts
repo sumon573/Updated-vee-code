@@ -38,7 +38,9 @@
  *   rule alone does NOT grant a write at the parent path. Until the rule lands,
  *   step (3) will fail with PERMISSION_DENIED and the invite is marked 'failed'.
  *
- * Price/config: couple_config/invitePriceDiamonds if present, else 1200.
+ * Price/config: a level send carries its level price (Lv1 1200, Lv2 2000,
+ * Lv3 3500, Lv4 5000, Lv5 7000); legacy sends with no amount fall back to
+ * couple_config/invitePriceDiamonds if present, else 1200.
  * This file never writes couple_config.
  */
 
@@ -57,6 +59,11 @@ import {
 import { database } from '@/src/config/firebase';
 import { buildChatId, createOrGetChat, sendMessage } from '@/src/features/chat/services/firebaseDmService';
 import { intimacyPairKey } from '@/src/features/voice-room/services/intimacyService';
+import {
+  amountToSendLevel,
+  isLevelAmount,
+  levelSendAmount,
+} from '@/src/features/intimacy/coupleLevelTokens';
 
 export const COUPLE_INVITE_EXPIRY_MS = 18000000; // 5 hours
 export const DEFAULT_INVITE_PRICE = 1200;
@@ -70,7 +77,12 @@ export interface CoupleInvite {
   senderUid: string;
   recipientUid: string;
   status: InviteStatus;
-  tokenDesign: TokenDesign;
+  /** Legacy token design; absent for level sends (card shows "Couple token"). */
+  tokenDesign?: TokenDesign;
+  /** Diamonds charged for this invite (the sent level's price). */
+  amount?: number;
+  /** Paid level the couple starts at on accept (1..5, absent = 1). */
+  sentLevel?: number;
   createdAt: number;
   expiresAt: number;
   receiptId: string;
@@ -146,6 +158,8 @@ export async function findPendingOutgoingInvite(senderUid: string): Promise<Coup
         recipientUid: v.recipientUid,
         status: v.status,
         tokenDesign: v.tokenDesign,
+        amount: typeof v.amount === 'number' ? v.amount : undefined,
+        sentLevel: typeof v.sentLevel === 'number' ? v.sentLevel : undefined,
         createdAt: typeof v.createdAt === 'number' ? v.createdAt : 0,
         expiresAt: typeof v.expiresAt === 'number' ? v.expiresAt : 0,
         receiptId: v.receiptId ?? '',
@@ -300,7 +314,12 @@ async function claimAndDebit(
 export interface SendCoupleInviteArgs {
   senderUid: string;
   recipientUid: string;
-  tokenDesign: TokenDesign;
+  /** Legacy token design; omit for level sends. */
+  tokenDesign?: TokenDesign;
+  /** Exact diamonds to charge; must be a level price when provided. */
+  amount?: number;
+  /** Paid level the couple starts at on accept (1..5). */
+  sentLevel?: number;
 }
 
 export interface SendCoupleInviteResult {
@@ -311,7 +330,10 @@ export interface SendCoupleInviteResult {
 }
 
 /**
- * Send a couple invitation with the exactly-once 1200-diamond charge.
+ * Send a couple invitation with the exactly-once level-price charge
+ * (Lv1 1200, Lv2 2000, Lv3 3500, Lv4 5000, Lv5 7000; legacy sends fall back
+ * to the config price). The invite records amount + sentLevel so the
+ * couple starts at the sent level on accept.
  *
  * RESUME LOGIC: if the sender already has a pending outgoing invite whose
  * receipt is claimed-but-not-done, Send does NOT create a new invite — it
@@ -323,9 +345,36 @@ export async function sendCoupleInvite({
   senderUid,
   recipientUid,
   tokenDesign,
+  amount,
+  sentLevel,
 }: SendCoupleInviteArgs): Promise<SendCoupleInviteResult> {
   if (!senderUid || !recipientUid) throw new InviteError('missing-user');
   if (senderUid === recipientUid) throw new InviteError('self-invite');
+
+  // Resolve the charge BEFORE any write. An explicit amount must be exactly
+  // a level price; a sent level implies its price; absent both = legacy
+  // config price. A mismatched amount/sentLevel pair is rejected — never
+  // charge one level's price for another level's start.
+  let price: number;
+  let effectiveLevel: number;
+  if (amount !== undefined && sentLevel !== undefined) {
+    const clampedLevel = Math.min(5, Math.max(1, Math.floor(sentLevel) || 1));
+    if (!isLevelAmount(amount) || amountToSendLevel(amount) !== clampedLevel) {
+      throw new InviteError('invalid-amount');
+    }
+    price = amount;
+    effectiveLevel = clampedLevel;
+  } else if (amount !== undefined) {
+    if (!isLevelAmount(amount)) throw new InviteError('invalid-amount');
+    price = amount;
+    effectiveLevel = amountToSendLevel(amount) ?? 1;
+  } else if (sentLevel !== undefined) {
+    effectiveLevel = Math.min(5, Math.max(1, Math.floor(sentLevel) || 1));
+    price = levelSendAmount(effectiveLevel);
+  } else {
+    price = await getInvitePrice();
+    effectiveLevel = 1;
+  }
 
   // Send-time one-person rule: neither side may already have a couple.
   const [senderHasCouple, recipientHasCouple] = await Promise.all([
@@ -340,14 +389,17 @@ export async function sendCoupleInvite({
   if (pending) {
     const charge = await getCharge(pending.receiptId);
     if (charge && charge.status === 'claimed') {
-      const price = await getInvitePrice();
+      // Resume with the ORIGINAL charged amount when recorded — a variable
+      // level price must never resume at the config price.
+      const resumePrice =
+        typeof charge.amount === 'number' && charge.amount > 0 ? charge.amount : await getInvitePrice();
       try {
-        await claimAndDebit(senderUid, pending.id, pending.receiptId, price);
+        await claimAndDebit(senderUid, pending.id, pending.receiptId, resumePrice);
       } catch (e) {
         await markInviteFailed(pending.id);
         throw e;
       }
-      return { inviteId: pending.id, receiptId: pending.receiptId, price, resumed: true };
+      return { inviteId: pending.id, receiptId: pending.receiptId, price: resumePrice, resumed: true };
     }
     // Pending + paid (or unclaimed edge): one pending invite at a time.
     throw new InviteError('pending-exists');
@@ -358,7 +410,6 @@ export async function sendCoupleInvite({
   if (!inInbox) throw new InviteError('not-in-inbox');
   if (!(intimacyValue > 0)) throw new InviteError('no-intimacy');
 
-  const price = await getInvitePrice();
   const balance = await getWalletBalance(senderUid);
   if (balance < price) throw new InviteError('insufficient');
 
@@ -372,7 +423,9 @@ export async function sendCoupleInvite({
     senderUid,
     recipientUid,
     status: 'pending',
-    tokenDesign,
+    ...(tokenDesign !== undefined ? { tokenDesign } : {}),
+    amount: price,
+    sentLevel: effectiveLevel,
     createdAt: serverTimestamp(),
     expiresAt: nowEstimate + COUPLE_INVITE_EXPIRY_MS,
     receiptId,

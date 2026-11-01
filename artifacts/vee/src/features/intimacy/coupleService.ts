@@ -51,6 +51,10 @@ export type CoupleInvite = {
   recipientUid: string;
   status: CoupleInviteStatus;
   tokenDesign?: string;
+  /** Diamonds charged for this invite (the sent level's price). */
+  amount?: number;
+  /** Paid level the couple starts at on accept (1..5, absent = 1). */
+  sentLevel?: number;
   /** Server timestamp, resolved to ms on read. May be absent on a fresh write. */
   createdAt?: number;
   expiresAt?: number;
@@ -61,6 +65,8 @@ export type CoupleRecord = {
   partners: [string, string];
   tokenDesign?: string;
   inviteId?: string;
+  /** Paid level (1..5); absent reads as 1. Set at formation from sentLevel. */
+  paidLevel?: number;
   hearts: number;
   giftHearts: number;
   togetherHearts: number;
@@ -79,6 +85,8 @@ function parseInvite(id: string, raw: Record<string, unknown>): CoupleInvite {
     recipientUid: typeof raw.recipientUid === 'string' ? raw.recipientUid : '',
     status: (typeof raw.status === 'string' ? raw.status : 'pending') as CoupleInviteStatus,
     tokenDesign: typeof raw.tokenDesign === 'string' ? raw.tokenDesign : undefined,
+    amount: asNumber(raw.amount),
+    sentLevel: asNumber(raw.sentLevel),
     createdAt: asNumber(raw.createdAt),
     expiresAt: asNumber(raw.expiresAt),
     receiptId: typeof raw.receiptId === 'string' ? raw.receiptId : undefined,
@@ -169,7 +177,8 @@ export async function fetchCoupleInvite(inviteId: string): Promise<CoupleInvite 
  *
  * The write is ONE atomic multi-path update, so it either all lands or
  * all fails — exactly the paths the rules allow, nothing extra:
- *   couples/{pairKey}                = full record, hearts all 0
+ *   couples/{pairKey}                = full record, hearts all 0,
+ *                                        paidLevel = sent level (absent = 1)
  *   userCouples/{senderUid}          = { pairKey, inviteId }
  *   userCouples/{recipientUid}       = { pairKey, inviteId }
  *   couple_invites/{inviteId}/status = 'accepted'
@@ -197,10 +206,17 @@ export async function acceptCoupleInvite(inviteId: string, myUid: string): Promi
   }
 
   const [uidA, uidB] = [invite.senderUid, myUid].sort();
+  // Direct-level send: the couple STARTS at the sent level (absent = 1,
+  // preserving the old behavior). paidLevel is a non-money record write.
+  const startLevel = Math.min(
+    5,
+    Math.max(1, Math.floor(invite.sentLevel ?? 1) || 1),
+  );
   const couple: CoupleRecord = {
     partners: [uidA, uidB],
     tokenDesign: invite.tokenDesign,
     inviteId: inviteId,
+    paidLevel: startLevel,
     hearts: 0,
     giftHearts: 0,
     togetherHearts: 0,
@@ -221,7 +237,7 @@ export async function acceptCoupleInvite(inviteId: string, myUid: string): Promi
 /**
  * Reject an incoming invitation (recipient only): a single write flipping
  * status pending → 'rejected'. The card then shows "Declined".
- * No refund: the 1200 diamonds were charged at send and are never refunded
+ * No refund: the level amount charged at send is never refunded
  * on reject (or on expiry) — the card/result text says so honestly and
  * never promises a refund. The sender may later send a fresh invite, which
  * is a new invite with a new charge; no code is needed for that beyond
