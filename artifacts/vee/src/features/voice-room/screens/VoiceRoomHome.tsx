@@ -32,11 +32,11 @@ import {
   subscribeActiveRooms,
   subscribeMyRoomsCombined,
   subscribePrivateActiveRooms,
-  subscribeSelfRoomLeft, stripSelfFromRoom,
+  subscribeSelfRoomLeft, stripSelfFromRoom, removeSeat, leaveAudience,
   verifyRoomPin,
   setPinVerifiedForSession,
   type RoomInfo } from '../services/firebaseRoomService';
-import { prefetchLivekitToken } from '../useLivekitVoiceRoom';
+import { prefetchLivekitToken, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
 import {
   getVoiceBreadcrumb,
   clearVoiceBreadcrumb } from '../utils/voiceCrashBreadcrumb';
@@ -49,6 +49,8 @@ import {
 import {
   enterPass2Mode,
   exitPass2Mode } from '../services/pass2SessionMode';
+import { getMinimizedRoom, setMinimizedRoom, type MinimizedRoom } from '@/src/store/minimizedRoom';
+import { clearPersistedActiveRoom } from '@/src/store/activeRoom';
 import * as Crypto from 'expo-crypto';
 
 /** Fix 6: Haversine distance in km between two lat/lng points */
@@ -248,12 +250,14 @@ export default function VoiceRoomHome({
   const [allRooms,  setAllRooms]  = useState<RoomInfo[]>(() => cachedSeed?.allRooms ?? []);
   const [recLoading, setRecLoading] = useState(() => !cachedSeed);
 
-  // Phase D (CDN room directory, 2026-10-28): public rooms come from the
+  // Phase D (CDN room directory, 2026-10-28): public rooms came from the
   // edge (3s edge cache, 60s tier cache) instead of a full Firebase rooms
   // query + 2 live subscriptions per room. Private rooms NEVER touch the
-  // public CDN — they still come from Firebase below. If the directory
-  // fails, the Firebase all-rooms feed is the fallback (directoryFailed
-  // flips the gate). Later poll failures keep the last good list.
+  // public CDN — they still come from Firebase below.
+  // 2026-11-01 (boss: Trending realtime): the live Firebase feed is now
+  // PRIMARY and the edge directory is only its seed/fallback — the old
+  // "directoryFailed flips the gate" fallback model is retired. Later poll
+  // failures keep the last good list.
   const DIRECTORY_URL = 'https://vee-edge.sumon118858.workers.dev/rooms/directory';
   const [directoryOk, setDirectoryOk] = useState(false);
   const [directoryFailed, setDirectoryFailed] = useState(false);
@@ -424,8 +428,12 @@ export default function VoiceRoomHome({
     return fn;
   };
 
+  // 2026-11-01 (boss: switch-room popup): while minimized in one room,
+  // tapping a DIFFERENT room asks first instead of joining directly.
+  const [pendingSwitchRoom, setPendingSwitchRoom] = useState<RoomInfo | null>(null);
+  const [pendingSwitchFrom, setPendingSwitchFrom] = useState<MinimizedRoom | null>(null);
   // Handle room card press — show PIN dialog for private rooms
-  const handleRoomPress = async (room: RoomInfo) => {
+  const proceedToRoom = async (room: RoomInfo) => {
     // Private rooms require PIN (isPublic === false OR undefined/missing = private by default for safety)
     if (room.isPublic !== true) {
       // Owner bypasses PIN — they created the room and already know it
@@ -440,7 +448,49 @@ export default function VoiceRoomHome({
       goToRoom(room.id, user?.displayName ?? user?.uid);
     }
   };
+  const handleRoomPress = async (room: RoomInfo) => {
+    const min = getMinimizedRoom();
+    if (min) {
+      if (min.id === room.id) {
+        // Same room: restore path — already a member, no PIN, no popup.
+        goToRoom(room.id, user?.displayName ?? user?.uid);
+        return;
+      }
+      // Different room while minimized: ask first, never join directly.
+      setPendingSwitchFrom(min);
+      setPendingSwitchRoom(room);
+      return;
+    }
+    await proceedToRoom(room);
+  };
   handleRoomPressRef.current = handleRoomPress;
+
+  // 2026-11-01 (boss: switch-room popup): Yes = the PROVEN
+  // MinimizedRoomBar.handleClose clean-leave sequence for the OLD room,
+  // then proceed to the pending room. (No Haptics / router.replace here:
+  // this screen IS home already, and navigation follows via proceedToRoom.)
+  const confirmSwitchRoom = () => {
+    const target = pendingSwitchRoom;
+    const from = pendingSwitchFrom;
+    setPendingSwitchRoom(null);
+    setPendingSwitchFrom(null);
+    if (!target || !from) return;
+    destroyPersistedVoiceRoomEngine();
+    if (from.mySeatIdx >= 0) {
+      removeSeat(from.id, from.mySeatIdx).catch(() => {});
+      // Seated users keep an audience record — clean it or it ghosts.
+      leaveAudience(from.id, from.myUid).catch(() => {});
+    } else {
+      leaveAudience(from.id, from.myUid).catch(() => {});
+    }
+    clearPersistedActiveRoom().catch(() => {});
+    setMinimizedRoom(null);
+    void proceedToRoom(target);
+  };
+  const cancelSwitchRoom = () => {
+    setPendingSwitchRoom(null);
+    setPendingSwitchFrom(null);
+  };
 
   const handlePinSubmit = async () => {
     if (!pinDialogRoom) return;
@@ -523,6 +573,34 @@ export default function VoiceRoomHome({
     lastCacheWriteRef.current = now;
     AsyncStorage.setItem(ROOMS_CACHE_KEY, JSON.stringify(memoryCachedVoiceRooms)).catch(() => {});
   }, []);
+  // 2026-11-01 (boss: Trending realtime): the live Firebase feed is the
+  // PRIMARY public source — one listener, counts update on join/leave
+  // instantly. The edge directory is only a seed until the live feed
+  // first delivers (or after it errors); the 15s poll tick recomputes
+  // through this same step and can never overwrite live data with
+  // tier-cached data. Live feeds are NEVER veiled (they update on leave
+  // in real time); the batch40 self-veil applies to tier payloads only.
+  // During pass2 home mode this is a no-op — the tier lists own allRooms.
+  const liveRoomsRef = useRef<RoomInfo[]>([]);
+  const liveDeliveredRef = useRef(false);
+  const userUidRef = useRef<string | undefined>(user?.uid);
+  userUidRef.current = user?.uid;
+  const pass2HomeActiveRef = useRef(pass2HomeActive);
+  pass2HomeActiveRef.current = pass2HomeActive;
+  const recomputeAllRooms = useCallback(() => {
+    if (pass2HomeActiveRef.current) return;
+    const pub = liveDeliveredRef.current ? liveRoomsRef.current : directoryRoomsRef.current;
+    const mergedRaw = mergeDirectoryRooms(pub, privateRoomsRef.current);
+    const uid = userUidRef.current;
+    const merged = (!liveDeliveredRef.current && uid) ? mergedRaw.map((r) => stripSelfFromRoom(r, uid)) : mergedRaw;
+    // Fix #23: identical visible content → no set, no cache churn.
+    if (roomsSignature(merged) === allRoomsSigRef.current) return;
+    allRoomsSigRef.current = roomsSignature(merged);
+    setAllRooms(merged);
+    setRecLoading(false);
+    cacheRooms(uid ?? '', myRoomsRef.current, merged);
+  }, [mergeDirectoryRooms, roomsSignature, cacheRooms]);
+
   // Cold start: disk cache seeds each list ONLY until its own live feed
   // arrives — the tab renders instantly with zero loader, then refreshes.
   useEffect(() => {
@@ -595,33 +673,26 @@ export default function VoiceRoomHome({
         clearTimeout(to);
         if (!res.ok) throw new Error('directory ' + res.status);
         const json = await res.json();
-        if (cancelled || !Array.isArray((json as any)?.rooms)) return;
+        if (cancelled) return;
+        // 2026-11-01 (boss: stuck refresh spinner): a malformed payload
+        // used to return without stopping the spinner — finish it here.
+        if (!Array.isArray((json as any)?.rooms)) { finishRefresh(); return; }
         const mapped = ((json as any).rooms as any[]).map(normalizeDirectoryRoom).filter((r): r is RoomInfo => r !== null);
         mapped.sort((a, b) => b.createdAt - a.createdAt);
         directoryRoomsRef.current = mapped;
         directoryIdsRef.current = new Set(mapped.map((r) => r.id));
         directoryEverOkRef.current = true;
-        const mergedRaw = mergeDirectoryRooms(mapped, privateRoomsRef.current);
-        // 2026-10-31 (boss: stale avatar + count after exit, PERMANENT):
-        // veil self from tier-cached directory payloads for 90s after a
-        // true leave — the tier cache (60s) would otherwise re-add the
-        // leaver on the next poll. Live Firebase feeds are NOT veiled
-        // (they update on leave in real time).
-        const merged = user?.uid ? mergedRaw.map((r) => stripSelfFromRoom(r, user.uid)) : mergedRaw;
-        recLiveRef.current = true;
-        // Fix #23: identical poll result → no set, no re-render, no cache
-        // churn. The refresh spinner still stops via finishRefresh().
-        if (roomsSignature(merged) === allRoomsSigRef.current) {
-          finishRefresh();
-          return;
-        }
-        allRoomsSigRef.current = roomsSignature(merged);
-        setAllRooms(merged);
-        setRecLoading(false);
         setDirectoryOk(true);
-        cacheRooms(user?.uid ?? '', myRoomsRef.current, merged);
+        recLiveRef.current = true;
+        // 2026-11-01 (boss: Trending realtime): the poll tick recomputes
+        // through the shared step — while the live feed has delivered it
+        // cannot overwrite live data with tier-cached data.
+        recomputeAllRooms();
         finishRefresh();
       } catch {
+        // 2026-11-01 (boss: stuck refresh spinner): a failed poll used to
+        // leave the spinner hanging until the 8s timeout — finish it here.
+        if (!cancelled) finishRefresh();
         if (!cancelled && !directoryEverOkRef.current) setDirectoryFailed(true);
       }
     };
@@ -632,41 +703,42 @@ export default function VoiceRoomHome({
   }, [refreshTick]);
 
   // Private rooms in directory mode (never on the public CDN).
+  // 2026-11-01 (boss: Trending realtime): no longer waits for
+  // directoryOk — the live feed is primary, so private rooms join the
+  // shared recompute as soon as their own feed delivers.
   useEffect(() => {
-    if (!directoryOk) return;
     if (pass2HomeActive) return; // pass2 REST lists own this feed
     const unsub = subscribePrivateActiveRooms((rooms) => {
       privateRoomsRef.current = rooms;
-      const mergedRaw = mergeDirectoryRooms(directoryRoomsRef.current, rooms);
-      const merged = user?.uid ? mergedRaw.map((r) => stripSelfFromRoom(r, user.uid)) : mergedRaw;
-      setAllRooms(merged);
-      cacheRooms(user?.uid ?? '', myRoomsRef.current, merged);
+      recomputeAllRooms();
     }, () => {
       // Feed error: keep the last list, never wipe.
     });
     return unsub;
-  }, [directoryOk, pass2HomeActive]);
+  }, [pass2HomeActive, recomputeAllRooms]);
 
-  // Subscribe to all active public rooms (fallback: runs only while the
-  // directory has neither succeeded nor failed yet — i.e. never once the
-  // directory is up, and always when it is down).
+  // 2026-11-01 (boss: Trending realtime): the live Firebase feed is now
+  // the PRIMARY public directory source — one listener, counts update on
+  // join/leave instantly. The edge poll is only a seed until this feed
+  // first delivers (or after it errors).
   useEffect(() => {
-    if (directoryOk || !directoryFailed) return;
     if (pass2HomeActive) return; // pass2 mode: cache + directory retry, never Firebase fallback
     const unsub = subscribeActiveRooms((rooms) => {
+      liveDeliveredRef.current = true;
+      liveRoomsRef.current = rooms;
       recLiveRef.current = true;
-      setAllRooms(rooms);
-      setRecLoading(false);
-      cacheRooms(user?.uid ?? '', myRoomsRef.current, rooms);
+      recomputeAllRooms();
       finishRefresh();
     }, () => {
-      // Feed error: keep the cached list (never wipe it with []), and do
-      // NOT mark the feed live — the empty-state text stays suppressed
+      // Feed error: fall back to the directory seed, never wipe — and do
+      // NOT mark the feed live, so the empty-state text stays suppressed
       // until a real feed confirms the list is truly empty.
+      liveDeliveredRef.current = false;
+      recomputeAllRooms();
       finishRefresh();
     });
     return unsub;
-  }, [refreshTick, directoryOk, directoryFailed, pass2HomeActive]);
+  }, [refreshTick, pass2HomeActive, recomputeAllRooms]);
 
   // Fix 6: Request location permission when "Nearby" tab is selected
   useEffect(() => {
@@ -998,7 +1070,17 @@ export default function VoiceRoomHome({
           setFollowingsOpen(false);
           const fresh = roomsByIdRef.current.get(roomId);
           if (fresh) void handleRoomPressRef.current(fresh);
-          else goToRoom(roomId, user?.displayName ?? user?.uid);
+          else {
+            const min = getMinimizedRoom();
+            if (min && min.id !== roomId) {
+              // Unknown ID: no RoomInfo to PIN-check (today's path joins
+              // directly), so the popup routes straight to goToRoom on Yes.
+              setPendingSwitchFrom(min);
+              setPendingSwitchRoom({ id: roomId, name: roomId, isPublic: true } as RoomInfo);
+            } else {
+              goToRoom(roomId, user?.displayName ?? user?.uid);
+            }
+          }
         }}
       />
 
@@ -1139,6 +1221,46 @@ export default function VoiceRoomHome({
                 <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>
                   {pinVerifying ? 'Verifying…' : 'Join Room'}
                 </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* 2026-11-01 (boss: switch-room popup): minimized in one room,
+          tapped another — ask first, never join directly. */}
+      <Modal
+        visible={!!pendingSwitchRoom}
+        animationType="fade"
+        transparent
+        onRequestClose={cancelSwitchRoom}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+          onPress={cancelSwitchRoom}
+        >
+          <Pressable style={{ width: '100%', maxWidth: 360 }} onPress={() => {}}>
+            <View style={{
+              backgroundColor: '#FFFFFF', borderRadius: 24, padding: 28,
+              borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
+              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20 }}>
+              <Text style={{ color: '#000000', fontSize: 18, fontWeight: '900', marginBottom: 12 }}>
+                Switch to this room?
+              </Text>
+              <Text style={{ color: '#8E8E93', fontSize: 14, marginBottom: 20 }}>
+                You are in "{pendingSwitchFrom?.name}". Switch to "{pendingSwitchRoom?.name}"?
+              </Text>
+              <Pressable
+                onPress={confirmSwitchRoom}
+                style={{ backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 10 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>Yes</Text>
+              </Pressable>
+              <Pressable
+                onPress={cancelSwitchRoom}
+                style={{ backgroundColor: '#F2F2F7', borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#000000', fontSize: 16, fontWeight: '900' }}>No</Text>
               </Pressable>
             </View>
           </Pressable>

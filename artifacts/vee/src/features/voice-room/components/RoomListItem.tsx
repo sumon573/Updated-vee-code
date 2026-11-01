@@ -50,6 +50,10 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
   const { t } = useTranslation();
   const previews = room.memberPreviews?.slice(0, MAX_DP) ?? [];
+  // 2026-11-01 (boss: nothing wrong shown): every number on this card is
+  // exactly the liveCount signal the onlyLive filter uses — never a
+  // different field (memberCount alone would show a stale seated count).
+  const shownCount = liveCount ?? room.liveCount ?? room.memberCount;
   const isPrivate = room.isPublic === false;
   // 2026-10-11 Issue #1: show the TRUE live audience (everyone who entered,
   // seat not required) — never the stale cached seat-only count.
@@ -105,7 +109,7 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               }}>
                 <Feather name="users" size={11} color={C.muted} />
                 <Text style={{ color: C.text, fontSize: 12, fontWeight: '700' }}>
-                  {liveCount ?? room.liveCount ?? room.memberCount}
+                  {shownCount}
                 </Text>
               </View>
               {/* Nearby distance (2026-10-11): REAL owner distance from viewer */}
@@ -164,7 +168,7 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
                   </View>
                 ),
               )}
-              {room.memberCount > previews.length && (
+              {shownCount > previews.length && (
                 <View style={{
                   width: DP, height: DP, borderRadius: DP / 2,
                   backgroundColor: '#EDE9FE',
@@ -173,14 +177,14 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
                   marginLeft: -8,
                 }}>
                   <Text style={{ color: '#7C3AED', fontSize: 7, fontWeight: '900' }}>
-                    +{(liveCount ?? room.memberCount) - previews.length}
+                    +{shownCount - previews.length}
                   </Text>
                 </View>
               )}
             </View>
           ) : (
             <Text style={{ color: C.muted, fontSize: 12 }}>
-              {t('voiceRoom.listItem.members', { count: liveCount ?? room.liveCount ?? room.memberCount })}
+              {t('voiceRoom.listItem.members', { count: shownCount })}
             </Text>
           )}
 
