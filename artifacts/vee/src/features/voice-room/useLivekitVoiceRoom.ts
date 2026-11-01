@@ -178,6 +178,16 @@ let _watchdogHoldsService = false;
 // path must not trust it. Set on every tick + at watchdog start.
 let _lastWatchdogTick = 0;
 
+// 2026-11-01 (boss: long-background return = dead buttons + dead mic):
+// _lastWatchdogTick was written on every tick but NEVER read — the freeze
+// check the 2026-10-26 comment promised was never wired. A gap over 120 s
+// proves JS was frozen (Tecno/HiOS force-freeze), so any cached
+// 'connected' string from before the gap is unproven and must not be
+// trusted by the watchdog or the restore path.
+function wasFrozen(): boolean {
+  return _lastWatchdogTick > 0 && Date.now() - _lastWatchdogTick > 120_000;
+}
+
 function stopPersistedWatchdog(): void {
   if (_persistedWatchdogTimer) {
     clearInterval(_persistedWatchdogTimer);
@@ -224,7 +234,9 @@ function startPersistedWatchdog(): void {
   _watchdogHoldsService = true;
   _lastWatchdogTick = Date.now();
   const tick = () => {
+    const prevTick = _lastWatchdogTick;
     _lastWatchdogTick = Date.now();
+    const frozen = prevTick > 0 && Date.now() - prevTick > 120_000;
     void (async () => {
       const p = _persistedRoom;
       if (!p) {
@@ -237,11 +249,29 @@ function startPersistedWatchdog(): void {
       } catch {
         conn = 'failed';
       }
-      // Healthy, or the SDK is healing it in place — hands off.
-      if (conn === 'connected' || conn === 'reconnecting' || conn === 'connecting') return;
+      // Healthy, or the SDK is healing it in place — hands off. A frozen
+      // return distrusts cached strings: repair even when it reads
+      // healthy. A dead mic track with a proven connection restarts just
+      // the track (no leave, no re-entry).
+      let trackDead = false;
+      try {
+        trackDead = p.published && !p.engine.isMicTrackLive();
+      } catch {
+        trackDead = false;
+      }
+      if ((conn === 'connected' || conn === 'reconnecting' || conn === 'connecting') && !frozen && !trackDead) return;
       if (_persistedWatchdogRepairing) return;
       _persistedWatchdogRepairing = true;
       try {
+        if (trackDead && !frozen) {
+          await p.engine.restartMicTrack();
+          if (_persistedRoom !== p) return;
+          const s = p.engine.getLocalState();
+          p.muted = s.muted;
+          p.published = s.publishing;
+          p.speakerOn = s.speakerOn;
+          return;
+        }
         await p.engine.leave();
         // Consumed or destroyed while leaving — do not resurrect.
         if (_persistedRoom !== p) return;
@@ -1456,6 +1486,49 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     this.emitLocal();
   }
 
+  /** True when the mic track exists and its media track is still live.
+   *  Fail-closed: no publication while not publishing is not a death
+   *  (nothing claimed), and any read error means 'leave it alone'.
+   *  A track whose mediaStreamTrack.readyState is 'ended' is dead even
+   *  while `publishing` still claims true — that is the mic-dead-but-
+   *  hearing-alive state (hearing is subscription, independent of the
+   *  publish track). */
+  isMicTrackLive(): boolean {
+    const room = this.room;
+    if (!room) return true;
+    try {
+      const pubs = Array.from(room.localParticipant.audioTrackPublications.values());
+      for (const pub of pubs) {
+        const track = pub.track as unknown as {
+          mediaStreamTrack?: { readyState?: string };
+        } | null;
+        if (track?.mediaStreamTrack) {
+          return track.mediaStreamTrack.readyState !== 'ended';
+        }
+      }
+      return !this.publishing;
+    } catch {
+      return true;
+    }
+  }
+
+  /** Restart a dead mic track WITHOUT tearing the room down (no re-entry,
+   *  no dip for others). publish() re-applies this.muted, so the user's
+   *  mute intent survives the restart. */
+  async restartMicTrack(): Promise<void> {
+    const room = this.room;
+    if (!room || !this.lk) return;
+    this.publishing = false;
+    try {
+      await this.enqueueNativeOp(() =>
+        room.localParticipant.setMicrophoneEnabled(false),
+      );
+    } catch {
+      // dead track anyway — publish fresh below
+    }
+    await this.publish();
+  }
+
   async setMuted(muted: boolean): Promise<boolean> {
     this.muted = muted;
     await this.applyTrackMute(muted);
@@ -1713,6 +1786,19 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       if (conn !== 'connected' && conn !== 'reconnecting' && !sessionWatchdogRepairingRef.current) {
         retryConnectionRef.current();
       }
+      // 2026-11-01 (boss: mic dead but hearing alive after freeze/glitch):
+      // the room can stay 'connected' (hearing works) while the mic track
+      // itself ended. Restart just the track — no leave, no re-entry.
+      if (conn === 'connected' && !sessionWatchdogRepairingRef.current) {
+        try {
+          const st = engine.getLocalState();
+          if (st.publishing && !engine.isMicTrackLive()) {
+            void engine.restartMicTrack().catch(() => {});
+          }
+        } catch {
+          // non-critical — next tap or tick re-checks
+        }
+      }
     };
 
     // ── Normal cleanup helper ─────────────────────────────────────────────
@@ -1789,7 +1875,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     if (_persistedRoom && _persistedRoom.roomId === roomID) {
       try {
         const c = _persistedRoom.engine.getLocalState().connection;
-        canRestore = c === 'connected' || c === 'reconnecting';
+        // 2026-11-01: a frozen return must not trust a cached 'connected'
+        // (the 2026-10-26 check, now wired via wasFrozen), and an engine
+        // mid-watchdog-repair must not be restored either — both fall
+        // through to a fresh join below.
+        canRestore = (c === 'connected' || c === 'reconnecting') && !wasFrozen() && !_persistedWatchdogRepairing;
       } catch {
         canRestore = false;
       }
@@ -2165,6 +2255,18 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const toggleMic = useCallback((): boolean => {
     const engine = engineRef.current;
     if (!engine) return mutedRef.current;
+    // 2026-11-01 (boss: mic dead but hearing alive): a mic track that
+    // ended while `publishing` stayed true makes every tap a no-op mute
+    // flip on a dead track. Restart the track; keep the mute intent
+    // (the restart re-applies it) so the seat write stays a no-op.
+    try {
+      if (engine.getLocalState().publishing && !engine.isMicTrackLive()) {
+        void engine.restartMicTrack().catch(() => {});
+        return mutedRef.current;
+      }
+    } catch {
+      // fall through to the normal toggle
+    }
     // Call the engine OUTSIDE the state setter: if the native call throws,
     // the exception must not propagate through React's reconciler.
     // Use the ref for synchronous current-value tracking.
