@@ -576,7 +576,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             // soft shadow on incoming; tail notch added as first child.
             backgroundColor: bubbleBg,
             borderRadius: 20,
-            paddingHorizontal: 14, paddingVertical: 12,
+            paddingHorizontal: 12, paddingVertical: 10,
             borderWidth: 0,
             overflow: 'visible',
             ...(isMe ? {} : {
@@ -589,7 +589,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             // soft shadow.
             backgroundColor: bubbleBg,
             borderRadius: 20,
-            paddingHorizontal: 14, paddingVertical: 11,
+            paddingHorizontal: 12, paddingVertical: 10,
             borderWidth: isMe ? 0 : 1, borderColor: C.border,
             ...(isMe ? {} : {
               shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4,
@@ -639,7 +639,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               </Text>
             </Pressable>
           ) : message.type === 'call' ? (
-            // Fix #31 (imo-exact call card): tail notch + white 56dp icon
+            // Fix #31 (imo-exact call card): tail notch + white 46dp icon
             // circle + bold title + grey action/duration subtitle. The
             // outer Pressable handles tap-to-call (see onPress above).
             <View>
@@ -649,15 +649,15 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
                 width: 14, height: 14, backgroundColor: bubbleBg,
                 transform: [{ rotate: '45deg' }],
               }} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{
-                  width: 56, height: 56, borderRadius: 28,
+                  width: 46, height: 46, borderRadius: 23,
                   backgroundColor: '#FFFFFF',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
                   shadowOffset: { width: 0, height: 2 }, elevation: 2,
                 }}>
-                  <Feather name={callIconName} size={26} color={callIconColor} />
+                  <Feather name={callIconName} size={22} color={callIconColor} />
                 </View>
                 {/* FIX #37: NO flex on this text container. flex:1 inside this
                     indefinite-width row (content-driven chain under a maxWidth-only
@@ -667,10 +667,10 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
                     re-add flex here. Titles/subtitles are short literals, so the
                     row (56 icon + 12 gap + ~150 text) always fits maxWidth 0.78. */}
                 <View>
-                  <Text style={{ color: textColor, fontSize: 18, fontWeight: '700' }}>
+                  <Text style={{ color: textColor, fontSize: 16, fontWeight: '700' }}>
                     {callTitle}
                   </Text>
-                  <Text style={{ color: C.muted, fontSize: 16, marginTop: 2 }}>
+                  <Text style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>
                     {callSubtitle}
                   </Text>
                 </View>
@@ -714,7 +714,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             // last word + spacer wrap together to a new line — the
             // bubble gains one line, but the time never splits and
             // never covers text.
-            <Text style={{ color: textColor, fontSize: 16, lineHeight: 22 }}>
+            <Text style={{ color: textColor, fontSize: 15, lineHeight: 21 }}>
               {message.content}
               <Text style={{ color: 'transparent', fontSize: 12 }}>
                 {'\u00A0'.repeat(isMe ? 32 : 26)}

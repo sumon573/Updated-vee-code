@@ -2186,14 +2186,14 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                     disabled={blockDirection !== 'none'}
                     onPress={() => { void handleQuickReaction(emoji); }}
                     style={{
-                      width: 48, height: 48, borderRadius: 24,
+                      width: 40, height: 40, borderRadius: 20,
                       backgroundColor: '#FFFFFF',
                       alignItems: 'center', justifyContent: 'center',
                       shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
                       shadowOffset: { width: 0, height: 2 }, elevation: 2,
                     }}
                   >
-                    <Text style={{ fontSize: 26 }}>{emoji}</Text>
+                    <Text style={{ fontSize: 22 }}>{emoji}</Text>
                   </Pressable>
                 ))}
               </View>
