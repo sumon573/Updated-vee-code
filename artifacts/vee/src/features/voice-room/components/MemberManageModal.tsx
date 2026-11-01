@@ -10,6 +10,7 @@ import { getOfficialBadgeIconUrl } from '@/src/services/verifiedService';
 import { useVerifiedBadge } from '@/src/hooks/useVerifiedBadge';
 import { truncateTo12 } from '@/src/utils/truncateName';
 import { useIsKing } from '@/src/hooks/useNobleRank';
+import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
 
 import MistNameplate from '@/src/components/MistNameplate';
@@ -49,6 +50,12 @@ export function MemberManageModal({
   const { t } = useTranslation();
   // 2026-11-01 (batch56): King gold + shimmer on the header name.
   const isKing = useIsKing(member?.id);
+  // 2026-11-01 (batch59, boss: King frame missing in this sheet): the
+  // Avatar below used the join-time snapshot (member as any).activeFrame,
+  // which room rows do not reliably carry — so no frame showed even though
+  // the live pointer is noble-frame-king. Same live subscription SeatCard
+  // already uses: direct users/{uid}/activeFrame, no snapshots.
+  const liveFrameId = useActiveFrame(member?.id);
 
   // 2026-10-15 (Sumon, URGENT): Rules of Hooks — ALL hooks must run before
   // any early return. Previously `if (!member) return null` sat ABOVE these
@@ -145,7 +152,8 @@ export function MemberManageModal({
               speaking={member.speaking}
               accent={C.primary}
               photoURL={member.photoURL}
-              frameType={(member as any).activeFrame || undefined}
+              frameType={liveFrameId || undefined}
+              nobleRankIndex={member.nobleRankIndex}
             />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
