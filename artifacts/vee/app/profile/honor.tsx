@@ -72,7 +72,7 @@ function NoblePlatePill({ itemId, icon, imageStyle, textStyle, pillWrapStyle }: 
   const rankIndex = NOBLE_RANKS.findIndex((r) => r.key === itemId.slice('noble-plate-'.length));
   if (mistColor || rankIndex < 0) {
     return /^https?:\/\//i.test(icon || '') ? (
-      <Image source={{ uri: icon }} style={imageStyle} contentFit="contain" cachePolicy="memory-disk" />
+      <Image source={{ uri: icon }} style={imageStyle} contentFit="contain" />
     ) : (
       <Text style={textStyle}>{icon}</Text>
     );
@@ -284,7 +284,7 @@ export default function HonorScreen() {
       {/* Profile row (IMO style) — white card */}
       <View style={[cardStyle, { flexDirection: 'row', alignItems: 'center', padding: 15 }]}>
         {photoURL ? (
-          <Image source={{ uri: photoURL }} style={{ width: 52, height: 52, borderRadius: 26 }} cachePolicy="memory-disk" />
+          <Image source={{ uri: photoURL }} style={{ width: 52, height: 52, borderRadius: 26 }} />
         ) : (
           <View style={{
             width: 52, height: 52, borderRadius: 26, backgroundColor: C.tile,
@@ -515,7 +515,7 @@ function BadgeSection({
               backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder,
               alignItems: 'center', justifyContent: 'center' }}>
               {/^https?:\/\//i.test(b.icon || '') ? (
-                <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} contentFit="contain" cachePolicy="memory-disk" />
+                <Image source={{ uri: b.icon }} style={{ width: 48, height: 48 }} contentFit="contain" />
               ) : (
                 <Text style={{ fontSize: 34 }}>{b.icon}</Text>
               )}

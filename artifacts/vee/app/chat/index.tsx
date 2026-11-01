@@ -6,7 +6,7 @@
  * Pin/Unpin: Long-press on chat item।
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, TextInput, Pressable, FlatList, Platform, Alert } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -114,11 +114,8 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     return () => { live = false; };
   }, [coupleInvites, coupleSenderProfiles]);
 
-  const visibleCoupleInvites = useMemo(
-    () => coupleInvites.filter(
-      (i) => i.status === 'pending' || actedCoupleInviteIds.includes(i.id),
-    ),
-    [coupleInvites, actedCoupleInviteIds],
+  const visibleCoupleInvites = coupleInvites.filter(
+    (i) => i.status === 'pending' || actedCoupleInviteIds.includes(i.id),
   );
 
   // ── Friend invitations (2026-10-27, friendship correction) ───────────
@@ -153,11 +150,8 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     return () => { live = false; };
   }, [friendInvites, friendSenderProfiles]);
 
-  const visibleFriendInvites = useMemo(
-    () => friendInvites.filter(
-      (i) => i.status === 'pending' || actedFriendInviteIds.includes(i.id),
-    ),
-    [friendInvites, actedFriendInviteIds],
+  const visibleFriendInvites = friendInvites.filter(
+    (i) => i.status === 'pending' || actedFriendInviteIds.includes(i.id),
   );
 
   const handleAcceptCoupleInvite = useCallback(async (invite: CoupleInvite) => {
@@ -369,28 +363,21 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
     );
   }, [router]);
 
-  // 2026-11-02 smoothness: filter + sort + split ran inline on EVERY
-  // render, handing FlatList a fresh `regularChats` array each time (any
-  // parent state change — story/invite updates included — re-diffed the
-  // whole list). Memoized on the real inputs; item objects keep identity
-  // so memo'd ChatListItem rows still skip unchanged rows.
-  const filteredChats = useMemo(() => (
-    search.trim()
-      ? chats.filter((c) =>
-          (c.participantName || '').toLowerCase().includes(search.toLowerCase()),
-        )
-      : chats
-  ), [chats, search]);
+  const filteredChats = search.trim()
+    ? chats.filter((c) =>
+        (c.participantName || '').toLowerCase().includes(search.toLowerCase()),
+      )
+    : chats;
 
   // Per Sumon 2026-10-12: pinned chats MUST appear at top.
   // Sort as safety net in case section rendering has issues.
-  const sortedByPin = useMemo(() => [...filteredChats].sort((a, b) => {
+  const sortedByPin = [...filteredChats].sort((a, b) => {
     const aPinned = a.isPinned === true ? 1 : 0;
     const bPinned = b.isPinned === true ? 1 : 0;
     return bPinned - aPinned;
-  }), [filteredChats]);
-  const pinnedChats  = useMemo(() => sortedByPin.filter(c => c.isPinned), [sortedByPin]);
-  const regularChats = useMemo(() => sortedByPin.filter(c => !c.isPinned), [sortedByPin]);
+  });
+  const pinnedChats  = sortedByPin.filter(c => c.isPinned);
+  const regularChats = sortedByPin.filter(c => !c.isPinned);
 
   // H4: refs so stable id-based handlers can find the chat object.
   const pinnedChatsRef = useRef(pinnedChats);
@@ -430,13 +417,8 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
   }
 
   // ── List header ──────────────────────────────────────────────────────────────
-  // 2026-11-02 smoothness: this was a render-local function component, so
-  // its identity changed on EVERY parent render and FlatList UNMOUNTED +
-  // REMOUNTED the whole header subtree each time — including the StoryBar
-  // (fresh tiles, re-run effects) on every chat-list update. Now a memoized
-  // element: stable unless one of its real inputs changes. StoryBar is
-  // purely prop-driven, so holding it mounted changes nothing visually.
-  const listHeader = useMemo(() => (
+  function ListHeader() {
+    return (
       <View>
         {/* Story bar */}
         <StoryBar
@@ -517,14 +499,8 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
           </>
         )}
       </View>
-  ), [
-    stories, storiesLoading, openStory, openCreator, onOpenPlanet,
-    visibleCoupleInvites, coupleSenderProfiles,
-    handleAcceptCoupleInvite, handleRejectCoupleInvite,
-    visibleFriendInvites, friendSenderProfiles,
-    handleAcceptFriendInvite, handleRejectFriendInvite,
-    pinnedChats, regularChats, handleChatPressById, handleChatLongPressById, t,
-  ]);
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -605,7 +581,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               // H4: fixed row height (73 = 52 avatar + 20 vertical padding +
               // 1 divider) enables getItemLayout for smooth scroll.
               getItemLayout={(_, index) => ({ length: 73, offset: 73 * index, index })}
-              ListHeaderComponent={listHeader}
+              ListHeaderComponent={ListHeader}
               ListEmptyComponent={pinnedChats.length === 0 ? <EmptyState /> : null}
               contentContainerStyle={{ paddingBottom: 120 }}
               showsVerticalScrollIndicator={false}

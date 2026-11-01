@@ -6,7 +6,7 @@
  * Fix: uid always set from child.key so participantId is never undefined.
  */
 
-import { useState, useCallback, useEffect, useRef, memo, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Modal, TextInput, Pressable, FlatList, Image, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -63,14 +63,7 @@ type UserActionState = {
   isFollowing?: boolean;
 };
 
-// 2026-11-02 smoothness (batch B): memo'd avatar + memo'd result row
-// (below) + stable renderItem + windowing. The old inline renderItem
-// rebuilt every row on each keystroke/status load; now a status load
-// for one user re-renders only that user's row (its `actions` slice is
-// the only prop that changes). No getItemLayout: the list's
-// contentContainer paddingTop shifts every row, and a plain row-height
-// offset would misplace the windowing math.
-const UserAvatar = memo(function UserAvatar({ user }: { user: VeeUser }) {
+function UserAvatar({ user }: { user: VeeUser }) {
   const displayName = user.name || (user.email ? user.email.split('@')[0] : null) || '?';
   const initials = displayName !== '?'
     ? displayName.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
@@ -91,46 +84,7 @@ const UserAvatar = memo(function UserAvatar({ user }: { user: VeeUser }) {
       <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>{initials}</Text>
     </View>
   );
-});
-
-const EMPTY_ACTIONS: UserActionState = {};
-
-const UserResultRow = memo(function UserResultRow({
-  item,
-  actions,
-  onVisitProfile,
-  renderActionButtons,
-}: {
-  item: VeeUser;
-  actions: UserActionState;
-  onVisitProfile: (user: VeeUser) => void;
-  renderActionButtons: (item: VeeUser, actions: UserActionState) => ReactNode;
-}) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center',
-      paddingVertical: 10, borderBottomWidth: 1,
-      borderBottomColor: C.border }}>
-      {/* Avatar + Info — tap to visit profile */}
-      <Pressable
-        onPress={() => onVisitProfile(item)}
-        style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-      >
-        <UserAvatar user={item} />
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-            {item.name || (item.email ? item.email.split('@')[0] : null) || 'User'}
-          </Text>
-          <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-            #{item.vId}
-          </Text>
-        </View>
-      </Pressable>
-
-      {renderActionButtons(item, actions)}
-    </View>
-  );
-});
+}
 
 export default function UserSearchModal({ visible, onClose, onSelectUser }: Props) {
   const { user: me } = useAuth();
@@ -321,10 +275,8 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
 
   // ── Action button rendering ────────────────────────────────────────────────
 
-  // 2026-11-02 smoothness: takes the per-user `actions` slice as a
-  // parameter (instead of closing over the whole userActions map) so
-  // the memo'd row below re-renders only when ITS slice changes.
-  const renderActionButtons = useCallback((item: VeeUser, a: UserActionState) => {
+  const renderActionButtons = useCallback((item: VeeUser) => {
+    const a = userActions[item.uid] ?? {};
 
     const alreadyFollowing = a.followed || a.isFollowing;
     const friendSent = a.friendSent || a.friendStatus === 'request-sent';
@@ -411,16 +363,7 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
         </Pressable>
       </View>
     );
-  }, [handleFollow, handleSendFriendRequest, handleVisitProfile]);
-
-  const renderUserItem = useCallback(({ item }: { item: VeeUser }) => (
-    <UserResultRow
-      item={item}
-      actions={userActions[item.uid] ?? EMPTY_ACTIONS}
-      onVisitProfile={handleVisitProfile}
-      renderActionButtons={renderActionButtons}
-    />
-  ), [userActions, handleVisitProfile, renderActionButtons]);
+  }, [userActions, handleFollow, handleSendFriendRequest, handleVisitProfile]);
 
   return (
     <Modal
@@ -488,11 +431,30 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
               data={results}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8 }}
-              renderItem={renderUserItem}
-              windowSize={10}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              removeClippedSubviews
+              renderItem={({ item }) => (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  paddingVertical: 10, borderBottomWidth: 1,
+                  borderBottomColor: C.border }}>
+                  {/* Avatar + Info — tap to visit profile */}
+                  <Pressable
+                    onPress={() => handleVisitProfile(item)}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                  >
+                    <UserAvatar user={item} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                        {item.name || (item.email ? item.email.split('@')[0] : null) || 'User'}
+                      </Text>
+                      <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
+                        #{item.vId}
+                      </Text>
+                    </View>
+                  </Pressable>
+
+                  {renderActionButtons(item)}
+                </View>
+              )}
             />
           ) : searched && query_.trim().length >= 2 ? (
             <View style={{ alignItems: 'center', paddingTop: 60 }}>

@@ -1,6 +1,6 @@
 /* ─────────────────────── Music Add page ─────────────────────── */
 
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, TextInput, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library';
@@ -53,22 +53,17 @@ function isSupportedFile(name: string | null | undefined): boolean {
 
 type RowStatus = 'uploading' | 'done' | 'failed';
 
-/* Fixed row height, same math as the playlist page: 10x2 + 48 + 1 = 69. */
-const MUSIC_ROW_HEIGHT = 69;
-
-// Perf: memoized — previously every parent re-render (each keystroke of
-// search, each upload status tick) re-rendered every visible row.
-const PhoneRow = memo(function PhoneRow(props: {
+function PhoneRow(props: {
   asset: MediaLibrary.Asset;
   selected: boolean;
   status: RowStatus | null;
   palette: MusicPalette;
-  onToggleItem: (id: string) => void;
+  onToggle: () => void;
 }) {
-  const { asset, selected, status, palette, onToggleItem } = props;
+  const { asset, selected, status, palette, onToggle } = props;
   const size = useMediaSize('file', asset.uri);
   return (
-    <Pressable onPress={() => onToggleItem(asset.id)} style={[styles.row, { borderBottomColor: palette.border }]}>
+    <Pressable onPress={onToggle} style={[styles.row, { borderBottomColor: palette.border }]}>
       <View style={[styles.thumb, { backgroundColor: palette.surface }]}>
         <Feather name="music" size={20} color={palette.blue} />
       </View>
@@ -93,7 +88,7 @@ const PhoneRow = memo(function PhoneRow(props: {
       </View>
     </Pressable>
   );
-});
+}
 
 interface AddPageProps {
   active: boolean;
@@ -182,22 +177,9 @@ export function MusicAddPage(props: AddPageProps) {
     [assets, selected],
   );
 
-  const toggle = useCallback((id: string) => {
+  const toggle = (id: string) => {
     setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
-
-  const renderPhoneRow = useCallback(
-    ({ item }: { item: MediaLibrary.Asset }) => (
-      <PhoneRow
-        asset={item}
-        selected={!!selected[item.id]}
-        status={status[item.id] ?? null}
-        palette={palette}
-        onToggleItem={toggle}
-      />
-    ),
-    [selected, status, palette, toggle],
-  );
+  };
 
   const selectAll = () => {
     const allSelected = visible.length > 0 && visible.every((a) => selected[a.id]);
@@ -387,15 +369,15 @@ export function MusicAddPage(props: AddPageProps) {
           data={visible}
           keyExtractor={(a) => a.id}
           showsVerticalScrollIndicator={false}
-          renderItem={renderPhoneRow}
-          getItemLayout={(_data, index) => ({
-            length: MUSIC_ROW_HEIGHT,
-            offset: MUSIC_ROW_HEIGHT * index,
-            index,
-          })}
-          initialNumToRender={12}
-          maxToRenderPerBatch={12}
-          windowSize={7}
+          renderItem={({ item }) => (
+            <PhoneRow
+              asset={item}
+              selected={!!selected[item.id]}
+              status={status[item.id] ?? null}
+              palette={palette}
+              onToggle={() => toggle(item.id)}
+            />
+          )}
         />
       )}
 

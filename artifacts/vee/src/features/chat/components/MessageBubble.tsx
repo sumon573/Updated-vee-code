@@ -499,7 +499,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
       alignItems: 'center', justifyContent: 'center',
     }}>
       {photo ? (
-        <Image source={{ uri: photo }} style={{ width: 36, height: 36, borderRadius: 18 }} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: photo }} style={{ width: 36, height: 36, borderRadius: 18 }} contentFit="cover" cachePolicy="disk" />
       ) : (
         <Feather name="user" size={18} color="#fff" />
       )}

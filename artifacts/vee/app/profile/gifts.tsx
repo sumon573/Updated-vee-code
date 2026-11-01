@@ -646,7 +646,6 @@ export default function GiftDisplayScreen() {
             windowSize={9}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
-            removeClippedSubviews={true}
             style={{
               backgroundColor: C.card, marginHorizontal: 15, marginTop: 12, borderRadius: 12,
               flexGrow: 0, maxHeight: '100%', overflow: 'hidden',

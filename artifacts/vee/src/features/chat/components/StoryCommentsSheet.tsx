@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, Image, TextInput, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,40 +43,41 @@ export default function StoryCommentsSheet({
     }
   }, [visible]);
 
-  // 2026-11-02 smoothness: these derivations ran inline on EVERY render —
-  // including every keystroke in the comment input — rebuilding the whole
-  // comment tree each time. Memoized so typing only re-renders the input.
-  // (Declared before the early return: hooks must run in the same order
-  // whether the sheet is visible or not.)
-  const reactionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const emoji of Object.values(reactions)) {
-      counts.set(emoji, (counts.get(emoji) ?? 0) + 1);
+  if (!visible) return null;
+
+  // Group reactions by emoji.
+  const reactionCounts = new Map<string, number>();
+  for (const emoji of Object.values(reactions)) {
+    reactionCounts.set(emoji, (reactionCounts.get(emoji) ?? 0) + 1);
+  }
+
+  // Sort comments by time, with replies grouped under parents.
+  const topLevel = comments.filter((c) => !c.replyTo).sort((a, b) => a.ts - b.ts);
+  const replies = new Map<string, StoryComment[]>();
+  for (const c of comments.filter((c) => c.replyTo)) {
+    const list = replies.get(c.replyTo!) ?? [];
+    list.push(c);
+    replies.set(c.replyTo!, list);
+  }
+  for (const list of replies.values()) list.sort((a, b) => a.ts - b.ts);
+
+  const handleSend = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await onSendComment(trimmed, replyTo ?? undefined);
+      setText('');
+      setReplyTo(null);
+    } catch (e) {
+      setError(getErrorCause(e));
+    } finally {
+      setSending(false);
     }
-    return counts;
-  }, [reactions]);
+  };
 
-  const topLevel = useMemo(
-    () => comments.filter((c) => !c.replyTo).sort((a, b) => a.ts - b.ts),
-    [comments],
-  );
-
-  const replies = useMemo(() => {
-    const map = new Map<string, StoryComment[]>();
-    for (const c of comments.filter((c) => c.replyTo)) {
-      const list = map.get(c.replyTo!) ?? [];
-      list.push(c);
-      map.set(c.replyTo!, list);
-    }
-    for (const list of map.values()) list.sort((a, b) => a.ts - b.ts);
-    return map;
-  }, [comments]);
-
-  // Stable row renderer (was: a fresh closure on every render, passed to
-  // FlatList via a fresh inline arrow — every keystroke re-rendered all
-  // visible comment rows). Self-recursion through the closure binding is
-  // safe: calls happen only after initialization.
-  const renderComment = useCallback((cmt: StoryComment, isReply: boolean): React.ReactNode => (
+  const renderComment = (cmt: StoryComment, isReply: boolean) => (
     <View key={cmt.id} style={{ marginBottom: 12, marginLeft: isReply ? 44 : 0 }}>
       <View style={{ flexDirection: 'row' }}>
         {cmt.userAvatar ? (
@@ -109,32 +110,7 @@ export default function StoryCommentsSheet({
       {/* Nested replies */}
       {!isReply && (replies.get(cmt.id) ?? []).map((r) => renderComment(r, true))}
     </View>
-  ), [replies, t]);
-
-  const renderCommentItem = useCallback(
-    ({ item }: { item: StoryComment }) => renderComment(item, false),
-    [renderComment],
   );
-
-  const commentKeyExtractor = useCallback((c: StoryComment) => c.id, []);
-
-  if (!visible) return null;
-
-  const handleSend = async () => {
-    const trimmed = text.trim();
-    if (!trimmed || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      await onSendComment(trimmed, replyTo ?? undefined);
-      setText('');
-      setReplyTo(null);
-    } catch (e) {
-      setError(getErrorCause(e));
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <View style={{
@@ -166,16 +142,9 @@ export default function StoryCommentsSheet({
         {/* Comments list */}
         <FlatList
           data={topLevel}
-          keyExtractor={commentKeyExtractor}
-          renderItem={renderCommentItem}
+          keyExtractor={(c) => c.id}
+          renderItem={({ item }) => renderComment(item, false)}
           contentContainerStyle={{ padding: 16 }}
-          // Short list, variable-height rows: no getItemLayout (heights
-          // vary with wrapped text). Windowing + clipping keep long
-          // threads cheap; rows carry no measurement dependencies.
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          removeClippedSubviews={true}
           ListEmptyComponent={
             <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
               {t('chat.storyNoComments', { defaultValue: 'No comments yet. Be the first!' })}

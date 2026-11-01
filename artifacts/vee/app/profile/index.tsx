@@ -546,7 +546,7 @@ function RoomCard({ item, role, ownerCountry, onPress }: {
     <Pressable onPress={onPress} style={{ width: 80, padding: 4, alignItems: 'center' }}>
       <View style={{ width: 72, height: 72, borderRadius: 16, overflow: 'hidden', backgroundColor: C.card }}>
         {item.coverImageUrl ? (
-          <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" cachePolicy="memory-disk" />
+          <Image source={{ uri: item.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8E8ED' }}>
             <Text style={{ fontSize: 36 }}>🎙️</Text>
@@ -567,7 +567,7 @@ function RoomCard({ item, role, ownerCountry, onPress }: {
             backgroundColor: '#E8E8ED',
             shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 2,
             shadowOffset: { width: 0, height: 1 }, elevation: 2 }}>
-            <Image source={{ uri: flagUrl(flagCode) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" cachePolicy="memory-disk" />
+            <Image source={{ uri: flagUrl(flagCode) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
           </View>
         ) : (
           <View style={{
@@ -1722,7 +1722,7 @@ export default function ProfileScreen({
                   <View key={giftId} style={{ width: 80, padding: 4, alignItems: 'center' }}>
                     <View style={{ width: 72, height: 72, backgroundColor: '#FFFFFF', borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                       {giftCatalog[giftId]?.thumbnailUrl ? (
-                        <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" cachePolicy="memory-disk" />
+                        <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
                       ) : (
                         <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
                       )}
@@ -1809,7 +1809,7 @@ export default function ProfileScreen({
                   <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
                     <View style={{ width: 72, aspectRatio: 1, backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
                       {/^https?:\/\//i.test(h.icon || '') ? (
-                        <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" cachePolicy="memory-disk" />
+                        <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
                       ) : (
                         <Text style={{ fontSize: 36 }}>{h.icon}</Text>
                       )}

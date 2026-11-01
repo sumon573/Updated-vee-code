@@ -2,7 +2,6 @@
  * IMOStoryRow — IMO-style story circles row (2026-10-10).
  * "Add a story" + horizontal scrollable story DPs with unread badges.
  */
-import { memo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -20,11 +19,7 @@ interface IMOStoryRowProps {
   onStoryPress: (storyId: string) => void;
 }
 
-// 2026-11-02 smoothness (batch B): memo'd + disk-cached story DPs.
-// The home shell re-renders on every incoming message; with the
-// shell's useMemo'd stories array + stable handlers, the strip now
-// skips those renders entirely instead of re-mapping every circle.
-export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOStoryRowProps) {
+export default function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOStoryRowProps) {
   return (
     <View
       style={{
@@ -114,7 +109,6 @@ export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: 
               {story.photoURL ? (
                 <Image
                   source={{ uri: story.photoURL }}
-                  cachePolicy="memory-disk"
                   style={{ width: hasUnread ? 58 : 60, height: hasUnread ? 58 : 60, borderRadius: hasUnread ? 29 : 30 }}
                 />
               ) : (
@@ -191,4 +185,4 @@ export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: 
       </ScrollView>
     </View>
   );
-});
+}

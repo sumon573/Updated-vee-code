@@ -239,7 +239,7 @@ export default function FriendInviteScreen() {
         }}
       >
         {item.photoURL ? (
-          <Image source={{ uri: item.photoURL }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" cachePolicy="memory-disk" />
+          <Image source={{ uri: item.photoURL }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" />
         ) : (
           <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E3F2FD', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 19, fontWeight: '700', color: C.blue }}>{initial}</Text>
@@ -357,10 +357,6 @@ export default function FriendInviteScreen() {
           keyExtractor={(item) => item.uid}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: 24 }}
-          windowSize={9}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          removeClippedSubviews={true}
         />
       )}
     </SafeAreaView>

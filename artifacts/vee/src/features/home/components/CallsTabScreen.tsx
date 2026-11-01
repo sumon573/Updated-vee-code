@@ -4,7 +4,7 @@
  * 16sp name, call direction/status line, red missed styling, 79dp-inset
  * dividers — matching IMO chat-row tokens.
  */
-import { memo, useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, FlatList, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/context/AuthContext';
@@ -31,10 +31,7 @@ function formatTime(timestamp: number): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-// 2026-11-02 smoothness (batch B): memo'd — the shell re-renders on
-// every message; unchanged call rows now skip. Rows are fixed 76dp,
-// so the list below also gets getItemLayout + windowing tuning.
-const CallRow = memo(function CallRow({
+function CallRow({
   entry,
   onCallBack,
 }: {
@@ -142,7 +139,7 @@ const CallRow = memo(function CallRow({
       />
     </View>
   );
-});
+}
 
 export default function CallsTabScreen({ onCallBack, onMissedCountChange }: CallsTabScreenProps) {
   const { user } = useAuth();
@@ -161,14 +158,6 @@ export default function CallsTabScreen({ onCallBack, onMissedCountChange }: Call
     });
   }, [user?.uid, onMissedCountChange]);
 
-  // 2026-11-02 smoothness (batch B): stable renderItem + fixed-height
-  // layout (76dp rows, verified above) + windowing. Rows are simple
-  // (no measurement deps, no sticky, the inset divider lives inside
-  // its own row), so removeClippedSubviews is safe here.
-  const renderCallRow = useCallback(({ item }: { item: CallHistoryEntry }) => (
-    <CallRow entry={item} onCallBack={onCallBack} />
-  ), [onCallBack]);
-
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       {/* Title bar */}
@@ -186,12 +175,7 @@ export default function CallsTabScreen({ onCallBack, onMissedCountChange }: Call
       <FlatList
         data={entries}
         keyExtractor={(item) => item.id}
-        renderItem={renderCallRow}
-        getItemLayout={(_data, index) => ({ length: 76, offset: 76 * index, index })}
-        windowSize={10}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews
+        renderItem={({ item }) => <CallRow entry={item} onCallBack={onCallBack} />}
         ListEmptyComponent={
           ready ? (
             <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>

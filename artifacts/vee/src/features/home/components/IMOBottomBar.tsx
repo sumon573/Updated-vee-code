@@ -13,21 +13,18 @@
  * the old NetworkStatusBar overlay used — the overlay itself is gone from
  * home, the bottom bar IS the status surface now.
  */
-import { memo, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  subscribeNetworkStatusProbe as subscribeNetworkStatus } from '@/src/services/networkService';
+  subscribeNetworkStatus } from '@/src/services/networkService';
 
 interface IMOBottomBarProps {
   onAddPress: () => void;
   onSearchPress: () => void;
 }
 
-// 2026-11-02 smoothness (batch B): memo'd — same home-shell reason as
-// IMOTopBar; its own network-status state still re-renders it when the
-// connection actually changes. Handler props are stable useCallbacks.
-export default memo(function IMOBottomBar({ onAddPress, onSearchPress }: IMOBottomBarProps) {
+export default function IMOBottomBar({ onAddPress, onSearchPress }: IMOBottomBarProps) {
   const [connecting, setConnecting] = useState(false);
   const wasConnectedRef = useRef(false);
 
@@ -86,4 +83,4 @@ export default memo(function IMOBottomBar({ onAddPress, onSearchPress }: IMOBott
       </TouchableOpacity>
     </View>
   );
-});
+}

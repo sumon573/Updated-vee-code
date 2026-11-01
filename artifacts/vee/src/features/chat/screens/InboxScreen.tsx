@@ -1388,53 +1388,6 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     }
   }, [forwardTarget, forwardSending, myUid, myRealName, user?.displayName, t]);
 
-  // 2026-11-02 smoothness: the forward-picker FlatList used an inline
-  // renderItem (fresh closures per row per render). Hoisted + fixed-height
-  // rows (44px avatar + 12px vertical padding × 2 = 68) get getItemLayout.
-  const renderForwardItem = useCallback(({ item }: { item: Chat }) => (
-    <Pressable
-      disabled={forwardSending}
-      onPress={() => { void handleForwardSend(item); }}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
-    >
-      {item.participantAvatar ? (
-        <Image source={{ uri: item.participantAvatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
-      ) : (
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#D9D9DE', alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name="user" size={20} color="#fff" />
-        </View>
-      )}
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }} numberOfLines={1}>{item.participantName}</Text>
-        <Text style={{ color: C.muted, fontSize: 13 }} numberOfLines={1}>{item.lastMessage}</Text>
-      </View>
-    </Pressable>
-  ), [forwardSending, handleForwardSend]);
-
-  // 2026-11-02 smoothness: pending-media strip used an inline renderItem.
-  // Hoisted; the strip holds at most 10 local thumbs, so no windowing
-  // tuning is needed (and local files gain nothing from cachePolicy).
-  const renderPendingMediaItem = useCallback(({ item }: { item: ImagePicker.ImagePickerAsset }) => (
-    <View style={{ position: 'relative' }}>
-      <Image
-        source={{ uri: item.uri }}
-        style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: '#F0F0F0' }}
-        resizeMode="cover"
-      />
-      {item.type === 'video' && (
-        <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, padding: 4 }}>
-          <Feather name="play" size={14} color="#fff" />
-        </View>
-      )}
-      <Pressable
-        style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#FF3B30', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
-        onPress={() => setPendingMedia((prev) => prev.filter((p) => p.uri !== item.uri))}
-      >
-        <Feather name="x" size={14} color="#fff" />
-      </Pressable>
-    </View>
-  ), []);
-
   // ── Reply ──────────────────────────────────────────────────────────────────
   const handleReply = useCallback((msg: DmMessage) => {
     setReplyTarget(msg);
@@ -2047,12 +2000,25 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                 <FlatList
                   data={forwardChats}
                   keyExtractor={(c) => c.id}
-                  renderItem={renderForwardItem}
-                  getItemLayout={(_, index) => ({ length: 68, offset: 68 * index, index })}
-                  initialNumToRender={12}
-                  maxToRenderPerBatch={10}
-                  windowSize={10}
-                  removeClippedSubviews
+                  renderItem={({ item }) => (
+                    <Pressable
+                      disabled={forwardSending}
+                      onPress={() => { void handleForwardSend(item); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
+                    >
+                      {item.participantAvatar ? (
+                        <Image source={{ uri: item.participantAvatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      ) : (
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#D9D9DE', alignItems: 'center', justifyContent: 'center' }}>
+                          <Feather name="user" size={20} color="#fff" />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }} numberOfLines={1}>{item.participantName}</Text>
+                        <Text style={{ color: C.muted, fontSize: 13 }} numberOfLines={1}>{item.lastMessage}</Text>
+                      </View>
+                    </Pressable>
+                  )}
                 />
               )}
             </SafeAreaView>
@@ -2098,12 +2064,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               // 2026-10-30 (boss: smooth open): 10 initial rows instead
               // of 20 — the viewport shows ~10 bubbles, so the slide
               // window lays out half the work; windowing renders the
-              // rest right after.
-              // 2026-11-02 smoothness: batch trimmed 20 -> 10 (one
-              // viewport per JS tick) so fast flings lay out less per
-              // tick; window 15 keeps coverage so no blank rows appear.
+              // rest right after. Batching/window/clipping untouched.
               initialNumToRender={10}
-              maxToRenderPerBatch={10}
+              maxToRenderPerBatch={20}
               windowSize={15}
               showsVerticalScrollIndicator={false}
               // Fix #31 (imo-like smooth keyboard + zero lag): taps on
@@ -2555,7 +2518,26 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
               horizontal
               keyExtractor={(item) => item.assetId || item.uri}
               contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-              renderItem={renderPendingMediaItem}
+              renderItem={({ item }) => (
+                <View style={{ position: 'relative' }}>
+                  <Image
+                    source={{ uri: item.uri }}
+                    style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: '#F0F0F0' }}
+                    resizeMode="cover"
+                  />
+                  {item.type === 'video' && (
+                    <View style={{ position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, padding: 4 }}>
+                      <Feather name="play" size={14} color="#fff" />
+                    </View>
+                  )}
+                  <Pressable
+                    style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#FF3B30', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
+                    onPress={() => setPendingMedia((prev) => prev.filter((p) => p.uri !== item.uri))}
+                  >
+                    <Feather name="x" size={14} color="#fff" />
+                  </Pressable>
+                </View>
+              )}
             />
             <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginTop: 16, gap: 12 }}>
               <Pressable

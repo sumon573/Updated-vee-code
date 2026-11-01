@@ -4,7 +4,7 @@
  * Requests tab split into: People → Me (received) | Me → People (sent).
  */
 
-import { memo, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { memo, useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, Pressable, Alert, Platform } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
@@ -653,22 +653,10 @@ export default function ContactsScreen() {
 
   // 2026-10-13 (Sumon): ব্লকড ইউজার কোনো লিস্টে দেখা যাবে না
   // (আনব্লক: Privacy → Blocked Users)।
-  // 2026-11-02 smoothness: these were inline filters — a NEW array on
-  // every render, so FlatList re-ran its data diff on every parent state
-  // change (search keystrokes included). Memoized on their real inputs.
-  const visibleContacts = useMemo(
-    () => contacts.filter((u) => !blockedUids.has(u.uid)),
-    [contacts, blockedUids],
-  );
+  const visibleContacts = contacts.filter((u) => !blockedUids.has(u.uid));
 
-  const visibleIncoming = useMemo(
-    () => incomingRequests.filter((r) => !blockedUids.has(r.fromUid)),
-    [incomingRequests, blockedUids],
-  );
-  const visibleSent = useMemo(
-    () => sentRequestUsers.filter((u) => !blockedUids.has(u.uid)),
-    [sentRequestUsers, blockedUids],
-  );
+  const visibleIncoming = incomingRequests.filter((r) => !blockedUids.has(r.fromUid));
+  const visibleSent = sentRequestUsers.filter((u) => !blockedUids.has(u.uid));
 
   const totalRequestsBadge = visibleIncoming.length;
   const topPad = Platform.OS === 'web' ? 67 : 0;
@@ -835,9 +823,6 @@ export default function ContactsScreen() {
               <FlatList
                 style={{ flex: 1 }}
                 removeClippedSubviews={true}
-                initialNumToRender={12}
-                maxToRenderPerBatch={10}
-                windowSize={10}
                 data={visibleIncoming}
                 nestedScrollEnabled={true}
                 keyExtractor={(item) => item.fromUid}
@@ -865,9 +850,6 @@ export default function ContactsScreen() {
               <FlatList
                 style={{ flex: 1 }}
                 removeClippedSubviews={true}
-                initialNumToRender={12}
-                maxToRenderPerBatch={10}
-                windowSize={10}
                 data={visibleSent}
                 nestedScrollEnabled={true}
                 keyExtractor={(item) => item.uid}
@@ -916,9 +898,6 @@ export default function ContactsScreen() {
             <FlatList
               style={{ flex: 1 }}
               removeClippedSubviews={true}
-              initialNumToRender={12}
-              maxToRenderPerBatch={10}
-              windowSize={10}
               data={visibleContacts}
               nestedScrollEnabled={true}
               keyExtractor={(item) => item.uid}

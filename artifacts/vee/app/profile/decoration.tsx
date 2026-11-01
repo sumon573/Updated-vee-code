@@ -170,7 +170,6 @@ function ItemIcon({ icon: storedIcon, frameId, frameName, itemId }: { icon: stri
             source={{ uri: icon }}
             style={{ width: isFrame ? 52 : 44, height: isFrame ? 52 : 44, position: 'absolute' }}
             contentFit="contain"
-            cachePolicy="memory-disk"
             onError={() => setImgError(true)}
           />
         ) : (
@@ -416,7 +415,6 @@ export default function DecorationScreen() {
         windowSize={9}
         initialNumToRender={15}
         maxToRenderPerBatch={15}
-        removeClippedSubviews={true}
       />
     );
   };

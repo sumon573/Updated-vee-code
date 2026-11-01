@@ -24,7 +24,7 @@
  * "currently-listed" exact for the mark-seen rule. No help icon
  * (never specified by the boss).
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Platform, SectionList } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -116,7 +116,6 @@ const VisitorRow = memo(function VisitorRow({ user, unseen, last, badgeIconUrl, 
                 source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
                 style={{ width: 18, height: 18, marginLeft: 6 }}
                 resizeMode="contain"
-                cachePolicy="memory-disk"
               />
             ) : null}
           </View>
@@ -188,9 +187,7 @@ export default function VisitorsScreen() {
   }, []);
 
   // Sections by latest visit (7-day window only; older records never listed).
-  // Perf (batch C): memoized so the section arrays (and the SectionList
-  // data identity) survive unrelated parent renders; rows are memo'd.
-  const { today, last7 } = useMemo(() => splitVisitorSections(records), [records]);
+  const { today, last7 } = splitVisitorSections(records);
   const listedUids = [...today, ...last7];
 
   // Profiles — cached-first + live (boss: instant load). subscribeUser
@@ -233,12 +230,12 @@ export default function VisitorsScreen() {
     profileSubsRef.current.clear();
   }, []);
 
-  const handleUserPress = useCallback((u: VeeUser) => {
+  const handleUserPress = (u: VeeUser) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(
       `/user-profile?uid=${encodeURIComponent(u.uid)}&name=${encodeURIComponent(u.name)}` as never,
     );
-  }, []);
+  };
 
   // 2026-10-30 (boss: new-visit visibility): a listed uid with no profile
   // doc renders as a placeholder row ('?' avatar, 'User' name) instead of
@@ -248,10 +245,10 @@ export default function VisitorsScreen() {
     uid: u, vId: '', name: '', email: '', photoURL: '', bio: '',
     createdAt: 0, lastSeen: 0, online: false,
   });
-  const sections = useMemo(() => [
+  const sections = [
     { title: 'Today', data: today.map((u) => profiles[u] ?? (missing[u] ? fallbackUser(u) : null)).filter(Boolean) as VeeUser[] },
     { title: 'Last 7 days', data: last7.map((u) => profiles[u] ?? (missing[u] ? fallbackUser(u) : null)).filter(Boolean) as VeeUser[] },
-  ].filter((s) => s.data.length > 0), [today, last7, profiles, missing]);
+  ].filter((s) => s.data.length > 0);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -287,9 +284,6 @@ export default function VisitorsScreen() {
             />
           )}
           showsVerticalScrollIndicator={false}
-          windowSize={9}
-          initialNumToRender={15}
-          maxToRenderPerBatch={15}
         />
       )}
     </SafeAreaView>

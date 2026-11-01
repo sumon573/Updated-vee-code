@@ -5,7 +5,6 @@
  * add affordance. Tapping a group opens the shared StoryViewer via the
  * shell's onStoryPress(userId).
  */
-import { memo, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,10 +28,7 @@ function timeAgo(timestamp: number): string {
   return `${Math.floor(diffH / 24)}d ago`;
 }
 
-// 2026-11-02 smoothness (batch B): memo'd avatar + disk cache — the
-// old expo-image had no cachePolicy, so story DPs re-fetched on
-// every mount instead of reading the disk cache.
-const StoryAvatar = memo(function StoryAvatar({
+function StoryAvatar({
   photoURL,
   name,
   unseen,
@@ -58,7 +54,6 @@ const StoryAvatar = memo(function StoryAvatar({
       {photoURL ? (
         <Image
           source={{ uri: photoURL }}
-          cachePolicy="memory-disk"
           style={{ width: '100%', height: '100%', borderRadius: size / 2 }}
         />
       ) : (
@@ -79,70 +74,7 @@ const StoryAvatar = memo(function StoryAvatar({
       )}
     </View>
   );
-});
-
-// 2026-11-02 smoothness (batch B): memo'd group row — previously the
-// row JSX lived inside renderGroup, so every parent render rebuilt
-// every row. Props are the stable group object + stable press handler.
-const StoryGroupRow = memo(function StoryGroupRow({
-  item,
-  onStoryPress,
-}: {
-  item: UserStories;
-  onStoryPress: (userId: string) => void;
-}) {
-  const latest = item.stories[item.stories.length - 1];
-  const unseen = !item.allSeen;
-  return (
-    <TouchableOpacity
-      onPress={() => onStoryPress(item.userId)}
-      activeOpacity={0.7}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 76,
-        paddingLeft: 15,
-        paddingRight: 15,
-        backgroundColor: '#FFFFFF',
-      }}
-    >
-      <StoryAvatar photoURL={item.userAvatar} name={item.userName} unseen={unseen} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          style={{ fontSize: 16, fontWeight: '500', color: '#000000' }}
-        >
-          {item.userName || 'Vee User'}
-        </Text>
-        <Text style={{ fontSize: 13, color: '#7a7a7a', marginTop: 2 }}>
-          {latest ? timeAgo(latest.createdAt) : ''}
-          {item.stories.length > 1 ? ` · ${item.stories.length} stories` : ''}
-        </Text>
-      </View>
-      {unseen && (
-        <View
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: 5,
-            backgroundColor: '#009dff',
-          }}
-        />
-      )}
-      <View
-        style={{
-          position: 'absolute',
-          left: 79,
-          right: 0,
-          bottom: 0,
-          height: 1,
-          backgroundColor: '#F0F1F2',
-        }}
-      />
-    </TouchableOpacity>
-  );
-});
+}
 
 export default function StoriesTabScreen({
   stories,
@@ -151,15 +83,62 @@ export default function StoriesTabScreen({
   onStoryPress,
   onAddStory,
 }: StoriesTabScreenProps) {
-  // 2026-11-02 smoothness (batch B): the old inline filter rebuilt
-  // the FlatList data array on every parent render — a full-list
-  // re-render on every home update. Both derivations are memo'd now.
-  const myGroup = useMemo(() => stories.find((s) => s.userId === myUserId), [stories, myUserId]);
-  const others = useMemo(() => stories.filter((s) => s.userId !== myUserId), [stories, myUserId]);
+  const myGroup = stories.find((s) => s.userId === myUserId);
+  const others = stories.filter((s) => s.userId !== myUserId);
 
-  const renderGroup = useCallback(({ item }: { item: UserStories }) => (
-    <StoryGroupRow item={item} onStoryPress={onStoryPress} />
-  ), [onStoryPress]);
+  const renderGroup = ({ item }: { item: UserStories }) => {
+    const latest = item.stories[item.stories.length - 1];
+    const unseen = !item.allSeen;
+    return (
+      <TouchableOpacity
+        onPress={() => onStoryPress(item.userId)}
+        activeOpacity={0.7}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          height: 76,
+          paddingLeft: 15,
+          paddingRight: 15,
+          backgroundColor: '#FFFFFF',
+        }}
+      >
+        <StoryAvatar photoURL={item.userAvatar} name={item.userName} unseen={unseen} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={{ fontSize: 16, fontWeight: '500', color: '#000000' }}
+          >
+            {item.userName || 'Vee User'}
+          </Text>
+          <Text style={{ fontSize: 13, color: '#7a7a7a', marginTop: 2 }}>
+            {latest ? timeAgo(latest.createdAt) : ''}
+            {item.stories.length > 1 ? ` · ${item.stories.length} stories` : ''}
+          </Text>
+        </View>
+        {unseen && (
+          <View
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              backgroundColor: '#009dff',
+            }}
+          />
+        )}
+        <View
+          style={{
+            position: 'absolute',
+            left: 79,
+            right: 0,
+            bottom: 0,
+            height: 1,
+            backgroundColor: '#F0F1F2',
+          }}
+        />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -179,14 +158,6 @@ export default function StoriesTabScreen({
         data={others}
         keyExtractor={(item) => item.userId}
         renderItem={renderGroup}
-        // NOTE (2026-11-02): no getItemLayout here on purpose — the
-        // 76dp ListHeaderComponent above shifts every row, and a plain
-        // 76*index offset would misplace the windowing math. Rows are
-        // still fixed 76dp, so one-time measurement is cheap.
-        windowSize={10}
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews
         ListHeaderComponent={
           <TouchableOpacity
             onPress={onAddStory}

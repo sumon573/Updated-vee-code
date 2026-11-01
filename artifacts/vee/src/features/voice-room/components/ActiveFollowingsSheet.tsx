@@ -10,7 +10,7 @@
  * Empty active state mirrors imo: outline person + "No active followings".
  * No demo rows ever: every row comes from following/userChats/rooms reads.
  */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -265,12 +265,7 @@ export function ActiveFollowingsSheet({
     };
   }, [visible, myUid, roomIds]);
 
-  // Perf (batch C): stable data identity so the list doesn't rebuild on
-  // every parent render (follow busy-state changes re-render the sheet).
-  const visibleRecommended = useMemo(
-    () => recommended.filter((r) => !dismissed.has(r.uid)),
-    [recommended, dismissed],
-  );
+  const visibleRecommended = recommended.filter((r) => !dismissed.has(r.uid));
 
   async function handleFollow(uid: string) {
     if (!myUid || busyUid) return;
@@ -324,9 +319,6 @@ export function ActiveFollowingsSheet({
               keyExtractor={(item) => item.uid}
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
-              windowSize={9}
-              initialNumToRender={15}
-              maxToRenderPerBatch={15}
               ListHeaderComponent={
                 <View>
                   {active.length === 0 ? (

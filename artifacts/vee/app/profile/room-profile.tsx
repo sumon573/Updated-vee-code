@@ -14,7 +14,7 @@
 // written via updateUser (a plain update). Follow-up: add these fields to
 // VeeUser + sanitize (userService change, separate order).
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, FlatList, Image, Modal, Pressable, ScrollView, Text, TextInput, View,
 } from 'react-native';
@@ -323,9 +323,9 @@ export default function RoomProfileScreen() {
   const age = calcAge(extra.birthday);
   const cityLines = [extra.city, extra.hometown, extra.language, extra.profession].filter((x): x is string => !!x);
   const countryQuery = countrySearch.trim().toLowerCase();
-  const filteredCountries = useMemo(() => countryQuery
+  const filteredCountries = countryQuery
     ? COUNTRIES.filter((n) => n.toLowerCase().includes(countryQuery))
-    : COUNTRIES, [countryQuery]);
+    : COUNTRIES;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -582,9 +582,6 @@ export default function RoomProfileScreen() {
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              windowSize={9}
-              initialNumToRender={20}
-              maxToRenderPerBatch={20}
               renderItem={({ item }) => {
                 const selected = countryDraft === item;
                 return (

@@ -7,7 +7,7 @@
  * - "Frequently Contacted" section with contacts (DP, name, call button)
  * All data is real — no demo.
  */
-import { useState, useMemo, useCallback, memo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { View, Text, TextInput, FlatList, Image, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -60,62 +60,6 @@ function pass2InboxToChat(c: Pass2InboxChat, myUid: string): Chat {
     isTyping: false,
   };
 }
-
-const ContactRow = memo(function ContactRow({
-  item,
-  avatarUrl,
-  onChatPress,
-  onCall,
-}: {
-  item: Chat;
-  avatarUrl?: string | null;
-  onChatPress: (chat: Chat) => void;
-  onCall: (chat: Chat) => void;
-}) {
-  const initials = (item.participantName || '?').trim().charAt(0).toUpperCase();
-  return (
-    <TouchableOpacity
-      onPress={() => onChatPress(item)}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-      }}
-    >
-      {avatarUrl ? (
-        <Image
-          source={{ uri: avatarUrl }}
-          style={{ width: 48, height: 48, borderRadius: 24 }}
-        />
-      ) : (
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 24,
-            backgroundColor: '#E0E0E0',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ fontSize: 20, color: '#757575', fontWeight: '600' }}>{initials}</Text>
-        </View>
-      )}
-      <Text style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#212121', fontWeight: '500' }}>
-        {item.participantName || 'User'}
-      </Text>
-      <TouchableOpacity
-        onPress={() => onCall(item)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Ionicons name="call" size={24} color="#2196F3" />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-});
 
 export default function IMOSearchScreen() {
   const router = useRouter();
@@ -213,26 +157,52 @@ export default function IMOSearchScreen() {
     router.push(`/inbox/${chat.id}?${params.toString()}` as any);
   }, [router]);
 
-  // 2026-11-02 smoothness (batch B): memo'd contact row + stable
-  // renderItem. The old renderContact was a fresh closure on every
-  // render (it fed BOTH lists), rebuilding every row on each keystroke.
-  // Row height is fixed: 12+12 padding + 48 avatar + 1 border = 73dp,
-  // so the results list below gets getItemLayout + windowing tuning.
-  // The nested "frequent" list keeps its props untouched: it lives
-  // inside a ScrollView with scrolling disabled, where clipping
-  // props can drop rows as the parent scrolls. Avatar stays RN Image
-  // (no library swaps in this pass).
-  const renderContact = useCallback(({ item }: { item: Chat }) => {
+  const renderContact = ({ item }: { item: Chat }) => {
+    const initials = (item.participantName || '?').trim().charAt(0).toUpperCase();
     const avatarUrl = item.participantAvatar || (item.participantId ? avatarCache[item.participantId] : null);
     return (
-      <ContactRow
-        item={item}
-        avatarUrl={avatarUrl}
-        onChatPress={handleChatPress}
-        onCall={handleCall}
-      />
+      <TouchableOpacity
+        onPress={() => handleChatPress(item)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: '#F0F0F0',
+        }}
+      >
+        {avatarUrl ? (
+          <Image
+            source={{ uri: avatarUrl }}
+            style={{ width: 48, height: 48, borderRadius: 24 }}
+          />
+        ) : (
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: '#E0E0E0',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 20, color: '#757575', fontWeight: '600' }}>{initials}</Text>
+          </View>
+        )}
+        <Text style={{ flex: 1, marginLeft: 12, fontSize: 16, color: '#212121', fontWeight: '500' }}>
+          {item.participantName || 'User'}
+        </Text>
+        <TouchableOpacity
+          onPress={() => handleCall(item)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="call" size={24} color="#2196F3" />
+        </TouchableOpacity>
+      </TouchableOpacity>
     );
-  }, [avatarCache, handleChatPress, handleCall]);
+  };
 
   const showResults = query.trim().length > 0;
 
@@ -274,11 +244,6 @@ export default function IMOSearchScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           renderItem={renderContact}
-          getItemLayout={(_data, index) => ({ length: 73, offset: 73 * index, index })}
-          windowSize={10}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          removeClippedSubviews
           style={{ flex: 1, backgroundColor: '#FFFFFF', marginTop: 8 }}
           ListEmptyComponent={
             <View style={{ padding: 32, alignItems: 'center' }}>

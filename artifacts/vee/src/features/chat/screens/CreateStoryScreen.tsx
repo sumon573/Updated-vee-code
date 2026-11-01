@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, FlatList, Pressable, Dimensions, Alert } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -10,56 +10,6 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 
 const { width, height } = Dimensions.get('window');
 const ITEM_SIZE = (width - 4) / 3;
-
-// 2026-11-02 smoothness: grid cells were rendered by a plain (non-memo)
-// renderItem with a fresh onPress closure per cell, so tapping one photo
-// re-rendered every visible cell. Memoized cell: only the cells whose
-// selection flag actually flips re-render. Props are scalars + one stable
-// handler, so memo() can do its job.
-const GridCell = memo(function GridCell({
-  item, isSelected, onSelect,
-}: {
-  item: MediaLibrary.Asset;
-  isSelected: boolean;
-  onSelect: (asset: MediaLibrary.Asset) => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => onSelect(item)}
-      style={{
-        width: ITEM_SIZE, height: ITEM_SIZE,
-        margin: 1,
-        opacity: isSelected ? 0.7 : 1 }}
-    >
-      {/* 2026-10-19 perf: expo-image instead of RN Image — the native
-          loader downsamples to the ~130px cell size (Glide on Android)
-          instead of decoding the full-resolution asset into every cell,
-          plus memory+disk caching for fast grid scrolls. */}
-      <ExpoImage
-        source={{ uri: item.uri }}
-        style={{ width: '100%', height: '100%' }}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-      />
-      {item.mediaType === 'video' && (
-        <View style={{
-          position: 'absolute', bottom: 6, right: 6,
-          backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
-          paddingHorizontal: 6, paddingVertical: 2 }}>
-          <Feather name="play" size={12} color="#fff" />
-        </View>
-      )}
-      {isSelected && (
-        <View style={{
-          position: 'absolute', top: 6, right: 6,
-          width: 24, height: 24, borderRadius: 12,
-          backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name="check" size={14} color="#fff" />
-        </View>
-      )}
-    </Pressable>
-  );
-});
 
 export default function CreateStoryScreen() {
   const router = useRouter();
@@ -195,32 +145,45 @@ export default function CreateStoryScreen() {
     router.push('/story-share?mode=camera');
   }, [router]);
 
-  // Stable renderItem for the memoized cells (was: a fresh function on
-  // every render). `selected` is a dep because the per-cell boolean is
-  // computed here — but memo'd GridCell props only change for the cells
-  // whose flag actually flips, so a toggle re-renders just those cells
-  // instead of the whole visible grid.
-  const renderItem = useCallback(({ item }: { item: MediaLibrary.Asset }) => (
-    <GridCell item={item} isSelected={selected.has(item.id)} onSelect={handleSelectPhoto} />
-  ), [handleSelectPhoto, selected]);
-
-  // Album-picker rows were built inline (fresh array + fresh renderItem
-  // on every render). Memoized data + hoisted renderer.
-  const albumPickerData = useMemo(
-    () => [{ id: null, title: t('story.allPhotos', { defaultValue: 'All photos' }) } as any, ...albums],
-    [albums, t],
-  );
-  const renderAlbumItem = useCallback(({ item }: { item: any }) => (
-    <Pressable
-      onPress={() => handleAlbumSelect(item.id ? item : null)}
-      style={{
-        paddingHorizontal: 16, paddingVertical: 14,
-        borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
-        backgroundColor: (selectedAlbum ?? null) === item.id ? '#f0f7ff' : '#fff' }}
-    >
-      <Text style={{ fontSize: 14, color: '#000' }}>{item.title}</Text>
-    </Pressable>
-  ), [handleAlbumSelect, selectedAlbum]);
+  const renderItem = ({ item }: { item: MediaLibrary.Asset }) => {
+    const isSelected = selected.has(item.id);
+    return (
+      <Pressable
+        onPress={() => handleSelectPhoto(item)}
+        style={{
+          width: ITEM_SIZE, height: ITEM_SIZE,
+          margin: 1,
+          opacity: isSelected ? 0.7 : 1 }}
+      >
+        {/* 2026-10-19 perf: expo-image instead of RN Image — the native
+            loader downsamples to the ~130px cell size (Glide on Android)
+            instead of decoding the full-resolution asset into every cell,
+            plus memory+disk caching for fast grid scrolls. */}
+        <ExpoImage
+          source={{ uri: item.uri }}
+          style={{ width: '100%', height: '100%' }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+        {item.mediaType === 'video' && (
+          <View style={{
+            position: 'absolute', bottom: 6, right: 6,
+            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
+            paddingHorizontal: 6, paddingVertical: 2 }}>
+            <Feather name="play" size={12} color="#fff" />
+          </View>
+        )}
+        {isSelected && (
+          <View style={{
+            position: 'absolute', top: 6, right: 6,
+            width: 24, height: 24, borderRadius: 12,
+            backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="check" size={14} color="#fff" />
+          </View>
+        )}
+      </Pressable>
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -333,16 +296,6 @@ export default function CreateStoryScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           numColumns={3}
-          // Fixed cells: ITEM_SIZE + 1px margin top/bottom per row.
-          getItemLayout={(_, index) => ({
-            length: ITEM_SIZE + 2,
-            offset: (ITEM_SIZE + 2) * Math.floor(index / 3),
-            index,
-          })}
-          initialNumToRender={21}
-          maxToRenderPerBatch={21}
-          windowSize={10}
-          removeClippedSubviews
           contentContainerStyle={{ paddingBottom: 100 }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
@@ -409,12 +362,19 @@ export default function CreateStoryScreen() {
               {t('story.selectAlbum', { defaultValue: 'Select album' })}
             </Text>
             <FlatList
-              data={albumPickerData}
+              data={[{ id: null, title: t('story.allPhotos', { defaultValue: 'All photos' }) } as any, ...albums]}
               keyExtractor={(item) => item.id ?? 'all'}
-              renderItem={renderAlbumItem}
-              initialNumToRender={15}
-              maxToRenderPerBatch={10}
-              windowSize={10}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => handleAlbumSelect(item.id ? item : null)}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 14,
+                    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+                    backgroundColor: (selectedAlbum ?? null) === item.id ? '#f0f7ff' : '#fff' }}
+                >
+                  <Text style={{ fontSize: 14, color: '#000' }}>{item.title}</Text>
+                </Pressable>
+              )}
             />
           </View>
         </Pressable>
