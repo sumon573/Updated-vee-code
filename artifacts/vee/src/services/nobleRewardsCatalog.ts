@@ -180,7 +180,7 @@ export const NOBLE_REWARDS_CATALOG: RankRewards[] = [
       fallbackIcon: '👑',
     },
     frame: {
-      designUrl: 'https://vee-club.duckdns.org/m/7976cd66fe4818953f12eac01fc104cc',
+      designUrl: 'https://vee-club.duckdns.org/m/13e7e5f7b07c9189dbfed4f3ed9176cd',
       config: { seatScale: 1.44, seatDy: 0.03 },
       fallbackIcon: '🖼️',
     },
