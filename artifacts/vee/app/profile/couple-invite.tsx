@@ -20,7 +20,7 @@
  *   - blue pill = the person's own TOTAL user level (levelService
  *     getLevelFromXP on users/{uid}/level) ONLY when that level record
  *     exists — omitted otherwise (coordinator's blue-pill decision).
- * Points text = red-pink heart icon + number (e.g. "81460").
+ * Points text = red-pink heart icon + compact number (e.g. "81.5K").
  *
  * VOICE BADGE — DELIBERATELY NOT FAKED (see report): there is no cheap
  * reliable live-room source (investigation §6: no roomDirectory, no
@@ -76,6 +76,39 @@ const C = {
   blue: '#007AFF',
   pink: '#FF4D7E',
 } as const;
+
+/**
+ * Compact count for THIS invite list only (display-only; values untouched).
+ * Under 1000 as-is; 1000+ K, 1,000,000+ M, 1,000,000,000+ B; max 1 decimal,
+ * trailing ".0" trimmed. 3176197 -> "3.2M", 2011711 -> "2M", 990011 -> "990K".
+ * Short strings also fix the row truncation (long numbers ran under the send button).
+ */
+function formatCompactCount(value: number): string {
+  const abs = Math.floor(Math.abs(value));
+  const sign = value < 0 ? '-' : '';
+  let div = 1;
+  let suffix = '';
+  if (abs >= 1_000_000_000) {
+    div = 1_000_000_000;
+    suffix = 'B';
+  } else if (abs >= 1_000_000) {
+    div = 1_000_000;
+    suffix = 'M';
+  } else if (abs >= 1_000) {
+    div = 1_000;
+    suffix = 'K';
+  } else {
+    return `${sign}${abs}`;
+  }
+  let scaled = Math.round((abs / div) * 10) / 10;
+  if (scaled >= 1000) {
+    // Rollover: 999999 -> 1000K would read wrong, promote to 1M.
+    scaled /= 1000;
+    suffix = suffix === 'K' ? 'M' : 'B';
+  }
+  const s = scaled.toFixed(1);
+  return `${sign}${s.endsWith('.0') ? s.slice(0, -2) : s}${suffix}`;
+}
 
 function TitleBar({ title }: { title: string }) {
   return (
@@ -296,7 +329,7 @@ export default function CoupleInviteScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8 }}>
               <Feather name="heart" size={14} color={C.pink} />
               <Text style={{ fontSize: 13, fontWeight: '600', color: C.text, marginLeft: 3 }}>
-                {String(item.intimacyValue)}
+                {formatCompactCount(item.intimacyValue)}
               </Text>
             </View>
           </View>
