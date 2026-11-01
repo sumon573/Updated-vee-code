@@ -84,7 +84,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
-import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
+import { getBalance, subscribeWalletBalance } from '@/src/features/wallet/walletService';
 import {
   DELICIOUS_FOODS,
   DELICIOUS_SIDES,
@@ -469,6 +469,27 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
     return () => { u1(); u2(); };
   }, [visible, myUid]);
 
+  // 2026-11-01 (boss: Delicious professional, mirror-stall-proof header):
+  // the header balance normally comes from the RTDB mirror, but a stalled
+  // mirror freezes it (bets/wins invisible, jumps on heal). Reconcile from
+  // Postgres truth (one-shot read-only GET) on event-driven moments only:
+  // my bets resolve, a new round starts, the round reaches result.
+  // Failures keep the mirror value (never crash, never show 0). No polling,
+  // no timers, no heat cost.
+  const truthBetsKeyRef = useRef<string>('');
+  const truthPhaseKeyRef = useRef<string>('');
+  const refreshTruthBalance = useCallback(() => {
+    if (!myUid) return;
+    getBalance().then((v) => { setBalance(v); }).catch(() => {});
+  }, [myUid]);
+  useEffect(() => {
+    if (!visible || !myUid) return;
+    const key = Object.entries(myBets).map(([id, b]) => `${id}:${b.status}`).sort().join(',');
+    if (key === truthBetsKeyRef.current) return;
+    truthBetsKeyRef.current = key;
+    if (Object.values(myBets).some((b) => b.status === 'debited' || b.status === 'confirmed')) refreshTruthBalance();
+  }, [visible, myUid, myBets, refreshTruthBalance]);
+
   // BOTTOM REWORK 2026-10-26: strip totals + Hot totals (global,
   // visible-gated like the rest).
   useEffect(() => {
@@ -699,6 +720,14 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   }, [results, todayStr, effFoodMap, effSideMap]);
 
   const phase = round?.phase ?? null;
+  useEffect(() => {
+    if (!visible || !myUid || roundN == null) return;
+    if (phase !== 'betting' && phase !== 'result') return;
+    const key = `${roundN}:${phase}`;
+    if (key === truthPhaseKeyRef.current) return;
+    truthPhaseKeyRef.current = key;
+    refreshTruthBalance();
+  }, [visible, myUid, phase, roundN, refreshTruthBalance]);
   const bettingOpen = phase === 'betting';
   // REAL-TIME HEADER (boss 2026-10-31): the pill shows the live balance
   // MINUS still-unresolved optimistic taps, so a bet drops the number the
