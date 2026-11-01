@@ -119,6 +119,10 @@ export default function GrabTopPill({ roomId }: { roomId: string }) {
   // Ticking seconds (local 1s interval; resets on every bot refresh).
   useEffect(() => {
     if (!node?.updatedAt) return;
+    // 2026-11-01 (perf): stop ticking once the data is stale - the stale
+    // pill is static and never reads `now`, so the tick was pure churn.
+    // A bot refresh updates updatedAt and restarts the tick via the dep.
+    if (Date.now() - node.updatedAt > STALE_AFTER_MS) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [node?.updatedAt]);

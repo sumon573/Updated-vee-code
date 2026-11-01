@@ -19,8 +19,8 @@
  * Scene motion stays soft and mostly at the sky/bottom edges so text
  * sitting directly on the background keeps full contrast.
  */
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Dimensions, Easing, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, AppState, Dimensions, Easing, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { SceneKind } from '../constants/theme';
 
@@ -457,7 +457,19 @@ const SCENES: Record<SceneKind, () => React.JSX.Element> = {
 export function AnimatedThemeBackground({ accentColor, scene }: Props) {
   const breathe = useRef(new Animated.Value(0)).current;
 
+  // 2026-11-01 (perf/heat): pause ALL background animation while the app is
+  // backgrounded. Nobody sees the room background then, and every loop in
+  // this file (glow, particles, scenes) unmounts with this gate, so no
+  // animation work burns CPU/GPU during long backgrounded voice sessions.
+  // Foreground render is identical to before.
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!appActive) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(breathe, {
@@ -477,7 +489,7 @@ export function AnimatedThemeBackground({ accentColor, scene }: Props) {
     loop.start();
     return () => loop.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accentColor]);
+  }, [accentColor, appActive]);
 
   const glowOpacity = breathe.interpolate({
     inputRange: [0, 1],
@@ -492,6 +504,18 @@ export function AnimatedThemeBackground({ accentColor, scene }: Props) {
     () => Array.from({ length: PARTICLE_COUNT }, (_, i) => i),
     [],
   );
+
+  // Backgrounded: render an empty shell so no animated child mounts at all
+  // (their loops never start). The room's own themeBg shows through; on
+  // foreground return the full animated background remounts unchanged.
+  if (!appActive) {
+    return (
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}
+      />
+    );
+  }
 
   // Scene themes: the animated scene IS the background (still zIndex 0,
   // absolute fill, pointer-events none — room UI always renders on top).

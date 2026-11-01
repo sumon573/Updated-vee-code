@@ -10,7 +10,7 @@ import Svg, { Path } from 'react-native-svg';
  * are untouched here; this file renders no badge anywhere.
  *
  * The twinkle mirrors the VibeHandFx dots in SeatCard.tsx: one Animated
- * value looping opacity, JS driver, opacity only, ~1200ms per leg. No
+ * value looping opacity, native driver, opacity only, ~1200ms per leg. No
  * layout animation, so a room full of King names costs almost nothing.
  */
 
@@ -24,8 +24,10 @@ export function KingSparkle({ size = 11 }: { size?: number } = {}) {
   const tw = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(tw, { toValue: 1, duration: 1200, useNativeDriver: false }),
-      Animated.timing(tw, { toValue: 0, duration: 1200, useNativeDriver: false }),
+      // 2026-11-01 (perf/heat): opacity on a View is natively animatable -
+      // the JS driver was pure JS-thread wakeups for every King sparkle.
+      Animated.timing(tw, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(tw, { toValue: 0, duration: 1200, useNativeDriver: true }),
     ]));
     loop.start();
     return () => loop.stop();

@@ -122,14 +122,27 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   const RIPPLE_MIN = [5, 7, 4, 6];
   const RIPPLE_MAX = [16, 13, 15, 12];
   const RIPPLE_DUR = [520, 680, 600, 760];
-  const ripples = useRef(RIPPLE_MIN.map((m) => new Animated.Value(m))).current;
+  // 2026-11-01 (perf/heat): ripple bars animate scaleY on the NATIVE driver
+  // (VoiceWaves precedent). Each bar keeps fixed height MAX and scales
+  // MIN/MAX->1, with a translateY that pins the bottom edge, so the bars
+  // grow/shrink from the baseline exactly like the old height animation -
+  // but with no JS-thread frame work while minimized. (The entrance spring
+  // and the drag pan stay JS-driven by design; see their notes.)
+  const ripples = useRef(RIPPLE_MIN.map((m, i) => {
+    const s = new Animated.Value(m / RIPPLE_MAX[i]);
+    const ty = s.interpolate({
+      inputRange: [m / RIPPLE_MAX[i], 1],
+      outputRange: [(RIPPLE_MAX[i] - m) / 2, 0],
+    });
+    return { s, ty };
+  })).current;
   useEffect(() => {
     if (!room) return;
-    const anims = ripples.map((v, i) =>
+    const anims = ripples.map(({ s }, i) =>
       Animated.loop(
         Animated.sequence([
-          Animated.timing(v, { toValue: RIPPLE_MAX[i], duration: RIPPLE_DUR[i], useNativeDriver: false }),
-          Animated.timing(v, { toValue: RIPPLE_MIN[i], duration: RIPPLE_DUR[i], useNativeDriver: false }),
+          Animated.timing(s, { toValue: 1, duration: RIPPLE_DUR[i], useNativeDriver: true }),
+          Animated.timing(s, { toValue: RIPPLE_MIN[i] / RIPPLE_MAX[i], duration: RIPPLE_DUR[i], useNativeDriver: true }),
         ]),
       ),
     );
@@ -456,10 +469,10 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
           marginTop: 6,
         }}
       >
-        {ripples.map((a, i) => (
+        {ripples.map(({ s, ty }, i) => (
           <Animated.View
             key={i}
-            style={{ width: 3, height: a, borderRadius: 2, backgroundColor: C.glow }}
+            style={{ width: 3, height: RIPPLE_MAX[i], borderRadius: 2, backgroundColor: C.glow, transform: [{ scaleY: s }, { translateY: ty }] }}
           />
         ))}
       </View>
