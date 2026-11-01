@@ -11,7 +11,9 @@ import {
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
 import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
-import { removeSeat, leaveAudience, refreshSeatHeartbeat, getSeatHostMuted, setSeatMute, writeSeatMuteReliable } from '@/src/features/voice-room/services/firebaseRoomService';
+import { removeSeat, leaveAudience, refreshSeatHeartbeat, refreshAudienceHeartbeat, getSeatHostMuted, setSeatMute, writeSeatMuteReliable } from '@/src/features/voice-room/services/firebaseRoomService';
+import { isPass2ModeActive, isPass2Seated } from '@/src/features/voice-room/services/pass2SessionMode';
+import { writePass2SeatMuteReliable } from '@/src/features/voice-room/services/pass2RestService';
 import { clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
 
 const C = {
@@ -198,7 +200,7 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   // 2026-10-13 (HIGH fix): মিনিমাইজ অবস্থায়ও সিট heartbeat চালু রাখো।
   // VoiceRoomScreen unmount হলে heartbeat বন্ধ হয়ে যেত — ৫ মিনিট পর অন্যের
   // sweepStaleSeats সিট মুছে দিত, অথচ LiveKit অডিও চালু থাকত (ghost mic +
-  // হারানো সিট)। এখন mini-player নিজেই প্রতি ৬০ সেকেন্ডে beat পাঠায়।
+  // (batch54: cadence is now 20s, same as the room screen.)
   useEffect(() => {
     if (!room?.id || !room?.myUid || room.mySeatIdx < 0) return;
     const rid = room.id;
@@ -206,7 +208,23 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     const idx = room.mySeatIdx;
     const beat = () => refreshSeatHeartbeat(rid, idx, uid).catch(() => {});
     beat();
-    const timer = setInterval(beat, 60_000);
+    const timer = setInterval(beat, 20_000);
+    return () => clearInterval(timer);
+  }, [room?.id, room?.myUid, room?.mySeatIdx]);
+
+  // 2026-11-01 (batch54, boss: minimized user auto-exits + bubble gone):
+  // the bar kept ONLY seated users alive. A minimized AUDIENCE user had
+  // no beat at all, so the presence sweep removed them within ~2 min.
+  // Beat audience too, at the same 20s cadence as the room screen
+  // (batch51). Transaction-guarded: a missing entry (kicked / already
+  // swept) is never recreated as a phantom.
+  useEffect(() => {
+    if (!room?.id || !room?.myUid || room.mySeatIdx >= 0) return;
+    const rid = room.id;
+    const uid = room.myUid;
+    const beat = () => refreshAudienceHeartbeat(rid, uid).catch(() => {});
+    beat();
+    const timer = setInterval(beat, 20_000);
     return () => clearInterval(timer);
   }, [room?.id, room?.myUid, room?.mySeatIdx]);
 
@@ -275,7 +293,15 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     // Reliable seat write: retries with backoff and records the intent
     // for the screen's pending-seat-mute reconciliation (first-sight heal
     // alone never covered a mid-stay failed write).
-    if (r && r.mySeatIdx >= 0) writeSeatMuteReliable(r.id, r.mySeatIdx, newMuted).catch(() => {});
+    // Gap 5: the bar's mute write follows the room session's mode —
+    // REST reliable writer when the room session is pass2 + seated,
+    // else today's Firebase writer. Engine flip + persisted intent
+    // above are unchanged.
+    if (r && r.mySeatIdx >= 0) {
+      (isPass2ModeActive('room') && isPass2Seated()
+        ? writePass2SeatMuteReliable(r.id, r.mySeatIdx, newMuted)
+        : writeSeatMuteReliable(r.id, r.mySeatIdx, newMuted)).catch(() => {});
+    }
   };
 
   if (!room) return null;
