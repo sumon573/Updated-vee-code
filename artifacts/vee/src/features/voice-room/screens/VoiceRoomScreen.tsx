@@ -2808,7 +2808,13 @@ export default function VoiceRoomScreen() {
   // 2026-10-30 (boss): audience + beside the room name must show for
   // audience even when SEATED. showJoinBanner requires unseated, so the
   // member-header + below was dead code. Members/host never see it.
-  const showAudienceJoinPlus = !isRoomMember && !hasJoined && !isOwnerOrAdmin;
+  // 2026-11-01 (boss: + must stay until the audience JOINS as a member):
+  // hasJoined must NOT gate this + — taking a seat sets hasJoined (voice
+  // session joined), so the old !hasJoined hid the + the moment an
+  // audience member sat down, before they ever tapped Join. A seated
+  // non-member could then never become a member, so they never appeared
+  // in the members list. Gate ONLY on membership, seated or not.
+  const showAudienceJoinPlus = !isRoomMember && !isOwnerOrAdmin;
 
   // 2026-10-27 (boss, imo audience header): 'Members: N' uses the SAME
   // roomMembers index the Room Info panel subscribes to (never a fake
