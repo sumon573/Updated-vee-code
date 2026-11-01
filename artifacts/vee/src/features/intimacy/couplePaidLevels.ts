@@ -61,15 +61,15 @@ export interface CouplePaidLevel {
 }
 
 /**
- * Detailed reward list, in Bengali, VERBATIM as supplied by the boss
- * (2026-11-01). Level 1 has no reward line in the boss's list — it is
+ * Detailed reward list, in English (boss order 2026-11-01: no Bengali
+ * anywhere on the Couple page). Level 1 has no reward line — it is
  * the starting level, so the detailed list runs Lv.2–Lv.5 only.
  */
-export const COUPLE_PAID_REWARDS_BN: Record<number, string> = {
-  2: 'উন্নত প্রোফাইল ফ্রেম, বিশেষ এন্ট্রি ইফেক্ট, কাপল চ্যাট ব্যাজ',
-  3: 'চমৎকার প্রোফাইল ফ্রেম, উজ্জ্বল এন্ট্রি ইফেক্ট, বাজিক্ত কাপল রুম থিম',
-  4: 'রাজকীয় প্রোফাইল ফ্রেম, ডিলাক্স এন্ট্রি ইফেক্ট, কাপল ইমোজি প্যাক',
-  5: 'সাম্রাজ্যের প্রোফাইল ফ্রেম, চূড়ান্ত এন্ট্রি ইফেক্ট, কাপল টাইটেল ফ্রেম',
+export const COUPLE_PAID_REWARDS_EN: Record<number, string> = {
+  2: 'Upgraded profile frame, special entry effect, couple chat badge',
+  3: 'Stunning profile frame, glowing entry effect, exclusive couple room theme',
+  4: 'Royal profile frame, deluxe entry effect, couple emoji pack',
+  5: 'Empire profile frame, ultimate entry effect, couple title frame',
 };
 
 export const COUPLE_PAID_LEVELS: CouplePaidLevel[] = COUPLE_PAID_LEVEL_IDS.map((id) => ({

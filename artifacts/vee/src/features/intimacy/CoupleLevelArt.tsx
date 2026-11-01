@@ -11,7 +11,8 @@
  *
  * STATIC by design: no Animated values, no timers, no loops — the page
  * stays smooth and heat-safe. Entry previews are stills, not live
- * effects (full animated entry effects are a follow-up).
+ * effects (full animated entry effects are a follow-up). The winged
+ * heart for the formed-couple header was added the same day.
  */
 
 import React from 'react';
@@ -46,6 +47,7 @@ const HOUSE_ART: Record<number, string> = {
 const CRYSTAL_ART = M('5c8f3bed6c90042ef7be7f17d01e1a4f');
 const RING_ART = M('cc76b0697a8fcd193691d5b5ad23c358');
 const LOVE_HOUSE_ART = M('753dc14d326d92a9cd457105d5f11057');
+const WINGED_HEART_ART = M('2486fe4c6d8f701d0550290d9779da2a');
 
 function lvOf(level: number) {
   return Math.min(5, Math.max(1, Math.floor(level) || 1));
@@ -146,6 +148,20 @@ export function LoveHouseArt({ width, locked }: { width: number; locked: boolean
         </View>
       )}
     </View>
+  );
+}
+
+// ─── Coupled header art ────────────────────────────────────────────────────
+
+/** Winged pink heart — the formed-couple header art (keyed WebP, 1024×683). */
+export function WingedHeartArt({ width }: { width: number }) {
+  const height = Math.round(width * 683 / 1024);
+  return (
+    <Image
+      source={{ uri: WINGED_HEART_ART }}
+      style={{ width, height }}
+      contentFit="contain"
+    />
   );
 }
 
