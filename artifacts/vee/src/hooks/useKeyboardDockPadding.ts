@@ -9,14 +9,24 @@ import type { View } from 'react-native';
 // on Android (it would double-shift on the old adjustPan binary), so
 // docking is measured instead of assumed:
 //   - on keyboardDidShow, measure the composer wrapper's on-screen
-//     bottom (pageY + height) against the FULL window height minus the
-//     keyboard height;
-//   - covered (overlay binary) -> pad the column by the keyboard height,
-//     which shrinks the flex list and docks the composer above the keys;
+//     bottom against the FULL window height minus the keyboard height;
+//   - covered (overlay binary) -> pad the column by exactly the amount
+//     that docks the composer above the keys (thread: kbH; room: kbH
+//     minus its fixed bottom-bar reserve, which cancels in the math);
 //   - already visible (pan binary: OS panned it into view, or a
 //     resize binary whose layout shrank) -> pad 0, byte-identical.
-// A second measure 350ms later corrects a mid-pan false positive: the
-// settled measure is authoritative. On keyboardDidHide the pad resets.
+// 2026-11-01 (dock fix v2 — the first version collapsed): the v1 check
+// compared the MEASURED bottom (which already includes the current pad)
+// against the keyboard top, so the 350ms re-measure always concluded
+// 'not covered' and reset the pad to 0 — the room composer fell back
+// behind the keyboard, and the inbox emoji view (taller than the text
+// keyboard) hid the text box. v2 measures the NATURAL bottom (measured
+// bottom + current pad = where the composer would sit with no variable
+// pad), so the pad is stable across re-measures and grows when the
+// keyboard grows (text -> emoji view). A mid-session measure never
+// collapses the pad to 0 (transient mid-animation frames); only
+// keyboardDidHide resets. A new show event cancels the pending
+// re-measure timer, so a stale height can never overwrite a fresh one.
 // Android only; other platforms return 0 and never subscribe.
 type Measurable = {
   measure?: (
@@ -26,6 +36,7 @@ type Measurable = {
 
 export function useKeyboardDockPadding() {
   const [dockPad, setDockPad] = useState(0);
+  const dockPadRef = useRef(0);
   const composerRef = useRef<View | null>(null);
   const fullHeightRef = useRef(Dimensions.get('window').height);
 
@@ -39,12 +50,24 @@ export function useKeyboardDockPadding() {
       const fullH = Math.max(fullHeightRef.current, Dimensions.get('window').height);
       fullHeightRef.current = fullH;
       node.measure((_x, _y, _w, h, _px, pageY) => {
-        const covered = pageY + h > fullH - kbH + 1;
-        setDockPad(covered ? kbH : 0);
+        // Natural bottom = where the composer would sit with NO variable
+        // pad. The room's fixed bottom-bar reserve is inside both the
+        // measured bottom and the layout, so it cancels here — the pad
+        // this computes docks the composer exactly above the keys on
+        // both screens.
+        const naturalBottom = pageY + h + dockPadRef.current;
+        const need = naturalBottom - (fullH - kbH);
+        if (need > 1) {
+          dockPadRef.current = need;
+          setDockPad(need);
+        }
+        // need <= 1 with a pad already set = transient mid-animation
+        // frame: never collapse mid-session; hide resets to 0.
       });
     };
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
       const kbH = e.endCoordinates ? e.endCoordinates.height : 0;
+      if (timer) clearTimeout(timer);
       check(kbH);
       timer = setTimeout(() => check(kbH), 350);
     });
@@ -54,6 +77,7 @@ export function useKeyboardDockPadding() {
         fullHeightRef.current,
         Dimensions.get('window').height,
       );
+      dockPadRef.current = 0;
       setDockPad(0);
     });
     return () => {
