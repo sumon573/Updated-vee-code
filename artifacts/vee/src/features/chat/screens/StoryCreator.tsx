@@ -202,6 +202,8 @@ export default function StoryCreator({ visible, onClose, onPublish }: Props) {
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            // 2026-11-01 (resize): Android KAV OFF - window shrink docks it.
+            enabled={Platform.OS !== 'android'}
           >
             <ScrollView
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}

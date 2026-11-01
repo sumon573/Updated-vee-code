@@ -57,6 +57,8 @@ export default function EmailLoginScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          // 2026-11-01 (resize): Android KAV OFF - window shrink docks it.
+          enabled={Platform.OS !== 'android'}
           style={{ flex: 1 }}
         >
           <ScrollView

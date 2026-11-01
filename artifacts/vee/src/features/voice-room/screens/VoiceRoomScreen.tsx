@@ -4130,6 +4130,8 @@ export default function VoiceRoomScreen() {
       // is adjustPan, so the OS itself keeps the focused input visible —
       // KAV stays OFF on Android entirely (no phantom pad possible, no
       // per-cycle jump). iOS keeps KAV as before.
+      // 2026-11-01 (resize): window is now adjustResize (app.json) -
+      // same OFF rule (resize + KAV would double-shift, not pan + KAV).
       // on the KAV itself paints any transient frame in theme color.
       enabled={Platform.OS !== 'android'}
     >

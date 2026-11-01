@@ -2028,6 +2028,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             // already keeps the input visible, so KAV must stay OFF there
             // (KAV + pan double-shifted the layout on every keyboard cycle).
             // iOS keeps 'padding' as before.
+            // 2026-11-01 (resize): window is now adjustResize (app.json) -
+            // KAV stays OFF on Android (resize + KAV would double-shift;
+            // the window shrink itself docks the composer).
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             enabled={Platform.OS !== 'android'}
