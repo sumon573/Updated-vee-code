@@ -42,7 +42,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 import MessageBubble, { saveRemoteMediaToGallery } from '../components/MessageBubble';
@@ -744,7 +744,8 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     if (!atBottomRef.current) return;
     // Fix #35: the user is viewing this chat right now — dismiss its
     // system-bar notification(s) at once. Best-effort, never fatal.
-    void dismissChatNotifications(chatId);
+    // batch57: Vee Team thread also dismisses official (no-chatId) pushes.
+    void dismissChatNotifications(chatId, { dismissOfficial: isSystemChat });
     const afterKey = markedChatRef.current === chatId ? lastMarkedKeyRef.current : null;
     markedChatRef.current = chatId;
     // background: safe to swallow — seen receipts are best-effort
@@ -753,7 +754,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         if (newestKey) lastMarkedKeyRef.current = newestKey;
       })
       .catch(() => {});
-  }, [chatId, myUid]);
+  }, [chatId, myUid, isSystemChat]);
+
+  // 2026-11-01 (batch57): read = vanish, retry on focus. The message-key
+  // effect above covers open + new arrivals, but a dismiss swallowed by a
+  // transient error (or an entry that arrived while this thread was
+  // backgrounded) would otherwise linger. Every focus re-sweeps ONLY this
+  // chat's entries — other chats' notifications are never touched.
+  useFocusEffect(
+    useCallback(() => {
+      void dismissChatNotifications(chatId, { dismissOfficial: isSystemChat });
+    }, [chatId, isSystemChat]),
+  );
 
   // 2026-10-30 (boss: seen must be INSTANT): trigger on the NEWEST
   // message key, not just length — subscribeMessages caps at 50, so in

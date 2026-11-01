@@ -70,14 +70,20 @@ export function setupNotificationHandler() {
  * call pushes carry no chatId and other chats' notifications are
  * untouched. Same mechanism as dismissIncomingCallNotifications (which
  * matches data.type); FCM exposes no stable tag to expo-notifications.
- * Best-effort: a stale bar entry is cosmetic, never fatal.
+ * 2026-11-01 (batch57): official broadcasts carry category:"official" and
+ * NO chatId, so the chatId matcher could never dismiss them — they stayed
+ * in the shade even after the Vee Team thread was read. When the opened
+ * thread IS the Vee Team thread (dismissOfficial), those official entries
+ * are dismissed too (same routing rule as the _layout tap handler, which
+ * routes official pushes to the Vee Team chat). Per-chat only — never a
+ * blast-clear. Best-effort: a stale bar entry is cosmetic, never fatal.
  */
-export async function dismissChatNotifications(chatId: string): Promise<void> {
+export async function dismissChatNotifications(chatId: string, opts?: { dismissOfficial?: boolean }): Promise<void> {
   try {
     const presented = await Notifications.getPresentedNotificationsAsync();
     for (const n of presented) {
       const data = (n.request?.content?.data ?? {}) as Record<string, unknown>;
-      if (data?.chatId === chatId) {
+      if (data?.chatId === chatId || (opts?.dismissOfficial && data?.category === 'official')) {
         await Notifications.dismissNotificationAsync(n.request.identifier).catch(() => {});
       }
     }
