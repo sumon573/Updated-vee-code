@@ -102,7 +102,7 @@ export default function TokenPickerSheet({
       t('couple.tokenHelpTitle', { defaultValue: 'About tokens' }),
       t('couple.tokenHelpBody', {
         defaultValue:
-          'A token is the design of your proposal. Sending a couple invitation costs 5000 diamonds, charged when you send. Diamonds are not returned if the invitation is rejected or expires. An invitation expires 5 hours after sending.',
+          'A token is the design of your proposal. Sending a couple invitation costs 1200 diamonds, charged when you send. Diamonds are not returned if the invitation is rejected or expires. An invitation expires 5 hours after sending.',
       }),
     );
   }
@@ -110,7 +110,7 @@ export default function TokenPickerSheet({
   function plainErrorMessage(code: string): string {
     switch (code) {
       case 'insufficient':
-        return t('couple.errorInsufficient', { defaultValue: 'Not enough diamonds. You need 5000 diamonds to send a couple invitation.' });
+        return t('couple.errorInsufficient', { defaultValue: 'Not enough diamonds. You need 1200 diamonds to send a couple invitation.' });
       case 'sender-already-coupled':
         return t('couple.errorSenderCoupled', { defaultValue: 'You already have a couple.' });
       case 'recipient-already-coupled':

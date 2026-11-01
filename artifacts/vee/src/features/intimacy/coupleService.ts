@@ -221,7 +221,7 @@ export async function acceptCoupleInvite(inviteId: string, myUid: string): Promi
 /**
  * Reject an incoming invitation (recipient only): a single write flipping
  * status pending → 'rejected'. The card then shows "Declined".
- * No refund: the 5000 diamonds were charged at send and are never refunded
+ * No refund: the 1200 diamonds were charged at send and are never refunded
  * on reject (or on expiry) — the card/result text says so honestly and
  * never promises a refund. The sender may later send a fresh invite, which
  * is a new invite with a new charge; no code is needed for that beyond

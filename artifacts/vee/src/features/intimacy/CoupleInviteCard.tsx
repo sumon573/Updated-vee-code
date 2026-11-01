@@ -15,7 +15,7 @@
  *                      reject button — the invite is simply over).
  *   accepted          → plain "Accepted" text (formation already landed).
  *   rejected          → plain "Declined" text + the honest no-refund note:
- *                      the 5000 diamonds sent with the invite are not
+ *                      the 1200 diamonds sent with the invite are not
  *                      refunded. No refund is ever promised.
  * All user-visible strings use t(..., { defaultValue }) — no locale edits.
  */
@@ -151,7 +151,7 @@ export function CoupleInviteCard({ invite, sender, onAccept, onReject }: Props) 
           </Text>
           <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
             {t('coupleInvite.noRefund', {
-              defaultValue: 'The 5000 diamonds sent with this invitation are not refunded.',
+              defaultValue: 'The 1200 diamonds sent with this invitation are not refunded.',
             })}
           </Text>
         </View>

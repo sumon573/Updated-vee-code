@@ -1,5 +1,5 @@
 /**
- * inviteService.ts — Couple invitation + 5000-diamond charge (Builder C, 2026-10-26).
+ * inviteService.ts — Couple invitation + 1200-diamond charge (Builder C, 2026-10-26).
  *
  * App code only. No push, no OTA, no VPS, no live RTDB writes from this file's
  * authoring step — every write below happens only at runtime, from a real
@@ -38,7 +38,7 @@
  *   rule alone does NOT grant a write at the parent path. Until the rule lands,
  *   step (3) will fail with PERMISSION_DENIED and the invite is marked 'failed'.
  *
- * Price/config: couple_config/invitePriceDiamonds if present, else 5000.
+ * Price/config: couple_config/invitePriceDiamonds if present, else 1200.
  * This file never writes couple_config.
  */
 
@@ -59,7 +59,7 @@ import { buildChatId, createOrGetChat, sendMessage } from '@/src/features/chat/s
 import { intimacyPairKey } from '@/src/features/voice-room/services/intimacyService';
 
 export const COUPLE_INVITE_EXPIRY_MS = 18000000; // 5 hours
-export const DEFAULT_INVITE_PRICE = 5000;
+export const DEFAULT_INVITE_PRICE = 1200;
 
 export type TokenDesign = 'cupid' | 'eternal' | 'lovelock' | 'luster';
 
@@ -106,7 +106,7 @@ export function isInviteExpired(invite: {
   return false;
 }
 
-/** Invite price: RTDB couple_config/invitePriceDiamonds if present, else 5000. Never crashes. */
+/** Invite price: RTDB couple_config/invitePriceDiamonds if present, else 1200. Never crashes. */
 export async function getInvitePrice(): Promise<number> {
   try {
     const snap = await get(ref(database, 'couple_config/invitePriceDiamonds'));
@@ -311,7 +311,7 @@ export interface SendCoupleInviteResult {
 }
 
 /**
- * Send a couple invitation with the exactly-once 5000-diamond charge.
+ * Send a couple invitation with the exactly-once 1200-diamond charge.
  *
  * RESUME LOGIC: if the sender already has a pending outgoing invite whose
  * receipt is claimed-but-not-done, Send does NOT create a new invite — it

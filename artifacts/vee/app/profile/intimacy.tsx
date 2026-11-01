@@ -1,40 +1,46 @@
 /**
- * Profile — Intimacy Detail Screen (2026-10-26).
- *
- * Honor-shell copy: 56dp TitleBar with bare router.back(), params
- * useLocalSearchParams<{ uid?: string }> with viewUid falling back to the
- * viewer's own uid, SafeAreaView edges={['top']}, the same light tokens,
- * and a three-flag loading gate with an 8-second timeout.
+ * Profile — Intimacy Detail Screen (rewritten 2026-11-01, boss Couple spec).
  *
  * Tabs: Couple (default) | Friend | Intimacy.
- *  - Couple: pink gradient header (tabs bar sits on it) with own photo +
- *    name (left), pink heart ring-box art (center), partner slot (right);
- *    Love House sheet + level card + Love House art + privileges below.
- *    Other users' pages are view-only: no + button, no invite action.
- *  - Friend: full friends list for the viewed uid, ranked by intimacy
- *    value desc. Rows navigate to the friend's profile; NO send buttons.
- *  - Intimacy: the viewed uid's pairs ranked, each with its intimacy
- *    level progress bar, plus the 10 intimacy-level thresholds listed
- *    (coordinator decision: the reference did not establish this tab).
  *
- * Data: ONLY real data — subscribeMyIntimacies(viewUid) + a read-only
- * userCouples/couples subscription (null = no couple). No demo names or
- * photos anywhere. All user-visible strings go through t() with an
- * English defaultValue (English UI law; locale files untouched).
+ * CACHED-FIRST: the page renders immediately with defaults — NO loading
+ * gate, NO blocking spinner, NO timers. Live subscriptions update the
+ * content in place when data arrives; missing data renders as the
+ * unpaired / empty state, never as a spinner. All subscriptions are
+ * event-driven (no polling), and the art is static code-drawn visuals
+ * (no animation loops) — the page stays smooth and heat-safe.
  *
- * Art: INTIMACY_ART comes from src/features/intimacy/intimacyArt (owned
- * by the art child — it may not exist yet when this file lands). An empty
- * URL, or a failed image load, renders a pink placeholder box instead of
- * crashing or showing demo art. expo-image for all remote art.
+ * COUPLE MODEL (boss spec 2026-11-01 — replaces the old 5000-diamond /
+ * 10-hearts-level model):
+ *   - Couple tab: trio header (self + crystal motif + partner slot),
+ *     Overall Intimacy Level + roadmap progress, Level-Up Costs
+ *     (Lv2 2000, Lv3 3500, Lv4 5000, Lv5 7000 Max), Level-Up Progress &
+ *     Reward Roadmap (one code-drawn house per level + Claim buttons),
+ *     Privilege Showcase (Lv.1-2) + High Level Privileges (Lv.3-5) with
+ *     one frame + one entry-effect preview per level, the detailed
+ *     reward list in Bengali (verbatim), and a Buy Diamonds pill.
+ *   - A couple request costs 1200 diamonds; on accept the couple starts
+ *     at Level 1; upgrades are diamond purchases per level.
+ *   - Intimacy tab: trio header (self + ring motif + partner slot),
+ *     Love House (locked until a couple is formed), the hearts meter
+ *     (Lv.1 0 ~ 4,000 for a fresh couple), privileges + Grab the Top.
+ *   - Friend tab: unchanged — explicit friends ranked by intimacy value.
  *
- * Privilege cards are INFO-ONLY (non-pressable Views): the boss has not
- * defined couple privilege mechanics, so no actions are invented.
+ * MONEY: upgrade charges go through chargeCoupleDiamonds() (the ONE
+ * money entry point, currently awaiting a wallet-service endpoint — see
+ * couplePayment.ts). Nothing here writes wallet balances. The request
+ * charge keeps the pre-existing inviteService path (price default now
+ * 1200); see the report for the unification open item.
+ *
+ * Other users' pages are view-only: no + button, no invite/upgrade/claim
+ * actions. All user-visible strings go through t() with an English
+ * defaultValue, EXCEPT the boss-supplied Bengali reward list, which is
+ * kept verbatim (English UI law + boss's own words).
  */
+
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import PremiumLoader from '@/src/components/PremiumLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -44,18 +50,14 @@ import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import {
   subscribeMyIntimacies,
   fetchPeerProfile,
-  intimacyLevelFor,
-  intimacyProgress,
-  INTIMACY_LEVELS,
   type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
 import {
   subscribeCoupleState,
   subscribeCoupleLevels,
   coupleLevelFor,
   coupleLevelProgress,
-  formatCoupleLevel,
   coupleLevelRangeText,
-  coupleLevelRangeLine,
+  formatCoupleLevel,
   formatHearts,
   DEFAULT_COUPLE_LEVELS,
   type CoupleLevel,
@@ -63,12 +65,33 @@ import {
 import {
   subscribeUserFriends, MAX_FRIENDS,
   type FriendEntry } from '@/src/features/intimacy/friendService';
-import { INTIMACY_ART } from '@/src/features/intimacy/intimacyArt';
 import { subscribeLevel } from '@/src/services/levelService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   FriendRow,
   RowPhoto } from '@/src/features/intimacy/IntimacyTiles';
+import {
+  subscribeCouplePaidLevel,
+  subscribeCoupleClaims,
+  setCouplePaidLevel,
+  claimCoupleLevelReward,
+  COUPLE_UPGRADE_COSTS,
+  COUPLE_PAID_LEVELS,
+  COUPLE_PAID_REWARDS_BN,
+  COUPLE_REQUEST_PRICE,
+  formatPaidLevel,
+  paidLevelProgress } from '@/src/features/intimacy/couplePaidLevels';
+import {
+  chargeCoupleDiamonds,
+  CouplePaymentUnavailable } from '@/src/features/intimacy/couplePayment';
+import {
+  CoupleFrameArt,
+  CoupleEntryEffectPreview,
+  CoupleHouseArt,
+  CrystalMotif,
+  RingMotif,
+  LoveHouseArt } from '@/src/features/intimacy/CoupleLevelArt';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
 
 const C = {
   bg: '#F4F5F5',
@@ -84,6 +107,7 @@ const C = {
   pinkDark: '#BE185D',
   pinkTile: '#FFF5F7',
   pinkBorder: '#F472B6',
+  pinkBar: '#FBCFE8',
   goldBg: '#FFF8E6',
   goldBorder: '#F5D67B',
   goldText: '#B8860B' } as const;
@@ -144,9 +168,7 @@ function TabsRow({ tab, setTab, friendCount, variant }: {
   );
 }
 
-/** Friend row with the friend's own user total level as the blue pill.
- *  pairValue = this pair's intimacy value when a pair exists (red pill +
- *  hearts text); absent = 0 (a friend who never gifted yet). */
+/** Friend row with the friend's own user total level as the blue pill. */
 function FriendRowWithLevel({ friendUid, pairValue, peer, onPress }: {
   friendUid: string;
   pairValue?: number;
@@ -179,97 +201,152 @@ function FriendRowWithLevel({ friendUid, pairValue, peer, onPress }: {
   );
 }
 
+/**
+ * Trio header row: self (left), center motif, partner slot (right).
+ * Partner slot rules: coupled → partner photo + name + level pill;
+ * unpaired + own page → + button + "Empty" + Lv.0 pill; unpaired +
+ * other page → state only, no action.
+ */
+function TrioRow({ ownPhotoURL, displayName, partner, isOwn, onInvite, onPartnerPress, center, levelPill }: {
+  ownPhotoURL: string | null;
+  displayName: string;
+  partner: { photoURL: string | null; name: string } | null;
+  isOwn: boolean;
+  onInvite: () => void;
+  onPartnerPress: () => void;
+  center: React.ReactNode;
+  levelPill: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 18 }}>
+      <View style={{ width: 88, alignItems: 'center' }}>
+        <RowPhoto photoURL={ownPhotoURL} name={displayName} size={56} />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8, textAlign: 'center' }} numberOfLines={1}>
+          {displayName}
+        </Text>
+      </View>
+      <View style={{ flex: 1, alignItems: 'center', paddingTop: 2 }}>
+        {center}
+      </View>
+      <View style={{ width: 88, alignItems: 'center' }}>
+        {partner ? (
+          <Pressable onPress={onPartnerPress} style={{ alignItems: 'center' }}>
+            <RowPhoto photoURL={partner.photoURL} name={partner.name} size={56} />
+            <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8, textAlign: 'center' }} numberOfLines={1}>
+              {partner.name || t('profile.intimacyPartner', { defaultValue: 'Partner' })}
+            </Text>
+            <View style={{ backgroundColor: C.pink, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>{levelPill}</Text>
+            </View>
+          </Pressable>
+        ) : isOwn ? (
+          <Pressable onPress={onInvite} style={{ alignItems: 'center' }} hitSlop={8}>
+            <View
+              style={{
+                width: 56, height: 56, borderRadius: 28, borderWidth: 2,
+                borderColor: C.pinkBorder, backgroundColor: C.pinkTile,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 30, fontWeight: '300', color: C.pink, lineHeight: 34 }}>+</Text>
+            </View>
+            <View style={{ backgroundColor: C.pink, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginTop: 8 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>Lv.0</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+              {t('profile.intimacyEmpty', { defaultValue: 'Empty' })}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={{ alignItems: 'center' }}>
+            <View
+              style={{
+                width: 56, height: 56, borderRadius: 28, borderWidth: 2,
+                borderColor: C.pinkBorder, backgroundColor: C.pinkTile,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            />
+            <Text style={{ fontSize: 13, color: C.muted, marginTop: 8 }}>
+              {t('profile.intimacyEmpty', { defaultValue: 'Empty' })}
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/** Small silhouette disc used inside frame previews. */
+function Silhouette({ size }: { size: number }) {
+  return (
+    <View
+      style={{
+        width: size, height: size, borderRadius: size / 2,
+        backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <Feather name="user" size={size * 0.5} color="#9CA3AF" />
+    </View>
+  );
+}
+
 export default function IntimacyScreen() {
   const { user } = useAuth();
   const { t } = useTranslation();
   const params = useLocalSearchParams<{ uid?: string; tab?: string }>();
   const viewUid = typeof params.uid === 'string' && params.uid ? params.uid : user?.uid;
   const isOwn = !!user?.uid && viewUid === user.uid;
-  // Friend (+) slots land here: ?tab=friend opens the Friend tab on mount.
   const initialTab: Tab =
     params.tab === 'friend' || params.tab === 'intimacy' ? params.tab : 'couple';
 
+  // Defaults render immediately; subscriptions update in place (no spinner).
   const [profile, setProfile] = useState<VeeUser | null>(null);
   const [entries, setEntries] = useState<IntimacyEntry[]>([]);
   const [couple, setCouple] = useState<CoupleState | null>(null);
-  // 2026-10-27 (boss correction): EXPLICIT friends — the ONLY Friend tab
-  // source. Intimacy pairs never render as friends.
   const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [coupleLevels, setCoupleLevels] = useState<CoupleLevel[]>(DEFAULT_COUPLE_LEVELS);
   const [peers, setPeers] = useState<Record<string, { name: string; photoURL: string | null }>>({});
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [error, setError] = useState<string | null>(null);
-  const [ringBoxFailed, setRingBoxFailed] = useState(false);
-  const [loveHouseFailed, setLoveHouseFailed] = useState(false);
+  const [paidLevel, setPaidLevel] = useState(1);
+  const [claims, setClaims] = useState<Set<number>>(new Set());
+  const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
-    if (!viewUid) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+    if (!viewUid) return;
     setError(null);
-    let profileDone = false;
-    let intimacyDone = false;
-    let coupleDone = false;
-    let friendsDone = false;
-    const maybeDone = () => {
-      if (profileDone && intimacyDone && coupleDone && friendsDone) setLoading(false);
-    };
-    const unsubProfile = subscribeUser(viewUid, (u) => {
-      profileDone = true;
-      setProfile(u);
-      maybeDone();
-    });
+    const loadError = t('profile.intimacyLoadError', { defaultValue: 'Could not load intimacy.' });
     let unsubIntimacy: () => void = () => {};
     let unsubCouple: () => void = () => {};
     let unsubFriends: () => void = () => {};
-    try {
-      unsubIntimacy = subscribeMyIntimacies(viewUid, (e) => {
-        intimacyDone = true;
-        setEntries(e);
-        maybeDone();
-      });
-    } catch (e) {
-      setError(t('profile.intimacyLoadError', { defaultValue: 'Could not load intimacy.' }) + ` ${getErrorCause(e)}`);
-      intimacyDone = true;
-      maybeDone();
-    }
-    try {
-      unsubCouple = subscribeCoupleState(viewUid, (s) => {
-        coupleDone = true;
-        setCouple(s);
-        maybeDone();
-      });
-    } catch (e) {
-      setError(t('profile.intimacyLoadError', { defaultValue: 'Could not load intimacy.' }) + ` ${getErrorCause(e)}`);
-      coupleDone = true;
-      maybeDone();
-    }
-    try {
-      unsubFriends = subscribeUserFriends(viewUid, (f) => {
-        friendsDone = true;
-        setFriends(f);
-        maybeDone();
-      });
-    } catch (e) {
-      setError(t('profile.intimacyLoadError', { defaultValue: 'Could not load intimacy.' }) + ` ${getErrorCause(e)}`);
-      friendsDone = true;
-      maybeDone();
-    }
-    const timeout = setTimeout(() => setLoading(false), 8000);
+    let unsubLevels: () => void = () => {};
+    const unsubProfile = subscribeUser(viewUid, (u) => setProfile(u));
+    try { unsubIntimacy = subscribeMyIntimacies(viewUid, (e) => setEntries(e)); } catch (e) { setError(`${loadError} ${getErrorCause(e)}`); }
+    try { unsubCouple = subscribeCoupleState(viewUid, (s) => setCouple(s)); } catch (e) { setError(`${loadError} ${getErrorCause(e)}`); }
+    try { unsubFriends = subscribeUserFriends(viewUid, (f) => setFriends(f)); } catch (e) { setError(`${loadError} ${getErrorCause(e)}`); }
+    try { unsubLevels = subscribeCoupleLevels((l) => setCoupleLevels(l)); } catch { /* defaults stay */ }
     return () => {
-      clearTimeout(timeout);
       unsubProfile();
       unsubIntimacy();
       unsubCouple();
       unsubFriends();
+      unsubLevels();
     };
   }, [viewUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Server-driven couple curve override (defaults render immediately).
-  useEffect(() => subscribeCoupleLevels(setCoupleLevels), []);
+  // Paid level + roadmap claims follow the couple pointer.
+  useEffect(() => {
+    const pairKey = couple?.pairKey ?? null;
+    if (!pairKey) {
+      setPaidLevel(1);
+      setClaims(new Set());
+      return;
+    }
+    const u1 = subscribeCouplePaidLevel(pairKey, (l) => setPaidLevel(l));
+    const u2 = subscribeCoupleClaims(pairKey, (c) => setClaims(c));
+    return () => { u1(); u2(); };
+  }, [couple?.pairKey]);
 
   // Peer names/photos for friends + partner (best-effort, cached in state).
   useEffect(() => {
@@ -300,29 +377,40 @@ export default function IntimacyScreen() {
     t('profile.intimacyUser', { defaultValue: 'User' });
   const ownPhotoURL = profile?.photoURL || null;
 
+  const isCoupled = !!couple;
   const partnerPeer = couple?.partnerUid ? peers[couple.partnerUid] : undefined;
   const partnerName = partnerPeer?.name || '';
   const partnerPhotoURL = partnerPeer?.photoURL ?? null;
+  const partner = couple?.partnerUid
+    ? { photoURL: partnerPhotoURL, name: partnerName }
+    : null;
 
-  // Art URLs (empty = placeholder box; see art-emptiness note in report).
-  const art = INTIMACY_ART as { ringBox?: string; loveHouse?: string } | undefined;
-  const ringBoxUrl = !ringBoxFailed && typeof art?.ringBox === 'string' ? art.ringBox : '';
-  const loveHouseUrl = !loveHouseFailed && typeof art?.loveHouse === 'string' ? art.loveHouse : '';
-
-  const coupleLevel = useMemo(
-    () => coupleLevelFor(couple?.hearts ?? 0, coupleLevels),
-    [couple?.hearts, coupleLevels],
+  // Hearts meter (Intimacy tab): the hearts curve, NOT the paid levels.
+  const hearts = couple?.hearts ?? 0;
+  const heartsLevel = useMemo(
+    () => coupleLevelFor(hearts, coupleLevels),
+    [hearts, coupleLevels],
   );
-  const nextCoupleLevel = useMemo(() => {
-    const idx = coupleLevels.findIndex((l) => l.id === coupleLevel.id);
-    return idx >= 0 && idx + 1 < coupleLevels.length ? coupleLevels[idx + 1] : null;
-  }, [coupleLevels, coupleLevel]);
+  const heartsProgress = useMemo(
+    () => coupleLevelProgress(hearts, coupleLevels),
+    [hearts, coupleLevels],
+  );
+  const nextHeartsLevel = useMemo(() => {
+    const sorted = [...coupleLevels].sort((a, b) => a.min - b.min);
+    const idx = sorted.findIndex((l) => l.id === heartsLevel.id);
+    return idx >= 0 && idx + 1 < sorted.length ? sorted[idx + 1] : null;
+  }, [coupleLevels, heartsLevel]);
+
+  // Paid roadmap (Couple tab).
+  const roadmapProgress = paidLevelProgress(paidLevel);
+  const nextPaidLevel = paidLevel < 5 ? paidLevel + 1 : null;
+  const nextCost = nextPaidLevel ? COUPLE_UPGRADE_COSTS[nextPaidLevel] : null;
 
   const showAbout = () => {
     Alert.alert(
       t('profile.intimacyAboutTitle', { defaultValue: 'About Intimacy' }),
       t('profile.intimacyAboutBody', {
-        defaultValue: 'Intimacy grows when you send gifts to a friend — higher intimacy means a higher level. A couple is one partner: form a couple to unlock the Love House, and your couple level grows from gifts, time spent together in voice rooms, and PK battles. A couple invitation costs 5000 diamonds, is never refunded, and expires 5 hours after sending. Friends are people you explicitly add (up to 5); a friend invitation is free and never expires.',
+        defaultValue: `Intimacy grows when you send gifts to a friend — higher intimacy means a higher level. A couple is one partner: form a couple to unlock the Love House. A couple invitation costs ${COUPLE_REQUEST_PRICE} diamonds, is never refunded, and expires 5 hours after sending. On accept, the couple starts at Level 1; higher levels are diamond upgrades (Lv.2 2000, Lv.3 3500, Lv.4 5000, Lv.5 7000). Each level grants its own profile frame and entry effect. Friends are people you explicitly add (up to 5); a friend invitation is free and never expires.`,
       }),
     );
   };
@@ -339,16 +427,50 @@ export default function IntimacyScreen() {
     router.push('/profile/friend-invite' as never);
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <PremiumLoader size="large" />
-      </SafeAreaView>
-    );
-  }
+  const goTopup = () => {
+    router.push('/profile/topup' as never);
+  };
+
+  const onUpgrade = () => {
+    if (!user?.uid || !couple?.pairKey || !nextPaidLevel || nextCost === undefined || nextCost === null) return;
+    setUpgrading(true);
+    void (async () => {
+      try {
+        await chargeCoupleDiamonds({
+          uid: user.uid,
+          pairKey: couple.pairKey,
+          level: nextPaidLevel,
+          amount: nextCost,
+          idempotencyKey: `${couple.pairKey}:${nextPaidLevel}`,
+        });
+        // Only reached once the wallet endpoint exists: record the level.
+        await setCouplePaidLevel(couple.pairKey, nextPaidLevel);
+      } catch (e) {
+        if (e instanceof CouplePaymentUnavailable) {
+          Alert.alert(
+            t('couple.upgradeUnavailableTitle', { defaultValue: 'Upgrade not available yet' }),
+            t('couple.upgradeUnavailableBody', { defaultValue: 'Couple upgrades need a wallet update first. Please try again later.' }),
+          );
+        } else {
+          Alert.alert(
+            t('couple.upgradeFailedTitle', { defaultValue: 'Upgrade failed' }),
+            getErrorCause(e),
+          );
+        }
+      } finally {
+        setUpgrading(false);
+      }
+    })();
+  };
+
+  const onClaim = (level: number) => {
+    if (!couple?.pairKey) return;
+    void claimCoupleLevelReward(couple.pairKey, level).catch((e) => {
+      setError(`${t('profile.intimacyClaimError', { defaultValue: 'Could not claim the reward.' })} ${getErrorCause(e)}`);
+    });
+  };
 
   const noFriends = friends.length === 0;
-  const noPairs = entries.length === 0;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -375,221 +497,308 @@ export default function IntimacyScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 18 }}>
-              {/* Own photo + name (left) */}
-              <View style={{ width: 88, alignItems: 'center' }}>
-                <RowPhoto photoURL={ownPhotoURL} name={displayName} size={56} />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8, textAlign: 'center' }} numberOfLines={1}>
-                  {displayName}
-                </Text>
-              </View>
-              {/* Pink heart ring-box art (center) */}
-              <View style={{ flex: 1, alignItems: 'center', paddingTop: 2 }}>
-                {ringBoxUrl ? (
-                  <Image
-                    source={{ uri: ringBoxUrl }}
-                    style={{ width: 120, height: 110 }}
-                    contentFit="contain"
-                    onError={() => setRingBoxFailed(true)}
-                  />
-                ) : (
-                  <View
-                    style={{
-                      width: 120, height: 110, borderRadius: 16, backgroundColor: C.pinkTile,
-                      borderWidth: 1, borderColor: C.pinkBorder, alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <Text style={{ fontSize: 44, color: C.pink }}>♥</Text>
-                  </View>
-                )}
-              </View>
-              {/* Partner slot (right) */}
-              <View style={{ width: 88, alignItems: 'center' }}>
-                {couple ? (
-                  <Pressable
-                    onPress={() => couple.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
-                    style={{ alignItems: 'center' }}
-                  >
-                    <RowPhoto photoURL={partnerPhotoURL} name={partnerName} size={56} />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8, textAlign: 'center' }} numberOfLines={1}>
-                      {partnerName || t('profile.intimacyPartner', { defaultValue: 'Partner' })}
-                    </Text>
-                  </Pressable>
-                ) : isOwn ? (
-                  <Pressable onPress={goCoupleInvite} style={{ alignItems: 'center' }} hitSlop={8}>
-                    <View
-                      style={{
-                        width: 56, height: 56, borderRadius: 28, borderWidth: 2,
-                        borderColor: C.pinkBorder, backgroundColor: C.pinkTile,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{ fontSize: 30, fontWeight: '300', color: C.pink, lineHeight: 34 }}>+</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, color: C.muted, marginTop: 8 }}>
-                      {t('profile.intimacyEmpty', { defaultValue: 'Empty' })}
-                    </Text>
-                  </Pressable>
-                ) : (
-                  // Other users: partner slot state only — NO + button, no invite action.
-                  <View style={{ alignItems: 'center' }}>
-                    <View
-                      style={{
-                        width: 56, height: 56, borderRadius: 28, borderWidth: 2,
-                        borderColor: C.pinkBorder, backgroundColor: C.pinkTile,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    />
-                    <Text style={{ fontSize: 13, color: C.muted, marginTop: 8 }}>
-                      {t('profile.intimacyEmpty', { defaultValue: 'Empty' })}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
+            <TrioRow
+              ownPhotoURL={ownPhotoURL}
+              displayName={displayName}
+              partner={partner}
+              isOwn={isOwn}
+              onInvite={goCoupleInvite}
+              onPartnerPress={() => couple?.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
+              center={<CrystalMotif size={110} />}
+              levelPill={formatPaidLevel(paidLevel)}
+            />
             <TabsRow tab={tab} setTab={setTab} friendCount={friends.length} variant="onPink" />
           </LinearGradient>
 
           <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-            <View style={{ position: 'relative' }}>
-              {/* Floating-hearts background decoration (text only, not images) */}
-              <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-                <Text style={{ position: 'absolute', top: 18, right: 24, fontSize: 22, color: '#F9A8D4', opacity: 0.5 }}>♥</Text>
-                <Text style={{ position: 'absolute', top: 120, left: 18, fontSize: 16, color: '#F9A8D4', opacity: 0.4 }}>♡</Text>
-                <Text style={{ position: 'absolute', top: 260, right: 14, fontSize: 18, color: '#F9A8D4', opacity: 0.4 }}>♡</Text>
-                <Text style={{ position: 'absolute', top: 420, left: 26, fontSize: 20, color: '#F9A8D4', opacity: 0.35 }}>♥</Text>
-              </View>
-
-              {/* Love House sheet */}
-              <View style={[cardStyle, { padding: 16 }]}>
-                <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>
-                  {t('profile.intimacyLoveHouse', { defaultValue: 'Love House' })}
-                </Text>
-                <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
-                  {couple
-                    ? `${t('profile.intimacyYourLoveHouse', { defaultValue: 'Your Love House' })} · ${coupleLevelRangeLine(coupleLevel)}`
-                    : t('profile.intimacyLoveHouseLocked', { defaultValue: 'Form a couple to unlock the Love House' })}
-                </Text>
-
-                {/* Level card */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14, backgroundColor: C.pinkTile, borderRadius: 12, padding: 12 }}>
-                  <View style={{ backgroundColor: C.pink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{formatCoupleLevel(coupleLevel)}</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: C.text }}>
-                      {formatHearts(couple?.hearts ?? 0)} {t('profile.intimacyHearts', { defaultValue: 'hearts' })}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                      {coupleLevelRangeText(coupleLevel)}
-                    </Text>
-                    <View style={{ height: 6, borderRadius: 3, backgroundColor: '#FBCFE8', marginTop: 8, overflow: 'hidden' }}>
-                      <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pink, width: `${Math.round(coupleLevelProgress(couple?.hearts ?? 0, coupleLevels) * 100)}%` }} />
+            {/* Overall Intimacy Level */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyOverallLevel', { defaultValue: 'Overall Intimacy Level' })}
+              </Text>
+              {isCoupled ? (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+                    <View style={{ backgroundColor: C.pink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{formatPaidLevel(paidLevel)}</Text>
                     </View>
+                    <Text style={{ fontSize: 13, color: C.muted, marginLeft: 10 }}>
+                      {`${t('profile.intimacyProgress', { defaultValue: 'Progress' })}: ${Math.round(roadmapProgress * 100)}%`}
+                    </Text>
                   </View>
-                </View>
-
-                {/* Love House art (lock overlay ONLY while no couple) */}
-                <View style={{ alignItems: 'center', marginTop: 16 }}>
-                  <View style={{ position: 'relative' }}>
-                    {loveHouseUrl ? (
-                      <Image
-                        source={{ uri: loveHouseUrl }}
-                        style={{ width: 260, height: 160, borderRadius: 16 }}
-                        contentFit="contain"
-                        onError={() => setLoveHouseFailed(true)}
-                      />
-                    ) : (
-                      <View
-                        style={{
-                          width: 260, height: 160, borderRadius: 16, backgroundColor: C.pinkTile,
-                          borderWidth: 1, borderColor: C.pinkBorder, alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        <Text style={{ fontSize: 52, color: C.pink }}>♥</Text>
-                        <Text style={{ fontSize: 13, color: C.muted, marginTop: 8 }}>
-                          {t('profile.intimacyLoveHouse', { defaultValue: 'Love House' })}
-                        </Text>
-                      </View>
-                    )}
-                    {!couple && (
-                      <View
-                        style={{
-                          position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
-                          alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        <View style={{ backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 24, padding: 10 }}>
-                          <Feather name="lock" size={24} color="#FFFFFF" />
-                        </View>
-                      </View>
-                    )}
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pinkBar, marginTop: 10, overflow: 'hidden' }}>
+                    <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pink, width: `${Math.round(roadmapProgress * 100)}%` }} />
                   </View>
-                </View>
-              </View>
-
-              {/* Privileges — INFO-ONLY (non-pressable Views; mechanics not defined) */}
-              <View style={{ paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
-                  {`${formatCoupleLevel(coupleLevel)} ${t('profile.intimacyPrivileges', { defaultValue: 'Privileges' })}`}
+                </>
+              ) : (
+                <Text style={{ fontSize: 13, color: C.muted, marginTop: 8, lineHeight: 19 }}>
+                  {isOwn
+                    ? t('profile.intimacyNoCoupleYet', { defaultValue: 'No couple yet — form a couple to start at Level 1.' })
+                    : t('profile.intimacyNoCouple', { defaultValue: 'No couple yet.' })}
                 </Text>
+              )}
+              {/* Level badges 1–5 */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 4 }}>
+                {COUPLE_PAID_LEVELS.map((l) => {
+                  const reached = isCoupled && l.id <= paidLevel;
+                  const current = isCoupled && l.id === paidLevel;
+                  return (
+                    <View
+                      key={l.id}
+                      style={{
+                        width: 30, height: 30, borderRadius: 15,
+                        backgroundColor: reached ? C.pink : '#FFFFFF',
+                        borderWidth: current ? 2 : 1,
+                        borderColor: current ? C.goldBorder : C.pinkBorder,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: reached ? '#FFFFFF' : C.muted }}>
+                        {l.id}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
-              <View style={{ paddingHorizontal: 15, paddingBottom: 32, gap: 10 }}>
-                <View style={{ backgroundColor: C.card, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
-                      {t('profile.intimacyPrivilegeGrow', { defaultValue: 'Grow together, unlock more' })}
+            </View>
+
+            {/* Level-Up Cost */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyLevelUpCost', { defaultValue: 'Level-Up Cost' })}
+              </Text>
+              <View style={{ flexDirection: 'row', marginTop: 12, gap: 8 }}>
+                {COUPLE_PAID_LEVELS.filter((l) => l.id > 1).map((l) => {
+                  const cost = COUPLE_UPGRADE_COSTS[l.id];
+                  const isNext = l.id === nextPaidLevel;
+                  return (
+                    <View
+                      key={l.id}
+                      style={{
+                        flex: 1, alignItems: 'center', backgroundColor: isNext ? C.goldBg : C.pinkTile,
+                        borderWidth: isNext ? 1 : 0, borderColor: C.goldBorder,
+                        borderRadius: 10, paddingVertical: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }}>
+                        {`Lv.${l.id}${l.id === 5 ? ` (${t('profile.intimacyMax', { defaultValue: 'Max' })})` : ''}`}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 3 }}>
+                        <DiamondIcon size={12} />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: C.text }}>{cost}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Upgrade action (own page only) */}
+            {isOwn && (
+              <View style={[cardStyle, { padding: 16 }]}>
+                {!isCoupled ? (
+                  <Pressable
+                    onPress={goCoupleInvite}
+                    style={{ backgroundColor: C.pink, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFFFFF' }}>
+                      {t('profile.intimacyFormCouple', { defaultValue: 'Form a couple' })}
                     </Text>
-                    <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
-                      {t('profile.intimacyPrivilegeGrowBody', { defaultValue: 'Couple privileges grow with your couple level. Send gifts, spend time together in voice rooms, and win PK battles to climb higher.' })}
-                    </Text>
-                  </View>
-                  <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 10 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: C.goldText }}>
-                      {t('profile.intimacyGrabTop', { defaultValue: 'Grab the Top' })}
-                    </Text>
-                  </View>
-                </View>
-                {nextCoupleLevel ? (
-                  <View style={{ backgroundColor: C.card, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }}>
+                  </Pressable>
+                ) : nextPaidLevel && nextCost !== null ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
-                        {`${t('profile.intimacyNextLevel', { defaultValue: 'Next' })}: ${formatCoupleLevel(nextCoupleLevel)}`}
+                        {`${t('profile.intimacyUpgradeTo', { defaultValue: 'Upgrade to' })} ${formatPaidLevel(nextPaidLevel)}`}
                       </Text>
-                      <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
-                        {`${t('profile.intimacyReachHearts', { defaultValue: 'Reach' })} ${formatHearts(nextCoupleLevel.min)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })}`}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                        <DiamondIcon size={14} />
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: C.text }}>{nextCost}</Text>
+                      </View>
                     </View>
-                    <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 10 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.goldText }}>
-                        {t('profile.intimacyGrabTop', { defaultValue: 'Grab the Top' })}
+                    <Pressable
+                      onPress={onUpgrade}
+                      disabled={upgrading}
+                      style={{ backgroundColor: upgrading ? C.pinkBorder : C.pink, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10 }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                        {upgrading
+                          ? t('profile.intimacyUpgrading', { defaultValue: 'Upgrading…' })
+                          : t('profile.intimacyUpgrade', { defaultValue: 'Upgrade' })}
                       </Text>
-                    </View>
+                    </Pressable>
                   </View>
                 ) : (
-                  <View style={{ backgroundColor: C.card, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
-                        {t('profile.intimacyTopLevel', { defaultValue: 'You reached the top level' })}
-                      </Text>
-                      <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
-                        {t('profile.intimacyTopLevelBody', { defaultValue: 'The highest couple level — every privilege is yours.' })}
-                      </Text>
-                    </View>
-                    <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 10 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.goldText }}>
-                        {t('profile.intimacyGrabTop', { defaultValue: 'Grab the Top' })}
-                      </Text>
-                    </View>
+                  <View>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                      {t('profile.intimacyTopLevel', { defaultValue: 'You reached the top level' })}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
+                      {t('profile.intimacyTopLevelBody', { defaultValue: 'The highest couple level — every privilege is yours.' })}
+                    </Text>
                   </View>
                 )}
               </View>
+            )}
+
+            {/* Level-Up Progress & Reward Roadmap */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyRoadmap', { defaultValue: 'Level-Up Progress & Reward Roadmap' })}
+              </Text>
+              <Text style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+                {t('profile.intimacyRoadmapBar', { defaultValue: 'Level-Up Progress Bar' })}
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 14 }}>
+                {COUPLE_PAID_LEVELS.map((l) => {
+                  const reached = isCoupled && l.id <= paidLevel;
+                  const current = isCoupled && l.id === paidLevel;
+                  return (
+                    <View
+                      key={l.id}
+                      style={{
+                        alignItems: 'center', opacity: reached ? 1 : 0.55,
+                        borderWidth: current ? 2 : 0, borderColor: C.goldBorder,
+                        borderRadius: 10, padding: 3,
+                      }}
+                    >
+                      <CoupleHouseArt level={l.id} width={56} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: C.text, marginTop: 4 }}>
+                        {`Level ${l.id}`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pinkBar, marginTop: 12, overflow: 'hidden' }}>
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pink, width: `${isCoupled ? Math.round(roadmapProgress * 100) : 0}%` }} />
+              </View>
+              {/* Claim buttons, one per level */}
+              <View style={{ flexDirection: 'row', marginTop: 12, gap: 6 }}>
+                {COUPLE_PAID_LEVELS.map((l) => {
+                  const reached = isCoupled && l.id <= paidLevel;
+                  const claimed = claims.has(l.id);
+                  return (
+                    <Pressable
+                      key={l.id}
+                      onPress={() => (reached && !claimed ? onClaim(l.id) : undefined)}
+                      disabled={!reached || claimed || !isOwn}
+                      style={{
+                        flex: 1, alignItems: 'center', justifyContent: 'center',
+                        height: 30, borderRadius: 999,
+                        backgroundColor: claimed ? C.goldBg : reached ? C.pink : C.tile,
+                        borderWidth: claimed ? 1 : 0, borderColor: C.goldBorder,
+                      }}
+                    >
+                      {claimed ? (
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: C.goldText }}>
+                          {t('profile.intimacyClaimed', { defaultValue: 'Claimed' })}
+                        </Text>
+                      ) : reached ? (
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>
+                          {t('profile.intimacyClaim', { defaultValue: 'Claim' })}
+                        </Text>
+                      ) : (
+                        <Feather name="lock" size={12} color={C.muted} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {!isCoupled && (
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 10, textAlign: 'center' }}>
+                  {t('profile.intimacyRoadmapLocked', { defaultValue: 'Rewards unlock once a couple is formed.' })}
+                </Text>
+              )}
+            </View>
+
+            {/* Privilege Showcase (Lv.1–2) */}
+            <View style={{ paddingHorizontal: 15, paddingTop: 16 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyShowcase12', { defaultValue: 'Privilege Showcase (Lv. 1-2)' })}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, paddingTop: 10, gap: 10 }}>
+              {[1, 2].map((lv) => (
+                <View key={`f${lv}`} style={{ width: '48%', backgroundColor: C.card, borderRadius: 12, padding: 10, alignItems: 'center' }}>
+                  <CoupleFrameArt level={lv} size={76}>
+                    <Silhouette size={56} />
+                  </CoupleFrameArt>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginTop: 8 }}>
+                    {`Lv.${lv} ${t('profile.intimacyFrame', { defaultValue: 'Frame' })}`}
+                  </Text>
+                </View>
+              ))}
+              {[1, 2].map((lv) => (
+                <View key={`e${lv}`} style={{ width: '48%', backgroundColor: C.card, borderRadius: 12, padding: 10, alignItems: 'center' }}>
+                  <CoupleEntryEffectPreview level={lv} width={140} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginTop: 8 }}>
+                    {`Lv.${lv} ${t('profile.intimacyEntryEffect', { defaultValue: 'Entry Effect' })}`}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* High Level Privileges (Lv.3–5) */}
+            <View style={{ paddingHorizontal: 15, paddingTop: 16 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyShowcase35', { defaultValue: 'High Level Privileges (Lv. 3-5)' })}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, paddingTop: 10, gap: 10 }}>
+              {[3, 4, 5].map((lv) => (
+                <View key={`f${lv}`} style={{ width: '48%', backgroundColor: C.card, borderRadius: 12, padding: 10, alignItems: 'center' }}>
+                  <CoupleFrameArt level={lv} size={76}>
+                    <Silhouette size={56} />
+                  </CoupleFrameArt>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginTop: 8 }}>
+                    {`Lv.${lv} ${t('profile.intimacyFrame', { defaultValue: 'Frame' })}${lv === 5 ? ` (${t('profile.intimacyMax', { defaultValue: 'Max' })})` : ''}`}
+                  </Text>
+                </View>
+              ))}
+              {[3, 4, 5].map((lv) => (
+                <View key={`e${lv}`} style={{ width: '48%', backgroundColor: C.card, borderRadius: 12, padding: 10, alignItems: 'center' }}>
+                  <CoupleEntryEffectPreview level={lv} width={140} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text, marginTop: 8 }}>
+                    {`Lv.${lv} ${t('profile.intimacyEntryEffect', { defaultValue: 'Entry Effect' })}${lv === 5 ? ` (${t('profile.intimacyMax', { defaultValue: 'Max' })})` : ''}`}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Detailed Reward & Privilege List (Bengali, verbatim) */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyRewardList', { defaultValue: 'Detailed Reward & Privilege List' })}
+              </Text>
+              {[2, 3, 4, 5].map((lv) => (
+                <Text key={lv} style={{ fontSize: 14, color: C.text, marginTop: 10, lineHeight: 21 }}>
+                  {`Lv.${lv}: ${COUPLE_PAID_REWARDS_BN[lv]}`}
+                </Text>
+              ))}
+            </View>
+
+            {/* Buy Diamonds pill */}
+            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+              <Pressable
+                onPress={goTopup}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: C.card, borderWidth: 1, borderColor: C.goldBorder,
+                  borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10,
+                }}
+              >
+                <DiamondIcon size={16} />
+                <Text style={{ fontSize: 14, fontWeight: '800', color: C.goldText }}>
+                  {t('profile.intimacyBuyDiamonds', { defaultValue: 'Buy Diamonds' })}
+                </Text>
+              </Pressable>
             </View>
           </ScrollView>
         </>
-      ) : (
+      ) : tab === 'intimacy' ? (
         <>
-          {/* Profile row card (Friend / Intimacy tabs) */}
+          {/* Profile row card (Intimacy tab) */}
           <View style={[cardStyle, { flexDirection: 'row', alignItems: 'center', padding: 15 }]}>
             <RowPhoto photoURL={ownPhotoURL} name={displayName} size={52} />
             <View style={{ marginLeft: 12, flex: 1 }}>
@@ -601,128 +810,140 @@ export default function IntimacyScreen() {
           </View>
           <TabsRow tab={tab} setTab={setTab} friendCount={friends.length} variant="plain" />
 
-          {tab === 'friend' ? (
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              {isOwn && friends.length < MAX_FRIENDS && (
-                <Pressable
-                  onPress={goFriendInvite}
-                  style={{
-                    marginHorizontal: 15, marginTop: 12, backgroundColor: C.blue,
-                    borderRadius: 12, paddingVertical: 12, alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFFFFF' }}>
-                    {t('profile.intimacySendFriendInvite', { defaultValue: 'Send Friend Invitation' })}
-                  </Text>
-                </Pressable>
-              )}
-              {isOwn && friends.length >= MAX_FRIENDS && (
-                <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 12, paddingHorizontal: 15 }}>
-                  {t('profile.intimacyMaxFriends', { defaultValue: 'You already have 5 friends — the maximum.' })}
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            {/* Trio: self + ring motif + partner slot */}
+            <View style={[cardStyle, { paddingBottom: 6 }]}>
+              <TrioRow
+                ownPhotoURL={ownPhotoURL}
+                displayName={displayName}
+                partner={partner}
+                isOwn={isOwn}
+                onInvite={goCoupleInvite}
+                onPartnerPress={() => couple?.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
+                center={<RingMotif size={110} />}
+                levelPill={formatPaidLevel(paidLevel)}
+              />
+            </View>
+
+            {/* Love House */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: C.text }}>
+                {t('profile.intimacyLoveHouse', { defaultValue: 'Love House' })}
+              </Text>
+              <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
+                {isCoupled
+                  ? `${t('profile.intimacyYourLoveHouse', { defaultValue: 'Your Love House' })} · ${coupleLevelRangeText(heartsLevel)}`
+                  : t('profile.intimacyLoveHouseLocked', { defaultValue: 'Form a couple to unlock the Love House' })}
+              </Text>
+              <View style={{ alignItems: 'center', marginTop: 16 }}>
+                <LoveHouseArt width={260} locked={!isCoupled} />
+              </View>
+            </View>
+
+            {/* Hearts meter */}
+            <View style={[cardStyle, { padding: 16 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ backgroundColor: C.pink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{formatCoupleLevel(heartsLevel)}</Text>
+                </View>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: C.text, marginLeft: 12 }}>
+                  {formatHearts(hearts)} {t('profile.intimacyHearts', { defaultValue: 'hearts' })}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+                {coupleLevelRangeText(heartsLevel)}
+              </Text>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pinkBar, marginTop: 8, overflow: 'hidden' }}>
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: C.pink, width: `${Math.round(heartsProgress * 100)}%` }} />
+              </View>
+              {nextHeartsLevel && (
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+                  {`${formatHearts(nextHeartsLevel.min - hearts)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })} ${t('profile.intimacyToNext', { defaultValue: 'to next level' })}`}
                 </Text>
               )}
-              {noFriends ? (
-                <View style={[cardStyle, { alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
-                    {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
-                    {t('profile.intimacyNoFriendsBody', { defaultValue: 'Send gifts to friends to grow intimacy together.' })}
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ paddingHorizontal: 15, paddingTop: 12, paddingBottom: 32, gap: 10 }}>
-                  {friends.map((f) => (
-                    <FriendRowWithLevel
-                      key={f.uid}
-                      friendUid={f.uid}
-                      pairValue={entries.find((e) => e.otherUid === f.uid)?.value}
-                      peer={peers[f.uid]}
-                      onPress={() => goFriendProfile(f.uid, peers[f.uid]?.name || '')}
-                    />
-                  ))}
-                </View>
-              )}
-            </ScrollView>
-          ) : (
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-              {/* Pairs ranked, with per-pair level progress */}
-              <Text style={{
-                fontSize: 13, fontWeight: '700', color: C.muted,
-                paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
-                {t('profile.intimacyPairsTitle', { defaultValue: 'Your intimacy levels' })}
+            </View>
+
+            {/* Privileges + Grab the Top */}
+            <View style={{ paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                {`${formatCoupleLevel(heartsLevel)} ${t('profile.intimacyPrivileges', { defaultValue: 'Privileges' })}`}
               </Text>
-              {noPairs ? (
-                <View style={[cardStyle, { marginTop: 0, alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
-                    {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}
+            </View>
+            <View style={{ paddingHorizontal: 15, paddingBottom: 32 }}>
+              <View style={{ backgroundColor: C.card, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: C.text }}>
+                    {t('profile.intimacyPrivilegeGrow', { defaultValue: 'Grow together, unlock more' })}
                   </Text>
-                  <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
-                    {t('profile.intimacyNoFriendsBody', { defaultValue: 'Send gifts to friends to grow intimacy together.' })}
+                  <Text style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 19 }}>
+                    {t('profile.intimacyPrivilegeGrowBody', { defaultValue: 'Couple privileges grow with your couple level. Send gifts, spend time together in voice rooms, and win PK battles to climb higher.' })}
                   </Text>
                 </View>
-              ) : (
-                <View style={{ paddingHorizontal: 15, paddingBottom: 8, gap: 10 }}>
-                  {entries.map((e) => {
-                    const lvl = intimacyLevelFor(e.value);
-                    const progress = intimacyProgress(e.value);
-                    const peer = peers[e.otherUid];
-                    const name = peer?.name || t('profile.intimacyUser', { defaultValue: 'User' });
-                    return (
-                      <Pressable
-                        key={e.pairKey}
-                        onPress={() => goFriendProfile(e.otherUid, peer?.name || '')}
-                        style={{ backgroundColor: C.card, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center' }}
-                      >
-                        <RowPhoto photoURL={peer?.photoURL ?? null} name={name} />
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Text style={{ fontSize: 15, fontWeight: '600', color: C.text, flex: 1 }} numberOfLines={1}>{name}</Text>
-                            <Text style={{ fontSize: 13, fontWeight: '700', color: C.blue, marginLeft: 8 }}>
-                              {`${t('profile.intimacyLevelShort', { defaultValue: 'Lv.' })}${lvl.id}`}
-                            </Text>
-                          </View>
-                          <View style={{ height: 6, borderRadius: 3, backgroundColor: C.blueLight, marginTop: 8, overflow: 'hidden' }}>
-                            <View style={{ height: 6, borderRadius: 3, backgroundColor: C.blue, width: `${Math.round(progress * 100)}%` }} />
-                          </View>
-                          <Text style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
-                            {lvl.max === null
-                              ? `${formatHearts(e.value)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })}`
-                              : `${formatHearts(e.value)} ${t('profile.intimacyHearts', { defaultValue: 'hearts' })} · ${formatHearts(lvl.max - e.value + 1)} ${t('profile.intimacyToNext', { defaultValue: 'to next level' })}`}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
+                <View style={{ backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.goldText }}>
+                    {t('profile.intimacyGrabTop', { defaultValue: 'Grab the Top' })}
+                  </Text>
                 </View>
-              )}
-              {/* All 10 intimacy-level thresholds */}
-              <Text style={{
-                fontSize: 13, fontWeight: '700', color: C.muted,
-                paddingHorizontal: 15, paddingTop: 14, paddingBottom: 8 }}>
-                {t('profile.intimacyThresholdsTitle', { defaultValue: 'Intimacy levels' })}
+              </View>
+            </View>
+          </ScrollView>
+        </>
+      ) : (
+        <>
+          {/* Profile row card (Friend tab) */}
+          <View style={[cardStyle, { flexDirection: 'row', alignItems: 'center', padding: 15 }]}>
+            <RowPhoto photoURL={ownPhotoURL} name={displayName} size={52} />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: '600', color: C.text }} numberOfLines={1}>{displayName}</Text>
+              <Text style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>
+                {`${friends.length} ${t('profile.intimacyTabFriend', { defaultValue: 'Friend' })}${friends.length === 1 ? '' : 's'}`}
               </Text>
-              <View style={{ marginHorizontal: 15, marginBottom: 32, backgroundColor: C.card, borderRadius: 12, overflow: 'hidden' }}>
-                {INTIMACY_LEVELS.map((l, i) => (
-                  <View
-                    key={l.id}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      paddingHorizontal: 14, paddingVertical: 11,
-                      borderBottomWidth: i === INTIMACY_LEVELS.length - 1 ? 0 : 0.5, borderBottomColor: C.border,
-                    }}
-                  >
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: C.text }}>
-                      {`${t('profile.intimacyLevelShort', { defaultValue: 'Lv.' })}${l.id}`}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: C.muted }}>
-                      {l.max === null ? `${formatHearts(l.min)}+` : `${formatHearts(l.min)} ~ ${formatHearts(l.max)}`}
-                    </Text>
-                  </View>
+            </View>
+          </View>
+          <TabsRow tab={tab} setTab={setTab} friendCount={friends.length} variant="plain" />
+
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            {isOwn && friends.length < MAX_FRIENDS && (
+              <Pressable
+                onPress={goFriendInvite}
+                style={{
+                  marginHorizontal: 15, marginTop: 12, backgroundColor: C.blue,
+                  borderRadius: 12, paddingVertical: 12, alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFFFFF' }}>
+                  {t('profile.intimacySendFriendInvite', { defaultValue: 'Send Friend Invitation' })}
+                </Text>
+              </Pressable>
+            )}
+            {isOwn && friends.length >= MAX_FRIENDS && (
+              <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 12, paddingHorizontal: 15 }}>
+                {t('profile.intimacyMaxFriends', { defaultValue: 'You already have 5 friends — the maximum.' })}
+              </Text>
+            )}
+            {noFriends ? (
+              <View style={[cardStyle, { alignItems: 'center', paddingTop: 40, paddingBottom: 44, paddingHorizontal: 48 }]}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: C.text, textAlign: 'center' }}>
+                  {t('profile.intimacyNoFriends', { defaultValue: 'No friends yet' })}
+                </Text>
+                <Text style={{ fontSize: 13, color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+                  {t('profile.intimacyNoFriendsBody', { defaultValue: 'Send gifts to friends to grow intimacy together.' })}
+                </Text>
+              </View>
+            ) : (
+              <View style={{ paddingHorizontal: 15, paddingTop: 12, paddingBottom: 32, gap: 10 }}>
+                {friends.map((f) => (
+                  <FriendRowWithLevel
+                    key={f.uid}
+                    friendUid={f.uid}
+                    pairValue={entries.find((e) => e.otherUid === f.uid)?.value}
+                    peer={peers[f.uid]}
+                    onPress={() => goFriendProfile(f.uid, peers[f.uid]?.name || '')}
+                  />
                 ))}
               </View>
-            </ScrollView>
-          )}
+            )}
+          </ScrollView>
         </>
       )}
     </SafeAreaView>
