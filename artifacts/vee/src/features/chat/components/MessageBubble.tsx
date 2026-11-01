@@ -1,7 +1,7 @@
 import { memo, useRef, useState, useEffect, useCallback } from 'react';
 import {
   View, Text, Pressable, Animated, Alert, Modal,
-  Dimensions,
+  Dimensions, Image as RNImage,
 } from 'react-native';
 // 2026-10-19 OOM fix: chat thumbnails use expo-image (disk cache + native
 // downsampling) instead of RN core Image, which decodes full-resolution
@@ -157,6 +157,45 @@ export async function saveRemoteMediaToGallery(
 }
 
 // Memoized: the DM thread FlatList renders one of these per message.
+// 2026-11-01 (batch58, boss: panel banner must show FULL whatever its size):
+// system-notice images (combined format = caption present) render at their
+// NATURAL aspect ratio with contentFit="contain" - never cropped. Size is
+// capped (240 wide x 320 tall, never upscaled) so a huge banner cannot
+// break layout; before the size resolves, a neutral 240x160 contain frame
+// shows the full image (letterboxed at worst, never cropped). Gated ONLY
+// on caption: normal DM images keep the exact 220x220 cover block below.
+function NoticeImage({ uri, onPress }: { uri: string; onPress?: () => void }) {
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    RNImage.getSize(
+      uri,
+      (w, h) => { if (live && w > 0 && h > 0) setNat({ w, h }); },
+      () => {},
+    );
+    return () => { live = false; };
+  }, [uri]);
+  const MAX_W = 240;
+  const MAX_H = 320;
+  let dw = 240;
+  let dh = 160;
+  if (nat) {
+    const scale = Math.min(1, MAX_W / nat.w, MAX_H / nat.h);
+    dw = Math.max(1, Math.round(nat.w * scale));
+    dh = Math.max(1, Math.round(nat.h * scale));
+  }
+  return (
+    <Pressable onPress={onPress}>
+      <Image
+        source={{ uri }}
+        style={{ width: dw, height: dh, borderRadius: 16 }}
+        contentFit="contain"
+        cachePolicy="disk"
+      />
+    </Pressable>
+  );
+}
+
 function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress, peerPhotoURL, myPhotoURL, isPeerOnline, onCallBack, onQuotePress, isHighlighted, onForward, onTogglePin, isPinned }: Props) {
   const { t } = useTranslation();
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -564,14 +603,18 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             </Text>
           ) : message.type === 'image' ? (
             <View>
-              <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
-                <Image
-                  source={{ uri: message.content }}
-                  style={{ width: 220, height: 220, borderRadius: 16 }}
-                  contentFit="cover"
-                  cachePolicy="disk"
-                />
-              </Pressable>
+              {message.caption ? (
+                <NoticeImage uri={message.content} onPress={() => onMediaPress?.(message.content, 'image')} />
+              ) : (
+                <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
+                  <Image
+                    source={{ uri: message.content }}
+                    style={{ width: 220, height: 220, borderRadius: 16 }}
+                    contentFit="cover"
+                    cachePolicy="disk"
+                  />
+                </Pressable>
+              )}
               {/* 2026-11-01 (batch57): caption for combined text+image notices.
                   Plain text only — never a raw image link. Absent for all
                   older image messages, which render exactly as before. */}
