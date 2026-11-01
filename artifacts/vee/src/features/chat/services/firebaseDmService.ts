@@ -57,6 +57,9 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
     // 2026-10-20 (boss): voice-message duration — written at send time but
     // never read back, so every voice bubble showed 0:00 until played.
     ...(typeof v.durationSec === 'number' ? { durationSec: v.durationSec } : {}),
+    // 2026-11-01 (batch57): caption passthrough — without this, a combined
+    // text+image notice renders as a bare photo with its text lost.
+    ...(typeof v.caption === 'string' && v.caption.length > 0 ? { caption: v.caption } : {}),
     cloudinaryId: v.cloudinaryId as string | undefined,
     createdAt: (v.createdAt as number) ?? Date.now(),
     status: (v.status as DmMessage['status']) ?? 'sent',

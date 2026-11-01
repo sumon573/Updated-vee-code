@@ -563,14 +563,24 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               {isMe ? '🗑 You deleted this message' : '🗑 This message was deleted'}
             </Text>
           ) : message.type === 'image' ? (
-            <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
-              <Image
-                source={{ uri: message.content }}
-                style={{ width: 220, height: 220, borderRadius: 16 }}
-                contentFit="cover"
-                cachePolicy="disk"
-              />
-            </Pressable>
+            <View>
+              <Pressable onPress={() => onMediaPress?.(message.content, 'image')}>
+                <Image
+                  source={{ uri: message.content }}
+                  style={{ width: 220, height: 220, borderRadius: 16 }}
+                  contentFit="cover"
+                  cachePolicy="disk"
+                />
+              </Pressable>
+              {/* 2026-11-01 (batch57): caption for combined text+image notices.
+                  Plain text only — never a raw image link. Absent for all
+                  older image messages, which render exactly as before. */}
+              {message.caption ? (
+                <Text style={{ color: textColor, fontSize: 16, lineHeight: 22, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 }}>
+                  {message.caption}
+                </Text>
+              ) : null}
+            </View>
           ) : message.type === 'video' ? (
             <Pressable
               onPress={() => onMediaPress?.(message.content, 'video')}

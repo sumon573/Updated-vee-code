@@ -23,6 +23,8 @@ export type DmMessage = {
   content: string;
   /** cloudinary public_id — set after upload */
   cloudinaryId?: string;
+  /** Caption text for image messages — system notices carry text+image as ONE message (batch57). */
+  caption?: string;
   createdAt: number;
   status: DmMessageStatus;
   /** reactions keyed by userId */
