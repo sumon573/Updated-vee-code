@@ -19,6 +19,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
+import { COUPLE_LEVEL_ART_URLS } from './coupleLevelTokens';
 
 const M = (id: string) => `https://vee-club.duckdns.org/m/${id}`;
 
@@ -186,6 +187,33 @@ export function RingMotif({ size }: { size: number }) {
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Image
         source={{ uri: RING_ART }}
+        style={{ width: size, height: size }}
+        contentFit="contain"
+      />
+    </View>
+  );
+}
+
+// ─── Center level box (coupled trio header) ────────────────────────────────
+
+/**
+ * The level's transparent heart ring box, shown in the header center slot
+ * when the user is coupled at that paid level (Lv.1–Lv.5). Soft gold glow
+ * shadow behind the box for the premium feel. Static, no animation.
+ */
+export function LevelBoxArt({ level, size }: { level: number; size: number }) {
+  const lv = Math.min(5, Math.max(1, Math.floor(level) || 1));
+  const uri = COUPLE_LEVEL_ART_URLS[lv];
+  return (
+    <View
+      style={{
+        width: size, height: size, alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#D4AF37', shadowOpacity: 0.45, shadowRadius: 12,
+        shadowOffset: { width: 0, height: 0 }, elevation: 6,
+      }}
+    >
+      <Image
+        source={{ uri }}
         style={{ width: size, height: size }}
         contentFit="contain"
       />

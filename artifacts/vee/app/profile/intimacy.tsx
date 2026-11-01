@@ -89,6 +89,7 @@ import {
   CrystalMotif,
   RingMotif,
   LoveHouseArt,
+  LevelBoxArt,
   WingedHeartArt } from '@/src/features/intimacy/CoupleLevelArt';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 
@@ -293,6 +294,11 @@ function TrioRow({ ownPhotoURL, displayName, partner, isOwn, onInvite, onPartner
 }
 
 /**
+ * RETIRED 2026-11-02: the formed-couple header no longer renders the big
+ * winged heart — the coupled header is now the trio with the level's
+ * transparent box in the center slot (see LevelBoxArt). This component
+ * and WingedHeartArt are KEPT (not deleted) for a possible return.
+ *
  * Formed-couple header: the big winged pink heart with BOTH avatars on
  * it and the Intimacy Points bar inside its lower half. The bar fill is
  * the same REAL hearts progress as the bars below — never a placeholder.
@@ -707,27 +713,20 @@ export default function IntimacyScreen() {
                 <Feather name="more-horizontal" size={22} color="#FFFFFF" />
               </Pressable>
             </View>
-            {isCoupled && partner ? (
-              <CoupledHeader
-                ownPhotoURL={ownPhotoURL}
-                displayName={displayName}
-                partner={partner}
-                onPartnerPress={() => couple?.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
-                heartsProgress={heartsProgress}
-              />
-            ) : (
-              <TrioRow
-                ownPhotoURL={ownPhotoURL}
-                displayName={displayName}
-                partner={partner}
-                isOwn={isOwn}
-                onInvite={goCoupleInvite}
-                onPartnerPress={() => couple?.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
-                center={<CrystalMotif size={110} />}
-                levelPill={formatPaidLevel(paidLevel)}
-                dark
-              />
-            )}
+            {/* Coupled header is the trio: self left, the level's transparent
+                box center, partner right. Uncoupled keeps the crystal center.
+                The real-points bar lives in the Overall section below. */}
+            <TrioRow
+              ownPhotoURL={ownPhotoURL}
+              displayName={displayName}
+              partner={partner}
+              isOwn={isOwn}
+              onInvite={goCoupleInvite}
+              onPartnerPress={() => couple?.partnerUid && goFriendProfile(couple.partnerUid, partnerName)}
+              center={isCoupled && partner ? <LevelBoxArt level={paidLevel} size={112} /> : <CrystalMotif size={110} />}
+              levelPill={formatPaidLevel(paidLevel)}
+              dark
+            />
           </LinearGradient>
 
           <ScrollView style={{ flex: 1, backgroundColor: BODY_PINK }} showsVerticalScrollIndicator={false}>
@@ -785,7 +784,7 @@ export default function IntimacyScreen() {
                       style={{
                         flex: 1, alignItems: 'center',
                         backgroundColor: isNext ? 'rgba(246,196,83,0.25)' : 'rgba(255,255,255,0.10)',
-                        borderWidth: isNext ? 1 : 0, borderColor: '#D4AF37',
+                        borderWidth: 1, borderColor: isNext ? '#D4AF37' : 'rgba(255,255,255,0.28)',
                         borderRadius: 10, paddingVertical: 8,
                       }}
                     >
@@ -802,9 +801,9 @@ export default function IntimacyScreen() {
               </View>
             </LinearGradient>
 
-            {/* Upgrade action (own page only) */}
+            {/* Upgrade action (own page only) — light glass card on the pink body */}
             {isOwn && (
-              <View style={[cardStyle, { padding: 16 }]}>
+              <View style={[cardStyle, { padding: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)' }]}>
                 {!isCoupled ? (
                   <Pressable
                     onPress={goCoupleInvite}
@@ -870,7 +869,7 @@ export default function IntimacyScreen() {
                       key={l.id}
                       style={{
                         alignItems: 'center',
-                        backgroundColor: '#FFFFFF',
+                        backgroundColor: 'rgba(255,255,255,0.65)',
                         borderWidth: current ? 2 : 0, borderColor: C.goldBorder,
                         borderRadius: 12, padding: 4,
                         shadowColor: '#BE185D', shadowOpacity: 0.12, shadowRadius: 4,

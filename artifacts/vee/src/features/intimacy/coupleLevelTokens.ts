@@ -1,27 +1,31 @@
 /**
- * coupleLevelTokens.ts — Send-sheet level tokens Lv1–Lv5 (boss spec 2026-11-01).
+ * coupleLevelTokens.ts — Send-sheet level boxes Lv1–Lv5 (boss spec 2026-11-01,
+ * box redesign 2026-11-02).
  *
  * The Send Couple Invitation sheet no longer offers token designs (Cupid's
  * Arrow / Eternal / Love Lock / Luster). It offers five LEVELS, all following
- * one shared design pattern, progressively upgraded: Lv1 simple slim gold
- * band, Lv2 gold + small gems, Lv3 ornate gold + pink sapphires, Lv4 royal
- * gold + crown accents, Lv5 most ornate jewel-encrusted crown ring.
+ * one shared design pattern, progressively upgraded: Lv1 simple glossy pink
+ * heart ring box, Lv2 gold trim + small gems, Lv3 ornate gold filigree +
+ * pink sapphires, Lv4 royal magenta + crown accents, Lv5 most ornate
+ * jewel-encrusted crown-topped box with radiant diamond + sparkles.
  *
  * Art: Vee-original 3D-render strip (one pattern language), sliced into
- * five square tiles, uploaded byte-for-byte to /m/ (verified
+ * five square tiles, AI-segmented to TRUE TRANSPARENT backgrounds
+ * (u2netp full-res; Lv3 re-done with full u2net at 320px after u2netp
+ * faded its base front), uploaded byte-for-byte to /m/ (verified
  * Content-Type + Content-Length). No imo art, no emoji art.
  *
  * Money: amounts are the boss's level prices. Lv1 1200 is both the request
  * price and the Lv1 send price; upgrades Lv2–Lv5 match couplePaidLevels.ts.
  */
 
-/** Remote /m/ art URLs for the five level tiles (uploaded 2026-11-02). */
+/** Remote /m/ art URLs for the five TRANSPARENT level box tiles (uploaded 2026-11-02). */
 export const COUPLE_LEVEL_ART_URLS: Record<number, string> = {
-  1: 'https://vee-club.duckdns.org/m/777c316763173ba7b58522d770412cd2',
-  2: 'https://vee-club.duckdns.org/m/9a9607d892f98c787e41a30cbcba1a6b',
-  3: 'https://vee-club.duckdns.org/m/ab4f6f642b61b18fb42cad1b63fd625d',
-  4: 'https://vee-club.duckdns.org/m/240f4eed1a593fee30bd9e19ce36cc84',
-  5: 'https://vee-club.duckdns.org/m/df651fda219645f23c656578c41d8030',
+  1: 'https://vee-club.duckdns.org/m/d8f804a080cf6b6d160d1cc535b352ed',
+  2: 'https://vee-club.duckdns.org/m/2404c6b7536094545c296edbe6f4c9de',
+  3: 'https://vee-club.duckdns.org/m/b5daf4a28e8407b7e23086410c901ecd',
+  4: 'https://vee-club.duckdns.org/m/857a726fc3a203493966defb351fd968',
+  5: 'https://vee-club.duckdns.org/m/94c18c001d3b313a4b2f902d00c4f89d',
 };
 
 export interface CoupleLevelToken {
@@ -29,7 +33,7 @@ export interface CoupleLevelToken {
   amount: number; // diamonds to send at this level
   /** Remote /m/ URL of the level tile. */
   artUrl: string | null;
-  /** Local final filename under ~/workspace/vee-couple-tokens/. */
+  /** Local final filename under ~/workspace/vee-couple-boxes/. */
   localFile: string;
 }
 
@@ -48,7 +52,7 @@ export const COUPLE_LEVEL_TOKENS: CoupleLevelToken[] = COUPLE_LEVEL_IDS.map((lev
   level,
   amount: COUPLE_LEVEL_AMOUNTS[level] ?? 1200,
   artUrl: COUPLE_LEVEL_ART_URLS[level] ?? null,
-  localFile: `level-token-lv${level}.webp`,
+  localFile: `box-lv${level}-t.webp`,
 }));
 
 /** Clamp any value to a valid send level (1..5). */
