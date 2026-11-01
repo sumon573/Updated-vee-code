@@ -13,7 +13,7 @@
  * Same design, same card look.
  */
 
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, Platform, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -163,17 +163,20 @@ export default function FollowersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allUids, visibleCount]);
 
-  const users = allUids
+  // Perf (batch C): stable data + press identity so memo'd UserRow rows bail
+  // out on unrelated parent renders (progressive profile arrivals) instead
+  // of re-rendering every visible row.
+  const users = useMemo(() => allUids
     .slice(0, visibleCount)
     .map((u) => profiles[u])
-    .filter(Boolean) as VeeUser[];
+    .filter(Boolean) as VeeUser[], [allUids, visibleCount, profiles]);
 
-  const handleUserPress = (u: VeeUser) => {
+  const handleUserPress = useCallback((u: VeeUser) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(
       `/user-profile?uid=${encodeURIComponent(u.uid)}&name=${encodeURIComponent(u.name)}` as never,
     );
-  };
+  }, []);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
@@ -231,6 +234,7 @@ export default function FollowersScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
             style={{
               marginHorizontal: 15, marginTop: 12,
               backgroundColor: C.card, borderRadius: 12,

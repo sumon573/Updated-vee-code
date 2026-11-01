@@ -1,6 +1,6 @@
 /* ─────────────────────── Music flow container ─────────────────────── */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Modal, Pressable, StyleSheet } from 'react-native';
 import { auth } from '@/src/config/firebase';
 import {
@@ -84,7 +84,12 @@ export function MusicFlowModal(props: MusicFlowModalProps) {
   }, [visible, roomId, uid]);
 
   const theme = resolveMusicTheme(activeThemeId);
-  const palette = musicPalette(theme ? isDarkThemeBg(theme.bg) : false);
+  // Perf: palette object identity was fresh on every modal render, which
+  // defeated memo() on every music row below. Same values, stable identity.
+  const palette = useMemo(
+    () => musicPalette(theme ? isDarkThemeBg(theme.bg) : false),
+    [theme?.bg],
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>

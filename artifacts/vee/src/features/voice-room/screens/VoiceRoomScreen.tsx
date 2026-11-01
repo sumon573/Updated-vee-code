@@ -4631,6 +4631,11 @@ export default function VoiceRoomScreen() {
             scrollEventThrottle={16}
             initialNumToRender={20}
             maxToRenderPerBatch={10}
+            // Perf (smoothness pass): the default windowSize 21 mounts ~10
+            // screens of messages above and below the viewport. 11 keeps
+            // ~5 screens each side — still generous for fast flings, but
+            // halves mounted message views (and their images) in long rooms.
+            windowSize={11}
           />
           {}
           {showChatScrollBtn && (

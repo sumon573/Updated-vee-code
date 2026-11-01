@@ -413,6 +413,7 @@ function StoryCard({
                 <Image
                   source={{ uri: author.avatar }}
                   style={{ width: 38, height: 38, borderRadius: 19 }}
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>
@@ -486,6 +487,7 @@ function StoryCard({
                 width: width - 40, height: (width - 40) * 1.4, borderRadius: 20,
               }}
               resizeMode="cover"
+              cachePolicy="memory-disk"
               onLoad={onMediaReady ? () => onMediaReady(story.id) : undefined}
             />
             {/* Text overlay (2026-10-11) */}

@@ -429,7 +429,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
                       backgroundColor: r.color, alignItems: 'center', justifyContent: 'center',
                       borderWidth: isSelected ? 3 : 0, borderColor: '#C9A227',
                     }}>
-                      <Image source={crown} style={{ width: 34, height: 34 }} contentFit="contain" />
+                      <Image source={crown} style={{ width: 34, height: 34 }} contentFit="contain" cachePolicy="memory-disk" />
                       {isFuture && (
                         <View style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: '#fff', borderRadius: 9, padding: 2, borderWidth: 1, borderColor: '#E0E0E0' }}>
                           <Feather name="lock" size={10} color="#8E8E93" />

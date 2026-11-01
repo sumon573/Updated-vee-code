@@ -33,6 +33,7 @@ function DP({ photoURL, name, size }: { photoURL?: string; name: string; size: n
         source={{ uri: photoURL }}
         style={{ width: size, height: size, borderRadius: size / 2 }}
         contentFit="cover"
+        cachePolicy="memory-disk"
       />
     );
   }

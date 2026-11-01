@@ -103,7 +103,9 @@ export default function CallMinimizeBar() {
           setDragging(true);
         }
         Animated.event([null, { dx: pan.x, dy: pan.y }], {
-          useNativeDriver: false,
+          // Perf (batch C): drag maps straight to a transform, which the
+          // native driver supports — keeps the bar on the UI thread.
+          useNativeDriver: true,
         })(_e, g);
       },
       onPanResponderRelease: (_e, g) => {
@@ -123,7 +125,7 @@ export default function CallMinimizeBar() {
           savedPos = { x: snapX, y: snapY };
           Animated.spring(pan, {
             toValue: { x: snapX, y: snapY },
-            useNativeDriver: false,
+            useNativeDriver: true,
             friction: 7,
             tension: 90,
           }).start();

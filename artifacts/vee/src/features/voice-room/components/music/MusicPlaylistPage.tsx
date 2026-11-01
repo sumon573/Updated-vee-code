@@ -1,6 +1,6 @@
 /* ─────────────────────── Music playlist page ─────────────────────── */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { View, Text, Pressable, FlatList, TextInput, StyleSheet, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import type { RoomMusic, MusicLibraryEntry } from '../../services/roomMusicService';
@@ -47,21 +47,29 @@ interface PlaylistPageProps {
   onAdd: () => void;
 }
 
-function PlaylistRow(props: {
+/* Fixed row height: paddingVertical 10 x2 + 48 thumb + 1 border = 69.
+   Titles/subs are single-line and the 48 thumb dominates, so rows never
+   grow — getItemLayout skips per-row measurement mid-scroll. */
+const MUSIC_ROW_HEIGHT = 69;
+
+// Perf: memoized — previously every parent re-render (e.g. a track change)
+// re-rendered every visible row, because the row was a plain function and
+// renderItem built fresh onPress/onLongPress closures per row.
+const PlaylistRow = memo(function PlaylistRow(props: {
   entry: MusicLibraryEntry;
   playing: boolean;
   selected: boolean;
   selectionMode: boolean;
   palette: MusicPalette;
-  onPress: () => void;
-  onLongPress: () => void;
+  onPressItem: (entry: MusicLibraryEntry) => void;
+  onLongPressItem: (key: string) => void;
 }) {
-  const { entry, playing, selected, selectionMode, palette, onPress, onLongPress } = props;
+  const { entry, playing, selected, selectionMode, palette, onPressItem, onLongPressItem } = props;
   const size = useMediaSize('url', entry.url);
   return (
     <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={() => onPressItem(entry)}
+      onLongPress={() => onLongPressItem(entry.libraryKey)}
       style={[styles.row, { borderBottomColor: palette.border }]}
     >
       <View style={[styles.thumb, { backgroundColor: palette.surface }]}>
@@ -94,7 +102,7 @@ function PlaylistRow(props: {
       ) : null}
     </Pressable>
   );
-}
+});
 
 export function MusicPlaylistPage(props: PlaylistPageProps) {
   const { active, library, music, canControl, uid, controls, palette, onBack, onAdd } = props;
@@ -125,14 +133,45 @@ export function MusicPlaylistPage(props: PlaylistPageProps) {
   const selectedCount = Object.keys(selected).filter((k) => selected[k]).length;
   const playingMediaId = music?.current?.mediaId ?? null;
 
-  const toggleSelect = (key: string) => {
+  const toggleSelect = useCallback((key: string) => {
     setSelected((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  }, []);
 
-  const enterSelection = (key: string) => {
+  const enterSelection = useCallback((key: string) => {
     setSelectionMode(true);
     setSelected({ [key]: true });
-  };
+  }, []);
+
+  // Perf: controls is a fresh object on every modal render (useMusicControls
+  // returns a plain literal), so depending on it would defeat the stable
+  // row handlers below. Event handlers only ever read the latest controls.
+  const controlsRef = useRef(controls);
+  useEffect(() => {
+    controlsRef.current = controls;
+  }, [controls]);
+
+  const handleRowPress = useCallback(
+    (entry: MusicLibraryEntry) => {
+      if (selectionMode) toggleSelect(entry.libraryKey);
+      else if (canControl) controlsRef.current.playLibrarySong(entry);
+    },
+    [selectionMode, canControl, toggleSelect],
+  );
+
+  const renderPlaylistRow = useCallback(
+    ({ item }: { item: MusicLibraryEntry }) => (
+      <PlaylistRow
+        entry={item}
+        playing={item.mediaId === playingMediaId}
+        selected={!!selected[item.libraryKey]}
+        selectionMode={selectionMode}
+        palette={palette}
+        onPressItem={handleRowPress}
+        onLongPressItem={enterSelection}
+      />
+    ),
+    [selected, selectionMode, playingMediaId, palette, handleRowPress, enterSelection],
+  );
 
   const deleteSelected = () => {
     const keys = Object.keys(selected).filter((k) => selected[k]);
@@ -247,20 +286,15 @@ export function MusicPlaylistPage(props: PlaylistPageProps) {
           data={visible}
           keyExtractor={(e) => e.libraryKey}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <PlaylistRow
-              entry={item}
-              playing={item.mediaId === playingMediaId}
-              selected={!!selected[item.libraryKey]}
-              selectionMode={selectionMode}
-              palette={palette}
-              onPress={() => {
-                if (selectionMode) toggleSelect(item.libraryKey);
-                else if (canControl) controls.playLibrarySong(item);
-              }}
-              onLongPress={() => enterSelection(item.libraryKey)}
-            />
-          )}
+          renderItem={renderPlaylistRow}
+          getItemLayout={(_data, index) => ({
+            length: MUSIC_ROW_HEIGHT,
+            offset: MUSIC_ROW_HEIGHT * index,
+            index,
+          })}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={7}
         />
       )}
     </View>

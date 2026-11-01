@@ -991,6 +991,12 @@ export function GiftsModal({
               numColumns={4}
               showsVerticalScrollIndicator={false}
               extraData={selectedGift?.id}
+              // Perf (smoothness pass): explicit grid tuning — 8 rows up
+              // front, a row-batch per frame budget, 7-window for a long
+              // catalog (was all defaults: 10/10/21).
+              initialNumToRender={32}
+              maxToRenderPerBatch={32}
+              windowSize={7}
             />
           )}
         </View>

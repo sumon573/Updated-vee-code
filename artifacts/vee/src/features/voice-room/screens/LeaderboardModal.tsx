@@ -1043,6 +1043,9 @@ export function LeaderboardModal({
             : <FlatList
                 data={rankedWeekRooms}
                 keyExtractor={(item) => item.id}
+                windowSize={9}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
                   <EmptyState
@@ -1071,6 +1074,9 @@ export function LeaderboardModal({
             : <FlatList
                 data={liveRankedRooms}
                 keyExtractor={(item) => item.id}
+                windowSize={9}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
                   <EmptyState icon="radio" message={t('leaderboard.noLive', { defaultValue: 'No live rooms right now' })} />
@@ -1091,6 +1097,9 @@ export function LeaderboardModal({
             : <FlatList
                 data={senders}
                 keyExtractor={(item) => item.uid}
+                windowSize={9}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
                   <EmptyState
@@ -1124,6 +1133,9 @@ export function LeaderboardModal({
             : <FlatList
                 data={receivers}
                 keyExtractor={(item) => item.uid}
+                windowSize={9}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
                 ListEmptyComponent={
                   <EmptyState

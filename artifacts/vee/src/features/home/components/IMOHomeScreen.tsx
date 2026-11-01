@@ -56,6 +56,11 @@ import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
 type ContentTab = Exclude<HomeTab, 'me'> | 'voice' | 'profile';
 
+// 2026-11-02 smoothness: fallback only — getContactUids is always
+// defined in practice; this keeps the imoStories memo dep stable
+// instead of a fresh `new Set()` on every render.
+const EMPTY_CONTACT_SET = new Set<string>();
+
 export default function IMOHomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -277,12 +282,18 @@ export default function IMOHomeScreen() {
 
   // Per Sumon 2026-10-12: story row shows ONLY contacts' stories (not public from non-contacts).
   // Public stories go to Planet only.
-  const imoStories: IMOStory[] = (stories || [])
+  // 2026-11-02 smoothness (batch B): useMemo'd — the old inline
+  // filter/map rebuilt a fresh array on EVERY home render (every
+  // incoming message), re-rendering the whole story strip each time.
+  // The dep is the contact SET object itself (contactUidsRef.current,
+  // replaced — not mutated — when contacts change), never the
+  // getContactUids closure, which is a fresh arrow on every render.
+  const contactUids = getContactUids?.() ?? EMPTY_CONTACT_SET;
+  const imoStories: IMOStory[] = useMemo(() => (stories || [])
     .filter((s: any) => {
       const uid = s.userId;
       if (uid === user?.uid) return true; // own story
-      const contacts = getContactUids?.() ?? new Set();
-      return contacts.has(uid);
+      return contactUids.has(uid);
     })
     .map((s: any) => ({
       id: s.userId,
@@ -290,7 +301,7 @@ export default function IMOHomeScreen() {
       name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
       photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
       unreadCount: s.unreadCount || 0,
-    }));
+    })), [stories, user?.uid, avatarCache, contactUids]);
 
   useEffect(() => {
     const missingUids = new Set<string>();
@@ -583,6 +594,22 @@ export default function IMOHomeScreen() {
     startCall(entry.remoteUid, entry.remoteName || 'Vee User', entry.remotePhotoURL);
   }, [startCall]);
 
+  // 2026-11-02 smoothness (batch B): stable chat-row renderItem +
+  // stable bar handlers. The old inline renderItem arrow and inline
+  // bar onPress arrows were fresh closures on every home render, so
+  // the memo'd bars/rows could never skip a render via prop identity.
+  const renderChatItem = useCallback(({ item }: { item: IMOChat }) => (
+    <IMOChatListItem
+      chat={item}
+      onPress={handleChatPress}
+      onLongPress={handleLongPress}
+      onCallPress={handleCallPress}
+    />
+  ), [handleChatPress, handleLongPress, handleCallPress]);
+  const handleProfilePress = useCallback(() => goToTab('profile'), [goToTab]);
+  const handleBottomAddPress = useCallback(() => goToTab('contacts'), [goToTab]);
+  const handleBottomSearchPress = useCallback(() => router.push('/search' as any), [router]);
+
   // 2026-10-30 (boss: profile pre-loaded): profile page node for the
   // pager — placeholder until warm-up, then the real screen, mounted
   // forever after. (If the pager unmounts for the stories/calls tabs,
@@ -626,14 +653,7 @@ export default function IMOHomeScreen() {
             </Text>
           </View>
         ) : null}
-        renderItem={({ item }) => (
-          <IMOChatListItem
-            chat={item}
-            onPress={handleChatPress}
-            onLongPress={handleLongPress}
-            onCallPress={handleCallPress}
-          />
-        )}
+        renderItem={renderChatItem}
         style={{ flex: 1 }}
       />
       {/* Long-press context menu (2026-10-11 Issue #6) */}
@@ -677,7 +697,7 @@ export default function IMOHomeScreen() {
             activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : activeTab === 'profile' ? 'profile' : 'none'}
             chatBadgeCount={totalUnread}
             pagerProgress={pagerProgress}
-            onProfilePress={() => goToTab('profile')}
+            onProfilePress={handleProfilePress}
             onTabPress={handleTopBarTab}
           />
         </View>
@@ -764,8 +784,8 @@ export default function IMOHomeScreen() {
           style={{ paddingBottom: bottomClearance }}
         >
           <IMOBottomBar
-            onAddPress={() => goToTab('contacts')}
-            onSearchPress={() => router.push('/search' as any)}
+            onAddPress={handleBottomAddPress}
+            onSearchPress={handleBottomSearchPress}
           />
         </View>
       </Animated.View>
