@@ -998,6 +998,12 @@ export async function joinRoomAsAudience(
   // 2026-10-20 (boss): stamp the heartbeat so a crashed session's leftover
   // entry ages out (see sweepStaleAudience) instead of showing a phantom
   // member in an empty room forever.
+  // 2026-11-01 (presence, boss: ghosts must die fast): arm a disconnect
+  // marker BEFORE the entry write (calls pattern). If this socket dies,
+  // the server marks connDead on the entry and VeeGuard sweeps it at once
+  // when the user is also absent from LiveKit. Never a remove(): a
+  // background socket drop must never delete a live user (2026-10-22).
+  onDisconnect(audienceRef).update({ connDead: true }).catch(() => {});
   await set(audienceRef, { ...entry, ts: serverTimestamp() });
   // 2026-10-22 ROOT FIX (boss, server-log proven): NO onDisconnect removal
   // for presence entries anymore. The old BUG 14/15 arm deleted the entry
@@ -1176,6 +1182,10 @@ async function takeSeatInner(
   if (!result.committed) {
     return { success: false };
   }
+  // 2026-11-01 (presence): arm the disconnect marker on the claimed seat
+  // (after success only — arming before the transaction could mark a
+  // seat owned by someone else).
+  onDisconnect(seatRef).update({ connDead: true }).catch(() => {});
 
   // GHOST FIX (2026-10-09) — now the shared clearOtherSeats() helper
   // (2026-10-23), also called by the reconnect presence re-register.
@@ -1226,6 +1236,9 @@ async function takeSeatInner(
     // 2026-10-22 ROOT FIX: no onDisconnect re-arm for the audience entry
     // (see joinRoomAsAudience) — presence is heartbeat + VeeGuard based.
   } catch { /* non-critical — server guard restores seated audience entries */ }
+  // 2026-11-01 (presence): seated users keep an audience entry — arm its
+  // disconnect marker too so a killed seated app is swept at once.
+  onDisconnect(audienceRef).update({ connDead: true }).catch(() => {});
   // 2026-10-22 ROOT FIX (replaces the 2026-10-14 onDisconnect arm): the
   // seat is NOT deleted when the RTDB socket drops. Socket drops in
   // background are routine and the user is usually still live on LiveKit;
@@ -1264,16 +1277,22 @@ export async function refreshSeatHeartbeat(
   userName?: string,
 ): Promise<void> {
   try {
-    await runTransaction(
+    const beatResult = await runTransaction(
       ref(database, `rooms/${roomId}/seats/${seatIndex}`),
       (current) => {
         const s = current as { userId?: string; userName?: string } | null | undefined;
         // নিজের সিট না হলে (মুছে গেছে / অন্যের) heartbeat লিখবে না
         if (!s || s.userId !== userId) return undefined;
-        if (userName && s.userName !== userName) return { ...s, userName, seatTs: serverTimestamp() };
-        return { ...s, seatTs: serverTimestamp() };
+        if (userName && s.userName !== userName) return { ...s, userName, seatTs: serverTimestamp(), connDead: null };
+        return { ...s, seatTs: serverTimestamp(), connDead: null };
       },
     );
+    // 2026-11-01 (presence): re-arm the disconnect marker on every
+    // successful beat — a fired arm never comes back on its own, and a
+    // reconnect without a fresh arm would leave the seat unmarked.
+    if (beatResult.committed) {
+      onDisconnect(ref(database, `rooms/${roomId}/seats/${seatIndex}`)).update({ connDead: true }).catch(() => {});
+    }
   } catch {
     // background: safe to swallow — a missed beat just ages the seat
   }
@@ -1344,13 +1363,18 @@ export async function refreshAudienceHeartbeat(
   userId: string,
 ): Promise<void> {
   try {
-    await runTransaction(
+    const beatResult = await runTransaction(
       ref(database, `rooms/${roomId}/audience/${userId}`),
       (current) => {
         if (!current) return undefined;
-        return { ...current, ts: serverTimestamp() };
+        return { ...current, ts: serverTimestamp(), connDead: null };
       },
     );
+    // 2026-11-01 (presence): re-arm the disconnect marker on every
+    // successful beat (see seat heartbeat above).
+    if (beatResult.committed) {
+      onDisconnect(ref(database, `rooms/${roomId}/audience/${userId}`)).update({ connDead: true }).catch(() => {});
+    }
   } catch {
     // background: safe to swallow — a missed beat just ages the entry
   }
@@ -1422,6 +1446,11 @@ export async function leaveSeat(
     // entry — heartbeat + VeeGuard own presence lifetime now.
   }
   await Promise.all(ops);
+  // 2026-11-01 (presence): the re-added audience entry belongs to a user
+  // still in the room — arm its disconnect marker.
+  if (audienceMember) {
+    onDisconnect(ref(database, `rooms/${roomId}/audience/${userId}`)).update({ connDead: true }).catch(() => {});
+  }
   _updateCounts(roomId).catch(() => {}); // best-effort
 }
 

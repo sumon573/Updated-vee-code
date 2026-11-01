@@ -2047,12 +2047,25 @@ export default function VoiceRoomScreen() {
     // 2026-10-20 (boss): ghost-audience sweep on enter (mirror of seats).
     sweepStaleAudience(roomId).catch(() => {});
   }, [roomId, pass2PollActive]);
+  // 2026-11-01 (presence, boss: ghosts must die fast): re-run the client
+  // sweeps every 60s while in the room, not only on enter — a ghost that
+  // appears mid-stay (crash, network loss) clears without a re-enter.
+  // Blind-client limits unchanged: only own + owner/admin-deletable
+  // entries actually delete (rules); the server sweeps own the rest.
+  useEffect(() => {
+    if (pass2PollActive) return;
+    const timer = setInterval(() => {
+      sweepStaleSeats(roomId).catch(() => {});
+      sweepStaleAudience(roomId).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [roomId, pass2PollActive]);
   useEffect(() => {
     if (mySeatIdx < 0) return;
     if (pass2PollActive) return; // poller beat refreshes the seat server-side (§3.3)
     const beat = () => refreshSeatHeartbeat(roomId, mySeatIdx, myUid, myName).catch(() => {});
     beat(); // immediate first beat on seating
-    const timer = setInterval(beat, 60_000);
+    const timer = setInterval(beat, 20_000);
     return () => clearInterval(timer);
   }, [roomId, mySeatIdx, myUid, pass2PollActive]);
 
@@ -2094,7 +2107,7 @@ export default function VoiceRoomScreen() {
     if (pass2PollActive) return; // beats replace audience heartbeats in pass2 (§3.8)
     const beat = () => refreshAudienceHeartbeat(roomId, myUid).catch(() => {});
     beat();
-    const timer = setInterval(beat, 60_000);
+    const timer = setInterval(beat, 20_000);
     return () => clearInterval(timer);
   }, [roomId, myUid, pass2PollActive]);
 
@@ -2140,9 +2153,10 @@ export default function VoiceRoomScreen() {
   // 2026-10-24 (boss: mic must NEVER cycle off→on on return): when
   // returning from minimize, the minimized-room record already knows the
   // seat (and that the mic was ON). Capture it on mount — before the
-  // focus effects clear the minimized record — so publishing can start
-  // the moment voice joins, without waiting for the seats subscription
-  // round-trip. Only when the mic was ON (muted === false); a muted
+  // focus effects clear the minimized record — so the mount-clear effect
+  // below knows the return carried a seat. Publishing itself now
+  // requires a confirmed seat (2026-11-01). Only when the mic was ON
+  // (muted === false); a muted
   // return keeps the normal seat-driven path so a muted mic never
   // leaks open. Safety: the seat-sync effect below stops publishing
   // the moment live seats show no seat (kicked while minimized).
@@ -2172,10 +2186,17 @@ export default function VoiceRoomScreen() {
   // counts as seated, so the mic re-opens the instant voice joins.
   useEffect(() => {
     if (!voiceJoined || isPublishing) return;
-    if (mySeatIdx < 0 && returningSeatIdx < 0) return;
+    // 2026-11-01 (presence, boss: voice-without-seat must be impossible):
+    // publish ONLY on a subscription-confirmed seat. The old
+    // returning-seat fast path published before the seat was confirmed,
+    // so a swept/taken seat still talked with no grid record. A
+    // minimized return keeps its already-publishing restored engine
+    // (isPublishing guard above), so this gate costs no mic drop; a
+    // fresh join waits for the seat restore + subscription round trip.
+    if (mySeatIdx < 0) return;
     if (!hasJoined) setHasJoined(true);
     startPublishing();
-  }, [voiceJoined, mySeatIdx, isPublishing, returningSeatIdx]);
+  }, [voiceJoined, mySeatIdx, isPublishing]);
 
   
   useEffect(() => {
@@ -2558,6 +2579,9 @@ export default function VoiceRoomScreen() {
           removeSeat(roomId, mySeatIdxRef.current).catch(() => {});
         }
         leaveAudience(roomId, myUid).catch(() => {});
+        // 2026-11-01 (presence): session ended — do not leave a stale
+        // current-room record behind (see handleLeave above).
+        clearCurrentRoom();
       } else {
         leaveAudience(roomId, myUid).catch(() => {});
         clearCurrentRoom();
@@ -3522,6 +3546,12 @@ export default function VoiceRoomScreen() {
     hasLeftRef.current = true;
     try {
       clearPersistedActiveRoom().catch(() => {});
+      // 2026-11-01 (presence): an explicit leave ends the session —
+      // clear the in-memory room records too, or the next mount for
+      // this room auto-restores the just-left seat (stale current
+      // record). Re-enter starts fresh as audience.
+      clearCurrentRoom();
+      setMinimizedRoom(null);
       sentJoinMsgKeys.delete(`${roomId}:${myUid}`);
 
       // 2026-10-22 FIX (boss): voluntary exit removes PRESENCE ONLY — never
