@@ -1884,7 +1884,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.headerBg }} edges={['top', 'bottom']}>
         <View style={{ flex: 1, paddingTop: topPad }}>
 
           {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -2026,7 +2026,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           <KeyboardAvoidingView
-            style={{ flex: 1, paddingBottom: dockPad }}
+            style={{ flex: 1, paddingBottom: dockPad, backgroundColor: C.bg }}
             // 2026-10-26 (typing-jitter fix): Android is adjustPan — the OS
             // already keeps the input visible, so KAV must stay OFF there
             // (KAV + pan double-shifted the layout on every keyboard cycle).
