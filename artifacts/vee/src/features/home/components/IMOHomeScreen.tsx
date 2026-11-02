@@ -45,7 +45,7 @@ import IMOBottomBar from '@/src/features/home/components/IMOBottomBar';
 import { formatMsgTime } from '@/src/utils/formatMsgTime';
 import { type HomeTab } from '@/src/features/home/components/IMOTabBar';
 import HomePager from '@/src/features/home/components/HomePager';
-import Animated, { useSharedValue, useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, interpolate, withTiming } from 'react-native-reanimated';
 import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
@@ -349,6 +349,18 @@ export default function IMOHomeScreen() {
   // at release: the old drag-then-push jerk (J2+J3+J4) is gone.
   const [pagerIndex, setPagerIndex] = useState(0);
   const pagerProgress = useSharedValue(0);
+  // 2026-11-02 (boss: profile entrance must be a professional horizontal
+  // page slide, NOT rising up): the tab whose bar heights are currently
+  // displayed. Updated ONLY when the pager settles on a page
+  // (handlePagerIndexChange), never mid-drag — so the bars stay frozen
+  // at the origin page's height while the page slides horizontally,
+  // and only then animate to the destination page's heights. The old
+  // progress-driven collapse shrank the bars DURING the swipe, which
+  // grew the pager row mid-slide and shifted the profile page's
+  // content upward — the "rising up" look. Settled states are
+  // identical to before: profile → both bars 0; voice → bottom bar 0
+  // only; chats/contacts → both bars full.
+  const [barsTab, setBarsTab] = useState<ContentTab>('chats');
   // 2026-10-30 (boss: one clean switch per tap, no jitter): settled flag
   // owned by HomePager — true only when no pager spring is in flight.
   // The focus repair below reads it and never acts mid-animation.
@@ -358,12 +370,15 @@ export default function IMOHomeScreen() {
   // (Assigned during render so a focus event always sees the fresh tab.)
   const pagerIndexRef = useRef(pagerIndex);
   pagerIndexRef.current = pagerIndex;
-  // 2026-10-30 (boss: full-page profile, Phase 2): shell bars collapse
-  // WITH the slide. Heights + opacity animate from the shared pager
-  // progress (UI thread): at progress -1 (profile page) both bars are
-  // height 0 and fully transparent, so the profile page is full-screen
-  // exactly like the route; at progress >= 0 both bars are full height.
-  // Sliding back restores them on the same curve — no cut, no jump.
+  // 2026-10-30 (boss: full-page profile, Phase 2): shell bars hide on
+  // the profile page, so it is full-screen exactly like the route.
+  // 2026-11-02 (boss: professional profile entrance, NOT rising up):
+  // the collapse NO LONGER follows live drag progress. Shrinking the
+  // bars mid-swipe grew the pager row mid-slide and shifted the page
+  // content upward — the "rising up" look. Now the bars stay frozen
+  // at the origin page's height while the page slides horizontally,
+  // and only animate to the destination heights once the pager
+  // settles (barsTab, below). Settled heights are unchanged.
   // Full heights are measured from the bars' own layout (the measured
   // View's height is its natural height, independent of the animated
   // wrapper's clipped height) over exact-style estimates (top 77 = 16
@@ -409,31 +424,35 @@ export default function IMOHomeScreen() {
   useEffect(() => {
     bottomBarFullH.value = 57 + bottomClearance;
   }, [bottomClearance]);
+  // 2026-11-02 (boss: professional profile entrance): collapse drivers.
+  // withTiming here REPLACES the old progress-driven collapse — same
+  // bars, same settled heights, no new animation system, no timers.
+  const topBarCollapse = useSharedValue(0);
+  const bottomBarCollapse = useSharedValue(0);
+  useEffect(() => {
+    topBarCollapse.value = withTiming(barsTab === 'profile' ? 1 : 0, { duration: 280 });
+    bottomBarCollapse.value = withTiming(barsTab === 'profile' || barsTab === 'voice' ? 1 : 0, { duration: 280 });
+  }, [barsTab, topBarCollapse, bottomBarCollapse]);
   const isPagerTab = activeTab === 'chats' || activeTab === 'voice' || activeTab === 'contacts' || activeTab === 'profile';
   const topBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: topBarFullH.value, opacity: 1 };
-    const p = pagerProgress.value;
+    const c = topBarCollapse.value;
     return {
-      height: interpolate(p, [-1, 0], [0, topBarFullH.value], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
-      opacity: interpolate(p, [-1, 0], [0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP }),
+      height: interpolate(c, [0, 1], [topBarFullH.value, 0]),
+      opacity: 1 - c,
     };
   }, [isPagerTab]);
   const bottomBarWrapStyle = useAnimatedStyle(() => {
     if (!isPagerTab) return { height: bottomBarFullH.value, opacity: 1 };
-    const p = pagerProgress.value;
-    // 2026-10-30 (boss: NO bottom bar on the voice page ONLY): knots are
-    // profile -1, chats 0, voice 1, contacts 2. Height + opacity follow
-    // the live drag progress, so chats<->voice and voice<->contacts
-    // fade + shrink smoothly with the finger — never a flash or pop.
-    // The true-height floor (belt-and-braces from the 16:11/14:56
-    // measurement flaws) is applied to `full` BEFORE interpolation, so
-    // the curve stays continuous and settled chats/contacts keep their
-    // exact old height (57 + clearance). Profile edge (-1 -> 0) and
-    // the profile-page collapse (height exactly 0 at -1) are unchanged.
+    // 2026-10-30 (boss: NO bottom bar on the voice page ONLY): settled
+    // knots are unchanged — profile and voice hide the bar, chats and
+    // contacts show it full. The true-height floor (belt-and-braces
+    // from the 16:11/14:56 measurement flaws) is applied to `full`
+    // BEFORE interpolation, so settled chats/contacts keep their
+    // exact old height (57 + clearance).
     const full = Math.max(bottomBarFullH.value, 57 + bottomClearance);
-    const h = interpolate(p, [-1, 0, 1, 2], [0, full, 0, full], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
-    const o = interpolate(p, [-1, 0, 1, 2], [0, 1, 0, 1], { extrapolateLeft: Extrapolation.CLAMP, extrapolateRight: Extrapolation.CLAMP });
-    return { height: h, opacity: o };
+    const c = bottomBarCollapse.value;
+    return { height: interpolate(c, [0, 1], [full, 0]), opacity: 1 - c };
   }, [isPagerTab, bottomClearance]);
   // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
   // renders a placeholder for the profile page at home mount, then
@@ -458,8 +477,10 @@ export default function IMOHomeScreen() {
     else if (tab === 'contacts') setPagerIndex(2);
   }, []);
   const handlePagerIndexChange = useCallback((i: number) => {
+    const tab: ContentTab = i === -1 ? 'profile' : i === 0 ? 'chats' : i === 1 ? 'voice' : 'contacts';
     setPagerIndex(i);
-    setActiveTab(i === -1 ? 'profile' : i === 0 ? 'chats' : i === 1 ? 'voice' : 'contacts');
+    setActiveTab(tab);
+    setBarsTab(tab);
   }, []);
 
   // 2026-10-30 (boss: underline exactly under the active tab, incl.

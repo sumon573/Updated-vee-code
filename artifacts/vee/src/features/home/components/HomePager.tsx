@@ -99,6 +99,10 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
   useEffect(() => {
     if (targetSV.value === index && Math.abs(progress.value - index) < 0.01) {
       pagerSettled.value = true; // already at rest on the target page
+      // 2026-11-02 (boss: professional profile entrance): a remount (or
+      // a snapped progress) can land here without a spring — still
+      // report the settled page so the shell's bar state syncs.
+      runOnJS(onIndexChange)(index);
       return;
     }
     targetSV.value = index;
@@ -108,6 +112,11 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       if (finished) {
         progress.value = index;
         pagerSettled.value = true;
+        // 2026-11-02 (boss: professional profile entrance): a tap
+        // spring is also a settle — report it, so the shell's bar
+        // state follows taps exactly like swipes. Stale guard: a
+        // newer tap mid-spring owns the target, never yank back.
+        if (index === targetSV.value) runOnJS(onIndexChange)(index);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
