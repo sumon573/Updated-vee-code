@@ -183,13 +183,21 @@ export default function HomePager({ pages, index, progress, pagerSettled, onInde
       'worklet';
       // Gesture lost to a list scroll (or cancelled): spring back to the
       // settled page instead of leaving the row half-dragged.
+      // 2026-11-02 (boss: shell bars stuck after a swipe): the old
+      // spring-back NEVER reported, so a gesture cancelled mid-spring
+      // (e.g. a second grab that failed) left the visible page moved
+      // but JS tab + bar state stale — profile content under chats
+      // bars. Report the settled page like every other spring does;
+      // reporting the current page is a harmless no-op.
       if (!success) {
         pagerSettled.value = false;
-        progress.value = withSpring(targetSV.value, SPRING_CONFIG, (finished) => {
+        const t = targetSV.value;
+        progress.value = withSpring(t, SPRING_CONFIG, (finished) => {
           'worklet';
           if (finished) {
-            progress.value = targetSV.value;
+            progress.value = t;
             pagerSettled.value = true;
+            if (t === targetSV.value) runOnJS(onIndexChange)(t);
           }
         });
       }

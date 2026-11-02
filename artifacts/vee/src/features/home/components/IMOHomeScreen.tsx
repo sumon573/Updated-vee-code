@@ -515,8 +515,16 @@ export default function IMOHomeScreen() {
       } else {
         const ni = Math.max(-1, Math.min(2, Math.round(p)));
         if (ni !== idx) {
+          // 2026-11-02 (boss: shell bars stuck after a swipe): the old
+          // repair adopted the visible page as the tab but NEVER synced
+          // barsTab, so the bars stayed at the old tab's heights on the
+          // new page (profile content under chats bars). This runs only
+          // when settled, so syncing bars here keeps the settle-only
+          // profile-entrance design intact.
+          const tab = ni === -1 ? 'profile' : ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts';
           setPagerIndex(ni);
-          setActiveTab(ni === -1 ? 'profile' : ni === 0 ? 'chats' : ni === 1 ? 'voice' : 'contacts');
+          setActiveTab(tab);
+          setBarsTab(tab);
         }
       }
     }, []),

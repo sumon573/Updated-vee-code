@@ -227,7 +227,6 @@ function PremiumProfileMenuScreen(props: VeePremiumProfileMenuProps) {
             <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={8} onPress={props.onBack} style={styles.topHit}>
               <PremiumGlyph kind="back" size={30}/>
             </Pressable>
-            <Text style={styles.brand}>Vee</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Settings" hitSlop={8} onPress={props.onSettings} style={styles.topHit}>
               <PremiumGlyph kind="settings" size={28}/>
             </Pressable>
@@ -287,10 +286,12 @@ function PremiumProfileMenuScreen(props: VeePremiumProfileMenuProps) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: P.base },
   scrollContent: { paddingBottom: 36 },
-  hero: { height: 304, overflow: 'hidden' },
+  // 2026-11-02 (boss polish: no empty top spaces): hero fits its content
+  // (topBar 66 + identity marginTop 28 + identity ~100 + ~30 bottom pad);
+  // the old 304 left a ~110px dead band under the identity row.
+  hero: { height: 224, overflow: 'hidden' },
   topBar: { height: 66, marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   topHit: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  brand: { color: '#7534CB', fontSize: 26, fontWeight: '700', letterSpacing: -0.9 },
   identity: { flexDirection: 'row', marginHorizontal: 22, alignItems: 'center', marginTop: 28 },
   avatarBorder: { width: 100, height: 100, padding: 3, borderRadius: 50, backgroundColor: '#E7B652', borderWidth: 2, borderColor: '#FFF6D7' },
   avatarInner: { flex: 1, overflow: 'hidden', borderRadius: 46, backgroundColor: '#E9D9F8' },
