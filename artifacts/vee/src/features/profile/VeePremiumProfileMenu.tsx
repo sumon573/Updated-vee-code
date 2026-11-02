@@ -286,13 +286,13 @@ function PremiumProfileMenuScreen(props: VeePremiumProfileMenuProps) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: P.base },
   scrollContent: { paddingBottom: 36 },
-  // 2026-11-02 (boss polish: no empty top spaces): hero fits its content
-  // (topBar 66 + identity marginTop 28 + identity ~100 + ~30 bottom pad);
-  // the old 304 left a ~110px dead band under the identity row.
-  hero: { height: 224, overflow: 'hidden' },
-  topBar: { height: 66, marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  // 2026-11-02 (boss polish, round 2: gap below the back button): hero
+  // fits its content (topBar 52 + identity marginTop 10 + identity ~100
+  // + ~30 bottom pad); Task Center overlap unchanged.
+  hero: { height: 192, overflow: 'hidden' },
+  topBar: { height: 52, marginHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   topHit: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  identity: { flexDirection: 'row', marginHorizontal: 22, alignItems: 'center', marginTop: 28 },
+  identity: { flexDirection: 'row', marginHorizontal: 22, alignItems: 'center', marginTop: 10 },
   avatarBorder: { width: 100, height: 100, padding: 3, borderRadius: 50, backgroundColor: '#E7B652', borderWidth: 2, borderColor: '#FFF6D7' },
   avatarInner: { flex: 1, overflow: 'hidden', borderRadius: 46, backgroundColor: '#E9D9F8' },
   avatar: { width: '100%', height: '100%' },
