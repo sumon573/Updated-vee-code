@@ -902,6 +902,14 @@ export default function VoiceRoomHome({
         <Pressable onPress={() => setLeaderboardOpen(true)} hitSlop={8} style={{ padding: 8 }}>
           <TrophyIcon size={24} />
         </Pressable>
+        {/* 2026-11-02 (boss: marked screenshot): clean person icon between
+            trophy and search, evenly spaced, polished circled-user look.
+            Tap opens Profile (person icon standard action). */}
+        <Pressable onPress={() => router.push('/profile')} hitSlop={8} style={{ padding: 8, marginHorizontal: 2 }}>
+          <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="user" size={15} color={C.text} />
+          </View>
+        </Pressable>
         <Pressable onPress={() => setRoomSearchOpen(true)} hitSlop={8} style={{ padding: 8 }}>
           <Feather name="search" size={22} color={C.text} />
         </Pressable>
