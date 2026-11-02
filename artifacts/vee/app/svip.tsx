@@ -1,5 +1,5 @@
-import SvipScreen from '@/src/features/svip/SvipScreen';
+import SvipRoyalHost from '@/src/features/svip/SvipRoyalHost';
 
 export default function SvipRoute() {
-  return <SvipScreen />;
+  return <SvipRoyalHost />;
 }
