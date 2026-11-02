@@ -5,7 +5,10 @@
  * privilege grid below, price + Join CTA at bottom. Each level's page
  * has a DIFFERENT design, progressively more premium (SVIP 1 simplest,
  * SVIP 5 most ornate) — same structure, distinct theme per level.
- * All styling is Vee-original code-drawn work; no reference-app assets.
+ * Emblems + privilege images are Vee-original art (2026-11-02); the page
+ * background is dark navy sampled from the art, so the art blends in.
+ * No reference-app assets. Rules fix 2026-11-02: svip + svipWaitlist
+ * nodes now exist in live rules (the page previously PERMISSION_DENIED).
  *
  * Purchase status: prices are set (boss 2026-11-02) and payment is
  * wallet diamonds, but no staging-verified SVIP purchase endpoint
@@ -13,7 +16,8 @@
  * Never a fake purchase, never a direct balance write.
  */
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Alert, Image } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { useRouter } from 'expo-router';
@@ -30,8 +34,21 @@ import {
   SvipPointsState, SvipPointsHistoryEntry,
 } from '@/src/features/svip/svipPointsService';
 
-const SVIP_CROWN = { uri: 'https://vee-club.duckdns.org/nobel-art/crown-ssking.png' };
-const PAGE_BG = '#0B0B14';
+/** Real emblem art per tier (Vee-original, uploaded 2026-11-02, original=1). */
+const SVIP_EMBLEMS: Record<number, { uri: string }> = {
+  1: { uri: 'https://vee-club.duckdns.org/m/8548210f9c98881c7f0d3b7637510985' },
+  2: { uri: 'https://vee-club.duckdns.org/m/26685caf5e67ec37594177371ebb0a2b' },
+  3: { uri: 'https://vee-club.duckdns.org/m/948ced7d08f92b678737c698b14b0d82' },
+  4: { uri: 'https://vee-club.duckdns.org/m/82ad4cf07bed1854197f1aafff96037e' },
+  5: { uri: 'https://vee-club.duckdns.org/m/d90334ef6342798b9dd0c53e25f803ad' },
+};
+/** Honest privilege images: badge + nameplate only (other privileges are abstract). */
+const PRIV_IMAGES: Record<string, { uri: string }> = {
+  badge: { uri: 'https://vee-club.duckdns.org/m/25d71f45cbab97628deab84c0d4d694c' },
+  nameplate: { uri: 'https://vee-club.duckdns.org/m/c2ce11dc076d334108e8ae2bd33bf653' },
+};
+/** Dark navy sampled from the emblem art background, so the art blends in. */
+const PAGE_BG = '#130D31';
 const GOLD = '#E8B84B';
 
 function formatExpiry(ts: number): string {
@@ -42,18 +59,6 @@ function formatExpiry(ts: number): string {
 
 function formatPrice(n: number): string {
   return n.toLocaleString('en-US');
-}
-
-/** Darken a #RRGGBB color by factor f (0..1) for the page gradient. */
-function darken(hex: string, f: number): string {
-  const m = /^#([0-9a-fA-F]{6})$/.exec(hex || '');
-  if (!m) return PAGE_BG;
-  const n = parseInt(m[1], 16);
-  const r = Math.round(((n >> 16) & 255) * f);
-  const g = Math.round(((n >> 8) & 255) * f);
-  const b = Math.round((n & 255) * f);
-  const p = (v: number) => v.toString(16).padStart(2, '0');
-  return `#${p(r)}${p(g)}${p(b)}`;
 }
 
 type Theme = {
@@ -74,20 +79,11 @@ const TIER_THEME: Record<number, Theme> = {
   5: { rings: 3, dashed: true, sparkles: 16, crown: 150, ornaments: 'full', max: true },
 };
 
-/** Static sparkle slots around the 200x200 emblem box (no animation). */
-const SPARKS = [
-  { l: 8, t: 18, s: 14 }, { l: 180, t: 24, s: 12 }, { l: 22, t: 150, s: 12 }, { l: 168, t: 140, s: 14 },
-  { l: 48, t: 6, s: 10 }, { l: 140, t: 10, s: 10 }, { l: 6, t: 90, s: 10 }, { l: 186, t: 96, s: 10 },
-  { l: 70, t: 180, s: 12 }, { l: 120, t: 178, s: 10 }, { l: 30, t: 60, s: 9 }, { l: 165, t: 70, s: 9 },
-  { l: 95, t: 2, s: 11 }, { l: 100, t: 190, s: 9 }, { l: 14, t: 120, s: 9 }, { l: 178, t: 120, s: 11 },
-];
-
 export default function SvipScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [svip, setSvip] = useState<SvipState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [onWaitlist, setOnWaitlist] = useState(false);
   const [joining, setJoining] = useState(false);
   const [points, setPoints] = useState<SvipPointsState | null>(null);
@@ -97,12 +93,14 @@ export default function SvipScreen() {
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
     setLoading(true);
-    setError(null);
     isOnSvipWaitlist(user.uid).then(setOnWaitlist).catch(() => {});
+    // Graceful degradation: a membership read error (e.g. stale rules) must
+    // never blank the page or show raw error text — degrade to non-member
+    // and still render tiers, prices, and Join.
     const unsub = subscribeSvip(
       user.uid,
       (s) => { setSvip(s); setLoading(false); },
-      (e) => { setError(getErrorCause(e)); setLoading(false); },
+      () => { setLoading(false); },
     );
     const unsubPoints = subscribeSvipPoints(user.uid, setPoints, () => {});
     getSvipPointsHistory(user.uid).then(setPointsHistory).catch(() => {});
@@ -145,15 +143,15 @@ export default function SvipScreen() {
   const tiers = getSvipTiers();
   const tier = tiers.find((t) => t.tier === selectedTier) || tiers[0];
   const theme = TIER_THEME[tier.tier] || TIER_THEME[1];
-  const accent = tier.color || '#42A5F5';
   const privs = getSvipPrivileges();
   const unlockedCount = privs.filter((p) => tier.tier >= p.minTier).length;
   const isMyTier = activeTier?.tier === tier.tier;
 
   return (
     <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
+      {/* Solid dark navy (identical stops) so the emblem art blends seamlessly. */}
       <LinearGradient
-        colors={[darken(accent, 0.35), PAGE_BG]}
+        colors={[PAGE_BG, PAGE_BG]}
         start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
         style={{ flex: 1 }}
       >
@@ -205,50 +203,13 @@ export default function SvipScreen() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}>
-          {error ? (
-            <View style={{ padding: 20, alignItems: 'center' }}>
-              <Text style={{ color: '#EF9A9A', fontSize: 14 }}>{error}</Text>
-            </View>
-          ) : (
-            <>
-              {/* Emblem — big tier emblem, ornament density grows per level */}
+              {/* Emblem — real art per tier (wings/gems baked in, no drawn shapes) */}
               <View style={{ alignItems: 'center', marginTop: 26 }}>
-                <View style={{ width: 200, height: 200, alignItems: 'center', justifyContent: 'center' }}>
-                  {Array.from({ length: theme.rings }).map((_, i) => (
-                    <View
-                      key={i}
-                      style={{
-                        position: 'absolute',
-                        width: 168 - i * 18, height: 168 - i * 18, borderRadius: (168 - i * 18) / 2,
-                        borderWidth: i === 0 ? 2 : 1,
-                        borderColor: i === 0 ? accent : 'rgba(255,255,255,0.35)',
-                        borderStyle: theme.dashed && i === theme.rings - 1 ? 'dashed' : 'solid',
-                      }}
-                    />
-                  ))}
-                  {theme.ornaments === 'corners' || theme.ornaments === 'full' ? (
-                    <>
-                      <Text style={{ position: 'absolute', left: 6, top: 6, color: GOLD, fontSize: 16 }}>◆</Text>
-                      <Text style={{ position: 'absolute', right: 6, top: 6, color: GOLD, fontSize: 16 }}>◆</Text>
-                      <Text style={{ position: 'absolute', left: 6, bottom: 6, color: GOLD, fontSize: 16 }}>◆</Text>
-                      <Text style={{ position: 'absolute', right: 6, bottom: 6, color: GOLD, fontSize: 16 }}>◆</Text>
-                    </>
-                  ) : null}
-                  {SPARKS.slice(0, theme.sparkles).map((s, i) => (
-                    <Text
-                      key={i}
-                      style={{
-                        position: 'absolute', left: s.l, top: s.t,
-                        color: GOLD, fontSize: s.s, opacity: 0.9 }}>
-                      ✦
-                    </Text>
-                  ))}
-                  <Image
-                    source={SVIP_CROWN}
-                    style={{ width: theme.crown, height: theme.crown }}
-                    resizeMode="contain"
-                  />
-                </View>
+                <ExpoImage
+                  source={SVIP_EMBLEMS[tier.tier] || SVIP_EMBLEMS[1]}
+                  style={{ width: 280, height: 280 }}
+                  contentFit="contain"
+                />
                 <Text style={{ fontSize: 26, fontWeight: '800', color: '#FFF', marginTop: 10 }}>
                   {tier.name}
                   {theme.max ? (
@@ -303,7 +264,15 @@ export default function SvipScreen() {
                         borderWidth: 1,
                         borderColor: unlocked ? 'rgba(232,184,75,0.45)' : 'rgba(255,255,255,0.10)',
                         opacity: unlocked ? 1 : 0.55 }}>
-                      <Text style={{ fontSize: 28 }}>{priv.icon}</Text>
+                      {PRIV_IMAGES[priv.key] ? (
+                        <ExpoImage
+                          source={PRIV_IMAGES[priv.key]}
+                          style={{ width: 72, height: 108 }}
+                          contentFit="contain"
+                        />
+                      ) : (
+                        <Text style={{ fontSize: 28 }}>{priv.icon}</Text>
+                      )}
                       <Text style={{
                         fontSize: 12, fontWeight: '700', color: '#FFF',
                         marginTop: 8, textAlign: 'center' }}>
@@ -401,8 +370,6 @@ export default function SvipScreen() {
                   </Text>
                 ) : null}
               </View>
-            </>
-          )}
         </ScrollView>
       </LinearGradient>
     </View>
