@@ -161,9 +161,9 @@ export default function VeeSvipMockupScreen({
           {validUntilLabel ? <Text style={styles.activeSub}>Valid until {validUntilLabel}</Text> : null}
         </View>
       ) : (
-        <Pressable onPress={onJoinWaitlist} disabled={joining || isWaitlisted} accessibilityRole="button"
-          style={[styles.joinBtn, (joining || isWaitlisted) && styles.joinBtnDim]}>
-          <Text style={styles.joinText}>{joining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+        <Pressable onPress={onJoinWaitlist} disabled={isJoining || isWaitlisted} accessibilityRole="button"
+          style={[styles.joinBtn, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
+          <Text style={styles.joinText}>{isJoining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
         </Pressable>
       )}
       {!viewingOwnTier && !isWaitlisted ? <InfoNote text="Currently waitlist only" /> : null}
@@ -269,9 +269,9 @@ export default function VeeSvipMockupScreen({
                 {viewingOwnTier ? (
                   <View style={[styles.joinBtn, styles.joinBtnFlex, styles.joinBtnDim]}><Text style={styles.joinText}>{selected.name} ACTIVE</Text></View>
                 ) : (
-                  <Pressable onPress={onJoinWaitlist} disabled={joining || isWaitlisted} accessibilityRole="button"
-                    style={[styles.joinBtn, styles.joinBtnFlex, (joining || isWaitlisted) && styles.joinBtnDim]}>
-                    <Text style={styles.joinText}>{joining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+                  <Pressable onPress={onJoinWaitlist} disabled={isJoining || isWaitlisted} accessibilityRole="button"
+                    style={[styles.joinBtn, styles.joinBtnFlex, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
+                    <Text style={styles.joinText}>{isJoining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
                   </Pressable>
                 )}
               </View>
