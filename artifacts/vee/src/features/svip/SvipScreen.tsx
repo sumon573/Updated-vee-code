@@ -1,16 +1,16 @@
 /**
- * SvipScreen — Vee SVIP membership (IMO SVIP style, 2026-10-19).
+ * SvipScreen — Vee SVIP membership, VIP Center structure (2026-11-02).
  *
- * IMO's SVIP = paid premium membership with svip_level, badge icon,
- * nameplate icon, entry effects, kick-out/anti-kick privileges, SVIP points.
- * Vee SVIP: 3 tiers, RTDB-backed (admin-granted until payment is decided).
+ * Dark premium look: top SVIP 1-5 tabs, big tier emblem center,
+ * privilege grid below, price + Join CTA at bottom. Each level's page
+ * has a DIFFERENT design, progressively more premium (SVIP 1 simplest,
+ * SVIP 5 most ornate) — same structure, distinct theme per level.
+ * All styling is Vee-original code-drawn work; no reference-app assets.
  *
- * Privilege honesty: enforced privileges show active; stubbed ones show
- * locked with their TODO — nothing is displayed that neither works nor is
- * explained.
- *
- * ⚠️ BOSS DECISIONS PENDING: pricing per tier + payment method.
- * Until decided, "Become SVIP" joins a waitlist (real RTDB write).
+ * Purchase status: prices are set (boss 2026-11-02) and payment is
+ * wallet diamonds, but no staging-verified SVIP purchase endpoint
+ * exists yet — so Join still joins the waitlist, honestly labeled.
+ * Never a fake purchase, never a direct balance write.
  */
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Alert, Image } from 'react-native';
@@ -23,7 +23,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
   subscribeSvip, joinSvipWaitlist, isOnSvipWaitlist,
-  SvipState, hasSvipPrivilege } from '@/src/features/svip/svipService';
+  SvipState } from '@/src/features/svip/svipService';
 import { getSvipTiers, getSvipPrivileges } from '@/src/features/svip/svipConfig';
 import {
   subscribeSvipPoints, getSvipPointsHistory, formatPointsExpiry,
@@ -31,12 +31,56 @@ import {
 } from '@/src/features/svip/svipPointsService';
 
 const SVIP_CROWN = { uri: 'https://vee-club.duckdns.org/nobel-art/crown-ssking.png' };
+const PAGE_BG = '#0B0B14';
+const GOLD = '#E8B84B';
 
 function formatExpiry(ts: number): string {
   const d = new Date(ts);
   const pad = (x: number) => `${x}`.padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+function formatPrice(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/** Darken a #RRGGBB color by factor f (0..1) for the page gradient. */
+function darken(hex: string, f: number): string {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return PAGE_BG;
+  const n = parseInt(m[1], 16);
+  const r = Math.round(((n >> 16) & 255) * f);
+  const g = Math.round(((n >> 8) & 255) * f);
+  const b = Math.round((n & 255) * f);
+  const p = (v: number) => v.toString(16).padStart(2, '0');
+  return `#${p(r)}${p(g)}${p(b)}`;
+}
+
+type Theme = {
+  rings: number;
+  dashed: boolean;
+  sparkles: number;
+  crown: number;
+  ornaments: 'none' | 'sides' | 'divider' | 'corners' | 'full';
+  max: boolean;
+};
+
+/** Per-level design — progressively more premium. Keyed by tier number. */
+const TIER_THEME: Record<number, Theme> = {
+  1: { rings: 1, dashed: false, sparkles: 0, crown: 110, ornaments: 'none', max: false },
+  2: { rings: 2, dashed: false, sparkles: 4, crown: 120, ornaments: 'sides', max: false },
+  3: { rings: 2, dashed: true, sparkles: 8, crown: 130, ornaments: 'divider', max: false },
+  4: { rings: 3, dashed: false, sparkles: 12, crown: 140, ornaments: 'corners', max: false },
+  5: { rings: 3, dashed: true, sparkles: 16, crown: 150, ornaments: 'full', max: true },
+};
+
+/** Static sparkle slots around the 200x200 emblem box (no animation). */
+const SPARKS = [
+  { l: 8, t: 18, s: 14 }, { l: 180, t: 24, s: 12 }, { l: 22, t: 150, s: 12 }, { l: 168, t: 140, s: 14 },
+  { l: 48, t: 6, s: 10 }, { l: 140, t: 10, s: 10 }, { l: 6, t: 90, s: 10 }, { l: 186, t: 96, s: 10 },
+  { l: 70, t: 180, s: 12 }, { l: 120, t: 178, s: 10 }, { l: 30, t: 60, s: 9 }, { l: 165, t: 70, s: 9 },
+  { l: 95, t: 2, s: 11 }, { l: 100, t: 190, s: 9 }, { l: 14, t: 120, s: 9 }, { l: 178, t: 120, s: 11 },
+];
 
 export default function SvipScreen() {
   const router = useRouter();
@@ -48,6 +92,7 @@ export default function SvipScreen() {
   const [joining, setJoining] = useState(false);
   const [points, setPoints] = useState<SvipPointsState | null>(null);
   const [pointsHistory, setPointsHistory] = useState<SvipPointsHistoryEntry[]>([]);
+  const [selectedTier, setSelectedTier] = useState(1);
 
   useEffect(() => {
     if (!user?.uid) { setLoading(false); return; }
@@ -65,7 +110,14 @@ export default function SvipScreen() {
     return () => { clearTimeout(timeout); unsub(); unsubPoints(); };
   }, [user?.uid]);
 
-  const handleBecomeSvip = async () => {
+  const active = svip && svip.expiry > Date.now();
+  const activeTier = active ? getSvipTiers().find((t) => t.tier === svip!.tier) : null;
+
+  useEffect(() => {
+    if (activeTier) setSelectedTier(activeTier.tier);
+  }, [activeTier?.tier]);
+
+  const handleJoin = async () => {
     if (!user?.uid || joining || onWaitlist) return;
     setJoining(true);
     try {
@@ -73,7 +125,7 @@ export default function SvipScreen() {
       setOnWaitlist(true);
       Alert.alert(
         'You\u2019re on the list',
-        'SVIP membership opens soon. We\u2019ll notify you the moment pricing and payment are live.',
+        'SVIP diamond purchase opens soon. We\u2019ll notify you the moment it\u2019s live.',
       );
     } catch (e) {
       Alert.alert('Couldn\u2019t join', getErrorCause(e));
@@ -82,203 +134,277 @@ export default function SvipScreen() {
     }
   };
 
-  const active = svip && svip.expiry > Date.now();
-  const activeTier = active ? getSvipTiers().find((t) => t.tier === svip!.tier) : null;
-
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: PAGE_BG, alignItems: 'center', justifyContent: 'center' }}>
         <PremiumLoader size="large" />
       </View>
     );
   }
 
+  const tiers = getSvipTiers();
+  const tier = tiers.find((t) => t.tier === selectedTier) || tiers[0];
+  const theme = TIER_THEME[tier.tier] || TIER_THEME[1];
+  const accent = tier.color || '#42A5F5';
+  const privs = getSvipPrivileges();
+  const unlockedCount = privs.filter((p) => tier.tier >= p.minTier).length;
+  const isMyTier = activeTier?.tier === tier.tier;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        paddingTop: 50, paddingHorizontal: 16, paddingBottom: 12,
-        borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Feather name="arrow-left" size={28} color="#000" />
-        </Pressable>
-        <Text style={{ fontSize: 28, fontWeight: '700', color: '#000', marginLeft: 16 }}>
-          SVIP
-        </Text>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {error ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ color: '#D32F2F', fontSize: 14 }}>{error}</Text>
-          </View>
-        ) : (
-          <>
-            {/* Hero — IMO SVIP header style */}
-            <LinearGradient
-              colors={activeTier ? [activeTier.color, '#212121'] : ['#B0BEC5', '#607D8B']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={{ margin: 20, borderRadius: 20, padding: 22, alignItems: 'center' }}
-            >
-              <Image source={SVIP_CROWN} style={{ width: 64, height: 64 }} resizeMode="contain" />
-              <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', marginTop: 8 }}>
-                {activeTier ? activeTier.name : 'Vee SVIP'}
+    <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
+      <LinearGradient
+        colors={[darken(accent, 0.35), PAGE_BG]}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={{ flex: 1 }}
+      >
+        {/* Header */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingTop: 50, paddingHorizontal: 16, paddingBottom: 4 }}>
+          <Pressable onPress={() => router.back()} hitSlop={12}>
+            <Feather name="arrow-left" size={28} color="#FFF" />
+          </Pressable>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: '#FFF', marginLeft: 16 }}>
+            SVIP Center
+          </Text>
+          {activeTier ? (
+            <View style={{
+              marginLeft: 'auto', backgroundColor: GOLD, borderRadius: 12,
+              paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#212121' }}>
+                {activeTier.name} Active
               </Text>
-              {active && svip ? (
-                <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', marginTop: 6 }}>
-                  Valid until {formatExpiry(svip.expiry)}
-                </Text>
-              ) : (
-                <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', marginTop: 6, textAlign: 'center' }}>
-                  The premium club for Vee\u2019s most dedicated members.
-                </Text>
-              )}
-            </LinearGradient>
+            </View>
+          ) : null}
+        </View>
 
-            {/* SVIP Points — IMO integral model: points expire, spent on kick-outs */}
-            {active && (
-              <View style={{
-                marginHorizontal: 20, marginBottom: 10, borderRadius: 14,
-                backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FFE082',
-                padding: 14 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 26 }}>⭐</Text>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#212121' }}>
-                      {points?.balance || 0} SVIP Points
+        {/* Tier tabs */}
+        <View style={{
+          flexDirection: 'row', paddingHorizontal: 12, paddingTop: 12,
+          borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.12)' }}>
+          {tiers.map((t) => {
+            const sel = t.tier === selectedTier;
+            return (
+              <Pressable
+                key={t.tier}
+                onPress={() => setSelectedTier(t.tier)}
+                style={{ flex: 1, alignItems: 'center', paddingBottom: 10 }}>
+                <Text style={{
+                  fontSize: 15, fontWeight: sel ? '800' : '600',
+                  color: sel ? GOLD : 'rgba(255,255,255,0.55)' }}>
+                  SVIP {t.tier}
+                </Text>
+                {sel ? (
+                  <View style={{
+                    marginTop: 8, height: 3, width: 28, borderRadius: 2,
+                    backgroundColor: GOLD }} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {error ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: '#EF9A9A', fontSize: 14 }}>{error}</Text>
+            </View>
+          ) : (
+            <>
+              {/* Emblem — big tier emblem, ornament density grows per level */}
+              <View style={{ alignItems: 'center', marginTop: 26 }}>
+                <View style={{ width: 200, height: 200, alignItems: 'center', justifyContent: 'center' }}>
+                  {Array.from({ length: theme.rings }).map((_, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        position: 'absolute',
+                        width: 168 - i * 18, height: 168 - i * 18, borderRadius: (168 - i * 18) / 2,
+                        borderWidth: i === 0 ? 2 : 1,
+                        borderColor: i === 0 ? accent : 'rgba(255,255,255,0.35)',
+                        borderStyle: theme.dashed && i === theme.rings - 1 ? 'dashed' : 'solid',
+                      }}
+                    />
+                  ))}
+                  {theme.ornaments === 'corners' || theme.ornaments === 'full' ? (
+                    <>
+                      <Text style={{ position: 'absolute', left: 6, top: 6, color: GOLD, fontSize: 16 }}>◆</Text>
+                      <Text style={{ position: 'absolute', right: 6, top: 6, color: GOLD, fontSize: 16 }}>◆</Text>
+                      <Text style={{ position: 'absolute', left: 6, bottom: 6, color: GOLD, fontSize: 16 }}>◆</Text>
+                      <Text style={{ position: 'absolute', right: 6, bottom: 6, color: GOLD, fontSize: 16 }}>◆</Text>
+                    </>
+                  ) : null}
+                  {SPARKS.slice(0, theme.sparkles).map((s, i) => (
+                    <Text
+                      key={i}
+                      style={{
+                        position: 'absolute', left: s.l, top: s.t,
+                        color: GOLD, fontSize: s.s, opacity: 0.9 }}>
+                      ✦
                     </Text>
-                    <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
-                      {formatPointsExpiry(points?.expiresAt || 0)} • Points expire after 30 days
-                    </Text>
-                  </View>
+                  ))}
+                  <Image
+                    source={SVIP_CROWN}
+                    style={{ width: theme.crown, height: theme.crown }}
+                    resizeMode="contain"
+                  />
                 </View>
-                {pointsHistory.length > 0 && (
-                  <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#FFE082', paddingTop: 8 }}>
-                    {pointsHistory.slice(0, 5).map((h, i) => (
-                      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 13, color: '#616161' }} numberOfLines={1}>
-                          {h.reason}
-                        </Text>
-                        <Text style={{
-                          fontSize: 13, fontWeight: '600',
-                          color: h.amount >= 0 ? '#2E7D32' : '#D32F2F' }}>
-                          {h.amount >= 0 ? '+' : ''}{h.amount}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: '#FFF', marginTop: 10 }}>
+                  {tier.name}
+                  {theme.max ? (
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: GOLD }}>  MAX</Text>
+                  ) : null}
+                </Text>
+                {isMyTier && active && svip ? (
+                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 }}>
+                    Your current tier • Valid until {formatExpiry(svip.expiry)}
+                  </Text>
+                ) : (
+                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 }}>
+                    {tier.durationDays}-day membership
+                  </Text>
                 )}
               </View>
-            )}
 
-            {/* Tier selector */}
-            <Text style={{
-              fontSize: 17, fontWeight: '700', color: '#212121',
-              paddingHorizontal: 20, marginBottom: 10 }}>
-              Membership tiers
-            </Text>
-            {getSvipTiers().map((tier) => {
-              const isMine = activeTier?.tier === tier.tier;
-              return (
-                <View key={tier.tier} style={{
-                  marginHorizontal: 20, marginBottom: 10, borderRadius: 14,
-                  borderWidth: isMine ? 2 : 1,
-                  borderColor: isMine ? tier.color : '#E0E0E0',
-                  padding: 14, flexDirection: 'row', alignItems: 'center',
-                  backgroundColor: isMine ? '#FFF8E1' : '#fff' }}>
-                  <Image source={SVIP_CROWN} style={{ width: 40, height: 40 }} resizeMode="contain" />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#212121' }}>
-                      {tier.name}{isMine ? '  •  Active' : ''}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
-                      {tier.durationDays}-day membership
-                    </Text>
-                  </View>
-                  {tier.priceDiamonds > 0 ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <DiamondIcon size={15} />
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#007AFF' }}>
-                        {tier.priceDiamonds}
+              {/* Identification divider — privilege count for this tier */}
+              <View style={{ alignItems: 'center', marginTop: 24, paddingHorizontal: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {theme.ornaments !== 'none' ? (
+                    <Text style={{ color: GOLD, fontSize: 14 }}>✦</Text>
+                  ) : null}
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFF' }}>
+                    Privileges ({unlockedCount}/{privs.length})
+                  </Text>
+                  {theme.ornaments !== 'none' ? (
+                    <Text style={{ color: GOLD, fontSize: 14 }}>✦</Text>
+                  ) : null}
+                </View>
+                {theme.ornaments === 'divider' || theme.ornaments === 'corners' || theme.ornaments === 'full' ? (
+                  <View style={{
+                    marginTop: 10, height: 1, width: '70%',
+                    backgroundColor: 'rgba(232,184,75,0.5)' }} />
+                ) : null}
+              </View>
+
+              {/* Privilege grid */}
+              <View style={{
+                flexDirection: 'row', flexWrap: 'wrap',
+                paddingHorizontal: 16, marginTop: 16 }}>
+                {privs.map((priv) => {
+                  const unlocked = tier.tier >= priv.minTier;
+                  return (
+                    <View
+                      key={priv.key}
+                      style={{
+                        width: '30.5%', marginHorizontal: '1%', marginBottom: 12,
+                        borderRadius: 14, paddingVertical: 14, paddingHorizontal: 6,
+                        alignItems: 'center',
+                        backgroundColor: unlocked ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
+                        borderWidth: 1,
+                        borderColor: unlocked ? 'rgba(232,184,75,0.45)' : 'rgba(255,255,255,0.10)',
+                        opacity: unlocked ? 1 : 0.55 }}>
+                      <Text style={{ fontSize: 28 }}>{priv.icon}</Text>
+                      <Text style={{
+                        fontSize: 12, fontWeight: '700', color: '#FFF',
+                        marginTop: 8, textAlign: 'center' }}>
+                        {priv.name}
                       </Text>
+                      <Text style={{
+                        fontSize: 11, color: unlocked ? GOLD : 'rgba(255,255,255,0.5)',
+                        marginTop: 4, textAlign: 'center' }}>
+                        {unlocked ? 'Unlocked' : `SVIP ${priv.minTier}+`}
+                      </Text>
+                      {!unlocked ? (
+                        <Feather name="lock" size={13} color="rgba(255,255,255,0.5)" style={{ marginTop: 6 }} />
+                      ) : null}
                     </View>
-                  ) : (
-                    <Text style={{ fontSize: 12, color: '#BDBDBD' }}>Price soon</Text>
-                  )}
-                </View>
-              );
-            })}
+                  );
+                })}
+              </View>
 
-            {/* Privileges */}
-            <Text style={{
-              fontSize: 17, fontWeight: '700', color: '#212121',
-              paddingHorizontal: 20, marginTop: 10, marginBottom: 10 }}>
-              SVIP privileges
-            </Text>
-            {getSvipPrivileges().map((priv) => {
-              const unlocked = hasSvipPrivilege(svip, priv.key);
-              const reachable = activeTier != null && activeTier.tier >= priv.minTier;
-              const locked = !unlocked;
-              return (
-                <View key={priv.key} style={{
-                  marginHorizontal: 20, marginBottom: 8, borderRadius: 12,
-                  backgroundColor: locked ? '#FAFAFA' : '#fff',
-                  borderWidth: 1, borderColor: '#E0E0E0',
-                  padding: 12, flexDirection: 'row', alignItems: 'center',
-                  opacity: locked ? 0.55 : 1 }}>
-                  <Text style={{ fontSize: 26 }}>{priv.icon}</Text>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#212121' }}>
-                      {priv.name}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>
-                      {locked
-                        ? `Requires ${getSvipTiers().find((t) => t.tier === priv.minTier)?.name || 'higher tier'}`
-                        : reachable && !priv.enforced
-                          ? 'Coming soon — activates here when it ships.'
-                          : 'Active'}
-                    </Text>
-                  </View>
-                  {locked ? (
-                    <Feather name="lock" size={16} color="#BDBDBD" />
-                  ) : (
-                    <Feather name="check-circle" size={18} color="#4CAF50" />
-                  )}
-                </View>
-              );
-            })}
-
-            {/* CTA */}
-            <View style={{ padding: 20 }}>
+              {/* SVIP Points — active members only (existing functionality) */}
               {active ? (
                 <View style={{
-                  backgroundColor: '#E8F5E9', borderRadius: 14, padding: 16, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#2E7D32' }}>
-                    You are {activeTier?.name} 🎉
-                  </Text>
+                  marginHorizontal: 20, marginTop: 4, marginBottom: 6, borderRadius: 14,
+                  backgroundColor: 'rgba(255,248,225,0.08)', borderWidth: 1, borderColor: 'rgba(255,224,130,0.4)',
+                  padding: 14 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 26 }}>⭐</Text>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFF' }}>
+                        {points?.balance || 0} SVIP Points
+                      </Text>
+                      <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                        {formatPointsExpiry(points?.expiresAt || 0)} • Points expire after 30 days
+                      </Text>
+                    </View>
+                  </View>
+                  {pointsHistory.length > 0 ? (
+                    <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,224,130,0.3)', paddingTop: 8 }}>
+                      {pointsHistory.slice(0, 5).map((h, i) => (
+                        <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
+                          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }} numberOfLines={1}>
+                            {h.reason}
+                          </Text>
+                          <Text style={{
+                            fontSize: 13, fontWeight: '600',
+                            color: h.amount >= 0 ? '#81C784' : '#EF9A9A' }}>
+                            {h.amount >= 0 ? '+' : ''}{h.amount}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
-              ) : (
-                <Pressable
-                  onPress={handleBecomeSvip}
-                  disabled={joining || onWaitlist}
-                  style={{
-                    backgroundColor: '#E3F2FD', borderRadius: 14, padding: 16, alignItems: 'center',
-                    opacity: onWaitlist ? 0.7 : 1 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#007AFF' }}>
-                    {joining ? 'Joining…' : onWaitlist ? 'You\u2019re on the waitlist ✓' : 'Become SVIP'}
-                  </Text>
-                  {!onWaitlist && (
-                    <Text style={{ fontSize: 12, color: '#007AFF', marginTop: 4, opacity: 0.8 }}>
-                      Pricing opens soon — join the waitlist
+              ) : null}
+
+              {/* Price + Join CTA */}
+              <View style={{
+                paddingHorizontal: 20, paddingTop: 18, paddingBottom: 28,
+                borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)', marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <DiamondIcon size={20} />
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFF' }}>
+                      {formatPrice(tier.priceDiamonds)}
                     </Text>
-                  )}
-                </Pressable>
-              )}
-            </View>
-            <View style={{ height: 24 }} />
-          </>
-        )}
-      </ScrollView>
+                    <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+                      / {tier.durationDays} DAYS
+                    </Text>
+                  </View>
+                </View>
+                {active ? (
+                  <View style={{
+                    marginTop: 14, backgroundColor: 'rgba(232,245,233,0.10)', borderRadius: 14,
+                    padding: 16, alignItems: 'center',
+                    borderWidth: 1, borderColor: 'rgba(129,199,132,0.4)' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#81C784' }}>
+                      You are {activeTier?.name} 🎉
+                    </Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={handleJoin}
+                    disabled={joining || onWaitlist}
+                    style={{
+                      marginTop: 14, backgroundColor: GOLD, borderRadius: 24,
+                      paddingVertical: 15, alignItems: 'center',
+                      opacity: onWaitlist ? 0.7 : 1 }}>
+                    <Text style={{ fontSize: 17, fontWeight: '800', color: '#212121' }}>
+                      {joining ? 'Joining…' : onWaitlist ? 'You\u2019re on the waitlist ✓' : 'Join SVIP'}
+                    </Text>
+                  </Pressable>
+                )}
+                {!active && !onWaitlist ? (
+                  <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 8, textAlign: 'center' }}>
+                    Diamond purchase opens soon — join the waitlist
+                  </Text>
+                ) : null}
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </LinearGradient>
     </View>
   );
 }

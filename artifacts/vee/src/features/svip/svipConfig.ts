@@ -4,11 +4,15 @@
  * SVIP = Vee's paid premium membership, modeled on IMO's SVIP:
  * tiered levels with badge icon + nameplate icon + room privileges.
  *
- * ⚠️ BOSS DECISIONS PENDING (do NOT invent):
- * 1. PRICING — all prices below are PLACEHOLDERS (0 = unset). Boss sets
- *    real diamond prices per tier + duration before any payment flow ships.
- * 2. PAYMENT METHOD — how users pay (diamonds from wallet? bKash? Google
- *    Play?). Until decided, the "Become SVIP" CTA only joins a waitlist.
+ * PRICING (boss 2026-11-02): SVIP 1 = 10,000 / SVIP 2 = 20,000 /
+ * SVIP 3 = 30,000 / SVIP 4 = 40,000 / SVIP 5 = 60,000 diamonds, 30 days.
+ * PAYMENT METHOD (boss 2026-11-02): wallet diamonds. No staging-verified
+ * SVIP purchase endpoint exists yet, so the Join CTA still joins the
+ * waitlist (honestly labeled) until that endpoint ships.
+ * NOTE: T4/T5 carry NO new enforced privileges (boss: do not invent) —
+ * they show the accumulated set. T4/T5 pointsGranted carry the T3 value
+ * (800) until the boss sets real values; purchase is not wired, so this
+ * is dormant config.
  *
  * Server-driven: this file is the client fallback. The RTDB node
  * `svip_config` overrides it when present — so boss can change
@@ -54,7 +58,7 @@ export const SVIP_TIERS: SvipTier[] = [
     tier: 1,
     name: 'SVIP 1',
     color: '#42A5F5',
-    priceDiamonds: 0, // ⚠️ BOSS: set price
+    priceDiamonds: 10000,
     durationDays: 30,
     privileges: ['badge', 'nameplate'],
     pointsGranted: 100,
@@ -63,7 +67,7 @@ export const SVIP_TIERS: SvipTier[] = [
     tier: 2,
     name: 'SVIP 2',
     color: '#7E57C2',
-    priceDiamonds: 0, // ⚠️ BOSS: set price
+    priceDiamonds: 20000,
     durationDays: 30,
     privileges: ['badge', 'nameplate', 'entryEffect'],
     pointsGranted: 300,
@@ -72,7 +76,25 @@ export const SVIP_TIERS: SvipTier[] = [
     tier: 3,
     name: 'SVIP 3',
     color: '#FF9800',
-    priceDiamonds: 0, // ⚠️ BOSS: set price
+    priceDiamonds: 30000,
+    durationDays: 30,
+    privileges: ['badge', 'nameplate', 'entryEffect', 'antiKick', 'kickOut'],
+    pointsGranted: 800,
+  },
+  {
+    tier: 4,
+    name: 'SVIP 4',
+    color: '#FFCA28',
+    priceDiamonds: 40000,
+    durationDays: 30,
+    privileges: ['badge', 'nameplate', 'entryEffect', 'antiKick', 'kickOut'],
+    pointsGranted: 800,
+  },
+  {
+    tier: 5,
+    name: 'SVIP 5',
+    color: '#FFE082',
+    priceDiamonds: 60000,
     durationDays: 30,
     privileges: ['badge', 'nameplate', 'entryEffect', 'antiKick', 'kickOut'],
     pointsGranted: 800,
