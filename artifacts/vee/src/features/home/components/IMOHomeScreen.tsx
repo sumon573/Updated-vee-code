@@ -277,7 +277,15 @@ export default function IMOHomeScreen() {
 
   // Per Sumon 2026-10-12: story row shows ONLY contacts' stories (not public from non-contacts).
   // Public stories go to Planet only.
-  const imoStories: IMOStory[] = (stories || [])
+  // 2026-11-02 (home swipe: super smooth, one page only): story strip
+  // data memoized — it was rebuilt (new array identity) on EVERY shell
+  // render, which would defeat the page memoization below. The
+  // contact-set dep is a sorted-join key, not the getContactUids
+  // closure itself (that closure is recreated every render; the
+  // ref-backed Set it reads is what matters) — the same key pattern
+  // the live-profiles effect in this file already uses.
+  const contactUidsKey = [...(getContactUids?.() ?? new Set<string>())].sort().join(',');
+  const imoStories: IMOStory[] = useMemo(() => (stories || [])
     .filter((s: any) => {
       const uid = s.userId;
       if (uid === user?.uid) return true; // own story
@@ -290,7 +298,7 @@ export default function IMOHomeScreen() {
       name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
       photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
       unreadCount: s.unreadCount || 0,
-    }));
+    })), [stories, user?.uid, avatarCache, contactUidsKey]);
 
   useEffect(() => {
     const missingUids = new Set<string>();
@@ -588,16 +596,16 @@ export default function IMOHomeScreen() {
   // forever after. (If the pager unmounts for the stories/calls tabs,
   // profileWarmed stays true, so returning mounts the real screen
   // immediately — no placeholder repeat.)
-  const profilePage = profileWarmed ? (
+  const profilePage = useMemo(() => profileWarmed ? (
     <ProfileScreen key="pager-profile" embedded />
   ) : (
     <View key="pager-profile" style={{ flex: 1, backgroundColor: '#FFFFFF' }} />
-  );
+  ), [profileWarmed]);
 
   // 2026-10-30 (boss: home page-swipe): chat page node for the pager.
   // Content UNCHANGED — moved out of the conditional so the pager can
   // keep it mounted beside the voice/contacts pages.
-  const chatsPage = (
+  const chatsPage = useMemo(() => (
     <View key="pager-chats" style={{ flex: 1 }}>
       <IMOStoryRow
         stories={imoStories}
@@ -656,7 +664,23 @@ export default function IMOHomeScreen() {
       {/* 2026-10-20 (boss): voice FAB removed — Rooms now lives in the
           bottom tab bar (Chats · Rooms · Contacts · DP). */}
     </View>
-  );
+  ), [imoStories, imoChats, getRowLayout, chatsReady, menuChat, user?.uid, handleAddStory, handleStoryPress, handleChatPress, handleLongPress, handleCallPress, runMenuAction, closeMenu]);
+
+  // 2026-11-02 (home swipe: super smooth, one page only): the pager
+  // pages keep STABLE element identity across shell renders. Before,
+  // every shell render rebuilt all four page elements, so every swipe
+  // settle (setPagerIndex + setActiveTab) and every mid-swipe data
+  // arrival forced React to reconcile ProfileScreen + the chat list +
+  // VoiceRoomHome + ContactsScreen on the JS thread while the settle
+  // spring was animating — the slight shake. Now a settle re-render
+  // reconciles nothing inside the pager (all four identities stable),
+  // and a data arrival re-renders only the page whose data changed
+  // (voice/contacts take no props, so their elements are constant).
+  // Same elements, same order, same props — referential stability
+  // only, zero behavior/layout change.
+  const voicePage = useMemo(() => <VoiceRoomHome key="pager-voice" />, []);
+  const contactsPage = useMemo(() => <ContactsScreen key="pager-contacts" />, []);
+  const pagerPages = useMemo(() => [profilePage, chatsPage, voicePage, contactsPage], [profilePage, chatsPage, voicePage, contactsPage]);
 
   return (
     <SafeAreaView edges={['left', 'right']} style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -696,7 +720,7 @@ export default function IMOHomeScreen() {
           progress={pagerProgress}
           pagerSettled={pagerSettled}
           onIndexChange={handlePagerIndexChange}
-          pages={[profilePage, chatsPage, <VoiceRoomHome key="pager-voice" />, <ContactsScreen key="pager-contacts" />]}
+          pages={pagerPages}
         />
       )}
 
