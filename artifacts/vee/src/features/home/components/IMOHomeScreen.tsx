@@ -50,7 +50,7 @@ import StoriesTabScreen from '@/src/features/home/components/StoriesTabScreen';
 import CallsTabScreen from '@/src/features/home/components/CallsTabScreen';
 import VoiceRoomHome from '@/src/features/voice-room/screens/VoiceRoomHome';
 import ContactsScreen from '@/src/features/contacts/ContactsScreen';
-import ProfileScreen from '@/app/profile/index';
+import ProfileMenuHost from '@/src/features/profile/ProfileMenuHost';
 import StoryViewer from '@/src/features/chat/screens/StoryViewer';
 import StoryCreator from '@/src/features/chat/screens/StoryCreator';
 
@@ -456,7 +456,7 @@ export default function IMOHomeScreen() {
   }, [isPagerTab, bottomClearance]);
   // 2026-10-30 (boss: profile pre-loaded): deferred warm-up — the pager
   // renders a placeholder for the profile page at home mount, then
-  // mounts the real ProfileScreen once after home settles
+  // mounts the real profile menu (ProfileMenuHost) once after home settles
   // (post-interaction, 1500ms fallback) and keeps it mounted forever
   // after. Home opens fast; every drag after warm-up is jerk-free. A
   // drag within the first ~second of home open may still show the
@@ -612,16 +612,16 @@ export default function IMOHomeScreen() {
     startCall(entry.remoteUid, entry.remoteName || 'Vee User', entry.remotePhotoURL);
   }, [startCall]);
 
-  // 2026-10-30 (boss: profile pre-loaded): profile page node for the
-  // pager — placeholder until warm-up, then the real screen, mounted
-  // forever after. (If the pager unmounts for the stories/calls tabs,
-  // profileWarmed stays true, so returning mounts the real screen
-  // immediately — no placeholder repeat.)
+  // 2026-11-02 (boss: Me icon opens the GPT menu): profile page node for
+  // the pager — placeholder until warm-up, then the ChatGPT premium
+  // profile menu (ProfileMenuHost), mounted forever after. Back goes to
+  // the chats tab. The /profile route keeps the old ProfileScreen, so
+  // Edit/Visitors/Rooms/Intimacy entries survive there.
   const profilePage = useMemo(() => profileWarmed ? (
-    <ProfileScreen key="pager-profile" embedded />
+    <ProfileMenuHost key="pager-profile" onBack={() => goToTab('chats')} />
   ) : (
     <View key="pager-profile" style={{ flex: 1, backgroundColor: '#FFFFFF' }} />
-  ), [profileWarmed]);
+  ), [profileWarmed, goToTab]);
 
   // 2026-10-30 (boss: home page-swipe): chat page node for the pager.
   // Content UNCHANGED — moved out of the conditional so the pager can
