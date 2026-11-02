@@ -508,7 +508,10 @@ type ReceiveEntry = {
   toName: string;
   toAvatar?: string;
   giftId: string;
-  emoji: string;
+  // Null when the feed entry carries no emoji (current GiftsModal entries
+  // have none) — the banner falls back to the gift thumbnail, then 🎁.
+  emoji: string | null;
+  thumbnailUrl?: string;
   coins: number;
   count: number;
 };
@@ -519,13 +522,17 @@ const MAX_QUEUED = 3;
 
 const comboOf = (e: ReceiveEntry) => `${e.fromUid}|${e.toUid}|${e.giftId}`;
 
-/** Defensive parse — malformed entries (missing emoji/toName) return null and are skipped. */
+/** Defensive parse — entries missing toName are malformed and skipped.
+    2026-11-02 (gift fly fix): emoji is OPTIONAL now — current GiftsModal
+    entries carry no emoji, and requiring it skipped every new gift. An
+    entry without emoji still yields a banner: the card renders the gift
+    thumbnail when present, else the neutral 🎁 fallback. */
 function parseFeedEntry(key: string, val: unknown): ReceiveEntry | null {
   if (!val || typeof val !== 'object') return null;
   const v = val as Record<string, unknown>;
   const emoji = typeof v.emoji === 'string' && v.emoji ? v.emoji : null;
   const toName = typeof v.toName === 'string' && v.toName ? v.toName : null;
-  if (!emoji || !toName) return null;
+  if (!toName) return null;
   const str = (x: unknown) => (typeof x === 'string' ? x : '');
   return {
     key,
@@ -537,6 +544,7 @@ function parseFeedEntry(key: string, val: unknown): ReceiveEntry | null {
     toAvatar: typeof v.toAvatar === 'string' ? v.toAvatar : undefined,
     giftId: str(v.giftId),
     emoji,
+    thumbnailUrl: typeof v.thumbnailUrl === 'string' && v.thumbnailUrl ? v.thumbnailUrl : undefined,
     coins: typeof v.coins === 'number' ? v.coins : 0,
     count: 1,
   };
@@ -552,6 +560,9 @@ function ReceiveBannerCard({
   const y = useRef(new Animated.Value(-90)).current;
   const op = useRef(new Animated.Value(0)).current;
   const sparkle = useRef(new Animated.Value(0.5)).current;
+  // 2026-11-02 (gift fly fix): thumbnail fallback for emoji-less entries —
+  // if the thumb fails to load, fall back to the neutral 🎁 below.
+  const [thumbFailed, setThumbFailed] = useState(false);
 
   // Sweep in + sparkle bounce on the gift emoji
   useEffect(() => {
@@ -601,7 +612,18 @@ function ReceiveBannerCard({
         <Text style={styles.recvName} numberOfLines={1}>{entry.fromName}</Text>
         <Text style={styles.recvSent}>{t('voiceRoom.screen.sentAGift')}</Text>
         <Animated.View style={{ transform: [{ scale: sparkle }] }}>
-          <Text style={{ fontSize: 40 }}>{entry.emoji}</Text>
+          {entry.emoji ? (
+            <Text style={{ fontSize: 40 }}>{entry.emoji}</Text>
+          ) : entry.thumbnailUrl && !thumbFailed ? (
+            <Image
+              source={{ uri: entry.thumbnailUrl }}
+              style={{ width: 40, height: 40, borderRadius: 8 }}
+              resizeMode="contain"
+              onError={() => setThumbFailed(true)}
+            />
+          ) : (
+            <Text style={{ fontSize: 40 }}>🎁</Text>
+          )}
         </Animated.View>
         <Text style={{ fontSize: 16 }}>✨</Text>
         <Text style={styles.bannerArrow}>→</Text>
