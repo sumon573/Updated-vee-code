@@ -123,11 +123,12 @@ function SettingToggle({
 
 // IMO menu row (BIUIItemView): ~56dp, 30dp rounded icon, 16sp label, chevron
 function SettingButton({
-  icon, iconBg, iconColor, label, onPress, danger, last }: {
+  icon, iconBg, iconColor, label, subtitle, onPress, danger, last }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   iconBg: string;
   iconColor: string;
   label: string;
+  subtitle?: string;
   onPress: () => void;
   danger?: boolean;
   last?: boolean;
@@ -138,7 +139,12 @@ function SettingButton({
         <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
           <Feather name={icon} size={16} color={iconColor} />
         </View>
-        <Text style={{ flex: 1, fontSize: 16, color: danger ? C.red : C.text, marginLeft: 12 }} numberOfLines={1}>{label}</Text>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={{ fontSize: 16, color: danger ? C.red : C.text }} numberOfLines={1}>{label}</Text>
+          {subtitle ? (
+            <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>{subtitle}</Text>
+          ) : null}
+        </View>
         <Feather name="chevron-right" size={18} color={C.mutedLight} />
       </Pressable>
       {!last && <View style={{ height: 0.5, backgroundColor: C.border, marginLeft: 57 }} />}
@@ -472,6 +478,12 @@ export default function SettingsScreen() {
         {/* Account */}
         <SectionLabel>{t('settings.sectionAccount')}</SectionLabel>
         <View style={[cardStyle, { marginTop: 0, paddingVertical: 2 }]}>
+          <SettingButton
+            icon="award" iconBg={C.goldBg} iconColor={C.goldText}
+            label="SVIP"
+            subtitle="SVIP 1–5 • 10,000–60,000 diamonds"
+            onPress={() => router.push('/svip')}
+          />
           <SettingButton
             icon="credit-card" iconBg={C.goldBg} iconColor={C.goldText}
             label="Wallet"
