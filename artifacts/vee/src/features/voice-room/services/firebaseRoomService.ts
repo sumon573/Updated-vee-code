@@ -599,24 +599,23 @@ export async function removeMemberFromRoom(
 
 /**
  * Subscribe to rooms created by the given user (My Rooms).
- * Uses orderByChild + equalTo for efficiency.
+ * 2026-11-03 (RTDB overage fix): reads the info-only `roomList` mirror
+ * (VeeRoomList bot, 1-min refresh) instead of querying the whole `rooms`
+ * node, whose query results carried every matching room's FULL node
+ * (info + seats + audience + chat + giftFeed, ~2.4 MB per sync).
+ * Filtered client-side by ownerId.
  */
 export function subscribeMyRooms(
   userId: string,
   callback: (rooms: RoomInfo[]) => void,
 ): () => void {
-  const myRoomsQuery = query(
-    ref(database, 'rooms'),
-    orderByChild('info/ownerId'),
-    equalTo(userId),
-  );
-  return onValue(myRoomsQuery, (snap) => {
+  return onValue(ref(database, 'roomList'), (snap) => {
     if (!snap.exists()) { callback([]); return; }
     const rooms: RoomInfo[] = [];
     snap.forEach((child) => {
-      const infoSnap = child.child('info');
-      if (infoSnap.exists()) {
-        const info = infoSnap.val() as RoomInfo & { _reserving?: boolean };
+      const info = child.val() as (RoomInfo & { _reserving?: boolean }) | null;
+      if (info && info.ownerId === userId) {
+        if (typeof info.id !== 'string') info.id = child.key!;
         // FIX (2026-10-10): Hide stale {_reserving:true} placeholders left by
         // the old two-step creation. They have no name and must never render
         // as rooms (cleanupStaleReservations deletes them in the background).
@@ -713,27 +712,29 @@ export function subscribeMyRoomsCombined(
   };
 }
 
-/** Get all active public rooms in real-time. */
+/** Get all active rooms in real-time.
+ * 2026-11-03 (RTDB overage fix): reads the info-only `roomList` mirror
+ * (VeeRoomList bot) instead of querying `rooms` — the old query delivered
+ * every active room's FULL node (~2.4 MB per sync) and was the measured
+ * cause of the download overage. A missing `roomList` node means the
+ * mirror bot has not populated it yet: that is an error, NOT an empty
+ * list, so callers with onError keep their cached/directory list.
+ */
 export function subscribeActiveRooms(
   callback: (rooms: RoomInfo[]) => void,
   onError?: () => void,
 ): () => void {
-  // BUG 14 fix: Query rooms whose info.active === true.
-  // orderByChild('info/active') on the 'rooms' collection traverses the
-  // nested path — Firebase supports this. The matching index in
-  // database.rules.json keeps this efficient.
-  const activeRoomsQuery = query(
-    ref(database, 'rooms'),
-    orderByChild('info/active'),
-    equalTo(true),
-  );
-  return onValue(activeRoomsQuery, (snap) => {
-    if (!snap.exists()) { callback([]); return; }
+  return onValue(ref(database, 'roomList'), (snap) => {
+    if (!snap.exists()) {
+      if (onError) onError();
+      else callback([]);
+      return;
+    }
     const rooms: RoomInfo[] = [];
     snap.forEach((child) => {
-      const infoSnap = child.child('info');
-      if (infoSnap.exists()) {
-        const info = infoSnap.val() as RoomInfo;
+      const info = child.val() as RoomInfo | null;
+      if (info) {
+        if (typeof info.id !== 'string') info.id = child.key!;
         // Show ALL active rooms (both public and private) — UI shows lock icon for private
         if (info.active) rooms.push(info);
       }
@@ -750,26 +751,27 @@ export function subscribeActiveRooms(
   });
 }
 
-/** Subscribe to private active rooms only (CDN-directory companion:
- * the edge directory serves public rooms; private rooms still come from
- * Firebase so they never touch a public CDN cache). */
+/** Subscribe to private active rooms only (roomList companion:
+ * the info-only `roomList` mirror serves private rooms; they never touch
+ * the public CDN directory. 2026-11-03 (RTDB overage fix): replaces the
+ * whole-`rooms` query, which delivered full room nodes (~2.4 MB per sync).
+ * A missing `roomList` node is an error, not an empty list. */
 export function subscribePrivateActiveRooms(
   callback: (rooms: RoomInfo[]) => void,
   onError?: () => void,
 ): () => void {
-  const privateRoomsQuery = query(
-    ref(database, 'rooms'),
-    orderByChild('info/isPublic'),
-    equalTo(false),
-  );
-  return onValue(privateRoomsQuery, (snap) => {
-    if (!snap.exists()) { callback([]); return; }
+  return onValue(ref(database, 'roomList'), (snap) => {
+    if (!snap.exists()) {
+      if (onError) onError();
+      else callback([]);
+      return;
+    }
     const rooms: RoomInfo[] = [];
     snap.forEach((child) => {
-      const infoSnap = child.child('info');
-      if (infoSnap.exists()) {
-        const info = infoSnap.val() as RoomInfo;
-        if (info.active) rooms.push(info);
+      const info = child.val() as RoomInfo | null;
+      if (info) {
+        if (typeof info.id !== 'string') info.id = child.key!;
+        if (info.active && info.isPublic === false) rooms.push(info);
       }
     });
     rooms.sort((a, b) => b.createdAt - a.createdAt);
