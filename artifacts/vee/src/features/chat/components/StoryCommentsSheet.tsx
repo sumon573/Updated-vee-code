@@ -145,6 +145,11 @@ export default function StoryCommentsSheet({
           keyExtractor={(c) => c.id}
           renderItem={({ item }) => renderComment(item, false)}
           contentContainerStyle={{ padding: 16 }}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={15}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
               {t('chat.storyNoComments', { defaultValue: 'No comments yet. Be the first!' })}

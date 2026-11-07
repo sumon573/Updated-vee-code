@@ -230,6 +230,8 @@ export default function FollowersScreen() {
             windowSize={9}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={50}
             showsVerticalScrollIndicator={false}
             style={{
               marginHorizontal: 15, marginTop: 12,

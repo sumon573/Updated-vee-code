@@ -16,6 +16,10 @@ import { subscribeRoomMembers, type JoinedMember } from '../services/firebaseRoo
 import { formatMembersCount } from '../screens/VoiceRoomHelpers';
 import { submitRoomReport } from '@/src/services/reportService';
 import { getUser } from '@/src/services/userService';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 /* ─────────────────────────── Room Info Panel (imo-style, 2026-10-27) ──
  * Dark panel, exactly like the boss's imo screenshots: room card that
@@ -226,7 +230,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   isOwner, isAdmin, ownerId, onDisband, onVisitProfile,
   myUid, myName,
   onOpenSettings, onOpenStore, onOpenInvite, onOpenRequests, onJoinRoom, onUnjoinRoom,
-  onSetAdmin, onDismissAdmin, onRemoveMember }: {
+  onSetAdmin, onDismissAdmin, onRemoveMember, glass }: {
   visible: boolean; onClose: () => void;
   allMembers: Participant[];
   /** Room description text (may be empty). */
@@ -263,6 +267,11 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   onSetAdmin: (uid: string) => void;
   onDismissAdmin: (uid: string) => void;
   onRemoveMember: (uid: string) => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). This panel is
+      dark by design (imo screenshots) — the mode is forced dark so it
+      stays black on every room theme, keeping only the scene fill
+      boost. Optional — without it the sheet uses plain dark glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const [ownerInfo, setOwnerInfo] = useState<{ name: string; photoURL?: string } | null>(null);
@@ -675,10 +684,14 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
       {/* Definite height (NOT maxHeight): the flex:1 tab content and its
           lists need a bounded parent, otherwise the list grows to full
-          content height, gets clipped at the panel edge, and cannot scroll. */}
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: PANEL_BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        height: '88%' }}>
+          content height, gets clipped at the panel edge, and cannot scroll.
+          Glass P1d: the panel is dark glass (mode forced dark — the black
+          imo identity survives on every room theme). The fixed tabs
+          overlay below keeps its solid PANEL_BG: it covers scrolled
+          content, so it must stay opaque. */}
+      <GlassView variant="modal" mode="dark"
+        resolved={glass ? { ...glass, mode: 'dark' } : undefined}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '88%' }}>
         {/* ── Panel header: chevron | (collapsed: DP + name) | gear + ... ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
           paddingTop: 14, paddingBottom: 6, gap: 10, height: 48 }}>
@@ -860,6 +873,8 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
               initialNumToRender={30}
               maxToRenderPerBatch={20}
               windowSize={10}
+              removeClippedSubviews
+              updateCellsBatchingPeriod={50}
               onEndReached={() => {
                 if (visibleCount < displayMembers.length) {
                   setVisibleCount((c) => Math.min(c + 30, displayMembers.length));
@@ -980,7 +995,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
             </View>
           </>
         )}
-      </View>
+      </GlassView>
     </Modal>
   );
 }

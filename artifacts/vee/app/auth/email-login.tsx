@@ -14,6 +14,17 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { login, getAuthErrorMessage } from '@/src/services/authService';
+// Glass P1a (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): auth sits on plain white (#FFFFFF), so resolveGlassTheme
+// (imo-light) adds the +0.08 light-backdrop fill boost. GlassView is
+// static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
+import { ROOM_THEMES } from '@/src/features/voice-room/constants/theme';
+const AUTH_GLASS = resolveGlassTheme(
+  ROOM_THEMES.find((t) => t.id === 'imo-light') ?? ROOM_THEMES[0],
+  false,
+);
 
 const C = {
   bg: '#FFFFFF',
@@ -21,9 +32,7 @@ const C = {
   muted: '#6B7280',
   blue: '#1E9BF0',
   blueDark: '#1879C4',
-  error: '#FF4B4B',
-  inputBg: '#F7F7FA',
-  inputBorder: '#E8E8EC' } as const;
+  error: '#FF4B4B' } as const;
 
 export default function EmailLoginScreen() {
   const { t } = useTranslation();
@@ -83,11 +92,10 @@ export default function EmailLoginScreen() {
               {t('auth.login.headerSubtitle')}
             </Text>
 
-            {/* Email */}
+            {/* Email (glass `panel` input) */}
+            <GlassView variant="panel" resolved={AUTH_GLASS} style={{ marginTop: 32, height: 56 }}>
             <View style={{
-              flexDirection: 'row', alignItems: 'center',
-              marginTop: 32, height: 56, borderRadius: 16,
-              backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
+              flex: 1, flexDirection: 'row', alignItems: 'center',
               paddingHorizontal: 16 }}>
               <Feather name="mail" size={20} color={C.muted} />
               <TextInput
@@ -102,12 +110,12 @@ export default function EmailLoginScreen() {
                 returnKeyType="next"
               />
             </View>
+            </GlassView>
 
-            {/* Password */}
+            {/* Password (glass `panel` input) */}
+            <GlassView variant="panel" resolved={AUTH_GLASS} style={{ marginTop: 16, height: 56 }}>
             <View style={{
-              flexDirection: 'row', alignItems: 'center',
-              marginTop: 16, height: 56, borderRadius: 16,
-              backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
+              flex: 1, flexDirection: 'row', alignItems: 'center',
               paddingHorizontal: 16 }}>
               <Feather name="lock" size={20} color={C.muted} />
               <TextInput
@@ -125,6 +133,7 @@ export default function EmailLoginScreen() {
                 <Feather name={showPassword ? 'eye' : 'eye-off'} size={20} color={C.muted} />
               </Pressable>
             </View>
+            </GlassView>
 
             {/* Forgot password */}
             <Pressable
@@ -170,15 +179,14 @@ export default function EmailLoginScreen() {
               )}
             </Pressable>
 
-            {/* New user -> signup */}
+            {/* New user -> signup (glass pill; blue outline kept as a
+                low-alpha accent border, A4). Solid blue login button
+                above stays solid. */}
+            <GlassView variant="chip" resolved={AUTH_GLASS} accentBorder="rgba(30,155,240,0.45)" style={{ marginTop: 16 }}>
             <Pressable
               onPress={() => router.replace('/auth/signup')}
               style={{
-                marginTop: 16,
                 height: 56,
-                borderRadius: 28,
-                borderWidth: 1.5,
-                borderColor: C.blue,
                 alignItems: 'center',
                 justifyContent: 'center' }}
             >
@@ -186,6 +194,7 @@ export default function EmailLoginScreen() {
                 {t('auth.login.newUser')}
               </Text>
             </Pressable>
+            </GlassView>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

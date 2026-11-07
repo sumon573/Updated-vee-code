@@ -27,6 +27,10 @@ import { getPersistedActiveRoom, clearPersistedActiveRoom } from '@/src/store/ac
 import { getCurrentWeekId } from '@/src/utils/weekId';
 import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { router, usePathname } from 'expo-router';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 // ─── Light premium palette ───────────────────────────────────────────────────
 
@@ -142,9 +146,13 @@ function EmptyState({ icon, message, hint }: { icon: React.ComponentProps<typeof
 
 export function LeaderboardModal({
   visible,
-  onClose }: {
+  onClose, glass }: {
   visible: boolean;
   onClose: () => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. Rank rows keep their own tint
+      backgrounds (content, never nested glass). */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('rooms');
@@ -943,13 +951,14 @@ export function LeaderboardModal({
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
         onPress={onClose}
       />
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: C.bg,
-        borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        maxHeight: '90%',
-        shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20,
-        elevation: 10 }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Rank rows keep their own tint backgrounds inside it (content,
+          never nested glass). */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          maxHeight: '90%',
+        }}>
         <View style={{
           width: 40, height: 4, borderRadius: 2, backgroundColor: C.border,
           alignSelf: 'center', marginTop: 12 }} />
@@ -1044,6 +1053,11 @@ export function LeaderboardModal({
                 data={rankedWeekRooms}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                removeClippedSubviews
+                windowSize={10}
+                maxToRenderPerBatch={10}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={50}
                 ListEmptyComponent={
                   <EmptyState
                     icon="home"
@@ -1072,6 +1086,11 @@ export function LeaderboardModal({
                 data={liveRankedRooms}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                removeClippedSubviews
+                windowSize={10}
+                maxToRenderPerBatch={10}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={50}
                 ListEmptyComponent={
                   <EmptyState icon="radio" message={t('leaderboard.noLive', { defaultValue: 'No live rooms right now' })} />
                 }
@@ -1092,6 +1111,11 @@ export function LeaderboardModal({
                 data={senders}
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                removeClippedSubviews
+                windowSize={10}
+                maxToRenderPerBatch={10}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={50}
                 ListEmptyComponent={
                   <EmptyState
                     icon="gift"
@@ -1125,6 +1149,11 @@ export function LeaderboardModal({
                 data={receivers}
                 keyExtractor={(item) => item.uid}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}
+                removeClippedSubviews
+                windowSize={10}
+                maxToRenderPerBatch={10}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={50}
                 ListEmptyComponent={
                   <EmptyState
                     icon="award"
@@ -1149,7 +1178,7 @@ export function LeaderboardModal({
                 )}
               />
         )}
-      </View>
+      </GlassView>
     </Modal>
   );
 }

@@ -22,6 +22,10 @@ import { database } from '@/src/config/firebase';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 
 export interface RankMember {
@@ -115,13 +119,16 @@ function RankRow({ uid, name, photoURL, color, initials, rank, right, nobleIdx }
   );
 }
 
-export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
+export function RoomRankModal({ visible, roomId, members, myUid, onClose, glass }: {
   visible: boolean;
   roomId: string;
   /** live members, already ordered owner → admin → activity */
   members: RankMember[];
   myUid: string | null;
   onClose: () => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const isMyRowKing = useIsKing(myUid);
@@ -198,10 +205,14 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '75%', paddingBottom: 28,
-      }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '75%',
+        }}>
+        <View style={{ paddingBottom: 28 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12 }}>
           <Feather name="award" size={18} color="#F59E0B" />
@@ -263,7 +274,8 @@ export function RoomRankModal({ visible, roomId, members, myUid, onClose }: {
             </View>
           </View>
         )}
-      </View>
+        </View>
+      </GlassView>
     </Modal>
   );
 }

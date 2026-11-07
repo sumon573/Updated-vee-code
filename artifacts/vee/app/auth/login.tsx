@@ -8,6 +8,17 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Modal, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
+// Glass P1a (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): auth sits on plain white (#FFFFFF), so resolveGlassTheme
+// (imo-light) adds the +0.08 light-backdrop fill boost. GlassView is
+// static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
+import { ROOM_THEMES } from '@/src/features/voice-room/constants/theme';
+const AUTH_GLASS = resolveGlassTheme(
+  ROOM_THEMES.find((t) => t.id === 'imo-light') ?? ROOM_THEMES[0],
+  false,
+);
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -287,7 +298,8 @@ export default function ImoLoginScreen() {
                   {t('auth.phoneLogin.termsSuffix')}
                 </Text>
 
-                {/* ── Sync Contacts ─────────────────────────────────── */}
+                {/* ── Sync Contacts (glass chip toggle) ─────────────────── */}
+                <GlassView variant="chip" resolved={AUTH_GLASS} style={{ alignSelf: 'center', marginTop: 22 }}>
                 <Pressable
                   onPress={handleToggleSyncContacts}
                   disabled={syncLoading}
@@ -295,8 +307,9 @@ export default function ImoLoginScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginTop: 22,
                     gap: 12,
+                    paddingHorizontal: 18,
+                    paddingVertical: 10,
                     opacity: syncLoading ? 0.6 : 1 }}
                   hitSlop={10}
                 >
@@ -317,6 +330,7 @@ export default function ImoLoginScreen() {
                     {t('auth.phoneLogin.syncContacts')}
                   </Text>
                 </Pressable>
+                </GlassView>
 
                 {/* ── Notice banner ─────────────────────────────────── */}
                 {!!notice && (
@@ -352,7 +366,8 @@ export default function ImoLoginScreen() {
                   </View>
                 )}
 
-                {/* ── Google sign-in (system-browser OAuth) ───────────────── */}
+                {/* ── Google sign-in (system-browser OAuth, glass pill) ───── */}
+                <GlassView variant="chip" resolved={AUTH_GLASS} style={{ marginTop: 24 }}>
                 <Pressable
                   onPress={handleGoogle}
                   disabled={googleLoading}
@@ -361,18 +376,8 @@ export default function ImoLoginScreen() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     height: 56,
-                    borderRadius: 28,
-                    backgroundColor: pressed ? '#F5F5F7' : '#FFFFFF',
-                    borderWidth: 1,
-                    borderColor: '#E0E0E0',
                     gap: 12,
-                    marginTop: 24,
-                    shadowColor: '#000',
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 3 },
-                    elevation: 3,
-                    opacity: googleLoading ? 0.7 : 1 })}
+                    opacity: googleLoading ? 0.7 : pressed ? 0.75 : 1 })}
                 >
                   {googleLoading ? (
                     <PremiumLoader size="medium" />
@@ -385,6 +390,7 @@ export default function ImoLoginScreen() {
                     </>
                   )}
                 </Pressable>
+                </GlassView>
 
                 {/* ── Stuck-in-browser recovery (2026-10-19) ────────────────
                     Visible only after the OAuth session timed out without
@@ -410,7 +416,8 @@ export default function ImoLoginScreen() {
                   </Pressable>
                 )}
 
-                {/* ── Email sign-in ───────────────────────────────────── */}
+                {/* ── Email sign-in (glass pill) ─────────────────────────── */}
+                <GlassView variant="chip" resolved={AUTH_GLASS} style={{ marginTop: 16 }}>
                 <Pressable
                   onPress={handleEmail}
                   style={({ pressed }) => ({
@@ -418,23 +425,15 @@ export default function ImoLoginScreen() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     height: 56,
-                    borderRadius: 28,
-                    backgroundColor: pressed ? '#F5F5F7' : '#FFFFFF',
-                    borderWidth: 1,
-                    borderColor: '#E0E0E0',
                     gap: 12,
-                    marginTop: 16,
-                    shadowColor: '#000',
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 3 },
-                    elevation: 3 })}
+                    opacity: pressed ? 0.75 : 1 })}
                 >
                   <Feather name="mail" size={22} color={C.blue} />
                   <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
                     {t('auth.login.continueWithEmail')}
                   </Text>
                 </Pressable>
+                </GlassView>
           </ScrollView>
         </KeyboardAvoidingView>
 
@@ -449,11 +448,9 @@ export default function ImoLoginScreen() {
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
             onPress={() => setLangOpen(false)}
           >
+            <GlassView variant="modal" resolved={AUTH_GLASS}>
             <Pressable
               style={{
-                backgroundColor: '#FFFFFF',
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
                 paddingTop: 10,
                 paddingBottom: 30,
                 paddingHorizontal: 20 }}
@@ -475,7 +472,7 @@ export default function ImoLoginScreen() {
                       paddingHorizontal: 8,
                       borderBottomWidth: 1,
                       borderBottomColor: '#F0F0F4',
-                      backgroundColor: pressed ? '#F7F7FA' : '#FFFFFF' })}
+                      backgroundColor: pressed ? 'rgba(15,23,42,0.06)' : 'transparent' })}
                   >
                     <Text style={{ fontSize: 28, marginRight: 14 }}>{lang.flag}</Text>
                     <View style={{ flex: 1 }}>
@@ -489,6 +486,7 @@ export default function ImoLoginScreen() {
                 );
               })}
             </Pressable>
+            </GlassView>
           </Pressable>
         </Modal>
 
@@ -508,13 +506,10 @@ export default function ImoLoginScreen() {
               padding: 30 }}
             onPress={() => setDocOpen(null)}
           >
+            <GlassView variant="modal" resolved={AUTH_GLASS} style={{ width: '100%', maxHeight: '70%' }}>
             <Pressable
               style={{
-                backgroundColor: '#FFFFFF',
-                borderRadius: 18,
-                padding: 22,
-                maxHeight: '70%',
-                width: '100%' }}
+                padding: 22 }}
               onPress={() => {}}
             >
               <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 12 }}>
@@ -541,6 +536,7 @@ export default function ImoLoginScreen() {
                 <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>OK</Text>
               </Pressable>
             </Pressable>
+            </GlassView>
           </Pressable>
         </Modal>
       </SafeAreaView>

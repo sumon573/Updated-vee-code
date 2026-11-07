@@ -9,6 +9,7 @@
  * its frame, so at 28 it rendered 16.5dp tall vs the contacts glyph's
  * 19.3dp; at 33 its ink is 19.4dp tall, matching).
  */
+import { memo } from 'react';
 import { View, Image, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatTabIcon } from '@/src/components/ChatTabIcon';
@@ -41,7 +42,12 @@ interface IMOTopBarProps {
   onTabPress: (tab: 'chat' | 'voice' | 'contacts') => void;
 }
 
-export default function IMOTopBar({
+// 2026-11-07 (IMO home scroll smoothness): memo()'d — the shell
+// re-renders on every chat/presence/story update, and the old plain
+// component re-rendered the whole top bar (DP image, tab icons, badge)
+// each time. Props are stable (primitives, stable callbacks, the
+// pagerProgress SharedValue), so unrelated shell renders now skip it.
+export default memo(function IMOTopBar({
   profilePhotoURL,
   profileInitials = '?',
   activeTab,
@@ -273,4 +279,4 @@ export default function IMOTopBar({
       </View>
     </View>
   );
-}
+})

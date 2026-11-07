@@ -431,6 +431,11 @@ export default function UserSearchModal({ visible, onClose, onSelectUser }: Prop
               data={results}
               keyExtractor={(item) => item.uid}
               contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8 }}
+              removeClippedSubviews
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              initialNumToRender={15}
+              updateCellsBatchingPeriod={50}
               renderItem={({ item }) => (
                 <View style={{
                   flexDirection: 'row', alignItems: 'center',

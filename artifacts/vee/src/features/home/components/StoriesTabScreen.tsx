@@ -158,6 +158,11 @@ export default function StoriesTabScreen({
         data={others}
         keyExtractor={(item) => item.userId}
         renderItem={renderGroup}
+        removeClippedSubviews
+        windowSize={10}
+        maxToRenderPerBatch={10}
+        initialNumToRender={15}
+        updateCellsBatchingPeriod={50}
         ListHeaderComponent={
           <TouchableOpacity
             onPress={onAddStory}

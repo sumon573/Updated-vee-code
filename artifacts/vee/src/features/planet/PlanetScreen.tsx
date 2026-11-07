@@ -176,6 +176,11 @@ export default function PlanetScreen() {
           contentContainerStyle={{ padding: 16, gap: CARD_GAP }}
           columnWrapperStyle={{ gap: CARD_GAP }}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={12}
+          updateCellsBatchingPeriod={50}
           renderItem={({ item, index }) => (
             <StoryCard
               userStory={item}

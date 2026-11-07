@@ -1030,6 +1030,8 @@ export function ImoStoreScreen() {
           windowSize={5}
           initialNumToRender={3}
           maxToRenderPerBatch={3}
+          removeClippedSubviews
+          updateCellsBatchingPeriod={50}
         />
       )}
 

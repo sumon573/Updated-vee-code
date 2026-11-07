@@ -3,16 +3,23 @@ import { View, Pressable, Animated } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import ScalePress from '@/components/ScalePress';
-import { C } from '../constants/theme';
 import { STICKERS, stickerUrl } from '../services/stickerCatalog';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 /* ─────────────────────────── Sticker Panel ───────────────────────────
    2026-10-23 (Sumon): the 😊 button opens the DESIGNED sticker set —
    animated WebP characters (transparent background, no plate). His list:
    👍 😂 😍 😡 😯 👋 🫣 🤔. Tapping one broadcasts the sticker id; the
    sender's seat performs it and a sticker lands in chat. */
-export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
+export function EmojiPanel({ visible, onSelect, onClose, bottomOffset, glass }: {
   visible: boolean; onSelect: (stickerId: string) => void; onClose: () => void; bottomOffset: number;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the panel uses plain light glass. Stickers stay crisp inside it
+      (never glass over art). */
+  glass?: ResolvedGlass;
 }) {
   const slideAnim   = useRef(new Animated.Value(80)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -36,16 +43,20 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
   return (
     <>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} onPress={onClose} />
+      {/* Glass P1d: the sticker panel is glass `panel`. The Animated.View
+          keeps the slide/fade (GlassView is static and takes no animated
+          values); the row-wrap grid + padding live on the inner wrapper
+          (plain View, never nested glass). */}
       <Animated.View style={{
         position: 'absolute', bottom: bottomOffset, left: 12, right: 12, zIndex: 100,
         transform: [{ translateY: slideAnim }], opacity: opacityAnim,
-        backgroundColor: '#FFFFFF', borderRadius: 22, borderWidth: 1.5, borderColor: C.border,
-        paddingVertical: 12, paddingHorizontal: 10,
-        flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
-        rowGap: 8,
-        shadowColor: C.primary, shadowOpacity: 0.4, shadowRadius: 20,
-        shadowOffset: { width: 0, height: -4 }, elevation: 20,
       }}>
+        <GlassView variant="panel" resolved={glass}>
+        <View style={{
+          paddingVertical: 12, paddingHorizontal: 10,
+          flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+          rowGap: 8,
+        }}>
         {STICKERS.map(sticker => (
           /* 2026-10-23 (Sumon): the grid squeezed left with a gap on the
              right — ScalePress puts `style` on its INNER view, so the
@@ -68,6 +79,8 @@ export function EmojiPanel({ visible, onSelect, onClose, bottomOffset }: {
             </ScalePress>
           </View>
         ))}
+        </View>
+        </GlassView>
       </Animated.View>
     </>
   );

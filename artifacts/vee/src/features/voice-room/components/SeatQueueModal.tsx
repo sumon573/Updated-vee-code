@@ -20,6 +20,10 @@ import { database } from '@/src/config/firebase';
 import { C } from '../constants/theme';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 import {
   takeSeat,
@@ -150,7 +154,7 @@ function QueueName({ userId, userName, isMe }: { userId: string; userName?: stri
   );
 }
 
-export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPosition, onClose, onCancelMine, pass2Active, audienceUids }: {
+export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPosition, onClose, onCancelMine, pass2Active, audienceUids, glass }: {
   visible: boolean;
   roomId: string;
   requests: SeatRequest[];
@@ -164,6 +168,9 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
   pass2Active?: boolean;
   /** Poll-delivered audience uids, for the REST admit's presence check. */
   audienceUids?: Set<string>;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const ordered = useMemo(() => [...requests].sort((a, b) => a.ts - b.ts), [requests]);
@@ -177,11 +184,14 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%',
-        paddingBottom: 28,
-      }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '70%',
+        }}>
+        <View style={{ paddingBottom: 28 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
           <Feather name="users" size={18} color="#05b5fa" />
@@ -277,7 +287,8 @@ export function SeatQueueModal({ visible, roomId, requests, myUid, isHost, myPos
             })
           )}
         </ScrollView>
-      </View>
+        </View>
+      </GlassView>
     </Modal>
   );
 }

@@ -369,6 +369,11 @@ export function MusicAddPage(props: AddPageProps) {
           data={visible}
           keyExtractor={(a) => a.id}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={15}
+          updateCellsBatchingPeriod={50}
           renderItem={({ item }) => (
             <PhoneRow
               asset={item}

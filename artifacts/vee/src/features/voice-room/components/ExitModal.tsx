@@ -2,20 +2,30 @@ import { View, Text, Pressable, Modal, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 /* ─────────────────────────── Exit Modal ─────────────────────────── */
-export function ExitModal({ visible, onClose, onLeave, onMinimize, roomName }: {
+export function ExitModal({ visible, onClose, onLeave, onMinimize, roomName, glass }: {
   visible: boolean; onClose: () => void; onLeave: () => void;
   onMinimize: () => void; roomName: string;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-        borderWidth: 1, borderColor: C.border,
-        paddingBottom: Platform.OS === 'web' ? 34 : 24, paddingTop: 8 }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+        <View style={{
+          paddingBottom: Platform.OS === 'web' ? 34 : 24, paddingTop: 8 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginBottom: 18 }} />
         <Text style={{ color: C.sub, fontSize: 12, fontWeight: '700', textAlign: 'center',
@@ -63,7 +73,8 @@ export function ExitModal({ visible, onClose, onLeave, onMinimize, roomName }: {
             {t('voiceRoom.exit.cancel')}
           </Text>
         </Pressable>
-      </View>
+        </View>
+      </GlassView>
     </Modal>
   );
 }

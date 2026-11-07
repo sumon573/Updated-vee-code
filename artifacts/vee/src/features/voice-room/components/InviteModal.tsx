@@ -6,6 +6,10 @@ import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import { useAuth } from '@/src/context/AuthContext';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 import { get, ref, set, type DataSnapshot } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { sendRoomInvite } from '../services/firebaseRoomService';
@@ -37,11 +41,14 @@ function getInitials(name: string): string {
 
 /* ─────────────────────────── Invite Modal ─────────────────────────── */
 export function InviteModal({
-  visible, onClose, roomId, roomName }: {
+  visible, onClose, roomId, roomName, glass }: {
   visible: boolean;
   onClose: () => void;
   roomId: string;
   roomName: string;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -130,10 +137,9 @@ export function InviteModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.border, maxHeight: '88%' }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '88%' }}>
         <View style={{
           width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
@@ -242,7 +248,7 @@ export function InviteModal({
             </Text>
           </Pressable>
         </ScrollView>
-      </View>
+      </GlassView>
     </Modal>
   );
 }

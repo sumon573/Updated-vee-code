@@ -245,6 +245,11 @@ export default function IMOSearchScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderContact}
           style={{ flex: 1, backgroundColor: '#FFFFFF', marginTop: 8 }}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={15}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             <View style={{ padding: 32, alignItems: 'center' }}>
               <Text style={{ color: '#9E9E9E', fontSize: 16 }}>No results found</Text>

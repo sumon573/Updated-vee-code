@@ -21,6 +21,17 @@ import { initializeWallet } from '@/src/features/wallet/walletService';
 import { uploadImage } from '@/src/services/cloudinaryService';
 import generateVId from '@/src/utils/generateVId';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+// Glass P1a (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): auth sits on plain white (#FFFFFF), so resolveGlassTheme
+// (imo-light) adds the +0.08 light-backdrop fill boost. GlassView is
+// static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
+import { ROOM_THEMES } from '@/src/features/voice-room/constants/theme';
+const AUTH_GLASS = resolveGlassTheme(
+  ROOM_THEMES.find((t) => t.id === 'imo-light') ?? ROOM_THEMES[0],
+  false,
+);
 
 const C = {
   bg: '#FFFFFF',
@@ -232,27 +243,25 @@ export default function CompleteProfileScreen() {
           {t('auth.completeProfile.subtitle')}
         </Text>
 
-        {/* Name input */}
-        <TextInput
-          style={{
-            marginTop: 32,
-            height: 56,
-            borderRadius: 16,
-            backgroundColor: '#F7F7FA',
-            borderWidth: 1,
-            borderColor: '#E8E8EC',
-            paddingHorizontal: 18,
-            fontSize: 17,
-            color: C.text }}
-          placeholder={t('auth.completeProfile.namePlaceholder')}
-          placeholderTextColor="#A9A9B3"
-          value={name}
-          onChangeText={(v) => { setName(v); setErrorMsg(''); }}
-          autoCapitalize="words"
-          returnKeyType="done"
-          onSubmitEditing={handleComplete}
-          maxLength={40}
-        />
+        {/* Name input (glass `panel`). The DP picker above stays
+            untouched — the photo must stay crisp, never under glass. */}
+        <GlassView variant="panel" resolved={AUTH_GLASS} style={{ marginTop: 32, height: 56 }}>
+          <TextInput
+            style={{
+              flex: 1,
+              paddingHorizontal: 18,
+              fontSize: 17,
+              color: C.text }}
+            placeholder={t('auth.completeProfile.namePlaceholder')}
+            placeholderTextColor="#A9A9B3"
+            value={name}
+            onChangeText={(v) => { setName(v); setErrorMsg(''); }}
+            autoCapitalize="words"
+            returnKeyType="done"
+            onSubmitEditing={handleComplete}
+            maxLength={40}
+          />
+        </GlassView>
 
         {/* Error */}
         {!!errorMsg && (

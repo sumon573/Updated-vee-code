@@ -47,6 +47,10 @@ import { database } from '@/src/config/firebase';
 import { Participant, GiftSentInfo } from '../types/room';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 import {
   sendGift, getBalance, getWalletBalance, canSelfSend,
@@ -228,7 +232,7 @@ function ChipName({ uid, name }: { uid: string; name: string }) {
 
 export function GiftsModal({
   visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
-  walletBalance, myUid, myName, roomId, senderSeated, seats, mySeatIdx }: {
+  walletBalance, myUid, myName, roomId, senderSeated, seats, mySeatIdx, glass }: {
   visible: boolean;
   onClose: () => void;
   /**
@@ -262,6 +266,10 @@ export function GiftsModal({
    */
   seats?: Array<Participant | null>;
   mySeatIdx?: number;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. Only the sheet chrome is glass;
+      gift art/thumbnails stay crisp, never under glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   // 2026-11-01 (nav-bar fix): sheet is absolute bottom:0 under
@@ -776,12 +784,14 @@ export function GiftsModal({
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
         onPress={onClose}
       />
-      <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: IMO_SHEET,
-        borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        maxHeight: '88%', overflow: 'hidden',
-      }}>
+      {/* Glass P1d: the gift panel chrome is glass `modal` over the dimmed
+          backdrop. Gift tiles/thumbnails/art stay plain Views inside it
+          (never nested glass, never glass over art). */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          maxHeight: '88%',
+        }}>
         {/* ── Close — 2026-10-20 (boss): the 240dp preview header block was
             REMOVED entirely ("Black ওটা থাকবেই না") — the panel opens
             directly as the clean white sheet (recipient row → tabs → grid).
@@ -991,6 +1001,11 @@ export function GiftsModal({
               numColumns={4}
               showsVerticalScrollIndicator={false}
               extraData={selectedGift?.id}
+              removeClippedSubviews
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              initialNumToRender={12}
+              updateCellsBatchingPeriod={50}
             />
           )}
         </View>
@@ -1066,7 +1081,7 @@ export function GiftsModal({
           </View>
         </View>
         <View style={{ height: 10 + insets.bottom }} />
-      </View>
+      </GlassView>
     </Modal>
   );
 }

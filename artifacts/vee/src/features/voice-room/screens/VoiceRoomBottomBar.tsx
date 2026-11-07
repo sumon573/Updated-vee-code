@@ -103,6 +103,10 @@ import React from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 import {
   BOTTOM_MIC_GEAR, BOTTOM_MIC_MUTED, BOTTOM_JOIN, BOTTOM_SMILEY, BOTTOM_CALENDAR,
   BOTTOM_SPEAKER, BOTTOM_SPEAKER_OFF, BOTTOM_GAMEPAD, BOTTOM_GIFT,
@@ -140,6 +144,11 @@ export interface VoiceRoomBottomBarProps {
   onSayPress: () => void;
   /** Smiley tap → existing EmojiPanel (reactions). */
   onSmileyPress: () => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A) — the Say pill
+      keeps its dark identity on every theme (mode forced dark) with the
+      scene fill boost. Optional: without it the pill uses plain dark
+      glass. The row itself stays strip-free on the boss's order. */
+  glass?: ResolvedGlass;
 }
 
 export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
@@ -147,7 +156,7 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
     keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, isMuted, speakerOn,
     handleMicBarPress, toggleSpeaker,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen,
-    onSayPress, onSmileyPress,
+    onSayPress, onSmileyPress, glass,
   } = props;
   return (
     <>
@@ -175,14 +184,20 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           </View>
         </ScalePress>
 
-        {/* Say pill — dark pill + "Say..." + smiley inside (target). */}
-        <View style={{
-          flex: 1, height: 48, borderRadius: 24,
-          backgroundColor: isDarkTheme ? '#2E2E2E' : '#262626',
-          borderWidth: 1,
-          borderColor: isDarkTheme ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.12)',
-          flexDirection: 'row', alignItems: 'center',
-          paddingLeft: 10, paddingRight: 4 }}>
+        {/* Say pill — dark pill + "Say..." + smiley inside (target).
+            Glass P1d: the pill keeps its dark identity on every theme
+            (dark glass, mode forced dark — never the light table), so
+            the target's dark pill survives; the row itself stays
+            strip-free on the boss's order, only the pill is glass. */}
+        <GlassView
+          variant="nav"
+          mode="dark"
+          resolved={glass ? { ...glass, mode: 'dark' } : undefined}
+          style={{ flex: 1, height: 48 }}
+        >
+          <View style={{
+            flex: 1, flexDirection: 'row', alignItems: 'center',
+            paddingLeft: 10, paddingRight: 4 }}>
           <Pressable onPress={onSayPress} style={{ flex: 1 }}>
             <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
               Say...
@@ -191,7 +206,8 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
           <ScalePress onPress={onSmileyPress} style={{ padding: 2 }}>
             <Image source={{ uri: BOTTOM_SMILEY }} style={{ width: 28, height: 28 }} />
           </ScalePress>
-        </View>
+          </View>
+        </GlassView>
 
         {/* Calendar — Task Center (existing modal). */}
         <ScalePress onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTaskCenterOpen(true); }}>

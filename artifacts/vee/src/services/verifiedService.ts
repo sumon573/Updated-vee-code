@@ -4,6 +4,11 @@ import { database } from '../config/firebase';
 // Cache for the official badge icon URL (server-driven, no app update needed)
 let badgeIconCache: string | null = null;
 let badgeIconPromise: Promise<string | null> | null = null;
+// 2026-11-07 (IMO home scroll smoothness): cache the ABSENT result too.
+// Before, a missing icon left badgeIconCache null, so EVERY mounted
+// VerifiedName re-downloaded the whole honors_catalog on mount (one `get`
+// per row). Now the catalog is fetched at most once per session.
+let badgeIconFetched = false;
 
 /**
  * 2026-10-13 (Sumon): SERVER-DRIVEN badge icon.
@@ -13,6 +18,7 @@ let badgeIconPromise: Promise<string | null> | null = null;
  */
 export async function getOfficialBadgeIconUrl(): Promise<string | null> {
   if (badgeIconCache) return badgeIconCache;
+  if (badgeIconFetched) return badgeIconCache; // null — already checked, don't re-fetch
   if (badgeIconPromise) return badgeIconPromise;
 
   badgeIconPromise = (async () => {
@@ -35,6 +41,7 @@ export async function getOfficialBadgeIconUrl(): Promise<string | null> {
       return null;
     } finally {
       badgeIconPromise = null;
+      badgeIconFetched = true;
     }
   })();
 
@@ -46,6 +53,7 @@ export async function getOfficialBadgeIconUrl(): Promise<string | null> {
  */
 export function clearBadgeIconCache() {
   badgeIconCache = null;
+  badgeIconFetched = false;
 }
 
 /**

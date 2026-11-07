@@ -8,6 +8,10 @@ import { C } from '../constants/theme';
 import { Participant, Role, ChannelRole, roleToLevel, canModerate } from '../types/room';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 
 /* ─────────────────────────── Seat Action Sheet ─────────────────────────── */
@@ -42,7 +46,7 @@ function ImoLockIcon() {
 }
 export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel, myId, locked, audience, onClose,
   onInvite, onLock, onUnlock, onDown, onJoin, onMute, onSetAdmin, onDismissAdmin, onBlock, onUnblock, onMention, accent,
-  isRoomBlocked, onKickOut, canKickOut, anchor }: {
+  isRoomBlocked, onKickOut, canKickOut, anchor, glass }: {
   visible: boolean; seatIdx: number; member?: Participant | null;
   myRole: Role; myRoleLevel?: number; myId: string; locked: boolean; audience: Participant[];
   onClose: () => void;
@@ -65,6 +69,9 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
    *  in VoiceRoomScreen before opening. Null = measure unavailable (fallback
    *  to a centered popup near the top). Occupied seats ignore it. */
   anchor?: { x: number; y: number; width: number; height: number } | null;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass and the popup plain dark glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   // 2026-11-01 (batch56): King gold + shimmer on the member name.
@@ -278,16 +285,20 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
     return (
       <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
+        {/* Glass P1d: the imo popup is dark glass (mode forced dark — the
+            dark menu identity survives on every room theme). The outer
+            View keeps positioning + width measuring (GlassView takes no
+            onLayout); padding moves to the inner wrapper. */}
         <View
           onLayout={(e) => {
             const w = e.nativeEvent.layout.width;
             if (w > 0 && w !== popupW) setPopupW(w);
           }}
           style={{ position: 'absolute', left: popupLeft, top: popupTop,
-          width: popupW ?? undefined, opacity: popupW == null ? 0 : 1,
-          backgroundColor: '#1e1e20', borderRadius: 14, paddingVertical: 6,
-          shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
-          elevation: 12 }}>
+          width: popupW ?? undefined, opacity: popupW == null ? 0 : 1 }}>
+          <GlassView variant="modal" mode="dark"
+            resolved={glass ? { ...glass, mode: 'dark' } : undefined}>
+          <View style={{ paddingVertical: 6 }}>
           {imoRows.map((r, i) => (
             <Pressable key={r.label} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); r.onPress(); }}
               style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 18, gap: 16,
@@ -296,6 +307,8 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
               <Text style={{ color: '#FFFFFF', fontSize: 16 }}>{r.label}</Text>
             </Pressable>
           ))}
+          </View>
+          </GlassView>
         </View>
       </Modal>
     );
@@ -304,9 +317,13 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: accent + '44', paddingBottom: Platform.OS === 'web' ? 34 : 20 }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop;
+          the accent hairline is kept via accentBorder (low alpha).
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. */}
+      <GlassView variant="modal" resolved={glass} accentBorder={accent + '44'}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+        <View style={{ paddingBottom: Platform.OS === 'web' ? 34 : 20 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12, marginBottom: 14 }} />
 
@@ -390,7 +407,8 @@ export function SeatActionSheet({ visible, seatIdx, member, myRole, myRoleLevel,
             {t('voiceRoom.seatAction.cancel')}
           </Text>
         </Pressable>
-      </View>
+        </View>
+      </GlassView>
     </Modal>
   );
 }

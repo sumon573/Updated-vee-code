@@ -415,6 +415,8 @@ export default function DecorationScreen() {
         windowSize={9}
         initialNumToRender={15}
         maxToRenderPerBatch={15}
+        removeClippedSubviews
+        updateCellsBatchingPeriod={50}
       />
     );
   };

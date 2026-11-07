@@ -234,6 +234,8 @@ export default function RoomMembersModal({
             windowSize={9}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={50}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 60 }}>
                 <Feather name="users" size={40} color={C.muted} />

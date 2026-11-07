@@ -6,6 +6,10 @@ import { C } from '../constants/theme';
 import { Participant } from '../types/room';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 
 /* ─────────────────────────── Invite to Seat Modal ─────────────────────────── */
@@ -21,18 +25,22 @@ function InviteName({ uid, name }: { uid: string; name: string }) {
   );
 }
 
-export function InviteToSeatModal({ visible, audience, seatIdx, onClose, onInvite, accent }: {
+export function InviteToSeatModal({ visible, audience, seatIdx, onClose, onInvite, accent, glass }: {
   visible: boolean; audience: Participant[]; seatIdx: number;
   onClose: () => void; onInvite: (memberId: string) => void;
   accent: string;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: accent + '44', maxHeight: '75%' }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop;
+          the accent hairline is kept via accentBorder (low alpha). */}
+      <GlassView variant="modal" resolved={glass} accentBorder={accent + '44'}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '75%' }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16,
@@ -79,7 +87,7 @@ export function InviteToSeatModal({ visible, audience, seatIdx, onClose, onInvit
             ))
           )}
         </ScrollView>
-      </View>
+      </GlassView>
     </Modal>
   );
 }

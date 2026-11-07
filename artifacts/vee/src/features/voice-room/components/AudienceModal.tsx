@@ -12,6 +12,10 @@ import { KingSparkle, KING_GOLD } from './KingShimmerName';
 
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { truncateTo12 } from '@/src/utils/truncateName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 /**
  * Perf (2026-10-22 audit): the audience list is VIRTUALIZED (FlatList) with
@@ -97,10 +101,14 @@ const AudienceRow = memo(function AudienceRow({
 });
 
 /* ─────────────────────────── Audience Modal ─────────────────────────── */
-export function AudienceModal({ visible, onClose, audience, myRole, onManageMember }: {
+export function AudienceModal({ visible, onClose, audience, myRole, onManageMember, glass }: {
   visible: boolean; onClose: () => void;
   audience: Participant[]; myRole: Role;
   onManageMember: (m: Participant) => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. Member DPs/frames sit ON the
+      glass, never under it. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
@@ -111,9 +119,9 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.border, maxHeight: '80%' }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '80%' }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16,
@@ -154,9 +162,11 @@ export function AudienceModal({ visible, onClose, audience, myRole, onManageMemb
             windowSize={7}
             initialNumToRender={18}
             maxToRenderPerBatch={18}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={50}
           />
         )}
-      </View>
+      </GlassView>
     </Modal>
   );
 }

@@ -319,6 +319,11 @@ export function ActiveFollowingsSheet({
               keyExtractor={(item) => item.uid}
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
+              removeClippedSubviews
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              initialNumToRender={15}
+              updateCellsBatchingPeriod={50}
               ListHeaderComponent={
                 <View>
                   {active.length === 0 ? (

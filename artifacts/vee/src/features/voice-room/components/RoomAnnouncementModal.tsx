@@ -16,6 +16,10 @@ import {
   setAnnouncement, clearAnnouncement, ANNOUNCEMENT_MAX_CHARS, type RoomAnnouncement,
 } from '../services/roomAnnouncementService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 interface Props {
   visible: boolean;
@@ -25,10 +29,13 @@ interface Props {
   myUid: string;
   myName: string;
   onClose: () => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }
 
 export function RoomAnnouncementModal({
-  visible, roomId, announcement, isOwnerOrAdmin, myUid, myName, onClose,
+  visible, roomId, announcement, isOwnerOrAdmin, myUid, myName, onClose, glass,
 }: Props) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
@@ -93,13 +100,17 @@ export function RoomAnnouncementModal({
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}
         onPress={onClose}
       >
+        {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+            The outer Pressable keeps the tap-stop + layout (maxHeight +
+            keyboard lift); padding moves to the inner wrapper. */}
         <Pressable
           onPress={(e) => e.stopPropagation()}
           style={{
-            backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-            maxHeight: '70%', paddingBottom: 28, marginBottom: kbHeight,
+            maxHeight: '70%', marginBottom: kbHeight,
           }}
         >
+          <GlassView variant="modal" resolved={glass}>
+          <View style={{ paddingBottom: 28 }}>
           {/* header */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18,
@@ -201,6 +212,8 @@ export function RoomAnnouncementModal({
               )}
             </ScrollView>
           )}
+          </View>
+          </GlassView>
         </Pressable>
       </Pressable>
     </Modal>

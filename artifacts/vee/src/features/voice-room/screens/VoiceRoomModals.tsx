@@ -22,6 +22,10 @@ import { ExitModal } from '../components/ExitModal';
 import { TaskCenterModal } from '../components/TaskCenterModal';
 import EntryBanner from '../components/EntryBanner';
 import { GiftFlyAnimation, GiftReceiveBanners, type GiftFlyHandle } from '../components/GiftFlyAnimation';
+// Glass P1d — resolved room-theme glass (Candidate A), computed once by
+// the Screen and forwarded to every glass modal below. Optional: a modal
+// without it falls back to plain light glass.
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 import { Role, Participant, BlockRecord } from '../types/room';
 import { submitReport } from '@/src/services/reportService';
 import { updateRoomSettings } from '../services/firebaseRoomService';
@@ -29,6 +33,8 @@ import type { RoomAnnouncement } from '../services/roomAnnouncementService';
 
 export interface VoiceRoomModalsProps {
   accentColor: string;
+  /** Glass P1d: resolved room-theme glass (Candidate A) from the Screen. */
+  glass?: ResolvedGlass;
   roomId: string;
   myUid: string;
   myName: string;
@@ -143,6 +149,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <RoomInfoModal
         visible={p.roomInfoOpen}
         onClose={() => p.setRoomInfoOpen(false)}
+        glass={p.glass}
         allMembers={p.allMembers}
         description={p.roomDescription}
         roomTopic={p.roomTopic}
@@ -181,6 +188,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <OperationHistoryModal
         visible={p.opHistOpen}
         onClose={() => p.setOpHistOpen(false)}
+        glass={p.glass}
         records={p.blockedRecs}
         onUnblock={p.unblockUser}
         accent={p.accentColor}
@@ -188,6 +196,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <SettingsModal
         visible={p.settingsOpen}
         onClose={() => p.setSettingsOpen(false)}
+        glass={p.glass}
         isOwnerOrAdmin={p.isOwnerOrAdmin}
         canEdit={p.myRole === 'host'}
         topic={p.roomTopic}
@@ -220,6 +229,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <SeatActionSheet
         visible={p.seatActionOpen}
         seatIdx={p.seatActionIdx}
+        glass={p.glass}
         member={p.seatActionMember ?? undefined}
         myRole={p.myRole}
         myRoleLevel={p.myRoleLevel}
@@ -247,6 +257,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <InviteToSeatModal
         visible={p.invToSeatOpen}
         audience={p.audience}
+        glass={p.glass}
         seatIdx={p.invToSeatIdx}
         onClose={() => p.setInvToSeatOpen(false)}
         onInvite={(memberId) => { p.inviteToSeat(memberId, p.invToSeatIdx); p.setInvToSeatOpen(false); }}
@@ -255,6 +266,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <InviteModal
         visible={p.inviteOpen}
         onClose={() => p.setInviteOpen(false)}
+        glass={p.glass}
         roomId={p.roomId}
         roomName={p.roomName}
       />
@@ -275,6 +287,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <GiftsModal
         visible={p.giftsOpen}
         onClose={() => { p.setGiftsOpen(false); p.setGiftsRecipient(null); }}
+        glass={p.glass}
         onGiftSent={p.handleGiftSent}
         onGiftPlay={p.handleGiftPlay}
         // 2026-10-13 (Sumon-এর নিয়ম): gift সবাইকে পাঠানো যাবে — seated +
@@ -292,6 +305,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <LeaderboardModal
         visible={p.leaderboardOpen}
         onClose={() => p.setLeaderboardOpen(false)}
+        glass={p.glass}
       />
       <RoomMembersModal
         visible={p.membersOpen}
@@ -304,6 +318,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <MemberManageModal
         member={p.activeMember}
         myRole={p.myRole}
+        glass={p.glass}
         myRoleLevel={p.myRoleLevel}
         myId={p.myUid}
         onClose={() => p.setActiveMember(null)}
@@ -345,6 +360,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
       <ExitModal
         visible={p.exitModalOpen}
         onClose={() => p.setExitModalOpen(false)}
+        glass={p.glass}
         onLeave={p.handleLeave}
         onMinimize={p.handleMinimize}
         roomName={p.roomName}

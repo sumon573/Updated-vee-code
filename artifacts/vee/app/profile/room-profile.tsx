@@ -582,6 +582,11 @@ export default function RoomProfileScreen() {
               style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              removeClippedSubviews
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              initialNumToRender={15}
+              updateCellsBatchingPeriod={50}
               renderItem={({ item }) => {
                 const selected = countryDraft === item;
                 return (

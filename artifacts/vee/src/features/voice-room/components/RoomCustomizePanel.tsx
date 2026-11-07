@@ -5,6 +5,10 @@ import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { C, getActiveThemes } from '../constants/theme';
 import { MUSIC_PREMIUM_ICON_URL } from './music/musicArt';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 /* ─────────────────────── Room Customize Panel ─────────────────────── */
 
@@ -31,7 +35,7 @@ import { MUSIC_PREMIUM_ICON_URL } from './music/musicArt';
 export function RoomCustomizePanel({
   visible, onClose, isOwnerOrAdmin, isHostSeat, nowPlayingTitle,
   onOpenMusic, onOpenGames, onOpenLudu, onOpenAnnouncement, onOpenPk,
-  activeThemeId, onThemeChange,
+  activeThemeId, onThemeChange, glass,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -46,6 +50,10 @@ export function RoomCustomizePanel({
   onOpenPk: () => void;
   activeThemeId: string;
   onThemeChange: (id: string) => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. Theme chips keep their own
+      colours inside it (content, never nested glass). */
+  glass?: ResolvedGlass;
 }) {
   const [showThemes, setShowThemes] = useState(false);
   const tap = (fn: () => void) => {
@@ -84,9 +92,9 @@ export function RoomCustomizePanel({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.borderFaint, maxHeight: '80%' }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '80%' }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
         <ScrollView contentContainerStyle={{ padding: 20 }} showsVerticalScrollIndicator={false}>
@@ -247,7 +255,7 @@ export function RoomCustomizePanel({
             <Text style={{ color: C.sub, fontWeight: '700' }}>Close</Text>
           </Pressable>
         </ScrollView>
-      </View>
+      </GlassView>
     </Modal>
   );
 }

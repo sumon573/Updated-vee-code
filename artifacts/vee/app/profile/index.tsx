@@ -10,6 +10,9 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, Alert, Modal, Pressable, FlatList, Animated } from 'react-native';
 import { Image } from 'expo-image';
 import PremiumLoader from '@/src/components/PremiumLoader';
+// Glass P1c (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): GlassView is static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { subscribeLevel, getLevelFromXP } from '@/src/services/levelService';
@@ -1458,8 +1461,14 @@ export default function ProfileScreen({
           ) : null}
         </View>
         </View>
-        <View style={{ backgroundColor: C.card, paddingHorizontal: 16, paddingBottom: 15 }}>
-          <View style={{ marginTop: -40 }}>
+        {/* Glass P1c (Candidate A): the header identity block is a glass
+            `panel`. The DP + frame CANNOT live inside the GlassView — its
+            inner layer clips overflow and the DP overlaps the cover by
+            -40dp — so the DP block is a sibling ABOVE the panel (same -40,
+            same 92 box, same frame geometry); the panel holds name/badges/
+            chips/bio only. Glass never covers the DP, the frame, or art. */}
+        <View>
+          <View style={{ marginTop: -40, paddingHorizontal: 16 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable
                 stretches to the full header width (column parent defaults to
                 stretch), so taps on the EMPTY space right of the DP opened the
@@ -1532,6 +1541,8 @@ export default function ProfileScreen({
               </View>
             </Pressable>
           </View>
+          <GlassView variant="panel" mode="light">
+            <View style={{ paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             <Text style={{ fontSize: 18, fontWeight: '500', color: isKing ? KING_GOLD : C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
             {(profile?.officialBadge || isOfficial) ? (
@@ -1676,6 +1687,8 @@ export default function ProfileScreen({
               </Pressable>
             </View>
           ) : null}
+            </View>
+          </GlassView>
         </View>
 
         {/* ─── VoiceClub Room section ─── */}
@@ -1720,13 +1733,25 @@ export default function ProfileScreen({
                   .slice(0, 4)
                   .map(([giftId, count]) => (
                   <View key={giftId} style={{ width: 80, padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: 72, height: 72, backgroundColor: '#FFFFFF', borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {/* Glass P1c: gift tile is a glass `card` — the fill sits
+                        BEHIND the art (art renders above it, crisp, same
+                        85% size); the tile keeps its 72 size + radius 16. */}
+                    <GlassView
+                      variant="card"
+                      mode="light"
+                      style={{
+                        width: 72,
+                        height: 72,
+                      }}
+                    >
+                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                       {giftCatalog[giftId]?.thumbnailUrl ? (
                         <Image source={{ uri: giftCatalog[giftId].thumbnailUrl }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
                       ) : (
                         <Text style={{ fontSize: 36 }}>{GIFTS[giftId] || '🎁'}</Text>
                       )}
-                    </View>
+                      </View>
+                    </GlassView>
                     <Text style={{ fontSize: 13, color: C.text, marginTop: 4, fontWeight: '600' }}>x{count}</Text>
                   </View>
                 ))}
@@ -1918,22 +1943,24 @@ export default function ProfileScreen({
       {/* ─── 2026-10-29 (boss): "..." popup — white pill with copy icon + VoiceClub ID.
           The ID is the SAME value as the Room Profile row (profile vId), NOT the short ID. */}
       <Modal visible={showVidPopup} transparent animationType="fade" onRequestClose={() => setShowVidPopup(false)}>
+        {/* Glass P1c (A2 rule): a glass modal must sit over a dimmed
+            backdrop — this popup previously had a transparent backdrop. */}
         <Pressable
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}
           onPress={() => setShowVidPopup(false)}
         />
-        <View style={{
-          position: 'absolute', top: insets.top + 56, right: 16,
-          flexDirection: 'row', alignItems: 'center',
-          backgroundColor: '#FFFFFF', borderRadius: 14,
-          paddingHorizontal: 16, paddingVertical: 12,
-          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8,
-          shadowOffset: { width: 0, height: 2 }, elevation: 8 }}>
+        <GlassView
+          variant="modal"
+          mode="light"
+          style={{ position: 'absolute', top: insets.top + 56, right: 16 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
           <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
             <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
           </Pressable>
-        </View>
+          </View>
+        </GlassView>
       </Modal>
 
       {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}

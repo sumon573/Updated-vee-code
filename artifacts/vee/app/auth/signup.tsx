@@ -12,6 +12,17 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
+// Glass P1a (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): auth sits on plain white (#FFFFFF), so resolveGlassTheme
+// (imo-light) adds the +0.08 light-backdrop fill boost. GlassView is
+// static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
+import { ROOM_THEMES } from '@/src/features/voice-room/constants/theme';
+const AUTH_GLASS = resolveGlassTheme(
+  ROOM_THEMES.find((t) => t.id === 'imo-light') ?? ROOM_THEMES[0],
+  false,
+);
 import { signUp, getAuthErrorMessage } from '@/src/services/authService';
 import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { deleteUser } from 'firebase/auth';
@@ -49,11 +60,17 @@ function Field({
 
   return (
     <View style={{ marginBottom: hint ? 6 : 16 }}>
+      {/* Glass P1a: input container is a glass `panel`; the focus ring
+          survives as a low-alpha blue accent border (A4: low alpha only). */}
+      <GlassView
+        variant="panel"
+        resolved={AUTH_GLASS}
+        accentBorder={focused ? 'rgba(30,155,240,0.55)' : null}
+        style={{ height: 56 }}
+      >
       <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        borderRadius: 16, borderWidth: 1,
-        borderColor: focused ? C.blue : C.inputBorder,
-        backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56 }}>
+        flex: 1, flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: 16 }}>
         <Feather name={icon} size={18} color={focused ? C.blue : C.muted} style={{ marginRight: 12 }} />
         <TextInput
           style={{ flex: 1, color: C.text, fontSize: 16, height: '100%' }}
@@ -72,6 +89,7 @@ function Field({
           </Pressable>
         )}
       </View>
+      </GlassView>
       {!!hint && (
         <Text style={{ color: C.muted, fontSize: 12, marginTop: 6, marginLeft: 16 }}>
           {hint}
@@ -329,16 +347,20 @@ export default function SignupScreen() {
 
           <View style={{ height: 14 }} />
 
+          {/* Glass P1a: secondary button keeps its blue outline as a
+              low-alpha accent border (A4); the solid blue primary above
+              stays solid. */}
+          <GlassView variant="chip" resolved={AUTH_GLASS} accentBorder="rgba(30,155,240,0.45)">
           <ScalePress onPress={() => router.replace('/auth/email-login')}>
             <View style={{
-              height: 56, borderRadius: 28, borderWidth: 1.6, borderColor: C.blue,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: '#FFFFFF' }}>
+              height: 56,
+              alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: C.blue, fontSize: 13, fontWeight: '800', letterSpacing: 1.2 }}>
                 {t('auth.signup.alreadyHaveAccount')}
               </Text>
             </View>
           </ScalePress>
+          </GlassView>
 
           <View style={{ height: Platform.OS === 'web' ? 34 : 48 }} />
         </ScrollView>
@@ -356,10 +378,10 @@ export default function SignupScreen() {
               alignItems: 'center', justifyContent: 'center', padding: 30 }}
             onPress={() => setDocOpen(null)}
           >
+            <GlassView variant="modal" resolved={AUTH_GLASS} style={{ width: '100%', maxHeight: '70%' }}>
             <Pressable
               style={{
-                backgroundColor: '#FFFFFF', borderRadius: 18,
-                padding: 22, maxHeight: '70%', width: '100%' }}
+                padding: 22 }}
               onPress={() => {}}
             >
               <Text style={{ fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 12 }}>
@@ -383,6 +405,7 @@ export default function SignupScreen() {
                 <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>OK</Text>
               </Pressable>
             </Pressable>
+            </GlassView>
           </Pressable>
         </Modal>
       </SafeAreaView>

@@ -176,6 +176,11 @@ export default function CallsTabScreen({ onCallBack, onMissedCountChange }: Call
         data={entries}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <CallRow entry={item} onCallBack={onCallBack} />}
+        removeClippedSubviews
+        windowSize={10}
+        maxToRenderPerBatch={10}
+        initialNumToRender={15}
+        updateCellsBatchingPeriod={50}
         ListEmptyComponent={
           ready ? (
             <View style={{ alignItems: 'center', paddingTop: 90, paddingHorizontal: 32 }}>

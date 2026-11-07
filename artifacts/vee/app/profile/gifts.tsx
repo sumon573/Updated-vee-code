@@ -618,6 +618,11 @@ export default function GiftDisplayScreen() {
           <FlatList
             data={contributorList}
             keyExtractor={(c) => c.uid}
+            removeClippedSubviews
+            windowSize={10}
+            maxToRenderPerBatch={10}
+            initialNumToRender={15}
+            updateCellsBatchingPeriod={50}
             renderItem={({ item, index }) => {
               const u = contributors[item.uid];
               // Name fallback: DB name → email prefix → 'User'.

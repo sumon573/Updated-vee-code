@@ -299,6 +299,11 @@ export default function CreateStoryScreen() {
           contentContainerStyle={{ paddingBottom: 100 }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={12}
+          updateCellsBatchingPeriod={50}
           ListFooterComponent={
             loadingMore ? (
               <PremiumLoader size="small" />
@@ -364,6 +369,11 @@ export default function CreateStoryScreen() {
             <FlatList
               data={[{ id: null, title: t('story.allPhotos', { defaultValue: 'All photos' }) } as any, ...albums]}
               keyExtractor={(item) => item.id ?? 'all'}
+              removeClippedSubviews
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              initialNumToRender={15}
+              updateCellsBatchingPeriod={50}
               renderItem={({ item }) => (
                 <Pressable
                   onPress={() => handleAlbumSelect(item.id ? item : null)}

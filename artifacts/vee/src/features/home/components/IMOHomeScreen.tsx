@@ -19,7 +19,6 @@ import { useAuth } from '@/src/context/AuthContext';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
 import { Chat } from '@/src/features/chat/types';
 import {
-  subscribePresence,
   pinChat,
   unpinChat,
   muteChat,
@@ -36,6 +35,8 @@ import type { CallHistoryEntry } from '@/src/features/audio-call/services/callHi
 import { useStories, subscribeSharedUserChats } from '@/src/features/chat/hooks/useStories';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { getUser } from '@/src/services/userService';
+import { ref, get } from 'firebase/database';
+import { database } from '@/src/config/firebase';
 import IMOStoryRow, { type IMOStory } from '@/src/features/home/components/IMOStoryRow';
 import { UniversalContentRenderer } from '@/src/components/UniversalContentRenderer';
 import IMOChatListItem, { type IMOChat } from '@/src/features/home/components/IMOChatListItem';
@@ -69,6 +70,16 @@ export default function IMOHomeScreen() {
   // effect run, so the no-cache + offline case can settle to the empty
   // state instead of staying blank forever (onValue never fires offline).
   const liveArrivedRef = useRef(false);
+  // 2026-11-07 (IMO home scroll smoothness): coalesced cache-write refs.
+  // The old code JSON.stringify'd the whole chat list and hit AsyncStorage
+  // on EVERY live snapshot — that JS-thread work could land mid-scroll and
+  // drop frames. The cache is only for offline-first load, so the write
+  // waits until after interactions (scroll) settle, and a burst of
+  // snapshots collapses to ONE write of the latest list. No timer /
+  // interval (InteractionManager, already imported); behaviour identical,
+  // just later. The cleanup below flushes a pending write on unmount.
+  const pendingChatCacheRef = useRef<Chat[] | null>(null);
+  const chatCacheScheduledRef = useRef(false);
   const [chatsReady, setChatsReady] = useState(false);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
@@ -81,7 +92,13 @@ export default function IMOHomeScreen() {
   // LIVE PROFILES (2026-10-11 Issue #4): real-time name + DP per chat
   // participant. When someone changes their profile, the chat list updates
   // immediately — no stale cached names/DPs.
-  const [liveProfiles, setLiveProfiles] = useState<Record<string, { name?: string; photoURL?: string }>>({});
+  // 2026-11-07 (IMO home scroll smoothness): `online` now rides this
+  // SAME subscribeUser stream (the user node already carries it), so the
+  // separate subscribePresence effect — a second full-node onValue
+  // listener per participant — is gone. Privacy masking is preserved
+  // (see privacyMap below): each participant's privacy is fetched ONCE
+  // and applied locally, mirroring subscribePresence exactly.
+  const [liveProfiles, setLiveProfiles] = useState<Record<string, { name?: string; photoURL?: string; online?: boolean }>>({});
   useEffect(() => {
     const uids = new Set<string>();
     for (const c of chats) {
@@ -95,13 +112,14 @@ export default function IMOHomeScreen() {
           if (!p) return;
           // Perf guard (2026-10-22 audit): subscribeUser fires on ANY field
           // change of the full user node (presence/lastSeen churn included).
-          // Only name/photoURL matter here — skip the state write when they
-          // are unchanged so the whole home shell stops re-rendering.
+          // Only name/photoURL/online matter here — skip the state write when
+          // they are unchanged so the whole home shell stops re-rendering.
           setLiveProfiles((prev) => {
             const photo = p.photoURL || undefined;
+            const online = p.online === true;
             const cur = prev[uid];
-            if (cur && cur.name === p.name && cur.photoURL === photo) return prev;
-            return { ...prev, [uid]: { name: p.name, photoURL: photo } };
+            if (cur && cur.name === p.name && cur.photoURL === photo && cur.online === online) return prev;
+            return { ...prev, [uid]: { name: p.name, photoURL: photo, online } };
           });
         }),
       );
@@ -163,32 +181,82 @@ export default function IMOHomeScreen() {
       }
       setChats(live);
       setChatsReady(true);
-      saveChatList(uid, live);
+      // 2026-11-07 (IMO home scroll smoothness): cache write deferred
+      // past the scroll (see refs above) — never stringify + write to
+      // AsyncStorage on the live-update path itself.
+      pendingChatCacheRef.current = live;
+      if (!chatCacheScheduledRef.current) {
+        chatCacheScheduledRef.current = true;
+        InteractionManager.runAfterInteractions(() => {
+          chatCacheScheduledRef.current = false;
+          if (cancelled) return;
+          const latest = pendingChatCacheRef.current;
+          pendingChatCacheRef.current = null;
+          if (latest) saveChatList(uid, latest);
+        });
+      }
     });
     return () => {
       cancelled = true;
       if (settleTimer) clearTimeout(settleTimer);
+      // Flush a pending cache write so the offline copy isn't lost on unmount.
+      const pending = pendingChatCacheRef.current;
+      pendingChatCacheRef.current = null;
+      if (pending) saveChatList(uid, pending);
       unsub();
     };
   }, [user?.uid]);
 
 
   // 2026-10-26 (boss: chat-list online + unseen-story marks): realtime
-  // presence per chat participant (privacy-masked inside subscribePresence
-  // — a contact hiding online status reads offline here, same as inbox)
-  // + unseen-story set from stories' unreadCount. The effect re-subscribes
-  // only when the participant SET changes (key string), never on every
-  // incoming message.
+  // presence per chat participant (privacy-masked — a contact hiding
+  // online status reads offline here, same as inbox) + unseen-story set
+  // from stories' unreadCount. The privacy fetch re-runs only when the
+  // participant SET changes (key string), never on every incoming message.
+  // 2026-11-07: the online flag rides the liveProfiles subscribeUser
+  // stream (see above) — no second live listener per participant.
   const participantIdsKey = useMemo(() => [...new Set(chats.map((c) => c.participantId).filter(Boolean) as string[])].sort().join(','), [chats]);
-  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
+  // 2026-11-07 (IMO home scroll smoothness): presence privacy cache.
+  // The old subscribePresence effect attached a SECOND full-node onValue
+  // listener per participant (the liveProfiles stream above already
+  // listens to the same node). Now each participant's `users/{uid}/privacy`
+  // is fetched ONCE and cached; the online mark is derived from the
+  // liveProfiles stream with that privacy applied. Semantics mirror
+  // subscribePresence exactly: missing node / fetch failure -> permissive
+  // (show); showOnlineStatus === false -> hidden. Privacy not loaded yet
+  // -> offline, same as before the old listener attached.
+  const [privacyMap, setPrivacyMap] = useState<Record<string, { showOnlineStatus?: boolean }>>({});
   useEffect(() => {
     const ids = participantIdsKey ? participantIdsKey.split(',') : [];
-    if (ids.length === 0) { setOnlineMap({}); return; }
-    const unsubs = ids.map((pid) => subscribePresence(pid, (online) => {
-      setOnlineMap((prev) => (prev[pid] === online ? prev : { ...prev, [pid]: online }));
-    }));
-    return () => { unsubs.forEach((u) => { try { u(); } catch {} }); };
-  }, [participantIdsKey]);
+    const missing = ids.filter((id) => !(id in privacyMap));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    Promise.all(missing.map(async (id) => {
+      try {
+        const snap = await get(ref(database, `users/${id}/privacy`));
+        return [id, snap.exists() ? (snap.val() as { showOnlineStatus?: boolean }) : {}] as const;
+      } catch {
+        return [id, {}] as const;
+      }
+    })).then((results) => {
+      if (cancelled) return;
+      const updates: Record<string, { showOnlineStatus?: boolean }> = {};
+      for (const [id, priv] of results) updates[id] = priv;
+      setPrivacyMap((prev) => ({ ...prev, ...updates }));
+    });
+    return () => { cancelled = true; };
+  }, [participantIdsKey, privacyMap]);
+  // Online mark derived from the liveProfiles stream + privacy cache —
+  // no second live listener per participant.
+  const onlineMap = useMemo(() => {
+    const out: Record<string, boolean> = {};
+    for (const pid of Object.keys(liveProfiles)) {
+      const priv = privacyMap[pid];
+      if (!priv) { out[pid] = false; continue; }
+      out[pid] = priv.showOnlineStatus !== false ? (liveProfiles[pid]?.online === true) : false;
+    }
+    return out;
+  }, [liveProfiles, privacyMap]);
   const unseenStoryUids = useMemo(() => new Set(
     (stories || []).filter((s: any) => (s.unreadCount || 0) > 0).map((s: any) => s.userId).filter(Boolean),
   ), [stories]);
@@ -647,9 +715,17 @@ export default function IMOHomeScreen() {
         data={imoChats}
         keyExtractor={(item) => item.id}
         getItemLayout={getRowLayout}
-        windowSize={11}
+        // 2026-11-07 (IMO home scroll smoothness): windowSize 11 -> 5.
+        // With removeClippedSubviews={false} (required — the pager Pan
+        // gesture breaks if clipping is on), windowSize 11 kept ~5.5
+        // viewports of rows mounted on each side (~90 rows), each holding
+        // an image + a VerifiedName subscription. 5 keeps ~2 viewports
+        // each side (~45 rows max) — still far more lookahead than a
+        // fling needs, with half the mounted work. Clipping stays off.
+        windowSize={5}
         initialNumToRender={15}
         maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
         removeClippedSubviews={false}
         nestedScrollEnabled={true}
         // 2026-10-19 polish: empty state — only after the first load so the

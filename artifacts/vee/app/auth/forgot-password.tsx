@@ -13,6 +13,17 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import ScalePress from '@/components/ScalePress';
 import { resetPassword, getAuthErrorMessage } from '@/src/services/authService';
+// Glass P1a (Candidate A "Pod Glass" — the default; no B/C used on this
+// screen): auth sits on plain white (#FFFFFF), so resolveGlassTheme
+// (imo-light) adds the +0.08 light-backdrop fill boost. GlassView is
+// static translucent fill only, no expo-blur.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
+import { ROOM_THEMES } from '@/src/features/voice-room/constants/theme';
+const AUTH_GLASS = resolveGlassTheme(
+  ROOM_THEMES.find((t) => t.id === 'imo-light') ?? ROOM_THEMES[0],
+  false,
+);
 
 const C = {
   bg: '#FFFFFF',
@@ -22,9 +33,7 @@ const C = {
   error: '#FF4B4B',
   errorBg: 'rgba(255,75,75,0.10)',
   success: '#22C55E',
-  successBg: 'rgba(34,197,94,0.10)',
-  inputBg: '#F7F7FA',
-  inputBorder: '#E8E8EC' } as const;
+  successBg: 'rgba(34,197,94,0.10)' } as const;
 
 export default function ForgotPasswordScreen() {
   const { t } = useTranslation();
@@ -125,12 +134,17 @@ export default function ForgotPasswordScreen() {
             </View>
           )}
 
-          {/* Email field */}
+          {/* Email field (glass `panel`; focus ring survives as a
+              low-alpha blue accent border, A4). */}
+          <GlassView
+            variant="panel"
+            resolved={AUTH_GLASS}
+            accentBorder={focused ? 'rgba(30,155,240,0.55)' : null}
+            style={{ height: 56, marginBottom: 24 }}
+          >
           <View style={{
-            flexDirection: 'row', alignItems: 'center',
-            borderRadius: 16, borderWidth: 1,
-            borderColor: focused ? C.blue : C.inputBorder,
-            backgroundColor: C.inputBg, paddingHorizontal: 16, height: 56, marginBottom: 24 }}>
+            flex: 1, flexDirection: 'row', alignItems: 'center',
+            paddingHorizontal: 16 }}>
             <Feather name="mail" size={18} color={focused ? C.blue : C.muted} style={{ marginRight: 12 }} />
             <TextInput
               style={{ flex: 1, color: C.text, fontSize: 16, height: '100%' }}
@@ -145,6 +159,7 @@ export default function ForgotPasswordScreen() {
               onBlur={() => setFocused(false)}
             />
           </View>
+          </GlassView>
 
           {/* Send button */}
           <ScalePress onPress={handleReset} disabled={loading || !!successMsg}>
@@ -169,18 +184,21 @@ export default function ForgotPasswordScreen() {
 
           <View style={{ height: 14 }} />
 
-          {/* Back to login */}
+          {/* Back to login (glass pill; blue outline kept as a low-alpha
+              accent border, A4). Solid send button above stays solid. */}
+          <GlassView variant="chip" resolved={AUTH_GLASS} accentBorder="rgba(30,155,240,0.45)">
           <ScalePress onPress={() => router.back()}>
             <View style={{
-              height: 56, borderRadius: 28, borderWidth: 1.6, borderColor: C.blue,
+              height: 56,
               alignItems: 'center', justifyContent: 'center',
-              flexDirection: 'row', gap: 8, backgroundColor: '#FFFFFF' }}>
+              flexDirection: 'row', gap: 8 }}>
               <Feather name="arrow-left" size={16} color={C.blue} />
               <Text style={{ color: C.blue, fontSize: 14, fontWeight: '800' }}>
                 {t('auth.forgotPassword.backToLogin')}
               </Text>
             </View>
           </ScalePress>
+          </GlassView>
 
           <View style={{ height: Platform.OS === 'web' ? 34 : 48 }} />
         </View>

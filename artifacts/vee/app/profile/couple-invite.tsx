@@ -414,6 +414,11 @@ export default function CoupleInviteScreen() {
           keyExtractor={(item) => item.uid}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: 24 }}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={15}
+          updateCellsBatchingPeriod={50}
         />
       )}
       {sheetRecipient && viewerUid ? (

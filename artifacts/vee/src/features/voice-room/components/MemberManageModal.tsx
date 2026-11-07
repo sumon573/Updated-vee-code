@@ -12,6 +12,10 @@ import { truncateTo12 } from '@/src/utils/truncateName';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { useActiveFrame } from '@/src/hooks/useActiveFrame';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 import MistNameplate from '@/src/components/MistNameplate';
 import { rewardsForRankKey } from '@/src/services/nobleRewardsCatalog';
@@ -23,7 +27,7 @@ export function MemberManageModal({
   member, myRole, myRoleLevel, myId, onClose, onGift, onMention, onBlock, onUnblock, onReport, onSetAdmin, onDismissAdmin,
   onViewProfile, onViewOtherProfile, onEditProfile,
   onDown, onDownFromSeat, isSeated,
-  isCommentBlocked, isRoomBlocked,
+  isCommentBlocked, isRoomBlocked, glass,
 }: {
   member: Participant | null; myRole: Role; myRoleLevel?: number; myId: string; onClose: () => void;
   onGift: () => void; onMention: (name: string) => void;
@@ -34,6 +38,9 @@ export function MemberManageModal({
   isCommentBlocked?: boolean;
   /** True when the member currently holds an active room-block */
   isRoomBlocked?: boolean;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
   onReport?: (memberId: string, memberName: string) => void;
   onSetAdmin: () => void; onDismissAdmin: () => void;
   onViewProfile: () => void;
@@ -135,9 +142,13 @@ export function MemberManageModal({
   return (
     <Modal visible={!!member} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.border, padding: 24 }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. The member DP/frame
+          art sits ON the glass, never under it. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+        <View style={{ padding: 24 }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginBottom: 20 }} />
 
@@ -369,7 +380,8 @@ export function MemberManageModal({
             {t('voiceRoom.memberManage.close')}
           </Text>
         </Pressable>
-      </View>
+        </View>
+      </GlassView>
     </Modal>
   );
 }

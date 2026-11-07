@@ -145,6 +145,10 @@ import { subscribeEdgeRoomChat } from '../services/edgeRoomChatService';
 import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker, formatMembersCount } from './VoiceRoomHelpers';
 import { VoiceRoomBottomBar } from './VoiceRoomBottomBar';
 import { VoiceRoomModals } from './VoiceRoomModals';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme } from '@/src/design/glassTokens';
 
 /**
  * 2026-10-26 (boss: every genuine entry must show its join line):
@@ -817,6 +821,50 @@ export default function VoiceRoomScreen() {
   const themeScene = useMemo(
     () => getActiveThemes().find((th) => th.id === activeThemeId)?.scene,
     [activeThemeId],
+  );
+
+  // Glass P1d — resolved glass for this room's theme (Candidate A):
+  // +0.15 fill boost + text scrim on the 6 animated scene themes,
+  // +0.08 on very light backdrops, dark table on Midnight (and any
+  // server-dark theme via isDarkTheme). Passed to the header, the chat
+  // chrome and every glass modal below; text stays themeOnBg/onBgSub.
+  const glassResolved = useMemo(
+    () =>
+      resolveGlassTheme(
+        getActiveThemes().find((th) => th.id === activeThemeId) ?? {
+          id: activeThemeId,
+          bg: C.bg,
+          surface: C.card,
+          onBg: C.text,
+          onBgSub: C.sub,
+          accent: C.primary,
+        },
+        isDarkTheme,
+      ),
+    [activeThemeId, isDarkTheme],
+  );
+
+  // Glass P1d (impeccable review finding): the @-mention dropdown floats
+  // directly over the scrolling chat list, and Candidate A's modal fill
+  // (0.80 on light themes) lets ~20% of chat text ghost through behind
+  // the names/roles. Candidate B ("Frost Deep", 0.85+) is the heavier
+  // frost the task allows for modals over chat — same theme/boost/scrim,
+  // just a denser fill, so the dropdown stays readable over busy chat.
+  const glassResolvedB = useMemo(
+    () =>
+      resolveGlassTheme(
+        getActiveThemes().find((th) => th.id === activeThemeId) ?? {
+          id: activeThemeId,
+          bg: C.bg,
+          surface: C.card,
+          onBg: C.text,
+          onBgSub: C.sub,
+          accent: C.primary,
+        },
+        isDarkTheme,
+        'B',
+      ),
+    [activeThemeId, isDarkTheme],
   );
 
   
@@ -4177,6 +4225,10 @@ export default function VoiceRoomScreen() {
       <AnimatedThemeBackground accentColor={accentColor} scene={themeScene} />
       <SafeAreaView edges={['top']}>
         {}
+        {/* Glass P1d: the room header is one glass `nav` bar (Candidate A,
+            full width so the trio X keeps its exact edge). The three
+            header variants + pills row render inside it, unchanged. */}
+        <GlassView variant="nav" resolved={glassResolved}>
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 2 }}>
           {showJoinBanner ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -4462,6 +4514,7 @@ export default function VoiceRoomScreen() {
             )}
           </View>
         </View>
+        </GlassView>
       </SafeAreaView>
 
       {}
@@ -4660,6 +4713,9 @@ export default function VoiceRoomScreen() {
             scrollEventThrottle={16}
             initialNumToRender={20}
             maxToRenderPerBatch={10}
+            windowSize={10}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={50}
           />
           {}
           {showChatScrollBtn && (
@@ -4689,21 +4745,24 @@ export default function VoiceRoomScreen() {
 
         {}
         {mentionQuery !== null && mentionCandidates.length > 0 && (
-          <View style={{
-            // 2026-10-26 (typing-jitter fix): absolute overlay above the
-            // input bar — inserting/removing this box in flow shrank/grew
-            // the chat list by up to 180dp on every @ keystroke. Bottom
-            // clears the input bar (62) and, while replying, the reply bar.
-            position: 'absolute', left: 8, right: 8, zIndex: 50,
-            bottom: replyingTo ? 112 : 70,
-            maxHeight: 180,
-            backgroundColor: '#FFFFFF',
-            borderRadius: 14,
-            borderWidth: 1, borderColor: accentColor + '55',
-            overflow: 'hidden',
-            shadowColor: accentColor, shadowOpacity: 0.25,
-            shadowRadius: 12, shadowOffset: { width: 0, height: -2 },
-            elevation: 8 }}>
+          // Glass P1d: the @-mention dropdown is glass `modal` — the
+          // accent hairline is kept via accentBorder (low alpha).
+          // Candidate B here (see glassResolvedB): the dropdown floats
+          // over the scrolling chat list, and A's fill lets chat text
+          // ghost through behind the names/roles.
+          <GlassView
+            variant="modal"
+            resolved={glassResolvedB}
+            accentBorder={accentColor + '55'}
+            style={{
+              // 2026-10-26 (typing-jitter fix): absolute overlay above the
+              // input bar — inserting/removing this box in flow shrank/grew
+              // the chat list by up to 180dp on every @ keystroke. Bottom
+              // clears the input bar (62) and, while replying, the reply bar.
+              position: 'absolute', left: 8, right: 8, zIndex: 50,
+              bottom: replyingTo ? 112 : 70,
+              maxHeight: 180,
+            }}>
             {mentionCandidates.slice(0, 6).map((m: Participant) => (
               <Pressable
                 key={m.id}
@@ -4733,16 +4792,19 @@ export default function VoiceRoomScreen() {
                 </View>
               </Pressable>
             ))}
-          </View>
+          </GlassView>
         )}
 
         {composerOpen && (
           <>
+          {/* Glass P1d: reply bar is a glass `panel` — the accent left
+              bar stays on the inner wrapper (plain View, never nested
+              glass). */}
           {replyingTo && (
+          <GlassView variant="panel" resolved={glassResolved} style={{ marginTop: 6 }}>
           <View style={{
             flexDirection: 'row', alignItems: 'center',
-            backgroundColor: C.card,
-            borderRadius: 10, padding: 8, marginTop: 6,
+            padding: 8,
             borderLeftWidth: 3, borderLeftColor: accentColor }}>
             <Text numberOfLines={1} style={{ flex: 1, color: C.sub, fontSize: 12 }}>
               ↩ {replyingTo.sender}: {replyingTo.text}
@@ -4751,6 +4813,7 @@ export default function VoiceRoomScreen() {
               <Feather name="x" size={14} color={C.muted} />
             </Pressable>
           </View>
+          </GlassView>
         )}
 
           {/* 2026-10-27 (boss, bottom rebuild): dark composer bar, full
@@ -4807,9 +4870,11 @@ export default function VoiceRoomScreen() {
         onSelect={sendEmojiReaction}
         onClose={() => setEmojiPanelOpen(false)}
         bottomOffset={BOTTOM_BAR_H + 8}
+        glass={glassResolved}
       />
       <VoiceRoomBottomBar
         keyboardOpen={keyboardOpen}
+        glass={glassResolved}
         isSeated={mySeatIdx >= 0}
         isMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? muted) : false}
         speakerOn={speakerOn}
@@ -4837,8 +4902,12 @@ export default function VoiceRoomScreen() {
           onPress={() => setActionMsg(null)}
           style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
         >
-          <Pressable onPress={() => {}} style={{
-            backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+          {/* Glass P1d: Copy/Reply sheet is glass `modal` over the
+              already-dimmed backdrop (rgba(0,0,0,0.45)). The outer
+              Pressable stays — it stops taps reaching the backdrop. */}
+          <Pressable onPress={() => {}}>
+          <GlassView variant="modal" resolved={glassResolved}>
+          <View style={{
             paddingHorizontal: 20, paddingTop: 16, paddingBottom: Math.max(insets.bottom, 16),
           }}>
             {actionMsg && (
@@ -4874,6 +4943,8 @@ export default function VoiceRoomScreen() {
                 {t('common.cancel', 'Cancel')}
               </Text>
             </Pressable>
+          </View>
+          </GlassView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -4895,6 +4966,7 @@ export default function VoiceRoomScreen() {
 
       <VoiceRoomModals
         accentColor={accentColor}
+        glass={glassResolved}
         pass2Active={pass2PollActive}
         roomId={roomId}
         myUid={myUid}
@@ -5001,6 +5073,7 @@ export default function VoiceRoomScreen() {
       <SeatQueueModal
         visible={seatQueueOpen}
         roomId={roomId}
+        glass={glassResolved}
         requests={pendingRequests}
         myUid={myUid}
         isHost={isOwnerOrAdmin}
@@ -5040,6 +5113,7 @@ export default function VoiceRoomScreen() {
       <RoomCustomizePanel
         visible={customizeOpen}
         onClose={() => setCustomizeOpen(false)}
+        glass={glassResolved}
         isOwnerOrAdmin={isOwnerOrAdmin}
         isHostSeat={isHostSeat}
         nowPlayingTitle={music?.current && typeof music.current.title === 'string' ? music.current.title.replace(/\.[^.]+$/, '') : null}
@@ -5108,6 +5182,7 @@ export default function VoiceRoomScreen() {
       <RoomRankModal
         visible={rankOpen}
         roomId={roomId}
+        glass={glassResolved}
         members={allMembers.map((m) => ({ uid: m.id, name: m.name || '', photoURL: m.photoURL ?? null, color: m.color, initials: m.initials }))}
         myUid={myUid}
         onClose={() => setRankOpen(false)}
@@ -5123,6 +5198,7 @@ export default function VoiceRoomScreen() {
       <RoomAnnouncementModal
         visible={announcementOpen}
         roomId={roomId}
+        glass={glassResolved}
         announcement={announcement}
         isOwnerOrAdmin={isOwnerOrAdmin}
         myUid={myUid}

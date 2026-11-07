@@ -247,6 +247,11 @@ export function MusicPlaylistPage(props: PlaylistPageProps) {
           data={visible}
           keyExtractor={(e) => e.libraryKey}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          windowSize={10}
+          maxToRenderPerBatch={10}
+          initialNumToRender={15}
+          updateCellsBatchingPeriod={50}
           renderItem={({ item }) => (
             <PlaylistRow
               entry={item}

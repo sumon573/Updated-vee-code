@@ -6,14 +6,21 @@ import { C } from '../constants/theme';
 import { BlockRecord } from '../types/room';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 import { fmtTime } from '../utils/format';
 
 /* ─────────────────────────── Operation History Modal ─────────────────────────── */
-export function OperationHistoryModal({ visible, onClose, records, onUnblock, accent }: {
+export function OperationHistoryModal({ visible, onClose, records, onUnblock, accent, glass }: {
   visible: boolean; onClose: () => void;
   records: BlockRecord[]; onUnblock: (id: string) => void;
   accent: string;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
 }) {
   const { t } = useTranslation();
   const active   = records.filter(r => r.isActive);
@@ -70,9 +77,9 @@ export function OperationHistoryModal({ visible, onClose, records, onUnblock, ac
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
-        backgroundColor: '#FFFFFF', borderTopLeftRadius: 26, borderTopRightRadius: 26,
-        borderWidth: 1, borderColor: C.border, maxHeight: '88%' }}>
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '88%' }}>
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.muted,
           alignSelf: 'center', marginTop: 12 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16,
@@ -114,7 +121,7 @@ export function OperationHistoryModal({ visible, onClose, records, onUnblock, ac
             </>
           )}
         </ScrollView>
-      </View>
+      </GlassView>
     </Modal>
   );
 }

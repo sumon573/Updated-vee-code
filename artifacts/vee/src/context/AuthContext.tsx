@@ -10,7 +10,7 @@
  */
 
 import React, {
-  createContext, useContext, useEffect, useRef, useState, useCallback,
+  createContext, useContext, useEffect, useMemo, useRef, useState, useCallback,
 } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +21,7 @@ import {
   setupPresence, setUserOffline, getUser, setUserVId, generateAndReserveVId,
 } from '../services/userService';
 import type { VeeUser } from '../services/userService';
+import { fetchPass2Flags, checkBanViaRest } from '../features/voice-room/services/pass2RestService';
 import generateVId from '../utils/generateVId';
 
 /** Maximum ms to wait for the first Firebase auth-state callback. */
@@ -164,6 +165,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const bannedSessionRef = useRef(false);
   // 2026-10-13: কোন UID ban হয়েছে track করি — ভিন্ন user login করলে reset।
   const bannedUidRef = useRef<string | null>(null);
+  // Pass2 ban-REST mode (DESIGN.md §3.8, staging flags): when the pass2
+  // flags say banRest, the users/{uid}/banned listener below is skipped
+  // and ban state comes from GET /users/me instead — no session holds a
+  // ban listener. Fail-closed: flags unreadable -> banRest false -> the
+  // listener path runs exactly as today. FCM ban push handling is
+  // server-side; this effect only consumes the ban field.
+  const banRestRef = useRef(false);
+
+  // Pass2 ban check on app start / login (flag-gated, inert when off).
+  // Runs after the auth callback sets `user`; if banRest becomes active
+  // it unsubscribes any ban listener the callback already started, so a
+  // pass2 session never keeps the listener. A null check result (REST
+  // down) preserves the current ban state — never clears a ban on a blip.
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    const uid = user.uid;
+    fetchPass2Flags().then((flags) => {
+      if (cancelled || !flags.banRest) return;
+      banRestRef.current = true;
+      if (banUnsubscribeRef.current) {
+        banUnsubscribeRef.current();
+        banUnsubscribeRef.current = null;
+      }
+      banListenerUidRef.current = null;
+      checkBanViaRest().then((res) => {
+        if (cancelled || !res) return;
+        if (res.banned) {
+          bannedSessionRef.current = true;
+          bannedUidRef.current = uid;
+          setIsBanned(true);
+          setBanReason(res.banReason);
+          void updateCachedBanFlag(uid, true);
+          firebaseLogout().catch(() => {});
+          setUser(null);
+        } else if (bannedSessionRef.current && bannedUidRef.current === uid) {
+          bannedSessionRef.current = false;
+          bannedUidRef.current = null;
+          setIsBanned(false);
+          setBanReason(null);
+          void updateCachedBanFlag(uid, false);
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   useEffect(() => {
     // 2026-10-26 (boss: no loading, super-fast open): EAGER session restore.
@@ -338,7 +386,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // 2026-10-19 stability fix: subscribe the ban listener ONCE per
           // UID. The auth callback re-fires on token refresh — the old code
           // tore the listener down and re-subscribed on every callback.
-          if (banListenerUidRef.current !== firebaseUser.uid) {
+          // Pass2: skip the ban listener entirely when ban-REST mode is on.
+          if (banListenerUidRef.current !== firebaseUser.uid && !banRestRef.current) {
             const prevUnsub = banUnsubscribeRef.current;
             banUnsubscribeRef.current = null;
             if (prevUnsub) prevUnsub();
@@ -419,6 +468,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               banUnsubscribeRef.current = null;
             }
             banListenerUidRef.current = null;
+            banRestRef.current = false;
             setIsBanned(false);
             setBanReason(null);
             // 2026-10-26: a real logout clears the fast-open cache. (A
@@ -613,8 +663,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await firebaseLogout();
   }, [user]);
 
+  // 2026-11-07 (IMO home scroll smoothness): memoize the context value.
+  // The old inline object literal was a NEW identity on every provider
+  // render, so every useAuth() consumer — including every memo'd chat
+  // row — re-rendered even when nothing it uses changed. Now the value
+  // only changes when a field it carries actually changes.
+  const contextValue = useMemo(
+    () => ({ user, loading, authTimedOut, logout, isBanned, banReason }),
+    [user, loading, authTimedOut, logout, isBanned, banReason],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, loading, authTimedOut, logout, isBanned, banReason }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

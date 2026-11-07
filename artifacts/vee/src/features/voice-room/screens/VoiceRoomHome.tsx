@@ -26,6 +26,10 @@ import ScalePress from '@/components/ScalePress';
 import RoomCard from '../components/RoomCard';
 import RoomListItem from '../components/RoomListItem';
 import { ActiveFollowingsBar, ActiveFollowingsSheet, loadActiveFollowings, type ActiveFollowing } from '../components/ActiveFollowingsSheet';
+// Glass P1b: Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import { resolveGlassTheme, type RoomThemeInput } from '@/src/design/glassTokens';
 import RoomCreationModal from './RoomCreationModal';
 import { LeaderboardModal } from './LeaderboardModal';
 import {
@@ -77,6 +81,23 @@ const C = {
   chipBg: 'rgba(139,92,246,0.14)',
   chipBgActive: '#7C3AED',
   surface: '#F2F2F7' } as const;
+
+// Glass P1b — Home is a light screen (imo-light, bg #FFFFFF): resolve
+// once at module scope. Values are imo-light from ROOM_THEMES
+// (src/features/voice-room/constants/theme.ts): white bg → +0.08 fill
+// boost, no scrim (calm backdrop, not a scene). Candidate B below is
+// ONLY for the sticky Recommended header, where room covers scroll
+// beneath it while stuck.
+const HOME_GLASS_THEME: RoomThemeInput = {
+  id: 'imo-light',
+  bg: '#FFFFFF',
+  surface: '#F1F5F9',
+  onBg: '#111827',
+  onBgSub: '#64748B',
+  accent: '#05b5fa',
+};
+const HOME_GLASS = resolveGlassTheme(HOME_GLASS_THEME, false);
+const HOME_GLASS_STICKY = resolveGlassTheme(HOME_GLASS_THEME, false, 'B');
 
 // 2026-10-26 (boss: no loader + superfast voice tab): cached-first rooms.
 // The module cache survives tab switches (component unmounts) within the
@@ -172,13 +193,13 @@ function CreateRoomTile({ onPress }: { onPress: () => void }) {
   return (
     <Pressable onPress={onPress}>
       <View style={{ width: 82, marginRight: 8 }}>
-        <View style={{
-          width: 68, height: 68, borderRadius: 16,
-          backgroundColor: 'rgba(139,92,246,0.08)',
-          borderWidth: 1, borderColor: 'rgba(139,92,246,0.30)',
-          alignItems: 'center', justifyContent: 'center' }}>
-          <Feather name="plus" size={24} color={C.glow} />
-        </View>
+        {/* Glass P1b: card tile (radius 16 = token card radius); the violet
+            hairline is kept via accentBorder, the plus stays centred. */}
+        <GlassView variant="card" resolved={HOME_GLASS} accentBorder="rgba(139,92,246,0.30)" style={{ width: 68, height: 68 }}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="plus" size={24} color={C.glow} />
+          </View>
+        </GlassView>
       </View>
     </Pressable>
   );
@@ -889,7 +910,10 @@ export default function VoiceRoomHome({
       {/* 2026-10-31 (boss: imo-identical header): Room | Explore tabs stay
           fixed above the list; trophy + search + close move here from the
           old My Rooms header row (imo has no My Rooms title row). */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, backgroundColor: '#FFFFFF' }}>
+      {/* Glass P1b: nav bar (Candidate A). borderRadius 0 — this bar is
+          flush to the screen edge, not a floating pill. */}
+      <GlassView variant="nav" resolved={HOME_GLASS} style={{ borderRadius: 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6 }}>
         <Pressable onPress={() => setPageTab('room')} hitSlop={6} style={{ marginRight: 20, alignItems: 'center' }}>
           <Text style={{ color: pageTab === 'room' ? '#000000' : '#8E8E93', fontSize: 17, fontWeight: pageTab === 'room' ? '800' : '600' }}>Room</Text>
           <View style={{ height: 3, width: 24, borderRadius: 2, backgroundColor: pageTab === 'room' ? '#2196F3' : 'transparent', marginTop: 4 }} />
@@ -920,6 +944,7 @@ export default function VoiceRoomHome({
           </Pressable>
         )}
       </View>
+      </GlassView>
       {/* 2026-10-31 (boss: chat-list/contacts scroll here): the page scroll
           is a virtualized FlatList (chat-list pattern) — the old GHScrollView
           mounted every Recommended card at once, which was the scroll jank.
@@ -965,19 +990,27 @@ export default function VoiceRoomHome({
                   ))}
                 </GHScrollView>
                 {myRooms.length === 0 && !myLoading && (
-                  <View style={{ backgroundColor: C.surface, borderRadius: 14, padding: 18, marginBottom: 8, marginHorizontal: 16, alignItems: 'center' }}>
-                    <Feather name="mic" size={24} color={C.muted} />
-                    <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-                      {t('voiceRoom.home.noMyRooms')}
-                    </Text>
-                  </View>
+                  // Glass P1b: panel (was a flat #F2F2F7 surface).
+                  <GlassView variant="panel" resolved={HOME_GLASS} style={{ marginBottom: 8, marginHorizontal: 16 }}>
+                    <View style={{ alignItems: 'center', padding: 18 }}>
+                      <Feather name="mic" size={24} color={C.muted} />
+                      <Text style={{ color: C.muted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                        {t('voiceRoom.home.noMyRooms')}
+                      </Text>
+                    </View>
+                  </GlassView>
                 )}
               </View>
             );
           }
           if (item.type === 'recheader') {
             return (
-              <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 16 }}>
+              // Glass P1b: sticky header — Candidate B (not A): room covers
+              // scroll beneath it while stuck, so it takes the heavier
+              // frost for readability. Chips inside stay plain (never
+              // nest GlassView) and keep their flat imo look.
+              <GlassView variant="panel" resolved={HOME_GLASS_STICKY} style={{ borderRadius: 0 }}>
+              <View style={{ paddingHorizontal: 16 }}>
                 <SectionTitle title={t('voiceRoom.home.recommended')} />
                 {/* 2026-10-31 (batch47 full display): chips window full-bleed (-16 cancels parent padding) + content padding 12 + chip margin 4 = first/last chip visual at 16; mid-scroll clips at screen edges like the top row. */}
                 <GHScrollView
@@ -1001,7 +1034,8 @@ export default function VoiceRoomHome({
                     />
                   ))}
                 </GHScrollView>
-              </View>
+                </View>
+              </GlassView>
             );
           }
           if (item.type === 'room' && item.room) {
@@ -1013,6 +1047,7 @@ export default function VoiceRoomHome({
                 distanceKm={item.distanceKm}
                 onPress={pressFor(item.room.id)}
                 hideLiveBadge
+                resolved={HOME_GLASS}
               />
               </View>
             );
@@ -1109,11 +1144,11 @@ export default function VoiceRoomHome({
           <SafeAreaView style={{ flex: 1 }}>
             {/* IMO-style search bar */}
             <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+              {/* Glass P1b: search bar pill (was flat #F0F0F0). */}
+              <GlassView variant="panel" resolved={HOME_GLASS} style={{ borderRadius: 24 }}>
               <View style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: '#F0F0F0',
-                borderRadius: 24,
                 paddingHorizontal: 16,
                 paddingVertical: 10 }}>
                 <Pressable onPress={() => { setRoomSearchOpen(false); setRoomSearchQuery(''); }} style={{ marginRight: 8 }}>
@@ -1132,7 +1167,8 @@ export default function VoiceRoomHome({
                     <Feather name="x-circle" size={20} color="#9E9E9E" />
                   </Pressable>
                 )}
-              </View>
+                </View>
+              </GlassView>
             </View>
             {/* Search results - filter by Room ID only */}
             <GHScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -1154,6 +1190,7 @@ export default function VoiceRoomHome({
                   <RoomListItem
                     key={room.id}
                     room={voiceRoomOf(room)}
+                    resolved={HOME_GLASS}
                     onPress={() => {
                       setRoomSearchOpen(false);
                       setRoomSearchQuery('');
@@ -1179,10 +1216,10 @@ export default function VoiceRoomHome({
           onPress={() => { setPinDialogRoom(null); setPinInput(''); setPinError(''); }}
         >
           <Pressable style={{ width: '100%', maxWidth: 360 }} onPress={() => {}}>
-            <View style={{
-              backgroundColor: '#FFFFFF', borderRadius: 24, padding: 28,
-              borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
-              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20 }}>
+            {/* Glass P1b: modal over the dimmed backdrop (A2 rule — the
+                0.7 backdrop stays); violet hairline kept via accentBorder. */}
+            <GlassView variant="modal" resolved={HOME_GLASS} accentBorder="rgba(139,92,246,0.35)">
+              <View style={{ padding: 28 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18, gap: 10 }}>
                 <Feather name="lock" size={20} color="#F59E0B" />
                 <Text style={{ color: '#000000', fontSize: 18, fontWeight: '900', flex: 1 }} numberOfLines={1}>
@@ -1231,7 +1268,8 @@ export default function VoiceRoomHome({
                   {pinVerifying ? 'Verifying…' : 'Join Room'}
                 </Text>
               </Pressable>
-            </View>
+              </View>
+            </GlassView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1249,10 +1287,10 @@ export default function VoiceRoomHome({
           onPress={cancelSwitchRoom}
         >
           <Pressable style={{ width: '100%', maxWidth: 360 }} onPress={() => {}}>
-            <View style={{
-              backgroundColor: '#FFFFFF', borderRadius: 24, padding: 28,
-              borderWidth: 1.5, borderColor: 'rgba(139,92,246,0.35)',
-              shadowColor: '#8B5CF6', shadowOpacity: 0.15, shadowRadius: 20 }}>
+            {/* Glass P1b: modal over the dimmed backdrop (A2 rule); violet
+                hairline kept via accentBorder. */}
+            <GlassView variant="modal" resolved={HOME_GLASS} accentBorder="rgba(139,92,246,0.35)">
+              <View style={{ padding: 28 }}>
               <Text style={{ color: '#000000', fontSize: 18, fontWeight: '900', marginBottom: 12 }}>
                 Switch to this room?
               </Text>
@@ -1271,7 +1309,8 @@ export default function VoiceRoomHome({
               >
                 <Text style={{ color: '#000000', fontSize: 16, fontWeight: '900' }}>No</Text>
               </Pressable>
-            </View>
+              </View>
+            </GlassView>
           </Pressable>
         </Pressable>
       </Modal>
