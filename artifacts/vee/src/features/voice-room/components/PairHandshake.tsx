@@ -12,7 +12,7 @@
  * breathes the badge while sparkles twinkle — হালকা, never flashy.
  * Drawn with react-native-svg (already a dependency): no image assets.
  */
-import React, { useEffect, useId, useRef } from 'react';
+import React, { memo, useEffect, useId, useRef } from 'react';
 import { Animated } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Polygon, Stop } from 'react-native-svg';
 import type { HandshakeDesign } from './handshakeDesigns';
@@ -23,7 +23,7 @@ export const HANDSHAKE_BADGE = 36;
 
 const SPARK = '6,0 7.6,4.4 12,6 7.6,7.6 6,12 4.4,7.6 0,6 4.4,4.4';
 
-export default function PairHandshake({ design }: { design: HandshakeDesign }) {
+function PairHandshakeInner({ design }: { design: HandshakeDesign }) {
   const pulse = useRef(new Animated.Value(0)).current;
   const twinkle = useRef(new Animated.Value(0)).current;
   const gid = `phs${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -84,3 +84,8 @@ export default function PairHandshake({ design }: { design: HandshakeDesign }) {
     </Animated.View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — design comes from the screen's pairBadges
+// useMemo (stable unless the pair's data changes), so badges no longer re-render
+// on every parent render. Pulse/twinkle loops unchanged.
+export default memo(PairHandshakeInner);

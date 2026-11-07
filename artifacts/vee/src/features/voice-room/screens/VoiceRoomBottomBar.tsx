@@ -99,7 +99,7 @@
  * pill 95dp, 390dp -> 125dp, 437dp -> 172dp; pill need ~89dp, so the row
  * fits on ALL phones with no overflow and no crowding (standing law).
  */
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
@@ -151,7 +151,7 @@ export interface VoiceRoomBottomBarProps {
   glass?: ResolvedGlass;
 }
 
-export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
+function VoiceRoomBottomBarInner(props: VoiceRoomBottomBarProps) {
   const {
     keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, isMuted, speakerOn,
     handleMicBarPress, toggleSpeaker,
@@ -241,3 +241,8 @@ export function VoiceRoomBottomBar(props: VoiceRoomBottomBarProps) {
     </>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — every prop is now a stable value
+// (booleans/strings, memo'd glass, stable setters + screen useCallbacks), so the
+// bottom bar no longer re-renders on every parent render.
+export const VoiceRoomBottomBar = memo(VoiceRoomBottomBarInner);

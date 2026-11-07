@@ -10,7 +10,7 @@ import {
   subscribeMinimizedRoom,
   type MinimizedRoom,
 } from '@/src/store/minimizedRoom';
-import { destroyPersistedVoiceRoomEngine, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
+import { destroyPersistedVoiceRoomEngine, destroyPersistedVoiceRoomEngineAsync, togglePersistedVoiceRoomMic, setPersistedVoiceRoomMic, getPersistedVoiceRoomMuted } from '../useLivekitVoiceRoom';
 import { removeSeat, leaveAudience, refreshSeatHeartbeat, refreshAudienceHeartbeat, getSeatHostMuted, setSeatMute, writeSeatMuteReliable } from '@/src/features/voice-room/services/firebaseRoomService';
 import { isPass2ModeActive, isPass2Seated } from '@/src/features/voice-room/services/pass2SessionMode';
 import { writePass2SeatMuteReliable } from '@/src/features/voice-room/services/pass2RestService';
@@ -247,6 +247,11 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     if (!room?.id || !room?.myUid || room.mySeatIdx < 0) return;
     let unsub: (() => void) | undefined;
     let cancelled = false;
+    // 2026-11-07 (Area A): host-mute enforcement while minimized.
+    // The screen's host-mute effect is unmounted with the screen, so
+    // a host-muted member who minimized kept talking. Guard repeated
+    // heartbeat snapshots so the force-mute fires once per change.
+    let lastHostMuted: boolean | null = null;
     void (async () => {
       try {
         const { ref, onValue } = await import('firebase/database');
@@ -255,11 +260,34 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
         unsub = onValue(
           ref(database, `rooms/${room.id}/seats/${room.mySeatIdx}`),
           (snap) => {
-            const seat = snap.val();
+            const seat = snap.val() as {
+              userId?: string; id?: string; uid?: string; hostMuted?: boolean;
+            } | null;
+            // 2026-11-07 (Area A): the old check read seat.id / seat.uid
+            // — raw RTDB seats carry `userId`, never `id`/`uid`, so a
+            // seat taken by someone else NEVER destroyed the engine
+            // (only a null seat did). Compare userId, with the legacy
+            // fields as fallback.
+            const seatUid = seat?.userId ?? seat?.id ?? seat?.uid;
             // Seat gone or taken by someone else → destroy engine
-            if (!seat || (seat.id && seat.id !== room.myUid && seat.uid !== room.myUid)) {
+            if (!seat || (seatUid && seatUid !== room.myUid)) {
               try { destroyPersistedVoiceRoomEngine(); } catch { /* non-critical */ }
               setMinimizedRoom(null);
+              return;
+            }
+            // Host-muted while minimized → force the mic muted. The
+            // minimized mic button already refuses to unmute a
+            // host-muted member, but nothing ENFORCED it until now.
+            // The icon follows via the store (the bar syncs micMuted
+            // from room.muted).
+            const hostMuted = seat.hostMuted === true;
+            if (hostMuted !== lastHostMuted) {
+              lastHostMuted = hostMuted;
+              if (hostMuted) {
+                void setPersistedVoiceRoomMic(true).catch(() => {});
+                const r = getMinimizedRoom();
+                if (r) setMinimizedRoom({ ...r, muted: true });
+              }
             }
           },
         );
@@ -338,30 +366,39 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
    */
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // 1. Tear down LiveKit audio
-    destroyPersistedVoiceRoomEngine();
-    // 2. Firebase cleanup — remove the user from the room
-    // background: safe to swallow — teardown after navigation; server-side presence expires via onDisconnect
-    if (room.mySeatIdx >= 0) {
-      removeSeat(room.id, room.mySeatIdx).catch(() => {});
-      // 2026-10-12 audit fix (HIGH): seated users keep audience record —
-      // clean it on discard or it ghosts forever.
-      leaveAudience(room.id, room.myUid).catch(() => {});
-    } else {
-      leaveAudience(room.id, room.myUid).catch(() => {});
-    }
-    // 2026-10-16 (Sumon): explicit close — clear the persisted active room
-    // so a later cold start does NOT auto-return to a room the user exited.
-    clearPersistedActiveRoom().catch(() => {});
-    // 3. Clear store
-    setMinimizedRoom(null);
-    // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack, so the
-    // bar can end up floating OVER the exited room screen — X then hides the
-    // bar but strands the user staring at a dead room ("exit হয় না").
-    // In that stuck case, navigate home.
-    if (pathname === '/voice-room' && (params as any)?.roomId === room.id) {
-      router.replace('/home');
-    }
+    // 2026-11-07 (Area A): await the FULL teardown before clearing
+    // the store / presence. The old fire-and-forget destroy let the
+    // user open another room while this engine was still leaving, so
+    // both rooms played at once (the new screen saw no persisted
+    // engine to wait for). leave() is internally bounded, so this
+    // cannot hang; audio is silenced synchronously at its top.
+    void (async () => {
+      try {
+        await destroyPersistedVoiceRoomEngineAsync();
+      } catch { /* non-critical — RTDB cleanup below still runs */ }
+      // 2. Firebase cleanup — remove the user from the room
+      // background: safe to swallow — teardown after navigation; server-side presence expires via onDisconnect
+      if (room.mySeatIdx >= 0) {
+        removeSeat(room.id, room.mySeatIdx).catch(() => {});
+        // 2026-10-12 audit fix (HIGH): seated users keep audience record —
+        // clean it on discard or it ghosts forever.
+        leaveAudience(room.id, room.myUid).catch(() => {});
+      } else {
+        leaveAudience(room.id, room.myUid).catch(() => {});
+      }
+      // 2026-10-16 (Sumon): explicit close — clear the persisted active room
+      // so a later cold start does NOT auto-return to a room the user exited.
+      clearPersistedActiveRoom().catch(() => {});
+      // 3. Clear store
+      setMinimizedRoom(null);
+      // 2026-10-16 (Sumon): cold-start auto-return leaves no back stack, so the
+      // bar can end up floating OVER the exited room screen — X then hides the
+      // bar but strands the user staring at a dead room ("exit হয় না").
+      // In that stuck case, navigate home.
+      if (pathname === '/voice-room' && (params as any)?.roomId === room.id) {
+        router.replace('/home');
+      }
+    })();
   };
 
   // Mic indicator color reflects the LIVE muted state (toggleable while minimized)

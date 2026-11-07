@@ -19,7 +19,7 @@
  * Scene motion stays soft and mostly at the sky/bottom edges so text
  * sitting directly on the background keeps full contrast.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, Dimensions, Easing, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { SceneKind } from '../constants/theme';
@@ -454,7 +454,7 @@ const SCENES: Record<SceneKind, () => React.JSX.Element> = {
 
 /* ═══════════════════════ Main component ═══════════════════════ */
 
-export function AnimatedThemeBackground({ accentColor, scene }: Props) {
+function AnimatedThemeBackgroundInner({ accentColor, scene }: Props) {
   const breathe = useRef(new Animated.Value(0)).current;
 
   // 2026-11-01 (perf/heat): pause ALL background animation while the app is
@@ -567,3 +567,8 @@ export function AnimatedThemeBackground({ accentColor, scene }: Props) {
     </View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — props are two strings, so the background
+// (10 looping particles + glow + scene) no longer re-renders on every parent
+// render; it only re-renders when the theme actually changes. Loops unchanged.
+export const AnimatedThemeBackground = memo(AnimatedThemeBackgroundInner);

@@ -23,8 +23,9 @@
  */
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
-  Animated, AppState, Dimensions, Easing, Image, StyleSheet, Text, View,
+  Animated, AppState, Dimensions, Easing, StyleSheet, Text, View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { limitToLast, onChildAdded, query, ref } from 'firebase/database';
 import { useTranslation } from 'react-i18next';
 import { AnimatedGift } from './GiftAnimations';
@@ -90,6 +91,8 @@ export function GiftAvatar({
       <Image
         source={{ uri: photoURL }}
         style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#1f2430' }}
+        contentFit="cover"
+        cachePolicy="memory-disk"
       />
     );
   }
@@ -375,7 +378,7 @@ const GiftShowPlayer = memo(function GiftShowPlayer({ show, onDone }: { show: Qu
   );
 });
 
-export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAnimation(_props, fwdRef) {
+export const GiftFlyAnimation = memo(forwardRef<GiftFlyHandle, {}>(function GiftFlyAnimation(_props, fwdRef) {
   // IMO: fullscreen shows QUEUE — one at a time, never overlapping.
   const [queue, setQueue] = useState<QueuedShow[]>([]);
   const [active, setActive] = useState<QueuedShow | null>(null);
@@ -492,7 +495,7 @@ export const GiftFlyAnimation = forwardRef<GiftFlyHandle, {}>(function GiftFlyAn
       {active ? <GiftShowPlayer show={active} onDone={handleDone} /> : null}
     </View>
   );
-});
+}));
 
 /* ═══════════════════════════════════════════
    2) RECEIVER-SIDE banners (Firebase giftFeed)
@@ -618,7 +621,8 @@ function ReceiveBannerCard({
             <Image
               source={{ uri: entry.thumbnailUrl }}
               style={{ width: 40, height: 40, borderRadius: 8 }}
-              resizeMode="contain"
+              contentFit="contain"
+              cachePolicy="memory-disk"
               onError={() => setThumbFailed(true)}
             />
           ) : (
@@ -639,7 +643,7 @@ function ReceiveBannerCard({
   );
 }
 
-export function GiftReceiveBanners({ roomId }: { roomId: string }) {
+function GiftReceiveBannersInner({ roomId }: { roomId: string }) {
   const [current, setCurrent] = useState<ReceiveEntry | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
 
@@ -764,6 +768,10 @@ export function GiftReceiveBanners({ roomId }: { roomId: string }) {
     </View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — only prop is roomId, so the banners no
+// longer re-render on every parent render; their own giftFeed state still drives them.
+export const GiftReceiveBanners = memo(GiftReceiveBannersInner);
 
 /* ═══════════════════════════════════════════
    Styles

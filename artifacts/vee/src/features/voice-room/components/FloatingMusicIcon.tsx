@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { memo, useRef, useEffect, useState } from 'react';
 import { View, Animated, PanResponder, Dimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,7 +16,7 @@ const SIZE = 56;
 const MARGIN = 8;
 const POS_KEY = 'vee_music_icon_pos_v1';
 
-export function FloatingMusicIcon({
+function FloatingMusicIconInner({
   paused, onPress,
 }: {
   paused: boolean;
@@ -133,3 +133,7 @@ export function FloatingMusicIcon({
     </Animated.View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — paused is a bool and onPress is a stable
+// screen useCallback, so the icon no longer re-renders on every parent render.
+export const FloatingMusicIcon = memo(FloatingMusicIconInner);

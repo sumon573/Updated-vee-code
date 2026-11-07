@@ -86,7 +86,9 @@ const SIGNAL_ROOT = 'webrtc';
 // third-party dependency. Allocate verified from the VPS and from a BD
 // home network on 2026-10-22.
 const TURN_CREDENTIAL = 'R2CxcKae18wTjoIZG5Uf';
-const ICE_SERVERS = [
+/** Shared by LiveKit voice rooms (useLivekitVoiceRoom rtcConfig fallback) —
+ *  keep this the single source of truth for the self-hosted TURN. */
+export const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   {

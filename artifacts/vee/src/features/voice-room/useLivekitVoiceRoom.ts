@@ -36,6 +36,9 @@ import { startVoiceForegroundService, stopVoiceForegroundService } from '@/src/s
 import { NoiseGate, extractMediaSourceLevel } from '@/src/services/noiseGate';
 import { setVoiceRoomAudioActive } from '@/src/services/audioOwner';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
+/** Self-hosted TURN + STUN, shared with 1-to-1 calls (single source of truth
+ *  in webrtcCallService). Passed to LiveKit as rtcConfig ICE fallback. */
+import { ICE_SERVERS } from '@/src/features/audio-call/services/webrtcCallService';
 import { getMusicVolumeSync } from '@/src/features/voice-room/services/musicVolumeService';
 import { useTranslation } from 'react-i18next';
 import { getMicIntent } from '@/src/store/activeRoom';
@@ -114,6 +117,11 @@ export type LivekitRoomReturn = {
   stopUserStream: (userID: string) => void;
   /** Room-music bot volume, local to this phone (2026-10-25). */
   setMusicVolume: (volume: number) => void;
+  /** Seat-truth hearing predicate (2026-11-07, Area A): the set of
+   *  identities this phone may hear, from the live seats snapshot.
+   *  With autoSubscribe:false, a remote publication is audible only
+   *  while its identity is in this set. */
+  setRemoteAudioAllowed: (allowed: Set<string>) => void;
   /**
    * Re-run join() after a failure (token/connect error surfaced via `error`).
    * Tears the engine down first so a half-connected room can't block the
@@ -148,6 +156,73 @@ let _persistedRoom: PersistedRoom | null = null;
     engine on top of it. */
 let _activeMountedEngine: LivekitVoiceRoomEngine | null = null;
 let _activeMountedRoomId: string | null = null;
+
+// ─── Ghost-voice hardening (2026-11-07, Areas A + B audit — merged) ───────
+// (1) Zombie rooms (Area A): a Room whose disconnect() never settled (hung
+// native teardown) stays connected server-side and keeps forwarding audio,
+// but leave() has already dropped every reference to it — nothing can ever
+// silence it again. Such rooms are registered here so the next join/leave
+// re-attempts their disconnect (no timers: driven by user actions only).
+// (2) In-flight leaves (Areas A + B): performCleanup()/destroyPersisted()
+// kick leave() off fire-and-forget and null the registries synchronously,
+// so a new screen mounting 80 ms later sees NO stale engine and joins
+// while the old leave is still running — old-room audio under the new
+// room. The pending leave is tracked here so a new join waits for it.
+const zombieRooms = new Set<Room>();
+let _pendingLeave: Promise<void> | null = null;
+
+/** Track a fire-and-forget leave so a following join can await it. Returns
+ *  the same promise so awaited call sites can await the leave through it.
+ *  Only the latest leave is tracked; settling clears it only if it is
+ *  still the tracked one, so a newer leave is never cleared by an older
+ *  settle. */
+function trackPendingLeave(promise: Promise<void>): Promise<void> {
+  _pendingLeave = promise;
+  const clear = () => {
+    if (_pendingLeave === promise) _pendingLeave = null;
+  };
+  promise.then(clear, clear);
+  return promise;
+}
+
+/** Await an in-flight fire-and-forget leave started by another path
+ *  (unmount, minimized-bar close, switch-room tap). Resolves immediately
+ *  when no leave is outstanding. Never throws. New joins call this before
+ *  creating their engine so no join can ever overlap a teardown.
+ *  MERGE NOTE: Area A capped this wait at 5 s (withTimeout); Area B
+ *  awaited the raw promise. The raw await is kept: leave() itself is
+ *  already internally bounded (5 s queued teardown + 5 s direct retry +
+ *  2 s mic fallback + 3 s audio-session stop, ~15 s worst case,
+ *  typically <1 s), so the wait is effectively bounded — while a 5 s
+ *  cap would let a join proceed mid-disconnect, re-opening the native
+ *  connect/disconnect race (SIGSEGV) this tracking exists to close. */
+export async function awaitPendingVoiceRoomLeave(): Promise<void> {
+  const pending = _pendingLeave;
+  if (!pending) return;
+  try {
+    await pending;
+  } catch {
+    // non-critical — a failed leave still unblocks the next join
+  }
+}
+
+/** Best-effort re-attempt of every zombie disconnect. Fire-and-forget:
+ *  a settled room drops out of the set; a still-hung one stays for the
+ *  next join/leave. Never throws. */
+function drainZombieRooms(): void {
+  if (zombieRooms.size === 0) return;
+  const rooms = [...zombieRooms];
+  void (async () => {
+    for (const room of rooms) {
+      try {
+        const { done } = await withTimeout(room.disconnect(), 2000);
+        if (done) zombieRooms.delete(room);
+      } catch {
+        // stays a zombie — a later join/leave retries it
+      }
+    }
+  })();
+}
 
 // ─── Minimized-room watchdog (2026-10-25, boss: mic/connection must NEVER
 // drop until mute or exit; background must never stop talk or hear) ───────
@@ -357,9 +432,12 @@ export function destroyPersistedVoiceRoomEngine(): void {
   _isMinimized = false;
   stopPersistedWatchdog();
   releaseSessionServiceHold();
-  engine.leave().catch(() => {
+  // 2026-11-07 (Areas A + B): track the fire-and-forget leave so a room
+  // opened right after this one waits for it (bounded by leave() itself)
+  // instead of joining while the old disconnect is still running.
+  trackPendingLeave(engine.leave().catch(() => {
     // non-critical — teardown after navigation
-  });
+  }));
 }
 
 /**
@@ -378,7 +456,7 @@ export async function destroyPersistedVoiceRoomEngineAsync(): Promise<void> {
   stopPersistedWatchdog();
   releaseSessionServiceHold();
   try {
-    await engine.leave();
+    await trackPendingLeave(engine.leave());
   } catch {
     // non-critical — teardown must never throw to callers
   }
@@ -399,17 +477,23 @@ export function getActiveVoiceRoomId(): string | null {
  * auto-retry can never resurrect it (see the retryConnection guard).
  */
 export async function leaveActiveVoiceRoomEngineAsync(): Promise<void> {
+  // 2026-11-07 (Area A): a fire-and-forget leave kicked off by an
+  // unmount may still be running even though no engine is registered
+  // anymore — wait for it (bounded) before touching anything else.
+  await awaitPendingVoiceRoomLeave();
   if (_activeMountedEngine) {
     const engine = _activeMountedEngine;
     _activeMountedEngine = null;
     _activeMountedRoomId = null;
     try {
-      await engine.leave();
+      await trackPendingLeave(engine.leave());
     } catch {
       // non-critical — teardown must never throw to callers
     }
-    return;
   }
+  // 2026-11-07 (Area A): the old code RETURNED after the mounted
+  // engine, so a persisted (minimized) engine was never left when
+  // both existed — its audio kept playing under the new room.
   if (_persistedRoom) {
     await destroyPersistedVoiceRoomEngineAsync();
   }
@@ -739,6 +823,14 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
 
   /** Identities currently flagged as speaking (remote only). */
   private speakingIds = new Set<string>();
+  /**
+   * 2026-11-07 (Area D, low-network audio): true while the SERVER reports
+   * our own connection quality as Poor/Lost (RoomEvent.ConnectionQuality-
+   * Changed for the local participant). Freshly subscribed remote tracks
+   * read it so they start with the deeper jitter buffer immediately
+   * instead of playing choppy until the next quality event.
+   */
+  private localLinkPoor = false;
   private participants: VoiceParticipant[] = [];
   private events: VoiceEngineEvents = {};
 
@@ -914,7 +1006,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     if (!lk) return; // 2026-10-19 polish: guard instead of non-null assertion
     const { RoomEvent, ParticipantEvent, Track } = lk;
     room
-      .on(RoomEvent.ParticipantConnected, () => this.scheduleParticipantsRefresh())
+      .on(RoomEvent.ParticipantConnected, () => {
+        this.scheduleParticipantsRefresh();
+        // 2026-11-07 (Area A): a newcomer publishes before the next
+        // predicate pass — apply seat-truth subscriptions at once.
+        this.applyRemoteSubscriptions();
+      })
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
         this.speakingIds.delete(p.identity);
         this.scheduleParticipantsRefresh();
@@ -930,6 +1027,16 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
             this.applyTrackMute(this.muted).catch(() => {});
           }
         } catch { /* non-critical: mute apply is best-effort */ }
+        // 2026-11-07 (Area A): with autoSubscribe:false a remote
+        // publication plays for NOBODY until the seat-truth predicate
+        // explicitly subscribes it. A ghost publication (seatless,
+        // muted, host-muted) is never subscribed, so it is never heard
+        // even when the speaker's own device failed to mute.
+        try {
+          if (participant && !participant.isLocal) {
+            this.applyRemoteSubscriptions();
+          }
+        } catch { /* non-critical */ }
       })
       .on(RoomEvent.TrackUnpublished, () => this.scheduleParticipantsRefresh())
       .on(RoomEvent.TrackSubscribed, (_track, _pub, participant) => {
@@ -939,6 +1046,21 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         try {
           if ((participant as unknown as { identity?: string } | undefined)?.identity === 'vee-music') {
             this.setMusicVolume();
+          }
+        } catch { /* non-critical */ }
+        // 2026-11-07 (Area D, low-network audio): a track subscribed while
+        // its link is already Poor/Lost starts with the deeper jitter
+        // buffer instead of playing choppy until the next quality event.
+        try {
+          if (_track?.kind === Track.Kind.Audio) {
+            const q = (participant as RemoteParticipant | undefined)?.connectionQuality;
+            if (
+              this.localLinkPoor ||
+              q === lk.ConnectionQuality.Poor ||
+              q === lk.ConnectionQuality.Lost
+            ) {
+              this.setRemotePlayoutDelay(participant as RemoteParticipant, 0.2);
+            }
           }
         } catch { /* non-critical */ }
       })
@@ -958,7 +1080,36 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       .on(RoomEvent.Reconnected, () => {
         this.connection = 'connected';
         this.error = null;
+        // 2026-11-07 (Area A): a reconnect re-issues subscriptions —
+        // re-apply seat truth so a ghost swept mid-glitch is not
+        // resubscribed by the SDK's reconnect path.
+        this.applyRemoteSubscriptions();
         this.emitLocal();
+      })
+      // 2026-11-07 (Area D, low-network audio): ADAPTIVE jitter buffer —
+      // the app previously never listened to connection quality at all, so
+      // a degrading link changed nothing until the connection died. Now:
+      // Poor/Lost deepens the playout delay on the affected inbound audio
+      // (200 ms, absorbs jitter instead of dropping late packets), and
+      // Good/Excellent resets it to 0 so good-network latency is untouched.
+      // Local-participant quality reflects OUR link → all remote tracks;
+      // a remote participant's quality reflects THEIR uplink → only their
+      // tracks. No re-publish, no re-subscribe, no mute/drop anywhere.
+      .on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        try {
+          const poor =
+            quality === lk.ConnectionQuality.Poor ||
+            quality === lk.ConnectionQuality.Lost;
+          if (!participant) return;
+          if (participant.isLocal) {
+            this.localLinkPoor = poor;
+            this.setRemotePlayoutDelay(null, poor ? 0.2 : 0);
+          } else {
+            this.setRemotePlayoutDelay(participant as RemoteParticipant, poor ? 0.2 : 0);
+          }
+        } catch {
+          // non-critical — quality adaptation must never break the room
+        }
       })
       .on(RoomEvent.Disconnected, () => {
         this.connection = this.leaveInitiated ? 'ended' : 'failed';
@@ -1021,6 +1172,45 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     }
   }
 
+  /**
+   * 2026-11-07 (Area D, low-network audio): adaptive jitter buffer for
+   * inbound voice. On a jittery slow link packets arrive late and the
+   * default (small, adaptive) jitter buffer drops them → choppy, gappy
+   * speech ("hard to hear"). A 200 ms minimum playout delay lets the
+   * receiver absorb the jitter; it costs ~200 ms latency, so it is
+   * applied ONLY while a link is Poor/Lost and reset to 0 on recovery —
+   * good-network latency is untouched. participant=null targets every
+   * subscribed remote track (our own link degraded); otherwise only that
+   * participant's tracks (their uplink degraded). Best-effort throughout:
+   * the SDK no-ops with a warning where the receiver does not support
+   * playoutDelayHint, and a missing/ended track is simply skipped.
+   */
+  private setRemotePlayoutDelay(participant: RemoteParticipant | null, delaySeconds: number): void {
+    const room = this.room;
+    if (!room) return;
+    try {
+      const targets = participant
+        ? [participant]
+        : Array.from(room.remoteParticipants.values());
+      for (const p of targets) {
+        p.audioTrackPublications.forEach((pub) => {
+          try {
+            const track = (pub as RemoteTrackPublication).track as unknown as {
+              setPlayoutDelay?: (seconds: number) => void;
+            } | null;
+            if (track && typeof track.setPlayoutDelay === 'function') {
+              track.setPlayoutDelay(delaySeconds);
+            }
+          } catch {
+            // per-track best-effort — one bad track must not block the rest
+          }
+        });
+      }
+    } catch {
+      // non-critical — playout delay is a quality aid, never a join blocker
+    }
+  }
+
   private setRemoteSubscribed(userId: string, subscribed: boolean): void {
     const room = this.room;
     if (!room) return;
@@ -1034,6 +1224,80 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       this.refreshParticipants();
     } catch {
       // non-critical
+    }
+  }
+
+  /**
+   * 2026-11-07 (Area A) — seat-truth subscription predicate.
+   * The screen sets the set of identities this phone may HEAR:
+   * seated users who are neither self-muted nor host-muted, plus the
+   * room-music bot. Null = no predicate set yet (fail-open: subscribe
+   * everyone, today's behaviour — the screen sets the predicate on
+   * mount, so the window is normally zero). A remote publication is
+   * audible ONLY while its identity is in this set: a muted, kicked,
+   * swept or never-seated speaker is unsubscribed here even when
+   * their own device failed to mute — the listener no longer depends
+   * on the speaker's phone cooperating. Manual muteRemoteUser /
+   * playUserStream calls still act directly; the next predicate pass
+   * re-applies seat truth on top of them.
+   */
+  private remoteAudioAllowed: Set<string> | null = null;
+
+  /** Set by VoiceRoomScreen from the live seats snapshot. */
+  setRemoteAudioAllowed(allowed: Set<string>): void {
+    this.remoteAudioAllowed = new Set(allowed);
+    this.applyRemoteSubscriptions();
+  }
+
+  /** (Re-)subscribe exactly the predicate's identities, unsubscribe
+   *  everyone else. Idempotent and synchronous; safe on every track /
+   *  participant / reconnect event. One participant refresh at the end
+   *  (not one per user — the per-user path thrashed the seat grid). */
+  private applyRemoteSubscriptions(): void {
+    const room = this.room;
+    if (!room) return;
+    const allowed = this.remoteAudioAllowed;
+    try {
+      room.remoteParticipants.forEach((p: RemoteParticipant) => {
+        const ok = allowed === null || allowed.has(p.identity);
+        p.audioTrackPublications.forEach((pub) => {
+          try {
+            (pub as RemoteTrackPublication).setSubscribed(ok);
+          } catch {
+            // non-critical — next pass retries
+          }
+        });
+      });
+      this.refreshParticipants();
+    } catch {
+      // non-critical
+    }
+  }
+
+  /**
+   * 2026-11-07 (Area A) — synchronous silence on leave intent.
+   * Stops ALL inbound playback AND local capture RIGHT NOW, before
+   * any await. leave()'s teardown used to wait behind the native op
+   * chain (up to 5 s) before its stopAllRemoteAudio ran, so a user
+   * who left a room kept hearing it — and kept being heard — until
+   * the queued disconnect finally ran. Called at the top of leave()
+   * (terminal and repair leaves alike — a repair re-creates the room
+   * and its tracks from scratch, so nothing here can mute a repair).
+   */
+  silenceNow(): void {
+    const room = this.room;
+    if (room) {
+      this.stopAllRemoteAudio(room);
+      try {
+        room.localParticipant.audioTrackPublications.forEach((pub) => {
+          const track = pub.track as unknown as {
+            mediaStreamTrack?: { enabled: boolean };
+          } | null;
+          if (track?.mediaStreamTrack) track.mediaStreamTrack.enabled = false;
+        });
+      } catch {
+        // non-critical — teardown below unpublishes regardless
+      }
     }
   }
 
@@ -1123,6 +1387,11 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     // leak a Room.
     if (this.room || this.joining) return; // idempotent
     this.joining = true;
+    // 2026-11-07 (Area A): never join over a hung old room or an
+    // in-flight leave — drain zombies and wait (bounded) for a
+    // fire-and-forget leave before touching the audio session.
+    drainZombieRooms();
+    await awaitPendingVoiceRoomLeave();
     // 2026-10-19 stability fix — mutual exclusion: never join a voice room
     // while a 1-to-1 call is active. Two native audio pipelines on one mic =
     // native WebRTC contention (hard crash). The minimized-call case is the
@@ -1226,9 +1495,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // pause unneeded layers — measurably less CPU, bandwidth and heat on
       // long room stays. Explicit capture defaults pin hardware AEC/NS/AGC
       // (echo/noise suppression) instead of relying on platform defaults.
+      // NOTE (2026-11-07, Area D low-network audit): adaptiveStream and
+      // dynacast are VIDEO-only in livekit-client — they degrade video
+      // layers, of which an audio-only room has none. They do NOTHING for
+      // audio on a slow link; the audio levers below are bitrate (publish
+      // preset), RED, reconnect patience, TURN fallback and playout delay.
       const room = new lk.Room({
         adaptiveStream: true,
         dynacast: true,
+        // 2026-11-07 (Area D, low-network audio): patient in-place
+        // reconnect. The SDK default policy gives up after 10 attempts
+        // (~45 s: 0/300/1200/2700/4800/7000x5) and the app then pays for a
+        // full leave + fresh join (new token, audio-session restart, fresh
+        // entry for everyone). 15 attempts (~80 s, same 7 s cap) keeps
+        // more glitches healing in place with the mic track intact — no
+        // reconnect storm: attempts are sequential, SDK-driven, 7 s apart
+        // at most. The hook's unbounded auto-retry stays the backstop
+        // after a genuine give-up.
+        reconnectPolicy: new lk.DefaultReconnectPolicy([
+          0, 300, 1200, 2700, 4800,
+          7000, 7000, 7000, 7000, 7000,
+          7000, 7000, 7000, 7000, 7000,
+        ]),
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -1238,16 +1526,23 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
           channelCount: 1,
           sampleRate: 48000,
         },
-        // Premium Voice v2: pin publish quality instead of SDK defaults —
-        // musicHighQuality = 96 kbps full-band Opus (voice sounds full,
-        // never thin), RED redundancy pinned so network loss and
-        // future SDK default changes can't silently degrade quality.
+        // Premium Voice v2: pin publish quality instead of SDK defaults.
+        // 2026-11-07 (Area D, low-network audio): music (48 kbps) replaces
+        // musicHighQuality (96 kbps) — ROOT CAUSE of "hard to hear on a
+        // slightly slow network". A voice-only room needs wideband Opus,
+        // not 96 kbps: at 96k + RED every speaker costs ~2x the wire
+        // bitrate of 48k, so N simultaneous speakers saturate a marginal
+        // link and speech turns choppy/lossy. 48 kbps mono Opus is still
+        // full-band and is the SDK default — normal-quality audio is
+        // unchanged in character, only the ceiling drops.
         // 2026-10-23 (Sumon order): DTX is OFF — with DTX on, the encoder
         // stops sending during silence and the first syllable after a
         // pause gets clipped/delayed ("কথা ধরছে না"). Instant, uncut
         // speech pickup outranks the tiny silence-bandwidth saving.
+        // RED stays ON: at 48 kbps its redundancy is affordable and it
+        // still repairs packet loss on a jittery link.
         publishDefaults: {
-          audioPreset: lk.AudioPresets.musicHighQuality,
+          audioPreset: lk.AudioPresets.music,
           dtx: false,
           red: true,
           forceStereo: false,
@@ -1261,10 +1556,39 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // 2026-10-24 (boss: mic never opens — Alert proved voiceJoined false):
       // room.connect() had NO timeout — a hanging websocket handshake left
       // the join stuck in 'connecting' forever: no error, no auto-retry
-      // (retry runs only on 'failed'), mic button dead. Bound it at 20s
-      // (same as the token timeout): a timeout throws into the catch below
+      // (retry runs only on 'failed'), mic button dead. Bound it at 30s
+      // (2026-11-07, Area D: was 20s — a working-but-slow handshake on a
+      // marginal link needs more than 20s; a truly dead network still fails
+      // into auto-retry, just 10s later): a timeout throws into the catch below
       // → 'failed' → auto-retry engages, and the mic button's Retry unsticks.
-      const connectPromise = room.connect(data.url, data.token);
+      // 2026-11-07 (Area A): autoSubscribe:false — the server forwards
+      // NO remote audio until this client explicitly subscribes a
+      // publication. Today's default (true) subscribed every participant
+      // the moment they published, whatever the seats/mute state said:
+      // that is the ghost — a muted, kicked or seatless speaker was
+      // heard by everyone. Subscriptions now follow the seat-truth
+      // predicate (applyRemoteSubscriptions), applied below on connect
+      // and on every track/participant/reconnect event.
+      // 2026-11-07 (Area D, low-network audio): connect options, previously
+      // all SDK defaults. peerConnectionTimeout/websocketTimeout were 15s —
+      // ICE gathering + DTLS on a slow link can exceed that, killing a
+      // join that would have succeeded; maxRetries was 1. 30s timeouts let
+      // a slow join finish instead of failing into a token-refetch loop.
+      // rtcConfig carries the self-hosted TURN as ICE fallback: rooms
+      // previously passed NO iceServers at all, so when direct UDP to the
+      // SFU was blocked/lossy there was no relay to fall back on (the
+      // 1-to-1 calls already use this same TURN). NOTE: client
+      // rtcConfig.iceServers REPLACES the server-advertised ICE, so STUN
+      // is included here too — never TURN-only. No iceTransportPolicy:
+      // relay stays a fallback, never forced (forcing relay would add
+      // latency + VPS load to every call).
+      const connectPromise = room.connect(data.url, data.token, {
+        autoSubscribe: false,
+        maxRetries: 2,
+        peerConnectionTimeout: 30000,
+        websocketTimeout: 30000,
+        rtcConfig: { iceServers: ICE_SERVERS },
+      });
       // A timed-out attempt may still settle later; never surface it as an
       // unhandled rejection.
       connectPromise.catch(() => {});
@@ -1274,8 +1598,8 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
           connectPromise,
           new Promise<never>((_, reject) => {
             connectTimer = setTimeout(
-              () => reject(new Error('Voice server connection timed out (20s)')),
-              20000,
+              () => reject(new Error('Voice server connection timed out (30s)')),
+              30000,
             );
           }),
         ]);
@@ -1285,11 +1609,17 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       if (this.joinAborted(myGeneration)) {
         // leave() ran during connect() — tear down this Room NOW so it can
         // never leak as a ghost participant with a stuck audio session.
+        const abortedRoom = this.room;
+        let abortedDone = true;
         try {
-          await this.teardownRoom();
+          abortedDone = await this.teardownRoom();
         } catch {
-          // non-critical
+          abortedDone = false;
         }
+        // 2026-11-07 (Area A): a hung teardown here used to drop the
+        // only reference to a still-connected Room — register it so a
+        // later join/leave retries its disconnect.
+        if (!abortedDone && abortedRoom) zombieRooms.add(abortedRoom);
         try {
           await rnSdk.AudioSession.stopAudioSession();
         } catch {
@@ -1304,6 +1634,9 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // 2026-10-19 stability fix: this engine now owns the native audio
       // pipeline — block 1-to-1 calls until leave()/disconnect.
       setVoiceRoomAudioActive(true);
+      // 2026-11-07 (Area A): subscribe whoever seat truth currently
+      // allows (null predicate = everyone, until the screen sets it).
+      this.applyRemoteSubscriptions();
       // Voice is up — the join survived every native stage; clear the breadcrumb
       // so a later unrelated crash is not misattributed to voice-room entry.
       markVoiceStage('room_connected', roomId);
@@ -1342,6 +1675,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     this.joining = false;
     this.speakingIds.clear();
     this.participants = [];
+    // 2026-11-07 (Area A): silence FIRST, synchronously — before any
+    // await. The teardown below can wait up to 5 s behind the native op
+    // chain, and until it runs the old room is still audible (and the
+    // local mic still live). A leave tap must stop audio at once, not
+    // when the disconnect finally settles.
+    this.silenceNow();
     // FIX #41 (2026-10-30, boss: "Voice room active" notification lingers
     // after exit): drop the foreground-service ref SYNCHRONOUSLY, before
     // any await. The stop used to live in the finally below, so a hung
@@ -1392,6 +1731,11 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
         // (hung disconnect), so silence inbound audio explicitly first —
         // synchronous, best-effort, idempotent with teardownRoom's stop.
         this.stopAllRemoteAudio(roomBefore);
+        // 2026-11-07 (Area A): register the zombie — the Room object is
+        // unreachable after this leave() returns, so without this the
+        // still-connected room would keep forwarding audio forever and
+        // no later code could disconnect it. The next join/leave drains it.
+        zombieRooms.add(roomBefore);
         // Disconnect alone cannot be trusted to have unpublished the mic,
         // so unpublish explicitly (best-effort, 2s) before anything else
         // runs. (Pre-2026-10-27 this fallback was skipped in exactly the
@@ -1529,9 +1873,43 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     await this.publish();
   }
 
+  /**
+   * 2026-11-07 (Area A) — instant capture silence, synchronous.
+   * Flips the raw MediaStreamTrack(s) off/on WITHOUT touching the
+   * native op chain, so a mute tap silences the mic at once even
+   * while a publish/disconnect is wedged ahead of it in the queue.
+   * The SDK-level mute signal still goes through applyTrackMute
+   * (serialized below) so remotes see isMuted; this flip is the
+   * audible backstop, idempotent with it.
+   */
+  private syncMuteToMediaTrack(muted: boolean): void {
+    const room = this.room;
+    if (!room) return;
+    try {
+      room.localParticipant.audioTrackPublications.forEach((pub) => {
+        const track = pub.track as unknown as {
+          mediaStreamTrack?: { enabled: boolean };
+        } | null;
+        if (track?.mediaStreamTrack) track.mediaStreamTrack.enabled = !muted;
+      });
+    } catch {
+      // non-critical — the serialized apply below still runs
+    }
+  }
+
   async setMuted(muted: boolean): Promise<boolean> {
     this.muted = muted;
-    await this.applyTrackMute(muted);
+    // 2026-11-07 (Area A): silence capture synchronously first — a
+    // mute must never wait behind a wedged native op.
+    this.syncMuteToMediaTrack(muted);
+    // 2026-11-07 (Area A): serialize the SDK-level mute behind
+    // publish()/unpublish()/leave(). Two overlapping setMuted calls
+    // used to race their applyTrackMute loops and could land in the
+    // wrong final state (mute tap lost to a concurrent unmute, or a
+    // mute issued mid-publish never applied to the fresh track).
+    await this.enqueueNativeOp(() => this.applyTrackMute(muted)).catch(() => {
+      // non-critical — mute intent is recorded in state regardless
+    });
     if (muted) {
       // 2026-10-15 (Sumon): ROOT CAUSE — muting mid-speech never fires
       // IsSpeakingChanged(false) (muted track yields no audio frames for the
@@ -1587,15 +1965,20 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
   async setSubscriptionMode(mode: VoiceSubscriptionMode, topN: number = 8): Promise<void> {
     const room = this.room;
     if (!room) return;
+    // 2026-11-07 (Area A): subscription modes still obey the
+    // seat-truth predicate — 'all speakers' means all ALLOWED
+    // speakers, never a muted/seatless ghost.
+    const allowed = (id: string): boolean =>
+      this.remoteAudioAllowed === null || this.remoteAudioAllowed.has(id);
     try {
       if (mode === 'active-speakers-only') {
         const top = new Set(room.activeSpeakers.slice(0, topN).map((p) => p.identity));
         room.remoteParticipants.forEach((p: RemoteParticipant) => {
-          this.setRemoteSubscribed(p.identity, top.has(p.identity));
+          this.setRemoteSubscribed(p.identity, top.has(p.identity) && allowed(p.identity));
         });
       } else {
         room.remoteParticipants.forEach((p: RemoteParticipant) => {
-          this.setRemoteSubscribed(p.identity, true);
+          this.setRemoteSubscribed(p.identity, allowed(p.identity));
         });
       }
     } catch {
@@ -1630,6 +2013,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   const identityRef = useRef({ roomID: '', userID: '', userName: '' });
   /** Latest attachHandlers closure — re-attached after a retry's leave(). */
   const attachRef = useRef<(engine: LivekitVoiceRoomEngine) => void>(() => {});
+  /** Latest seat-truth hearing predicate (2026-11-07, Area A) — the
+   *  screen sets it from the seats snapshot, possibly before this
+   *  hook's engine exists; it is (re-)applied to the engine at
+   *  creation/restore so the predicate is never lost to ordering. */
+  const remoteAudioAllowedRef = useRef<Set<string> | null>(null);
   // 2026-10-23 (boss: error banner + manual Retry is not professional):
   // silent auto-recovery bookkeeping — see onLocalStateChange below.
   const autoRetryAttemptsRef = useRef(0);
@@ -1806,16 +2194,33 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       if (isCleaningUpRef.current) return;
       isCleaningUpRef.current = true;
       mountedRef.current = false;
-      _activeMountedEngine = null;
-      _activeMountedRoomId = null;
 
       const engine = engineRef.current;
       engineRef.current = null;
 
       if (engine) {
-        engine.leave().catch(() => {
+        // 2026-11-07 (Area B ghost-audio fix, ROOT CAUSE 1): unregister
+        // the global mounted engine ONLY when this hook instance owns
+        // it. The first init run passes roomID '' (voiceReady is false
+        // until the PIN gate passes) and creates NO engine — yet its
+        // cleanup used to null the global unconditionally, orphaning a
+        // still-mounted stacked room's engine: no teardown ever ran for
+        // it, the new room's stale-mounted teardown branch was skipped
+        // (global already null), and the new room's join effect had
+        // already removed the old room's RTDB presence — audible with
+        // no ID in the room, in BOTH rooms at once. An engine-less
+        // cleanup now touches no global state at all.
+        if (_activeMountedEngine === engine) {
+          _activeMountedEngine = null;
+          _activeMountedRoomId = null;
+        }
+        // 2026-11-07 (Area B): the unmount leave is fire-and-forget,
+        // but track it so the next room's join awaits the teardown
+        // instead of connecting over it (invite-accept 80ms push,
+        // fast room-switch taps).
+        trackPendingLeave(engine.leave().catch(() => {
           // non-critical — teardown after unmount
-        });
+        }));
       }
       // True session end (not a minimize persist — that path returns
       // before performCleanup): the session hold is released here.
@@ -1899,6 +2304,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       _activeMountedRoomId = roomID;
       // Re-attach handlers with fresh closures on this component instance
       attachHandlers(persisted.engine);
+      // 2026-11-07 (Area A): re-apply the current seat-truth predicate
+      // (the seats snapshot may have moved while minimized).
+      if (remoteAudioAllowedRef.current) {
+        persisted.engine.setRemoteAudioAllowed(remoteAudioAllowedRef.current);
+      }
       const s = persisted.engine.getLocalState();
       // FIX (2026-10-10): Use the persisted muted state (user's intent at minimize
       // time), not the engine's possibly-stale s.muted. This prevents the mic
@@ -1938,6 +2348,16 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // real roomID arrives and the restore branch above reuses it.
         // (Same for userID 'anonymous': AuthContext starts with null.)
         if (!roomID || userID === 'anonymous') return;
+
+        // 2026-11-07 (Area B ghost-audio fix): a previous room's leave
+        // may still be tearing down (unmount fire-and-forget, Home
+        // switch tap, invite accept) — the global pointer is already
+        // null, so the stale-mounted branch below cannot see it. Wait
+        // for the tracked teardown before creating a new Room / audio
+        // session, or both rooms play at once and the disconnect can
+        // race the connect natively. Bounded inside engine.leave().
+        await awaitPendingVoiceRoomLeave();
+        if (!mountedRef.current) return;
 
         // 2026-10-27 (boss: two rooms must never play at once): a still-
         // MOUNTED engine for a DIFFERENT room (a room screen stacked below
@@ -2022,6 +2442,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         // Session hold starts here (join intent) and lasts until true
         // exit — background leave→join recoveries can never drop the
         // foreground service to zero mid-session (see hold comment).
+        // 2026-11-07 (Area A): wait (bounded) for any fire-and-forget
+        // leave kicked off by the previous screen's unmount before
+        // creating the new room — joining over it plays both rooms.
+        await awaitPendingVoiceRoomLeave();
         acquireSessionServiceHold();
         const engine = new LivekitVoiceRoomEngine();
         // 2026-10-26 (mic intent seed): a fresh engine defaults to
@@ -2040,6 +2464,12 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         engineRef.current = engine;
         _activeMountedEngine = engine;
         _activeMountedRoomId = roomID;
+        // 2026-11-07 (Area A): apply the seat-truth predicate BEFORE
+        // join, so the connect-time subscription pass uses it (the
+        // screen may have set it before this engine existed).
+        if (remoteAudioAllowedRef.current) {
+          engine.setRemoteAudioAllowed(remoteAudioAllowedRef.current);
+        }
         await engine.join(roomID, { userId: userID, userName });
         // engine.join() never throws — failures surface via onLocalStateChange
       })().catch(() => {
@@ -2208,6 +2638,13 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
         if (autoRetryTimerRef.current) return;
         const engine = engineRef.current;
         if (!engine) return;
+        // 2026-11-07 (Area B ghost-audio fix): a stacked-under screen's
+        // engine is NOT the active room — never repair/rejoin it. Without
+        // this, a backgrounded app whose old stacked engine died would
+        // leave + fresh-join the OLD room in the background, resurrecting
+        // its audio while the user is in a new room (retryConnection has
+        // the same guard; this watchdog was the one path missing it).
+        if (_activeMountedEngine && _activeMountedEngine !== engine) return;
         let conn: string = '';
         try {
           conn = engine.getLocalState().connection;
@@ -2330,6 +2767,11 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     engineRef.current?.setMusicVolume(volume);
   }, []);
 
+  const setRemoteAudioAllowed = useCallback((allowed: Set<string>) => {
+    remoteAudioAllowedRef.current = new Set(allowed);
+    engineRef.current?.setRemoteAudioAllowed(allowed);
+  }, []);
+
   return {
     joined,
     connection,
@@ -2355,5 +2797,6 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     playUserStream,
     stopUserStream,
     setMusicVolume,
+    setRemoteAudioAllowed,
   };
 }

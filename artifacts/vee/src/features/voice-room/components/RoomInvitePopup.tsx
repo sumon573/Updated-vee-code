@@ -8,7 +8,7 @@ import { ref, onValue, remove, get } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
 import { removeSeat, leaveAudience } from '../services/firebaseRoomService';
-import { destroyPersistedVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
+import { destroyPersistedVoiceRoomEngineAsync, leaveActiveVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
 
 type RoomInvite = {
   roomId: string;
@@ -71,6 +71,19 @@ export default function RoomInvitePopup() {
       // new room after the same 80ms settle the notification-tap path in
       // _layout uses. The new room's own one-active-room guard cleans any
       // remainder as backstop.
+      // 2026-11-07 (Area B ghost-audio fix): the old order removed RTDB
+      // presence FIRST and only awaited the PERSISTED engine destroy —
+      // a no-op for the MOUNTED engine actually playing. The mounted
+      // engine's teardown was left to the dismiss/unmount fire-and-
+      // forget, so the new room joined (80ms later) over a still-live
+      // old disconnect: audible in both rooms, invisible in the old
+      // one. Await the LIVE engine leave FIRST (bounded, never throws),
+      // then remove presence. (Area A added the same await after the
+      // RTDB removal; merged here to the LiveKit-first position — one
+      // call only.)
+      try {
+        await leaveActiveVoiceRoomEngineAsync();
+      } catch { /* noop */ }
       try {
         const seatsSnap = await get(ref(database, `rooms/${currentRoomId}/seats`)).catch(() => null);
         let mySeatIdx = -1;

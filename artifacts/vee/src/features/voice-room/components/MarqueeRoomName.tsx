@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Text, View } from 'react-native';
 
 /**
@@ -30,7 +30,7 @@ type Props = {
   fontWeight: '700' | '900';
 };
 
-export function MarqueeRoomName({ text, color, fontWeight }: Props) {
+function MarqueeRoomNameInner({ text, color, fontWeight }: Props) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
@@ -108,3 +108,7 @@ export function MarqueeRoomName({ text, color, fontWeight }: Props) {
     </View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — all props are primitives, so the header
+// name no longer re-renders on every parent render.
+export const MarqueeRoomName = memo(MarqueeRoomNameInner);

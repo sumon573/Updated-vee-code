@@ -44,7 +44,7 @@
  * every 2 min. Until then this pill stays hidden — never faked.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
@@ -104,7 +104,7 @@ function ChairIcon({ size = 18 }: { size?: number }) {
   );
 }
 
-export default function GrabTopPill({ roomId }: { roomId: string }) {
+function GrabTopPillInner({ roomId }: { roomId: string }) {
   const { t } = useTranslation();
   const [node, setNode] = useState<GrabTopNode | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -173,3 +173,7 @@ export default function GrabTopPill({ roomId }: { roomId: string }) {
     </View>
   );
 }
+
+// 2026-11-07 (Area C perf/heat): memo — only prop is roomId, so the pill no
+// longer re-renders on every parent render; its own 1s ticker still ticks.
+export default memo(GrabTopPillInner);

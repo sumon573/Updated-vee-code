@@ -40,7 +40,7 @@ import {
   verifyRoomPin,
   setPinVerifiedForSession,
   type RoomInfo } from '../services/firebaseRoomService';
-import { prefetchLivekitToken, destroyPersistedVoiceRoomEngine } from '../useLivekitVoiceRoom';
+import { prefetchLivekitToken, destroyPersistedVoiceRoomEngineAsync } from '../useLivekitVoiceRoom';
 import {
   getVoiceBreadcrumb,
   clearVoiceBreadcrumb } from '../utils/voiceCrashBreadcrumb';
@@ -496,17 +496,25 @@ export default function VoiceRoomHome({
     setPendingSwitchRoom(null);
     setPendingSwitchFrom(null);
     if (!target || !from) return;
-    destroyPersistedVoiceRoomEngine();
-    if (from.mySeatIdx >= 0) {
-      removeSeat(from.id, from.mySeatIdx).catch(() => {});
-      // Seated users keep an audience record — clean it or it ghosts.
-      leaveAudience(from.id, from.myUid).catch(() => {});
-    } else {
-      leaveAudience(from.id, from.myUid).catch(() => {});
-    }
-    clearPersistedActiveRoom().catch(() => {});
-    setMinimizedRoom(null);
-    void proceedToRoom(target);
+    // 2026-11-07 (Area A): await the FULL teardown before entering
+    // the new room. The old fire-and-forget destroy + immediate
+    // proceedToRoom joined the target while this engine was still
+    // leaving, so both rooms played at once.
+    void (async () => {
+      try {
+        await destroyPersistedVoiceRoomEngineAsync();
+      } catch { /* non-critical — presence cleanup below still runs */ }
+      if (from.mySeatIdx >= 0) {
+        removeSeat(from.id, from.mySeatIdx).catch(() => {});
+        // Seated users keep an audience record — clean it or it ghosts.
+        leaveAudience(from.id, from.myUid).catch(() => {});
+      } else {
+        leaveAudience(from.id, from.myUid).catch(() => {});
+      }
+      clearPersistedActiveRoom().catch(() => {});
+      setMinimizedRoom(null);
+      void proceedToRoom(target);
+    })();
   };
   const cancelSwitchRoom = () => {
     setPendingSwitchRoom(null);
