@@ -557,22 +557,67 @@ export default function VoiceRoomHome({
   // 2026-10-20 (boss): pull-to-refresh, exactly like the chat screen — a pull
   // re-subscribes both room feeds (fresh Firebase snapshots) and the spinner
   // stops on the first fresh snapshot (8s safety timeout mirrors chat).
+  // 2026-11-07 (Voice Room Home fix — stuck refresh icon): the native
+  // Android SwipeRefreshLayout spinner cannot handle a true→false flip
+  // inside a few milliseconds. Firebase onValue delivers the cached
+  // roomList / userRooms snapshot immediately on re-subscribe, so
+  // finishRefresh ran ~ms after handleRefresh and the spinner's show
+  // animation never completed, leaving it stuck visible over the
+  // carousel. Enforce a minimum visible duration (MIN_REFRESH_MS) so
+  // the spinner always animates in fully before it is hidden. Same
+  // one-shot setTimeout mechanism already used for the 8s safety —
+  // no new timer/interval/poll.
+  const MIN_REFRESH_MS = 700;
+  const MAX_REFRESH_MS = 8000;
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const refreshingRef = useRef(false);
-  const finishRefresh = () => {
-    if (refreshingRef.current) {
-      refreshingRef.current = false;
-      setRefreshing(false);
+  const refreshStartRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshHideScheduledRef = useRef(false);
+  const clearRefreshTimer = () => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
     }
   };
-  const handleRefresh = () => {
+  const finishRefresh = useCallback(() => {
+    if (!refreshingRef.current) return;
+    const elapsed = Date.now() - refreshStartRef.current;
+    const remaining = MIN_REFRESH_MS - elapsed;
+    if (remaining > 0) {
+      // Too soon — the native spinner has not had time to animate in.
+      // Re-schedule the hide for when the minimum has elapsed (this
+      // supersedes the 8s safety timer, which is cancelled here).
+      if (!refreshHideScheduledRef.current) {
+        refreshHideScheduledRef.current = true;
+        clearRefreshTimer();
+        refreshTimerRef.current = setTimeout(() => {
+          refreshHideScheduledRef.current = false;
+          finishRefresh();
+        }, remaining);
+      }
+      return;
+    }
+    clearRefreshTimer();
+    refreshHideScheduledRef.current = false;
+    refreshingRef.current = false;
+    setRefreshing(false);
+  }, []);
+  const handleRefresh = useCallback(() => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
+    refreshStartRef.current = Date.now();
+    refreshHideScheduledRef.current = false;
     setRefreshing(true);
     setRefreshTick((n) => n + 1);
-    setTimeout(finishRefresh, 8000);
-  };
+    clearRefreshTimer();
+    refreshTimerRef.current = setTimeout(finishRefresh, MAX_REFRESH_MS);
+  }, [finishRefresh]);
+  // Clear any pending refresh timeout on unmount (no stale setState).
+  useEffect(() => () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+  }, []);
 
   // Subscribe to my rooms: created rooms first, then rooms I've joined
   // (most-recently-joined first) — persists even after minimizing or
@@ -965,7 +1010,8 @@ export default function VoiceRoomHome({
         nestedScrollEnabled={true}
         initialNumToRender={12}
         maxToRenderPerBatch={8}
-        windowSize={21}
+        updateCellsBatchingPeriod={50}
+        windowSize={10}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
