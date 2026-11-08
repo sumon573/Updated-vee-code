@@ -48,6 +48,7 @@ import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, nobleThemeFor, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
+import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
 import {
   subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
   type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
@@ -739,6 +740,9 @@ export default function ProfileScreen({
   // ONE permanent level system, not a local estimate.
   const [levelXp, setLevelXp] = useState(0);
   const [nobleState, setNobleState] = useState<NobleState | null>(null);
+  // 2026-11-09 (boss): SVIP state for the auto nameplate — the current SVIP
+  // tier's plate shows first on the profile while membership is active.
+  const [svipState, setSvipState] = useState<SvipState | null>(null);
   // PIN gate for private rooms (enforced from EVERYWHERE)
   const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
   // (Gift History section removed 2026-10-10 per Sumon: gifts live ONLY inside
@@ -1005,6 +1009,13 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) { setNobleState(null); return; }
     return subscribeNoble(displayUid, setNobleState);
+  }, [displayUid]);
+
+  // ── 2026-11-09 (boss): SVIP nameplate auto-set — the profile ALWAYS shows
+  // the current SVIP tier's plate first while membership is active.
+  useEffect(() => {
+    if (!displayUid) { setSvipState(null); return; }
+    return subscribeSvip(displayUid, setSvipState);
   }, [displayUid]);
 
   // ── Private room PIN enforcement (from EVERYWHERE) ──
@@ -1349,7 +1360,15 @@ export default function ProfileScreen({
   const nobleRankKey = nobleState && NOBLE_RANKS[nobleState.rankIndex] ? NOBLE_RANKS[nobleState.rankIndex].key : null;
   const rankPlateGrant = nobleRankKey ? grantedNameplates.find((n) => n.id === 'noble-plate-' + nobleRankKey) || null : null;
   const rankPlateCatalog = nobleRankKey ? getActiveCatalog().find((r) => r.rankKey === nobleRankKey)?.nameplate : undefined;
-  const displayNameplate = rankPlateGrant || (nobleRankKey && rankPlateCatalog ? { id: 'noble-plate-' + nobleRankKey, icon: (rankPlateCatalog as any).designUrl || (rankPlateCatalog as any).fallbackIcon || '' } as GrantedNameplate : null) || activeNameplate;
+  /* 2026-11-09 (boss): SVIP + noble nameplates auto-set and are non-removable.
+     SVIP wins over noble (this fixes SVIP5's plate losing to the noble rule).
+     An expired SVIP plate must never show via the stale stored pointer, so the
+     pointer is ignored when it names an svip plate while SVIP is inactive.
+     Display is derived from live state — no stored write path — so an expired
+     membership can never leave a stale auto plate behind. */
+  const svipPlateGrant = isSvipActive(svipState) ? grantedNameplates.find((n) => n.id === 'svip' + svipState!.tier + '-nameplate') || null : null;
+  const effectiveActiveNameplate = activeNameplate && activeNameplate.id.startsWith('svip') && activeNameplate.id.endsWith('-nameplate') && !isSvipActive(svipState) ? null : activeNameplate;
+  const displayNameplate = svipPlateGrant || rankPlateGrant || (nobleRankKey && rankPlateCatalog ? { id: 'noble-plate-' + nobleRankKey, icon: (rankPlateCatalog as any).designUrl || (rankPlateCatalog as any).fallbackIcon || '' } as GrantedNameplate : null) || effectiveActiveNameplate;
   /* Mist color for Viscount+ nameplates */
   const nameplateMist = (() => {
     if (!displayNameplate) return null;

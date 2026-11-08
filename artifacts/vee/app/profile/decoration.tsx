@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
+import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
 import { View, Text, ScrollView, Pressable, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -253,6 +254,9 @@ export default function DecorationScreen() {
   const [entryEffects, setEntryEffects] = useState<GrantedEntryEffect[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 2026-11-09 (boss): SVIP state for the auto nameplate — the current SVIP
+  // tier's plate is always USING and cannot be removed.
+  const [svipState, setSvipState] = useState<SvipState | null>(null);
   const [tab, setTab] = useState<TabKey>('frames'); // 2026-10-31 (boss): Nobel tab removed; Frames is first
 
   useEffect(() => {
@@ -284,6 +288,13 @@ export default function DecorationScreen() {
     };
   }, [targetUid]);
 
+  // 2026-11-09 (boss): SVIP state for the auto nameplate — the current SVIP
+  // tier's plate is always USING and cannot be removed.
+  useEffect(() => {
+    if (!targetUid) { setSvipState(null); return; }
+    return subscribeSvip(targetUid, setSvipState);
+  }, [targetUid]);
+
   const handleEquip = async (field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect', id: string) => {
     if (!isMe || !user?.uid) return;
     try {
@@ -311,16 +322,28 @@ export default function DecorationScreen() {
     return typeof ri === 'number' && NOBLE_RANKS[ri] ? NOBLE_RANKS[ri].key : null;
   })();
 
+  // 2026-11-09 (boss): nameplate auto-set — SVIP tier's plate first (when the
+  // grant exists), else the current noble rank's plate. The auto plate is
+  // ALWAYS in use and has no Remove option; other plates keep Use/Remove.
+  const autoPlateId = (() => {
+    if (isSvipActive(svipState)) {
+      const svipId = 'svip' + svipState!.tier + '-nameplate';
+      if (nameplates.some((n) => n.id === svipId)) return svipId;
+    }
+    return nobleRankKey ? 'noble-plate-' + nobleRankKey : null;
+  })();
+
   const renderItemRow = (
     item: { id: string; name: string; icon: string; obtainedAt: number; validity: 'permanent' | number; source: string; stars?: number },
     isActive: boolean,
     field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect',
     sourceLabel: string,
   ) => {
-    // 2026-10-31 (boss): current rank's noble plate counts as active even if
-    // the pointer is stale (heal syncs it); its Remove button is hidden below.
-    const isRankPlate = field === 'activeNameplate' && nobleRankKey && item.id === 'noble-plate-' + nobleRankKey;
-    const showActive = isActive || isRankPlate;
+    // 2026-11-09 (boss): the auto plate (SVIP tier / current noble rank)
+    // counts as active even if the pointer is stale (heal syncs it); its
+    // Remove button is hidden below.
+    const isAutoPlate = field === 'activeNameplate' && autoPlateId && item.id === autoPlateId;
+    const showActive = isActive || isAutoPlate;
     return (
     <View
       key={item.id}
@@ -362,7 +385,7 @@ export default function DecorationScreen() {
             <View style={{ backgroundColor: C.successBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: C.success }}>✓ USING</Text>
             </View>
-            {!isRankPlate && (
+            {!isAutoPlate && (
             <Pressable
               style={{ backgroundColor: C.errorBg, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
               onPress={() => handleRemove(field)}
