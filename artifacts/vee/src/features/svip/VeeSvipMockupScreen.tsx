@@ -7,10 +7,11 @@
  * All art is given art: the mockup's own hero crop (svip_design.hero),
  * the shipped dragon badges, and the live nameplate. Icons are the
  * draft's delivered SVG set, in gold. Nothing here is newly designed.
- * Static only — no entry-effect preview, no animation, Join stays
- * on the waitlist, honestly labeled.
+ * Static only — no entry-effect preview, no animation.
+ * Join (2026-11-08, Full SVIP) buys the selected tier with wallet
+ * diamonds; the host owns the purchase call and the waitlist fallback.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -48,7 +49,8 @@ export interface VeeSvipMockupProps {
   isWaitlisted: boolean;
   isJoining: boolean;
   onBack: () => void;
-  onJoinWaitlist: () => void;
+  onJoin: () => void;
+  onTierChange?: (tier: number) => void;
 }
 
 const GOLD = '#E8B84B';
@@ -110,9 +112,10 @@ function PriceText({ n, size = 15 }: { n: number; size?: number }) {
 
 export default function VeeSvipMockupScreen({
   tiers, privileges, assets, activeTier, validUntilLabel,
-  isWaitlisted, isJoining, onBack, onJoinWaitlist,
+  isWaitlisted, isJoining, onBack, onJoin, onTierChange,
 }: VeeSvipMockupProps) {
   const [selectedTier, setSelectedTier] = useState(1);
+  useEffect(() => { onTierChange?.(selectedTier); }, [selectedTier]);
   const [view, setView] = useState<'main' | 'details' | 'preview'>('main');
   const [detailsTab, setDetailsTab] = useState<'privileges' | 'facts'>('privileges');
   const selected = useMemo(() => tiers.find((t) => t.tier === selectedTier) ?? tiers[0], [tiers, selectedTier]);
@@ -161,12 +164,11 @@ export default function VeeSvipMockupScreen({
           {validUntilLabel ? <Text style={styles.activeSub}>Valid until {validUntilLabel}</Text> : null}
         </View>
       ) : (
-        <Pressable onPress={onJoinWaitlist} disabled={isJoining || isWaitlisted} accessibilityRole="button"
+        <Pressable onPress={onJoin} disabled={isJoining || isWaitlisted} accessibilityRole="button"
           style={[styles.joinBtn, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
-          <Text style={styles.joinText}>{isJoining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+          <Text style={styles.joinText}>{isJoining ? 'Processing…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
         </Pressable>
       )}
-      {!viewingOwnTier && !isWaitlisted ? <InfoNote text="Currently waitlist only" /> : null}
     </View>
   );
 
@@ -269,13 +271,12 @@ export default function VeeSvipMockupScreen({
                 {viewingOwnTier ? (
                   <View style={[styles.joinBtn, styles.joinBtnFlex, styles.joinBtnDim]}><Text style={styles.joinText}>{selected.name} ACTIVE</Text></View>
                 ) : (
-                  <Pressable onPress={onJoinWaitlist} disabled={isJoining || isWaitlisted} accessibilityRole="button"
+                  <Pressable onPress={onJoin} disabled={isJoining || isWaitlisted} accessibilityRole="button"
                     style={[styles.joinBtn, styles.joinBtnFlex, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
-                    <Text style={styles.joinText}>{isJoining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+                    <Text style={styles.joinText}>{isJoining ? 'Processing…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
                   </Pressable>
                 )}
               </View>
-              {!viewingOwnTier && !isWaitlisted ? <InfoNote text="Currently waitlist only" /> : null}
             </ScrollView>
           </>
         ) : (

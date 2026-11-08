@@ -17,6 +17,7 @@ import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { subscribeLevel, getLevelFromXP } from '@/src/services/levelService';
 import { useIsKing } from '@/src/hooks/useNobleRank';
+import SvipBadge from '@/src/features/svip/SvipBadge';
 import { KingSparkle, KING_GOLD } from '@/src/features/voice-room/components/KingShimmerName';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
@@ -1551,6 +1552,10 @@ export default function ProfileScreen({
             <View style={{ paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             <Text style={{ fontSize: 18, fontWeight: '500', color: isKing ? KING_GOLD : C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
+            {/* 2026-11-08 (Full SVIP): SVIP badge privilege (T1) — renders
+                nothing when the user has no active SVIP, so non-members
+                see zero change. */}
+            {displayUid ? <SvipBadge uid={displayUid} size={12} /> : null}
             {(profile?.officialBadge || isOfficial) ? (
               <Image
                 source={badgeIconUrl ? { uri: badgeIconUrl } : require('@/assets/images/vee-badge.png')}
