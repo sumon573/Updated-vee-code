@@ -129,6 +129,46 @@ export async function getCachedFrameUri(frameId: string): Promise<string | null>
   }
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * 2026-11-09 (boss: seat frame appears LATE when I sit — must be
+ * INSTANT): frame-art prefetch. AnimatedFrame only starts its
+ * download when the seat renders, so a freshly-changed frame URL
+ * (new media id = new cache hash) costs a full 2–3 MB download
+ * AFTER the user sits — the seat shows the bundled fallback until
+ * it lands. Warming the on-disk cache BEFORE the seat renders
+ * makes the frame appear instantly: getCachedFrameUri finds the
+ * file already on disk and returns immediately. Fire-and-forget —
+ * errors are swallowed; the seat path still loads on demand.
+ * ───────────────────────────────────────────────────────────── */
+
+// In-flight prefetch guard — one download per frameId at a time.
+const prefetchInflight = new Map<string, Promise<void>>();
+
+/** Download a frame's art into the on-disk cache (no-op if cached). */
+export function prefetchFrameArt(frameId: string): Promise<void> {
+  if (!frameId) return Promise.resolve();
+  const existing = prefetchInflight.get(frameId);
+  if (existing) return existing;
+  const p = (async () => {
+    try { await getCachedFrameUri(frameId); } catch { /* ignore — on-demand load is the fallback */ }
+  })();
+  prefetchInflight.set(frameId, p);
+  void p.then(() => { if (prefetchInflight.get(frameId) === p) prefetchInflight.delete(frameId); });
+  return p;
+}
+
+/** Read a user's equipped frame once and prefetch its art. */
+export async function prefetchActiveFrameForUser(uid: string): Promise<void> {
+  try {
+    if (!uid) return;
+    const snap = await get(ref(database, `users/${uid}/activeFrame`));
+    const frameId = snap.exists() ? snap.val() : null;
+    if (typeof frameId === 'string' && frameId.trim().length > 0) {
+      await prefetchFrameArt(frameId.trim());
+    }
+  } catch { /* ignore — on-demand seat load is the fallback */ }
+}
+
 /** Delete cached frame file(s) — forces re-download next time. */
 export async function clearFrameFileCache(frameId?: string): Promise<void> {
   try {

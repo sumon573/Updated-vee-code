@@ -23,8 +23,8 @@ export function MsgText({ text, accent }: { text: string; accent: string }) {
 /* ─────────────────────────── Premium Speaking Ripple ─────────────────────────── */
 // 2026-10-15 (Sumon): premium ripple — ONLY while actually speaking (voice detected).
 // - DP stays 100% STABLE: no zoom, no pulse, no movement — the ripple never touches the DP.
-// - Circular waves spread on ALL sides, starting OUTSIDE the frame (frame is 1.15x;
-//   waves start at 1.28x and expand outward) — never inside the profile/frame.
+// - Circular waves spread on ALL sides, starting OUTSIDE the frame (seat frame is
+//   1.44x; waves start at 1.52x and expand outward) — never inside the profile/frame.
 // - Tiny mist dots + tiny flowers in various colors float outward and fade.
 // - Pure RN Animated, native driver (transform/opacity only), pointerEvents none.
 const MIST_COLORS = ['#FF6B9D', '#A78BFA', '#60A5FA', '#FBBF24', '#34D399', '#FB923C', '#F472B6', '#93C5FD'];
@@ -170,8 +170,8 @@ export function SpeakingRipple({ size, visible, nobleRankIndex, activeRipple, ri
 
   if (fadeHidden) return null;
 
-  const area = size * 2.7;    // ripple playground — covers the max expansion
-  const waveD = size * 1.28;  // wave ring diameter — starts OUTSIDE the 1.15x frame
+  const area = size * 3.0;    // ripple playground — covers the max expansion
+  const waveD = size * 1.52;  // wave ring diameter — starts OUTSIDE the 1.44x seat frame
   const edgeR = size * 0.62; // particles spawn just outside the DP edge
 
   const renderWave = (anim: Animated.Value, key: string) => {

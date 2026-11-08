@@ -16,6 +16,7 @@ import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom, pe
 import { getRoomEntryCache, saveRoomEntryCache } from '@/src/store/roomEntryCache';
 import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
+import { prefetchFrameArt, prefetchActiveFrameForUser } from '@/src/services/frameService';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
 import { subscribeWalletBalance } from '@/src/features/wallet/walletService';
@@ -322,6 +323,14 @@ export default function VoiceRoomScreen() {
     }
   }, [(myProfile as any)?.activeFrame]);
 
+  // 2026-11-09 (boss: seat frame late): whenever MY equipped frame changes
+  // (even mid-room), warm the new art immediately so the seat shows it
+  // instantly instead of downloading after I sit.
+  useEffect(() => {
+    const frame = (myProfile as any)?.activeFrame;
+    if (typeof frame === 'string' && frame) prefetchFrameArt(frame).catch(() => {});
+  }, [(myProfile as any)?.activeFrame]);
+
   // 2026-10-22 (boss, heat/lag): the 30s PERIODIC frame-sync interval that
   // used to live here is REMOVED. It rewrote seats/{idx}.activeFrame every
   // 30s even when nothing changed — and every write re-fires the seats
@@ -356,6 +365,15 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     if (!roomId || !myUid || myUid === 'anonymous') return;
     prefetchLivekitToken(roomId, voiceUserName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, myUid]);
+
+  // 2026-11-09 (boss: seat frame appears LATE when I sit — must be instant):
+  // warm MY OWN equipped frame's art the moment the room screen mounts, so
+  // the file is already on disk when I take a seat.
+  useEffect(() => {
+    if (!roomId || !myUid || myUid === 'anonymous') return;
+    prefetchActiveFrameForUser(myUid).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, myUid]);
 
@@ -486,6 +504,10 @@ export default function VoiceRoomScreen() {
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
 
+  // 2026-11-09 (boss: seat frame late): uids whose frame art is already
+  // warmed this screen mount — one RTDB read + download per uid, max.
+  const warmedFrameUidsRef = useRef<Set<string>>(new Set());
+
   // MF-2 (2026-11-08): seat-truth hearing — the engine
   // subscribes ONLY the identities in this allow-set, so a muted,
   // host-muted, kicked or never-seated speaker is never heard even
@@ -501,6 +523,17 @@ export default function VoiceRoomScreen() {
     }
     setRemoteAudioAllowed(allowed);
   }, [seats, voiceJoined, setRemoteAudioAllowed]);
+
+  // 2026-11-09 (boss: seat frame late): warm seated members' frame art as
+  // seats fill, so their frames render instantly instead of downloading
+  // after the seat renders. Once per uid per mount (see warmed set above).
+  useEffect(() => {
+    for (const s of seats) {
+      if (!s?.id || warmedFrameUidsRef.current.has(s.id)) continue;
+      warmedFrameUidsRef.current.add(s.id);
+      prefetchActiveFrameForUser(s.id).catch(() => {});
+    }
+  }, [seats]);
   // 2026-10-22 (boss): admin registry (rooms/{id}/admins) — the SOURCE OF
   // TRUTH for role, exactly like the security rules. See myRole below.
   const [roomAdminUids, setRoomAdminUids] = useState<Set<string>>(new Set<string>());

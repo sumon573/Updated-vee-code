@@ -79,8 +79,8 @@ export default function AnimatedFrame({ size, frameId, compact, scale }: Props) 
   // 2026-10-17 (Sumon): PERMANENT — All frames use official size standard.
   // Server controls WHICH frame (honors_catalog), size is ALWAYS official.
   // 1.15x = tight snug fit, no white gap at edges, never covers the DP.
-  // 2026-10-29 (Fix #36): the voice-room SEAT path passes scale=1.25
-  // (48dp DP -> 60dp frame, +4.8dp diameter) because the boss found the seat
+  // 2026-10-29 (Fix #36): the voice-room SEAT path passes scale=1.44
+  // (48dp DP -> 69.12dp frame, King size) because the boss found the seat
   // frame too small. Any other caller omits scale and gets exactly 1.15x.
   const frameSize = size * (scale ?? OFFICIAL_FRAME_SCALE);
 

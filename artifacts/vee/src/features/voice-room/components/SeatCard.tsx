@@ -255,7 +255,10 @@ export const SeatCard = memo(function SeatCard({
                     seat frames render at 1.25x DP (60dp on the 48dp DP)
                     instead of the official 1.15x (55.2dp). DP size, grid,
                     name row, badges, and the frame artwork itself are all
-                    unchanged; non-seat frames keep 1.15x via the default. */}
+                    unchanged; non-seat frames keep 1.15x via the default.
+                    2026-11-09 (boss: STILL too small — make it King size):
+                    raised to 1.44x DP (69.12dp on the 48dp DP), exactly the
+                    King seat scale, so SVIP frames sit as big as King's. */}
                 {liveFrameId ? (
                   <Avatar
                     initials={member.initials}
@@ -264,7 +267,7 @@ export const SeatCard = memo(function SeatCard({
                     speaking={member.speaking}
                     accent={accent}
                     photoURL={member.photoURL}
-                    frameScale={1.25}
+                    frameScale={1.44}
                     frameType={liveFrameId || undefined}
                     nobleRankIndex={member.nobleRankIndex}
                     activeRipple={liveRipple?.id} rippleColors={liveRipple?.colors}
@@ -322,17 +325,20 @@ export const SeatCard = memo(function SeatCard({
             {/* 2026-10-19 (IMO port Phase 1): mic badge — white when live, red
                 when muted (IMO). 2026-10-20 (boss): moved bottom-RIGHT →
                 bottom-LEFT, because the bottom-right badge covered the
-                Official frame's official logo. */}
+                Official frame's official logo. 2026-11-09 (boss: MUCH smaller,
+                left side, slightly towards the TOP — it covered the "SVIP"
+                plate): shrunk 18dp → 12dp and moved to the UPPER-LEFT
+                (top: 6, left: -2), far from the frame's bottom plate. */}
             <View style={{
-              position: 'absolute', bottom: 0, left: 0,
-              width: 18, height: 18, borderRadius: 9,
+              position: 'absolute', top: 6, left: -2,
+              width: 12, height: 12, borderRadius: 6,
               backgroundColor: showMuted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
-              borderWidth: 1.5, borderColor: C.bg,
+              borderWidth: 1, borderColor: C.bg,
               shadowColor: showMuted ? C.red : '#000',
               shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 },
             }}>
-              <Feather name={showMuted ? 'mic-off' : 'mic'} size={9} color={showMuted ? '#fff' : '#333'} />
+              <Feather name={showMuted ? 'mic-off' : 'mic'} size={6} color={showMuted ? '#fff' : '#333'} />
             </View>
             {micDecorUrl && (
               <Image
