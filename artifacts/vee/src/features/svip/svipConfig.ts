@@ -224,3 +224,63 @@ export async function loadServerSvipConfig(): Promise<void> {
     // Fallback to hardcoded — non-critical
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+ * 2026-11-08 (PRODUCTION SVIP transfer, F8 overlay): LIVE
+ * subscription to `svip_config`, taken from the test overlay's
+ * svipConfig.ts (subscribeSvipConfig). RECONCILIATION: the overlay
+ * file was NOT copied over this one — it drops the hardcoded
+ * SVIP_TIERS/SVIP_PRIVILEGES fallbacks (fail-closed []), which the
+ * shipping mockup/royal hosts, SvipBadge, svipService and AuthContext
+ * still rely on via getSvipTiers()/getSvipPrivileges(). This file
+ * keeps its hardcoded fallback API intact; only the subscription
+ * helper is added, reusing this file's sanitizers (the transferred
+ * SvipScreen reads tier number / name / priceDiamonds only, for
+ * which both sanitizers agree). The subscription callback returns
+ * the live server arrays directly (empty when absent), so the
+ * transferred screen still fails closed with no server data.
+ * ───────────────────────────────────────────────────────────── */
+
+/**
+ * Live subscription to `svip_config` (F8): the SVIP screen renders
+ * from this, so a server edit reflects without restart. Sanitised;
+ * an empty/malformed node yields empty arrays (fail closed).
+ */
+export function subscribeSvipConfig(
+  cb: (v: { tiers: SvipTier[]; privileges: SvipPrivilegeDef[] }) => void,
+  onError?: (e: unknown) => void,
+): () => void {
+  let detach: (() => void) | null = null;
+  let cancelled = false;
+  (async () => {
+    try {
+      const { ref, onValue } = await import('firebase/database');
+      const { database } = await import('@/src/config/firebase');
+      if (cancelled) return;
+      detach = onValue(
+        ref(database, 'svip_config'),
+        (snap) => {
+          if (cancelled) return;
+          const data = snap.val();
+          if (!data || typeof data !== 'object') {
+            cb({ tiers: [], privileges: [] });
+            return;
+          }
+          const tiers = toArray(data.tiers).map(sanitizeTier).filter(Boolean) as SvipTier[];
+          const privs = toArray(data.privileges).map(sanitizePrivilege).filter(Boolean) as SvipPrivilegeDef[];
+          cb({
+            tiers: tiers.sort((a, b) => a.tier - b.tier),
+            privileges: privs,
+          });
+        },
+        (e) => onError?.(e),
+      );
+    } catch (e) {
+      if (!cancelled) onError?.(e);
+    }
+  })();
+  return () => {
+    cancelled = true;
+    try { detach?.(); } catch { /* non-critical */ }
+  };
+}

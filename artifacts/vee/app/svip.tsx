@@ -1,5 +1,5 @@
-import SvipMockupHost from '@/src/features/svip/SvipMockupHost';
+import SvipScreen from '@/src/features/svip/SvipScreen';
 
 export default function SvipRoute() {
-  return <SvipMockupHost />;
+  return <SvipScreen />;
 }
