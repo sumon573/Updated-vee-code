@@ -328,9 +328,14 @@ export const SeatCard = memo(function SeatCard({
                 Official frame's official logo. 2026-11-09 (boss: MUCH smaller,
                 left side, slightly towards the TOP — it covered the "SVIP"
                 plate): shrunk 18dp → 12dp and moved to the UPPER-LEFT
-                (top: 6, left: -2), far from the frame's bottom plate. */}
+                (top: 6, left: -2), far from the frame's bottom plate.
+                2026-11-09 01:26 (boss, testing OTA 01a1bc9a: "Mute এর আইকন টা
+                আরেকটু নিচে হবে"): nudged a little LOWER, top: 6 → 10, so it
+                sits ON the frame's top-left edge instead of floating just
+                above it. Size (12dp) and left (-2) unchanged; still far
+                from the "SVIP" plate and the frame art's head. */}
             <View style={{
-              position: 'absolute', top: 6, left: -2,
+              position: 'absolute', top: 10, left: -2,
               width: 12, height: 12, borderRadius: 6,
               backgroundColor: showMuted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
