@@ -1518,8 +1518,14 @@ export default function ProfileScreen({
                       // up-shift leaves the ring 10.64px ABOVE the DP center. Offset +2.4
                       // centers the ring on the DP (10.64px DOWN). Profile only; seats untouched.
                       const isNobleFrame = activeFrameId.startsWith('noble-frame-');
-                      const frameSize = isNobleFrame ? 110 : 92;
-                      const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (activeFrameId === 'noble-frame-king' ? -3.5 : (isNobleFrame ? -8.25 : 0)));
+                      const frameSize = (isNobleFrame || activeFrameId.startsWith('svip')) ? 110 : 92;
+                      // 2026-11-08 (boss): SVIP5 dragon frame ONLY — hole centre measured at
+                      // 47.66% of art height (transparent-hole bounding box y 91..275 on the
+                      // 384x384 icon, stable across all 16 frames), so offset 0 leaves the
+                      // hole 2.6px ABOVE the DP center. Offset +3 centers the hole on the DP
+                      // (46 - (-9 + 110*0.4766) = +2.6, rounded to +3). Size already 110px
+                      // (Noble size, OTA 16). Profile only; seats untouched.
+                      const nobleOffsetY = activeFrameId === 'svip5-frame' ? 3 : (activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (activeFrameId === 'noble-frame-king' ? -3.5 : (isNobleFrame ? -8.25 : 0))));
                       // King frame ring center y-frac 0.5315 on the 962x1096 source -> offset -3.5 centers it on DP 46 (55 - 110*0.5315).
                       return (
                         <Image

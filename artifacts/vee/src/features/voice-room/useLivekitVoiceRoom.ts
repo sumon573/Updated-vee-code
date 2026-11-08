@@ -1231,9 +1231,12 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
    * 2026-11-07 (Area A) — seat-truth subscription predicate.
    * The screen sets the set of identities this phone may HEAR:
    * seated users who are neither self-muted nor host-muted, plus the
-   * room-music bot. Null = no predicate set yet (fail-open: subscribe
-   * everyone, today's behaviour — the screen sets the predicate on
-   * mount, so the window is normally zero). A remote publication is
+   * room-music bot. MF-2 (2026-11-08): the unset default is FAIL-CLOSED
+   * (empty set — hear nobody) instead of fail-open null: the screen's
+   * mount effect sets the predicate before any subscription pass can
+   * run (the hook carries it in a ref and applies it before join), so
+   * the empty default only ever silences the gap before seat truth
+   * lands — never a muted/seatless ghost. A remote publication is
    * audible ONLY while its identity is in this set: a muted, kicked,
    * swept or never-seated speaker is unsubscribed here even when
    * their own device failed to mute — the listener no longer depends
@@ -1241,7 +1244,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
    * playUserStream calls still act directly; the next predicate pass
    * re-applies seat truth on top of them.
    */
-  private remoteAudioAllowed: Set<string> | null = null;
+  private remoteAudioAllowed: Set<string> = new Set<string>();
 
   /** Set by VoiceRoomScreen from the live seats snapshot. */
   setRemoteAudioAllowed(allowed: Set<string>): void {
@@ -1259,7 +1262,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     const allowed = this.remoteAudioAllowed;
     try {
       room.remoteParticipants.forEach((p: RemoteParticipant) => {
-        const ok = allowed === null || allowed.has(p.identity);
+        const ok = allowed.has(p.identity);
         p.audioTrackPublications.forEach((pub) => {
           try {
             (pub as RemoteTrackPublication).setSubscribed(ok);
@@ -1635,7 +1638,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // pipeline — block 1-to-1 calls until leave()/disconnect.
       setVoiceRoomAudioActive(true);
       // 2026-11-07 (Area A): subscribe whoever seat truth currently
-      // allows (null predicate = everyone, until the screen sets it).
+      // allows (empty until the screen sets it — MF-2 fail-closed).
       this.applyRemoteSubscriptions();
       // Voice is up — the join survived every native stage; clear the breadcrumb
       // so a later unrelated crash is not misattributed to voice-room entry.
@@ -1969,7 +1972,7 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     // seat-truth predicate — 'all speakers' means all ALLOWED
     // speakers, never a muted/seatless ghost.
     const allowed = (id: string): boolean =>
-      this.remoteAudioAllowed === null || this.remoteAudioAllowed.has(id);
+      this.remoteAudioAllowed.has(id);
     try {
       if (mode === 'active-speakers-only') {
         const top = new Set(room.activeSpeakers.slice(0, topN).map((p) => p.identity));

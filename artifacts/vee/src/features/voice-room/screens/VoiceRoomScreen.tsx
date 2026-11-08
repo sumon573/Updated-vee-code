@@ -462,6 +462,7 @@ export default function VoiceRoomScreen() {
     playUserStream,
     stopUserStream,
     setMusicVolume,
+    setRemoteAudioAllowed,
     wasRestored } = useLivekitVoiceRoom({
     roomID: voiceReady ? roomId : '',
     userID: voiceBan ? 'anonymous' : myUid,
@@ -484,6 +485,22 @@ export default function VoiceRoomScreen() {
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
+
+  // MF-2 (2026-11-08): seat-truth hearing — the engine
+  // subscribes ONLY the identities in this allow-set, so a muted,
+  // host-muted, kicked or never-seated speaker is never heard even
+  // when their own device failed to mute (the SHAKIB'S HOUSE ghost).
+  // Runs on mount (seats start empty = music-bot only, fail-closed),
+  // on every seats change, and once when voice joins; the hook keeps
+  // the latest set in a ref and re-applies it before join / on engine
+  // restore, so the connect-time pass already uses it.
+  useEffect(() => {
+    const allowed = new Set<string>(['vee-music']);
+    for (const s of seats) {
+      if (s && !s.muted && s.hostMuted !== true) allowed.add(s.id);
+    }
+    setRemoteAudioAllowed(allowed);
+  }, [seats, voiceJoined, setRemoteAudioAllowed]);
   // 2026-10-22 (boss): admin registry (rooms/{id}/admins) — the SOURCE OF
   // TRUTH for role, exactly like the security rules. See myRole below.
   const [roomAdminUids, setRoomAdminUids] = useState<Set<string>>(new Set<string>());
