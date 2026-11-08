@@ -164,9 +164,9 @@ export default function VeeSvipMockupScreen({
           {validUntilLabel ? <Text style={styles.activeSub}>Valid until {validUntilLabel}</Text> : null}
         </View>
       ) : (
-        <Pressable onPress={onJoin} disabled={isJoining || isWaitlisted} accessibilityRole="button"
-          style={[styles.joinBtn, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
-          <Text style={styles.joinText}>{isJoining ? 'Processing…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+        <Pressable onPress={onJoin} disabled={isJoining} accessibilityRole="button"
+          style={[styles.joinBtn, isJoining && styles.joinBtnDim]}>
+          <Text style={styles.joinText}>{isJoining ? 'Processing…' : 'Join Now'}</Text>
         </Pressable>
       )}
     </View>
@@ -271,9 +271,9 @@ export default function VeeSvipMockupScreen({
                 {viewingOwnTier ? (
                   <View style={[styles.joinBtn, styles.joinBtnFlex, styles.joinBtnDim]}><Text style={styles.joinText}>{selected.name} ACTIVE</Text></View>
                 ) : (
-                  <Pressable onPress={onJoin} disabled={isJoining || isWaitlisted} accessibilityRole="button"
-                    style={[styles.joinBtn, styles.joinBtnFlex, (isJoining || isWaitlisted) && styles.joinBtnDim]}>
-                    <Text style={styles.joinText}>{isJoining ? 'Processing…' : isWaitlisted ? 'You are on the waitlist' : 'Join Now'}</Text>
+                  <Pressable onPress={onJoin} disabled={isJoining} accessibilityRole="button"
+                    style={[styles.joinBtn, styles.joinBtnFlex, isJoining && styles.joinBtnDim]}>
+                    <Text style={styles.joinText}>{isJoining ? 'Processing…' : 'Join Now'}</Text>
                   </Pressable>
                 )}
               </View>

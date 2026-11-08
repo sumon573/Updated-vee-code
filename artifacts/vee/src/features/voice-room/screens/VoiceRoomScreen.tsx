@@ -4252,10 +4252,13 @@ export default function VoiceRoomScreen() {
       <AnimatedThemeBackground accentColor={accentColor} scene={themeScene} />
       <SafeAreaView edges={['top']}>
         {}
-        {/* Glass P1d: the room header is one glass `nav` bar (Candidate A,
-            full width so the trio X keeps its exact edge). The three
-            header variants + pills row render inside it, unchanged. */}
-        <GlassView variant="nav" resolved={glassResolved}>
+        {/* 2026-11-08 (boss): glass `nav` card REMOVED from the room
+            header — its 0.68-0.83 white fill rendered as a big white box
+            banner on every room theme (light-green rooms included),
+            hiding the room's own themed background. The header (room
+            name, Members, rank pills) sits directly on the themed
+            background again, as before the 2026-11-07 glass ship.
+            Header content itself is unchanged. */}
         <View style={{ paddingHorizontal: 14, paddingTop: Platform.OS === 'web' ? 68 : 6, paddingBottom: 2 }}>
           {showJoinBanner ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -4541,7 +4544,6 @@ export default function VoiceRoomScreen() {
             )}
           </View>
         </View>
-        </GlassView>
       </SafeAreaView>
 
       {}
