@@ -87,7 +87,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 
 import MistNameplate from '@/src/components/MistNameplate';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
-import { NobleStarPill } from '@/src/components/NobleStarPill';
+import { NobleStarPill, grantStars } from '@/src/components/NobleStarPill';
 
 /** Lighten a hex color - second stop of the pill gradient (same helper as profile's PremiumPill). */
 function lightenHex(hex: string, amt: number): string {
@@ -312,7 +312,7 @@ export default function DecorationScreen() {
   })();
 
   const renderItemRow = (
-    item: { id: string; name: string; icon: string; obtainedAt: number; validity: 'permanent' | number; source: string },
+    item: { id: string; name: string; icon: string; obtainedAt: number; validity: 'permanent' | number; source: string; stars?: number },
     isActive: boolean,
     field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect',
     sourceLabel: string,
@@ -345,7 +345,7 @@ export default function DecorationScreen() {
               <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>NOBEL</Text>
             </View>
           )}
-          <NobleStarPill grantId={item.id} />
+          <NobleStarPill grantId={item.id} stars={item.stars} />
         </View>
         <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
           Obtained {formatObtainedDate(item.obtainedAt)} · {sourceLabel}
@@ -397,7 +397,16 @@ export default function DecorationScreen() {
       entryfx: { items: entryEffects, field: 'activeEntryEffect' as const, active: (profile as any)?.activeEntryEffect, label: 'Nobel' },
     }[tab];
 
-    if (data.items.length === 0) {
+    // 2026-11-09 (boss): nameplates list by stars — most stars FIRST, then the
+    // others. grantStars reads the grant's server-driven `stars` field, else
+    // the noble rank spec; starless items sort last (never invent a number).
+    const items = tab === 'nameplates'
+      ? [...(data.items as { id: string; stars?: number }[])].sort(
+          (a, b) => (grantStars(b) ?? 0) - (grantStars(a) ?? 0),
+        )
+      : data.items;
+
+    if (items.length === 0) {
       return <LuxuryEmptyState tab={tab} />;
     }
 
@@ -405,7 +414,7 @@ export default function DecorationScreen() {
     // mounted every owned item row at once.
     return (
       <FlatList
-        data={data.items}
+        data={items}
         keyExtractor={(item: any) => item.id}
         renderItem={({ item }: { item: any }) =>
           renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)

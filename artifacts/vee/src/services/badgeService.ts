@@ -46,6 +46,10 @@ export interface GrantedNameplate {
   source: 'official' | 'event';
   description?: string;
   grantedBy?: string;
+  /** 2026-11-09 (boss): SVIP reward star count, server-driven (svip_page /
+   * honors_catalog / grant `stars` field). SVIP1 = 2, SVIP2 = 2, SVIP3 = 3,
+   * SVIP4 = 4, SVIP5 = 5. Absent = no star known (never invented). */
+  stars?: number;
 }
 
 export interface GrantedFrame {
@@ -58,6 +62,10 @@ export interface GrantedFrame {
   source: 'official' | 'event';
   description?: string;
   grantedBy?: string;
+  /** 2026-11-09 (boss): SVIP reward star count, server-driven (svip_page /
+   * honors_catalog / grant `stars` field). SVIP1 = 2, SVIP2 = 2, SVIP3 = 3,
+   * SVIP4 = 4, SVIP5 = 5. Absent = no star known (never invented). */
+  stars?: number;
 }
 
 /* ── 2026-10-15 (Sumon): Sound Ripple collectibles ──
