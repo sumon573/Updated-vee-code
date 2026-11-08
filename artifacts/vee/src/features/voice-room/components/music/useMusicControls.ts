@@ -9,6 +9,7 @@ import {
   setMusicSeek,
   setMusicEcho,
   addMusicTrack,
+  removeQueueTrack,
   getRoomMusicOnce,
   type RoomMusic,
   type MusicLibraryEntry,
@@ -166,6 +167,45 @@ export function useMusicControls(args: ControlsArgs) {
 
 
 
+  /**
+   * Auto-next runway (2026-11-08, boss: a song ending must start the
+   * next one by itself). The bot advances ONLY through the room queue,
+   * so after a tap-to-play the queue is filled with the next songs
+   * from the host's library in playlist-page order (newest first),
+   * wrapping once, at most 10. Songs already queued are skipped (no
+   * duplicates); a 1-song library prefills nothing (no self-loop).
+   * Fire-and-forget: a failed add only shortens the runway, and the
+   * modal's auto-next watcher covers the tail while it is open.
+   * Defined BEFORE playLibrarySong: the dependency array below reads
+   * it at render time, so it must already be initialised.
+   */
+  const prefillFollowers = useCallback(
+    (afterMediaId: string) => {
+      if (!canControl) return;
+      const lib = library ?? [];
+      if (lib.length <= 1) return;
+      const queuedIds = new Set((getMusic()?.queue ?? []).map((t) => t.mediaId));
+      const idx = lib.findIndex((e) => e.mediaId === afterMediaId);
+      const followers: MusicLibraryEntry[] = [];
+      for (let k = 1; k <= lib.length && followers.length < 10; k++) {
+        const e = lib[(idx + k) % lib.length];
+        if (!e || e.mediaId === afterMediaId) break;
+        if (!queuedIds.has(e.mediaId)) followers.push(e);
+      }
+      if (followers.length === 0) return;
+      Promise.all(
+        followers.map((e) =>
+          addMusicTrack(
+            roomId,
+            { title: e.title, url: e.url, mediaId: e.mediaId, durationSec: e.duration },
+            myName,
+          ).catch(() => ''),
+        ),
+      ).catch(() => {});
+    },
+    [canControl, getMusic, library, roomId, myName],
+  );
+
   const playLibrarySong = useCallback(
     (entry: { mediaId: string; title: string; url: string; duration: number | null }) => {
       if (!canControl) return;
@@ -173,21 +213,42 @@ export function useMusicControls(args: ControlsArgs) {
       const queued = (m?.queue ?? []).find((t) => t.mediaId === entry.mediaId && t.addedBy === uid);
       if (queued) {
         playTrack(queued.queueId);
+        // Already queued (a prefilled follower): top the runway back up
+        // so the songs after it keep coming without another tap.
+        prefillFollowers(entry.mediaId);
         return;
       }
-      addMusicTrack(
-        roomId,
-        { title: entry.title, url: entry.url, mediaId: entry.mediaId, durationSec: entry.duration },
-        myName,
-      )
+      // Fresh tap: drop MY stale prefilled followers first (the room
+      // queue has no user-managed content — the only writer is this
+      // function + prefill — so anything I queued is an old runway).
+      // Another admin's entries are never touched.
+      const stale = (m?.queue ?? []).filter((t) => t.addedBy === uid);
+      const clearStale = stale.length
+        ? Promise.all(stale.map((t) => removeQueueTrack(roomId, t.queueId).catch(() => {})))
+        : Promise.resolve();
+      clearStale
+        .then(() =>
+          addMusicTrack(
+            roomId,
+            { title: entry.title, url: entry.url, mediaId: entry.mediaId, durationSec: entry.duration },
+            myName,
+          ),
+        )
         .then((queueId) => {
           if (queueId) playTrack(queueId);
+          // 2026-11-08 (boss: auto-next): keep the runway full — the
+          // bot's advance() can only play what is IN the room queue,
+          // and the tap-to-play path removes the song from the queue
+          // when it starts, so a lone tap always ended in silence.
+          // Prefill the next songs from the library (playlist order,
+          // wrapping, max 10) so the next song plays by itself.
+          prefillFollowers(entry.mediaId);
         })
         .catch(() => {
           Alert.alert('Could not play this song', 'Check your connection and try again.');
         });
     },
-    [canControl, getMusic, uid, roomId, myName, playTrack],
+    [canControl, getMusic, uid, roomId, myName, playTrack, prefillFollowers],
   );
 
   // 2026-10-27 (boss: Next must step songs one by one, never grey out

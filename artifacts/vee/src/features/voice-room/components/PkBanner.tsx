@@ -45,10 +45,14 @@ export function PkBanner({
   const isChallengerKing = useIsKing(pk.challenger.uid);
   const isOpponentKing = useIsKing(pk.opponent.uid);
 
+  // 1s ticker runs ONLY while the battle is active — the countdown is
+  // the only thing that needs it (challenge/ended show static text, so
+  // no wakeups there). Re-arms on challenge -> active.
   useEffect(() => {
+    if (pk.status !== 'active') return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [pk.status]);
 
   const challengerScore = pkScoreOf(pk, pk.challenger.uid);
   const opponentScore = pkScoreOf(pk, pk.opponent.uid);
@@ -58,9 +62,23 @@ export function PkBanner({
   const isEnded = pk.status === 'ended';
   const winnerUid = isEnded && !pk.draw ? pk.winnerUid : null;
   const remainingMs = Math.max(0, pk.endsAt - now);
-  const remainingText = `${Math.floor(remainingMs / 60000)}:${String(
-    Math.floor((remainingMs % 60000) / 1000),
-  ).padStart(2, '0')}`;
+  // 2026-11-08 (PK realtime polish): when the clock hits 0 the bot still
+  // needs its grace window to count late gifts before it writes the
+  // winner (up to ~20s) — show an honest "Counting…" instead of a stuck
+  // 0:00, so the wait reads as the battle finishing, not frozen.
+  const isCounting = pk.status === 'active' && remainingMs === 0;
+  const remainingText = isCounting
+    ? 'Counting…'
+    : `${Math.floor(remainingMs / 60000)}:${String(
+        Math.floor((remainingMs % 60000) / 1000),
+      ).padStart(2, '0')}`;
+  // Leader's score glows gold so the room sees at a glance who is ahead.
+  const leaderUid =
+    challengerScore === opponentScore
+      ? null
+      : challengerScore > opponentScore
+        ? pk.challenger.uid
+        : pk.opponent.uid;
 
   const avatar = (name: string, color: string, photoURL?: string | null) => {
     if (photoURL) {
@@ -130,13 +148,13 @@ export function PkBanner({
               {pk.challenger.name}
             </Text>
             {isChallengerKing ? <KingSparkle /> : null}
-            <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '900' }}>
+            <Text style={{ color: leaderUid === pk.challenger.uid ? '#FDE68A' : '#FFF', fontSize: 15, fontWeight: '900' }}>
               {formatPkScore(challengerScore)}
             </Text>
           </View>
           <Text style={{ color: C.muted, fontSize: 13, fontWeight: '800', paddingHorizontal: 10 }}>VS</Text>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-            <Text style={{ color: '#FFF', fontSize: 15, fontWeight: '900' }}>
+            <Text style={{ color: leaderUid === pk.opponent.uid ? '#FDE68A' : '#FFF', fontSize: 15, fontWeight: '900' }}>
               {formatPkScore(opponentScore)}
             </Text>
             <Text numberOfLines={1} style={{ color: isOpponentKing ? KING_GOLD : '#FFF', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' }}>

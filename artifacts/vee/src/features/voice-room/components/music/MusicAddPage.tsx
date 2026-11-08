@@ -108,6 +108,7 @@ export function MusicAddPage(props: AddPageProps) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Record<string, RowStatus>>({});
   const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
   const loadedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -208,6 +209,7 @@ export function MusicAddPage(props: AddPageProps) {
     if (picked.length === 0) return;
     setBatchRunning(true);
     setBatchError(null);
+    setBatchProgress({ done: 0, total: picked.length });
     let failed = 0;
     // Batch dedup (2026-10-27 upload speedup): ONE library read up front
     // instead of one RTDB query per song. If that read fails, fall back
@@ -232,6 +234,7 @@ export function MusicAddPage(props: AddPageProps) {
           pending.push({ asset, up });
         }
         if (mountedRef.current) {
+          setBatchProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
           setStatus((prev) => ({ ...prev, [asset.id]: 'done' }));
           setSelected((prev) => {
             const next = { ...prev };
@@ -242,14 +245,19 @@ export function MusicAddPage(props: AddPageProps) {
         return true;
       } catch (e) {
         if (mountedRef.current) {
+          setBatchProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
           setStatus((prev) => ({ ...prev, [asset.id]: 'failed' }));
           setBatchError(friendlyUploadError(e));
         }
         return false;
       }
     };
-    for (let i = 0; i < picked.length; i += 3) {
-      const chunk = picked.slice(i, i + 3);
+    // 2026-11-08 (boss: fast upload): 5-at-a-time, up from 3. The
+    // media server now round-robins uploads across its healthy Telegram
+    // bots (it used to hammer bot 0 for every file), so parallel
+    // uploads no longer queue behind one bot token.
+    for (let i = 0; i < picked.length; i += 5) {
+      const chunk = picked.slice(i, i + 5);
       const results = await Promise.all(chunk.map(resolveOne));
       failed += results.filter((r) => !r).length;
     }
@@ -283,6 +291,7 @@ export function MusicAddPage(props: AddPageProps) {
     }
     if (mountedRef.current) {
       setBatchRunning(false);
+      setBatchProgress(null);
       if (failed === 0) onAdded();
     }
   };
@@ -399,7 +408,11 @@ export function MusicAddPage(props: AddPageProps) {
           style={[styles.addBtn, { backgroundColor: palette.blue }, batchRunning && styles.dim]}
         >
           <Text style={styles.addBtnText}>
-            {batchRunning ? 'Adding…' : `Add ${selectedCount} Song${selectedCount === 1 ? '' : 's'}`}
+            {batchRunning
+              ? batchProgress
+                ? `Adding… ${batchProgress.done}/${batchProgress.total}`
+                : 'Adding…'
+              : `Add ${selectedCount} Song${selectedCount === 1 ? '' : 's'}`}
           </Text>
         </Pressable>
       ) : null}

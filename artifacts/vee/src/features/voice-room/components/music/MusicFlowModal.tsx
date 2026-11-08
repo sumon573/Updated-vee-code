@@ -70,6 +70,65 @@ export function MusicFlowModal(props: MusicFlowModalProps) {
 
   const controls = useMusicControls({ roomId, canControl, uid, myName, getMusic, onVolumeChange, library });
 
+  // Auto-next backstop (2026-11-08, boss: a song ending must start the
+  // next one by itself). The prefill runway in useMusicControls covers
+  // the usual case (the bot advances through the queue on its own), but
+  // once the runway drains the bot goes idle — this watcher steps to
+  // the next library song (playlist order, wrapping) when the modal is
+  // open and the host is in control. Guards, all required:
+  // - only the playing -> idle transition with the current track gone
+  //   (a natural end — the bot writes idle directly);
+  // - NOT after a Stop: the stop path passes through state 'stopped'
+  //   first, which sets sawStopped and suppresses this watcher;
+  // - NOT after a host-leave clear: the cleared track was started by
+  //   the departing host, so its addedBy is not this controller;
+  // - one shot per ended track (lastAutoNextQueueId), never a loop;
+  // - never with a 1-song library (that would replay the same song
+  //   forever) and never back onto the song that just ended.
+  const prevStateRef = useRef<string | null>(null);
+  // Last track seen playing (kept across the bot's two-write advance:
+  // it removes `current` BEFORE writing 'idle', so the snapshot in
+  // between is { playing, current: null } — a prev-snapshot queueId
+  // would already be wiped when 'idle' arrives).
+  const lastPlayingRef = useRef<{ queueId: string; mediaId: string; addedBy: string } | null>(null);
+  const sawStoppedRef = useRef(false);
+  const lastAutoNextQueueIdRef = useRef<string | null>(null);
+  const playNextRef = useRef(controls.playLibrarySong);
+  playNextRef.current = controls.playLibrarySong;
+  useEffect(() => {
+    const cur = music;
+    if (cur?.state === 'stopped') sawStoppedRef.current = true;
+    if (cur?.state === 'playing') sawStoppedRef.current = false;
+    if (cur?.current) {
+      lastPlayingRef.current = {
+        queueId: cur.current.queueId,
+        mediaId: cur.current.mediaId,
+        addedBy: cur.current.addedBy,
+      };
+    }
+    const ended = lastPlayingRef.current;
+    if (
+      prevStateRef.current === 'playing' &&
+      ended &&
+      ended.addedBy === uid &&
+      cur &&
+      cur.state === 'idle' &&
+      !cur.current &&
+      canControl &&
+      !sawStoppedRef.current &&
+      lastAutoNextQueueIdRef.current !== ended.queueId &&
+      library.length > 1
+    ) {
+      const idx = library.findIndex((e) => e.mediaId === ended.mediaId);
+      const next = idx >= 0 ? library[(idx + 1) % library.length] : library[0];
+      if (next && next.mediaId !== ended.mediaId) {
+        lastAutoNextQueueIdRef.current = ended.queueId;
+        playNextRef.current(next);
+      }
+    }
+    prevStateRef.current = cur?.state ?? 'idle';
+  }, [music, canControl, library, uid]);
+
   useEffect(() => {
     if (!visible) {
       setView('player');

@@ -6,9 +6,12 @@ import { Animated, View } from 'react-native';
  * "animation ভাবে বাড়া কমা দেখতে পাবে" — the whole room must SEE the
  * bar grow/shrink live as diamonds land on either side).
  *
- * The challenger share animates (~500ms) on every score change instead
+ * The challenger share animates (~250ms) on every score change instead
  * of jumping; 0–0 shows an even bar. Width animation needs the JS
  * driver (width is not native-drivable) — a tiny bar, so that is fine.
+ * 2026-11-08: 500ms → 250ms — during a gift storm each score change
+ * restarted the 500ms glide, so the bar perpetually chased the numbers
+ * and always looked behind; at 250ms it tracks the live totals.
  */
 export function PkScoreBar({
   challengerScore,
@@ -30,7 +33,7 @@ export function PkScoreBar({
   useEffect(() => {
     Animated.timing(shareAnim, {
       toValue: share,
-      duration: 500,
+      duration: 250,
       useNativeDriver: false,
     }).start();
   }, [share]);

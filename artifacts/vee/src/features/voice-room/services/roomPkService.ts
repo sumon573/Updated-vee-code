@@ -62,23 +62,127 @@ export interface RoomPk {
   draw: boolean;
 }
 
+/* ── Optimistic PK scores (2026-11-08, PK realtime polish) ──────────
+ * The gift you send plays instantly, but the authoritative score only
+ * moves after wallet → giftFeed → VPS bot → RTDB (2–5s, worse in a gift
+ * storm). That gap is exactly why PK felt fake/slow: the gift flies and
+ * the bar sits still. So a gift you just sent successfully to a battler
+ * bumps the DISPLAYED totals immediately, and the bump is reconciled
+ * away as the bot's authoritative totals catch up (each authoritative
+ * increase eats the same amount of bump — never double-counted, never a
+ * visible jump down). Bumps are display-only: the bot still owns scores
+ * and the winner. A bump only lives while its battle is active, is
+ * keyed to that battle (rematch resets it), and ages out after 30s if
+ * the bot never confirms it (bot down / out-of-window gift). */
+const PK_BUMP_MAX_AGE_MS = 30_000;
+type PkBumpEntry = { battleKey: string; bumps: Array<{ uid: string; coins: number; at: number }> };
+const pkBumpsByRoom = new Map<string, PkBumpEntry>();
+const pkLastTotalsByRoom = new Map<string, { battleKey: string; totals: Record<string, number> }>();
+const pkLastRawByRoom = new Map<string, RoomPk | null>();
+const pkDeliverersByRoom = new Map<string, Set<(raw: RoomPk | null) => void>>();
+
+function pkBattleKey(pk: RoomPk): string {
+  return `${pk.startedAt}:${pk.endsAt}:${pk.challenger.uid}:${pk.opponent.uid}`;
+}
+
+function applyPkBumps(roomId: string, raw: RoomPk | null): RoomPk | null {
+  if (!raw || raw.status !== 'active') {
+    pkBumpsByRoom.delete(roomId);
+    pkLastTotalsByRoom.delete(roomId);
+    return raw;
+  }
+  const key = pkBattleKey(raw);
+  const authTotals: Record<string, number> = { ...(raw.scores?.totals ?? {}) };
+  const prev = pkLastTotalsByRoom.get(roomId);
+  const entry = pkBumpsByRoom.get(roomId);
+  // Reconcile: authoritative increases eat the same amount of bump
+  // (one bump entry per uid — notePkGiftSent merges — so a single eat).
+  if (prev && prev.battleKey === key && entry && entry.battleKey === key) {
+    for (const uid of Object.keys(authTotals)) {
+      const delta = (authTotals[uid] || 0) - (prev.totals[uid] || 0);
+      if (delta <= 0) continue;
+      const b = entry.bumps.find((x) => x.uid === uid);
+      if (b) b.coins = Math.max(0, b.coins - delta);
+    }
+    entry.bumps = entry.bumps.filter((b) => b.coins > 0);
+    if (entry.bumps.length === 0) pkBumpsByRoom.delete(roomId);
+  }
+  pkLastTotalsByRoom.set(roomId, { battleKey: key, totals: { ...authTotals } });
+  if (!entry || entry.battleKey !== key) return raw;
+  // Age out bumps the bot never confirmed (bot down / out-of-window).
+  const now = Date.now();
+  const live = entry.bumps.filter((b) => b.coins > 0 && now - b.at <= PK_BUMP_MAX_AGE_MS);
+  if (live.length === 0) {
+    pkBumpsByRoom.delete(roomId);
+    return raw;
+  }
+  entry.bumps = live;
+  const totals = { ...authTotals };
+  for (const b of live) totals[b.uid] = (totals[b.uid] || 0) + b.coins;
+  return { ...raw, scores: { ...(raw.scores ?? { totals: {} }), totals } };
+}
+
+/** Call after a gift to a battler has been charged + written to giftFeed
+ * (GiftsModal onGiftSent — succeeded recipients only). The bot will score
+ * it; this just makes the sender's own score move NOW. No-ops when no
+ * battle is active, the recipient is not a battler, or the amount is 0. */
+export function notePkGiftSent(roomId: string, toUid: string, coins: number): void {
+  if (!roomId || !toUid || !(coins > 0)) return;
+  const raw = pkLastRawByRoom.get(roomId);
+  if (!raw || raw.status !== 'active') return;
+  if (toUid !== raw.challenger.uid && toUid !== raw.opponent.uid) return;
+  const key = pkBattleKey(raw);
+  let entry = pkBumpsByRoom.get(roomId);
+  if (!entry || entry.battleKey !== key) {
+    entry = { battleKey: key, bumps: [] };
+    pkBumpsByRoom.set(roomId, entry);
+  }
+  const now = Date.now();
+  const existing = entry.bumps.find((b) => b.uid === toUid);
+  if (existing) {
+    existing.coins += coins;
+    existing.at = now;
+  } else {
+    entry.bumps.push({ uid: toUid, coins, at: now });
+  }
+  // Re-deliver immediately so the banner/modal move on this frame.
+  const deliverers = pkDeliverersByRoom.get(roomId);
+  if (deliverers) {
+    for (const deliver of [...deliverers]) deliver(raw);
+  }
+}
+
 function pkRef(roomId: string) {
   return ref(database, `roomPk/${roomId}`);
 }
 
-/** Live PK state for a room (null when no PK). */
+/** Live PK state for a room (null when no PK).
+ * Delivered totals include the sender's optimistic bumps (see
+ * notePkGiftSent) — display-only, reconciled against authoritative
+ * totals on every delivery. */
 export function subscribeRoomPk(roomId: string, cb: (pk: RoomPk | null) => void): () => void {
-  return onValue(pkRef(roomId), (snap) => {
+  const deliver = (raw: RoomPk | null) => {
+    cb(applyPkBumps(roomId, raw));
+  };
+  let deliverers = pkDeliverersByRoom.get(roomId);
+  if (!deliverers) {
+    deliverers = new Set();
+    pkDeliverersByRoom.set(roomId, deliverers);
+  }
+  deliverers.add(deliver);
+  const unsub = onValue(pkRef(roomId), (snap) => {
     if (!snap.exists()) {
-      cb(null);
+      pkLastRawByRoom.set(roomId, null);
+      deliver(null);
       return;
     }
     const v = snap.val() as any;
     if (!v || typeof v.status !== 'string' || !v.challenger || !v.opponent) {
-      cb(null);
+      pkLastRawByRoom.set(roomId, null);
+      deliver(null);
       return;
     }
-    cb({
+    const raw: RoomPk = {
       status: v.status,
       challenger: v.challenger,
       opponent: v.opponent,
@@ -90,8 +194,15 @@ export function subscribeRoomPk(roomId: string, cb: (pk: RoomPk | null) => void)
       scores: (v.scores as PkScores) || null,
       winnerUid: typeof v.winnerUid === 'string' ? v.winnerUid : null,
       draw: v.draw === true,
-    });
+    };
+    pkLastRawByRoom.set(roomId, raw);
+    deliver(raw);
   });
+  return () => {
+    unsub();
+    deliverers!.delete(deliver);
+    if (deliverers!.size === 0) pkDeliverersByRoom.delete(roomId);
+  };
 }
 
 /** Send a PK challenge (fails if a PK already exists — rules backstop).

@@ -57,8 +57,13 @@ export function PkModal({
     return subscribeRoomPk(roomId, setPk);
   }, [visible, roomId]);
 
+  // 1s ticker runs while the modal is open and a PK exists — active for
+  // the countdown AND challenge, so the 60s expiry text/button state
+  // actually updates (before, the ticker only ran when active, so a
+  // pending challenge never ticked and Accept stayed live past expiry
+  // until some unrelated re-render).
   useEffect(() => {
-    if (!visible || pk?.status !== 'active') return;
+    if (!visible || !pk) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [visible, pk?.status]);
@@ -290,7 +295,7 @@ export function PkModal({
                 <View style={{ alignItems: 'center', paddingHorizontal: 8 }}>
                   <Text style={{ color: C.text, fontSize: 18, fontWeight: '900' }}>VS</Text>
                   <Text style={{ color: C.red, fontSize: 15, fontWeight: '800', marginTop: 4 }}>
-                    {remainingMs > 0 ? remainingText : 'Ending…'}
+                    {remainingMs > 0 ? remainingText : 'Counting final gifts…'}
                   </Text>
                 </View>
                 <View style={{ flex: 1, alignItems: 'center' }}>

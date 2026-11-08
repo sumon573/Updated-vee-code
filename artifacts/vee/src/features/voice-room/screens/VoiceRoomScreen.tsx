@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image as RNImage, BackHandler, Modal, KeyboardAvoidingView, Keyboard, AppState } from 'react-native';
-import { Image } from 'expo-image';
+import { View, Text, FlatList, Alert, Pressable, Animated, Platform, TextInput, Image, BackHandler, Modal, KeyboardAvoidingView, Keyboard, AppState } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -15,7 +14,7 @@ import { setMinimizedRoom, getMinimizedRoom, setCurrentRoom, getCurrentRoom, cle
 import { getRoomChatSession, setRoomChatSession, clearRoomChatSession } from '@/src/store/roomChatSession';
 import { persistActiveRoom, getPersistedActiveRoom, clearPersistedActiveRoom, persistMicIntent } from '@/src/store/activeRoom';
 import { getRoomEntryCache, saveRoomEntryCache } from '@/src/store/roomEntryCache';
-import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, leaveActiveVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
+import { useLivekitVoiceRoom, setVoiceRoomMinimized, destroyPersistedVoiceRoomEngineAsync, prefetchLivekitToken } from '../useLivekitVoiceRoom';
 import { fetchGiftCatalog } from '../services/giftCatalogService';
 import { useAuth } from '@/src/context/AuthContext';
 import { getUser, subscribeUser } from '@/src/services/userService';
@@ -78,7 +77,7 @@ import {
   subscribeRoomMusic, setMusicState, type RoomMusic,
 } from '../services/roomMusicService';
 import {
-  subscribeRoomPk, acceptPk, removePk, rematchPk, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
+  subscribeRoomPk, acceptPk, removePk, rematchPk, notePkGiftSent, PK_CHALLENGE_TIMEOUT_MS, type RoomPk,
 } from '../services/roomPkService';
 import { VoteGameModal } from '../components/games/VoteGameModal';
 import { TurntableGameModal } from '../components/games/TurntableGameModal';
@@ -207,7 +206,7 @@ import { TRIO_DOTS, TRIO_SHARE, TRIO_X } from './trioIcons';
 const TRIO_ICONS = { dots: TRIO_DOTS, share: TRIO_SHARE, x: TRIO_X };
 function TrioIcon({ kind, size, color }: { kind: 'dots' | 'share' | 'x'; size: number; color: string }) {
   return (
-    <RNImage source={{ uri: TRIO_ICONS[kind] }} style={{ width: size, height: size, tintColor: color }} resizeMode="contain" />
+    <Image source={{ uri: TRIO_ICONS[kind] }} style={{ width: size, height: size, tintColor: color }} resizeMode="contain" />
   );
 }
 
@@ -463,7 +462,6 @@ export default function VoiceRoomScreen() {
     playUserStream,
     stopUserStream,
     setMusicVolume,
-    setRemoteAudioAllowed,
     wasRestored } = useLivekitVoiceRoom({
     roomID: voiceReady ? roomId : '',
     userID: voiceBan ? 'anonymous' : myUid,
@@ -552,35 +550,6 @@ export default function VoiceRoomScreen() {
 
   
   const hasRestoredRef = useRef(false);
-
-  // 2026-11-07 (Area A, ghost voice): SEAT-TRUTH HEARING. The engine
-  // connects with autoSubscribe:false, so a remote voice is audible
-  // ONLY while its owner is in this set. The set is rebuilt from the
-  // live RTDB seats snapshot on every change: seated users who are
-  // neither self-muted nor host-muted, plus the room-music bot
-  // ('vee-music', a LiveKit-only participant with no seat). Anyone
-  // else — a muted speaker, a kicked/swept user, an audience member
-  // whose client still publishes, a participant LiveKit knows but
-  // RTDB does not — is unsubscribed HERE, on the listener's phone,
-  // so their voice can never be heard even when their own device
-  // failed to mute or disconnect. Deliberate trade-off (stated, not
-  // hidden): hearing now trusts the RTDB seats feed — while that feed
-  // is unreachable, newly arrived speakers stay silent until the
-  // snapshot lands, rather than any ghost being audible. The
-  // engine's null-predicate default (subscribe all) applies only
-  // before the first snapshot, and the first snapshot normally lands
-  // before voice connects.
-  useEffect(() => {
-    const allowed = new Set<string>();
-    allowed.add('vee-music');
-    for (const seat of seats) {
-      if (!seat || seat.id === myUid) continue;
-      if (seat.muted === true || seat.hostMuted === true) continue;
-      allowed.add(seat.id);
-    }
-    setRemoteAudioAllowed(allowed);
-  }, [seats, myUid, setRemoteAudioAllowed]);
-
   useEffect(() => {
     if (!wasRestored || hasRestoredRef.current) return;
     if (seats.every((s) => s === null)) return; // wait for seat data to arrive
@@ -1301,29 +1270,13 @@ export default function VoiceRoomScreen() {
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [musicOpen,     setMusicOpen]     = useState(false);
   const [music,         setMusic]         = useState<RoomMusic | null>(null);
-  // 2026-11-07 (Area C perf/heat): signature of the last music state the
-  // SCREEN consumed. The screen only reads music.state, current presence
-  // and current.title (floating icon + customize-panel title + the seat-0
-  // stop effect) — the music sheet keeps its OWN subscribeRoomMusic inside
-  // MusicFlowModal, so queue/positionSec/echo churn must never re-render
-  // this screen. The service rebuilds a fresh object on every node write
-  // (queue add, seek, echo toggle), and each one used to cost a full
-  // 5,000-line render. Sig reset on (re)subscribe so a new room's first
-  // delivery always applies even if it matches the previous room's.
-  const musicSigRef = useRef('');
   useEffect(() => {
     if (!roomId) {
       setMusic(null);
       return;
     }
     if (pass2PollActive) return; // music comes from /live in pass2
-    musicSigRef.current = '';
-    return subscribeRoomMusic(roomId, (m) => {
-      const sig = m ? `${m.state}|${m.current?.queueId ?? ''}|${m.current?.title ?? ''}` : 'null';
-      if (sig === musicSigRef.current) return;
-      musicSigRef.current = sig;
-      setMusic(m);
-    });
+    return subscribeRoomMusic(roomId, setMusic);
   }, [roomId, pass2PollActive]);
   // 2026-10-25 (boss): 1v1 PK — challenge prompt for the opponent.
   const [pkOpen, setPkOpen] = useState(false);
@@ -1364,28 +1317,15 @@ export default function VoiceRoomScreen() {
   // subscription, so the lobby appears the moment the host creates it
   // and disappears the moment it starts or ends.
   const [luduLobby, setLuduLobby] = useState<RoomGame | null>(null);
-  // 2026-11-07 (Area C perf/heat): subscribeGames rebuilds a fresh games
-  // array (fresh objects) on EVERY games-node write — any game's move,
-  // vote or spin — so the lobby object below was a new identity each time
-  // and setLuduLobby re-rendered the whole screen even when the lobby
-  // itself had not changed at all. Skip when the lobby's content is
-  // identical; any real lobby change (new lobby, players, status) still
-  // passes through. Sig reset on (re)subscribe so a new room's first
-  // delivery always applies.
-  const luduLobbySigRef = useRef('');
   useEffect(() => {
     if (!roomId) {
       setLuduLobby(null);
       return;
     }
     if (pass2PollActive) return; // games come from /live in pass2
-    luduLobbySigRef.current = '';
     return subscribeGames(roomId, (games) => {
-      const lobby = games.find((g) => g.type === 'ludu' && g.status === 'lobby') ?? null;
-      const sig = JSON.stringify(lobby);
-      if (sig === luduLobbySigRef.current) return;
-      luduLobbySigRef.current = sig;
-      setLuduLobby(lobby);
+      const lobby = games.find((g) => g.type === 'ludu' && g.status === 'lobby');
+      setLuduLobby(lobby ?? null);
     });
   }, [roomId, pass2PollActive]);
   useEffect(() => {
@@ -1470,19 +1410,11 @@ export default function VoiceRoomScreen() {
     if (!info || info.active === false) {
       if (!hasLeftRef.current) {
         hasLeftRef.current = true;
-        // 2026-11-07 (Area B): room-closed exit is still a LEAVE — the
-        // old code navigated at once and left the disconnect to the
-        // unmount cleanup, so the user stayed audible (invisible, the
-        // room being gone) until the fire-and-forget teardown landed.
-        // Await the engine leave first, then navigate + alert.
-        void (async () => {
-          await leaveActiveVoiceRoomEngineAsync();
-          router.back();
-          Alert.alert(
-            t('voiceRoom.screen.roomClosed'),
-            t('voiceRoom.screen.roomClosedMsg'),
-          );
-        })();
+        router.back();
+        Alert.alert(
+          t('voiceRoom.screen.roomClosed'),
+          t('voiceRoom.screen.roomClosedMsg'),
+        );
       }
       return;
     }
@@ -1580,21 +1512,13 @@ export default function VoiceRoomScreen() {
     if (!myBlock) return;
     forceLeftRef.current = true;
     hasLeftRef.current = true;
-    // 2026-11-07 (Area B): a kick is still a LEAVE — the old code only
-    // stopped publishing and navigated, leaving the disconnect to the
-    // unmount cleanup while the server had already removed the seat /
-    // audience: audible with no ID until the teardown landed. Await
-    // the engine leave first, then navigate + alert.
     try { stopPublishing(); } catch {  }
     try { stopUserStream(myUid); } catch {  }
-    void (async () => {
-      await leaveActiveVoiceRoomEngineAsync();
-      router.back();
-      Alert.alert(
-        t('voiceRoom.screen.removedTitle'),
-        t('voiceRoom.screen.removedMsg'),
-      );
-    })();
+    router.back();
+    Alert.alert(
+      t('voiceRoom.screen.removedTitle'),
+      t('voiceRoom.screen.removedMsg'),
+    );
   }, [blockedRecs, hasJoined, myUid, stopPublishing, stopUserStream, t]);
 
   useEffect(() => {
@@ -1849,14 +1773,6 @@ export default function VoiceRoomScreen() {
     })();
   }, [roomId, myUid, markEchoSendState]);
 
-  // 2026-11-07 (Area C perf/heat): signature of the last RENDERED chat
-  // list — same guard pattern as seats/audience above. handleChat used to
-  // call setMessages with a brand-new array on every delivery, and the
-  // watcher/pass2 poll paths deliver the full list every 5s even when
-  // nothing new arrived — a full-screen re-render every 5s forever, plus
-  // a re-render for every duplicate flush. A message id is a push key, so
-  // it is unique per room and the sig can never collide across rooms.
-  const chatSigRef = useRef('');
   const handleChat = (fbMsgs: RoomChatMsg[]) => {
     // 2026-10-26 (boss: session + last 30): only this stay's messages,
     // capped at the last 30 — pre-join messages and anything older than
@@ -1873,24 +1789,7 @@ export default function VoiceRoomScreen() {
       pendingEchoesRef.current = pendingEchoesRef.current.filter((e) => !deliveredIds.has(e.id));
     }
     const pending = pendingEchoesRef.current;
-    const next = pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs;
-    // Skip the setState (and the scroll) when the rendered list is
-    // byte-identical to the last one — text, sender, time, kind, gift
-    // totals and echo send-state are all in the signature, so a real new
-    // or changed message always passes through.
-    const sig = next.map((m) => [
-      m.id,
-      m.ts,
-      m.senderId ?? '',
-      m.text ?? '',
-      m.kind ?? '',
-      m.gift ? `${m.gift.giftId}|${m.gift.totalCoins}|${m.gift.quantity}` : '',
-      m.sendState ?? '',
-      m.replyTo ? `${m.replyTo.sender ?? ''}|${m.replyTo.text ?? ''}` : '',
-    ].join('~')).join(';');
-    if (sig === chatSigRef.current) return;
-    chatSigRef.current = sig;
-    setMessages(next);
+    setMessages(pending.length > 0 ? [...deliveredMsgs, ...pending] : deliveredMsgs);
     // 2026-10-26 (typing-jitter fix): auto-scroll ONLY when already at
     // the bottom — a scrolled-up reader must never be yanked by a new
     // message; the scroll button brings them back on tap.
@@ -2583,47 +2482,22 @@ export default function VoiceRoomScreen() {
   }, [seats, mySeatIdx, isPublishing]);
 
   
-  // 2026-11-07 (Area C perf/heat): return the PREVIOUS seats array when
-  // no seat's speaking flag actually changes. The old code always returned
-  // prev.map(...) — a brand-new array — so EVERY speakingUsers identity
-  // change (participant join/leave, mute/subscribe change, any
-  // ActiveSpeakersChanged burst) forced a full re-render of this 5,000-line
-  // screen + VoiceRoomModals + bottom bar, even when no speaking ring
-  // changed. React bails out when the updater returns the identical
-  // reference, so no-op speaking churn now costs zero renders. A real
-  // start/stop still produces a new array and renders exactly as before.
   useEffect(() => {
     if (!speakingUsers) return;
-    setSeats((prev: Array<Participant | null>) => {
-      let changed = false;
-      const next = prev.map((s: Participant | null) => {
-        if (!s || s.id === myUid) return s;
-        const isSpeaking = speakingUsers[s.id] === true && !s.muted && !s.hostMuted;
-        if (isSpeaking !== s.speaking) {
-          changed = true;
-          return { ...s, speaking: isSpeaking };
-        }
-        return s;
-      });
-      return changed ? next : prev;
-    });
+    setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null) => {
+      if (!s || s.id === myUid) return s;
+      const isSpeaking = speakingUsers[s.id] === true && !s.muted && !s.hostMuted;
+      return isSpeaking !== s.speaking ? { ...s, speaking: isSpeaking } : s;
+    }));
   }, [speakingUsers, myUid]);
 
   useEffect(() => {
     if (mySeatIdx < 0) return;
-    setSeats((prev: Array<Participant | null>) => {
-      let changed = false;
-      const next = prev.map((s: Participant | null, i: number) => {
-        if (i !== mySeatIdx || !s) return s;
-        const effectiveSpeaking = localSpeaking && !muted;
-        if (s.speaking !== effectiveSpeaking) {
-          changed = true;
-          return { ...s, speaking: effectiveSpeaking };
-        }
-        return s;
-      });
-      return changed ? next : prev;
-    });
+    setSeats((prev: Array<Participant | null>) => prev.map((s: Participant | null, i: number) => {
+      if (i !== mySeatIdx || !s) return s;
+      const effectiveSpeaking = localSpeaking && !muted;
+      return s.speaking !== effectiveSpeaking ? { ...s, speaking: effectiveSpeaking } : s;
+    }));
   }, [localSpeaking, mySeatIdx, muted]);
 
   
@@ -3481,19 +3355,6 @@ export default function VoiceRoomScreen() {
     }
   }, [mySeatIdx, toggleMic, seats, lockedSeats, joinSeat, t, isOwnerOrAdmin]);
 
-  // 2026-11-07 (Area C perf/heat): stable identities for the bottom-bar
-  // and floating-music-icon press handlers. They used to be inline arrows
-  // in the JSX, so VoiceRoomBottomBar / FloatingMusicIcon received a new
-  // callback prop on every parent render and memo could never bail them
-  // out. All three only call stable setters (+ Keyboard/Haptics), so []
-  // deps are exact — behaviour identical, just a stable reference.
-  const handleSayPress = useCallback(() => setComposerOpen(true), []);
-  const handleSmileyPress = useCallback(() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }, []);
-  const openMusicSheet = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setMusicOpen(true);
-  }, []);
-
   useEffect(() => {
     if (!roomId || pass2PollActive) return; // frozen in pass2 mode: /watch carries no lockedSeats (tier gap); takes still 403 server-side when locked
     const unsub = subscribeLockedSeats(roomId, setLockedSeats);
@@ -3842,7 +3703,7 @@ export default function VoiceRoomScreen() {
     );
   }, [audience, seats, roomId, roomName, myUid, myName, t]);
 
-  const handleLeave = useCallback(async () => {
+  const handleLeave = useCallback(() => {
     hasLeftRef.current = true;
     try {
       clearPersistedActiveRoom().catch(() => {});
@@ -3854,23 +3715,11 @@ export default function VoiceRoomScreen() {
       setMinimizedRoom(null);
       sentJoinMsgKeys.delete(`${roomId}:${myUid}`);
 
-      // 2026-11-07 (Area B ghost-audio fix): LIVEKIT FIRST, presence
-      // SECOND. The old order removed the RTDB seat/audience and only
-      // then navigated — the LiveKit disconnect happened later, in the
-      // unmount cleanup, fire-and-forget. Between the two the user was
-      // invisible in the room (no ID) yet still audible, for as long as
-      // the teardown took (bounded, but seconds on a hung disconnect).
-      // Await the full engine leave (disconnect + audio-session stop,
-      // internally bounded, never throws) BEFORE any presence removal,
-      // so a user who is not in the room is never audible. Same proven
-      // order as LeaderboardModal.performSwitch.
-      try { stopPublishing(); } catch {  }
-      await leaveActiveVoiceRoomEngineAsync();
-
       // 2026-10-22 FIX (boss): voluntary exit removes PRESENCE ONLY — never
       // the admin grant (see the minimized-room cleanup above). Demotion is
       // reserved for owner dismiss / kick / block of that user.
       if (mySeatIdx >= 0) {
+        try { stopPublishing(); } catch {  }
         if (pass2PollActiveRef.current) {
           // Session-end: the seat leave lands immediately via REST;
           // audience presence expires via beats (the tier
@@ -4189,7 +4038,17 @@ export default function VoiceRoomScreen() {
       videoSize: info.videoSize || null,
       videoFullscreen: info.videoFullscreen || null }).catch(() => {});
     }
-  }, [roomId, myUid, myName, myColor, t]);
+    // 2026-11-08 (PK realtime polish): this fires only after the wallet
+    // charge + giftFeed write succeeded, so the bot WILL score it — bump
+    // the displayed PK totals now instead of waiting 2–5s for the bot
+    // round trip. No-op when no battle is active or the recipient is not
+    // a battler; reconciled away as authoritative totals arrive.
+    if (pk?.status === 'active') {
+      for (const r of info.recipients) {
+        notePkGiftSent(roomId, r.uid, info.coins * quantity);
+      }
+    }
+  }, [roomId, myUid, myName, myColor, t, pk]);
 
   const sendEmojiReaction = useCallback((emoji: string) => {
     setEmojiPanelOpen(false);
@@ -4369,8 +4228,7 @@ export default function VoiceRoomScreen() {
         <Image
           source={{ uri: storeBgUrl }}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
+          resizeMode="cover"
         />
       )}
       {}
@@ -4394,7 +4252,7 @@ export default function VoiceRoomScreen() {
                 alignItems: 'center', justifyContent: 'center',
                 backgroundColor: accentColor + '22' }}>
                 {roomImageUri ? (
-                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
                 ) : (
                   <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
                     {(roomName || '?').charAt(0).toUpperCase()}
@@ -4467,7 +4325,7 @@ export default function VoiceRoomScreen() {
                 alignItems: 'center', justifyContent: 'center',
                 backgroundColor: accentColor + '22' }}>
                 {roomImageUri ? (
-                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
                 ) : (
                   <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
                     {(roomName || '?').charAt(0).toUpperCase()}
@@ -4538,7 +4396,7 @@ export default function VoiceRoomScreen() {
                 alignItems: 'center', justifyContent: 'center',
                 backgroundColor: accentColor + '22' }}>
                 {roomImageUri ? (
-                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: roomImageUri }} style={{ width: 36, height: 36 }} />
                 ) : (
                   <Text style={{ color: accentColor, fontSize: 14, fontWeight: '900' }}>
                     {(roomName || '?').charAt(0).toUpperCase()}
@@ -5038,8 +4896,8 @@ export default function VoiceRoomScreen() {
         setTaskCenterOpen={setTaskCenterOpen}
         setGiftsOpen={setGiftsOpen}
         setGamesOpen={setGamesOpen}
-        onSayPress={handleSayPress}
-        onSmileyPress={handleSmileyPress}
+        onSayPress={() => setComposerOpen(true)}
+        onSmileyPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }}
       />
       {/* 2026-10-23 (Sumon): message action sheet — long-press a user TEXT
           message → Copy Text / Reply. Gift cards and system messages never
@@ -5310,7 +5168,7 @@ export default function VoiceRoomScreen() {
       {music?.current && (music.state === 'playing' || music.state === 'paused') && (
         <FloatingMusicIcon
           paused={music.state === 'paused'}
-          onPress={openMusicSheet}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMusicOpen(true); }}
         />
       )}
       <PkModal

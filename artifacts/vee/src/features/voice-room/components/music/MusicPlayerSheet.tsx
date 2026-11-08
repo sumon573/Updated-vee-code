@@ -183,6 +183,14 @@ export function MusicPlayerSheet(props: PlayerSheetProps) {
           <Text style={[styles.subtitle, { color: palette.sub }]} numberOfLines={1}>
             {subtitle}
           </Text>
+          {/* Up-next runway (2026-11-08, auto-next): how many songs are
+              queued to follow this one — 0 means the music stops when
+              this song ends (tap a song to refill it). */}
+          {current && (music?.queue?.length ?? 0) > 0 ? (
+            <Text style={[styles.upNext, { color: palette.sub }]} numberOfLines={1}>
+              Up next: {music?.queue?.length} song{(music?.queue?.length ?? 0) === 1 ? '' : 's'}
+            </Text>
+          ) : null}
         </View>
         {canControl && current ? (
           <Pressable onPress={controls.stop} hitSlop={8} style={styles.power}>
@@ -326,6 +334,7 @@ const styles = StyleSheet.create({
   meta: { flex: 1, marginLeft: 14, marginRight: 8 },
   title: { fontSize: 16, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 3 },
+  upNext: { fontSize: 12, marginTop: 3, fontWeight: '600' },
   power: { padding: 4 },
   seekRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
   time: { fontSize: 12, width: 40, textAlign: 'center' },
