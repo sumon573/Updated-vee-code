@@ -279,10 +279,25 @@ export async function grantSvipTierRewards(
     try {
       const existing = await get(ref(database, `users/${uid}/${node}/${reward.id}`));
       if (existing.exists()) continue; // already granted — never rewrite
+      // FRAME ICON (2026-11-08, SVIP grid bug): svip_page `art` for a frame
+      // is a SPRITE SHEET (the SVIP page animates it with SvipSpriteFrame),
+      // but the own-profile page renders the grant `icon` directly as one
+      // image — a sprite there shows as a grid. Resolve the frame icon from
+      // honors_catalog/{id}/animationUrl (the single animated WebP); fall
+      // back to reward.art if the catalog has no entry. Nameplates and other
+      // kinds keep reward.art (static PNGs — correct as-is).
+      let icon = reward.art;
+      if (reward.kind === 'frame') {
+        try {
+          const animSnap = await get(ref(database, `honors_catalog/${reward.id}/animationUrl`));
+          const anim = animSnap.val();
+          if (typeof anim === 'string' && anim) icon = anim;
+        } catch { /* catalog unreadable — keep reward.art */ }
+      }
       await set(ref(database, `users/${uid}/${node}/${reward.id}`), {
         id: reward.id,
         name: reward.label,
-        icon: reward.art,
+        icon,
         obtainedAt: now,
         validity,
         source: 'official',
