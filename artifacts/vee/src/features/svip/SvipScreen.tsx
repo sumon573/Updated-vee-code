@@ -34,19 +34,22 @@
  * - Preview DP/name use the LOGGED-IN user (the showcase's "M"/"Mh"
  *   was demo data).
  *
- * Purchase status (PRODUCTION, 2026-11-08 transfer): Join buys the
- * selected tier with wallet diamonds via POST /wallet/svip/purchase
- * (purchaseSvip in svipService) and grants the tier's svip_page
- * rewards on success. The waitlist is ONLY a fallback when the
- * purchase endpoint is unreachable. Never a fake purchase, never a
- * direct balance write. A tier with priceDiamonds 0 (Baron/Duke: not
- * for sale) shows no price; the waitlist CTA stays. The Join button
- * stays enabled and tappable for a waitlisted non-member (2026-11-08
- * production Join-button fix) — waitlist never disables purchase.
+ * Purchase status (2026-11-09, boss order): the purchase endpoint is
+ * CLOSED (403 "purchase is closed") by design — the Join/Recharge CTA
+ * NEVER calls purchaseSvip. Tapping it navigates to the top-up page
+ * (/profile/topup), the recharge path. The waitlist survives only as
+ * the (now unreachable) fallback record; it is never written from here.
+ *
+ * Recharge progress (2026-11-09, boss order): a live thin gold bar at
+ * the SVIP Points line shows lifetime recharge progress toward the
+ * NEXT tier — wallets/{uid}/totalRecharged (live subscription via
+ * walletService.subscribeTotalRecharged, tx-history fallback) against
+ * the server svip_config priceDiamonds thresholds. Max tier shows a
+ * full bar with "Max".
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, Alert, Modal, useWindowDimensions,
+  View, Text, Pressable, ScrollView, Modal, useWindowDimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -55,12 +58,11 @@ import { useRouter } from 'expo-router';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import { useAuth } from '@/src/context/AuthContext';
-import { getErrorCause } from '@/src/utils/errorDisplay';
 import {
-  subscribeSvip, joinSvipWaitlist, isOnSvipWaitlist, isSvipActive,
-  purchaseSvip, grantSvipTierRewards, formatSvipExpiry,
+  subscribeSvip, isOnSvipWaitlist, isSvipActive,
   SvipState,
 } from '@/src/features/svip/svipService';
+import { subscribeTotalRecharged } from '@/src/features/wallet/walletService';
 import {
   subscribeSvipConfig, SvipTier,
 } from '@/src/features/svip/svipConfig';
@@ -106,7 +108,7 @@ export default function SvipScreen() {
   const [pageLoaded, setPageLoaded] = useState(false);
   const [tiersLoaded, setTiersLoaded] = useState(false);
   const [onWaitlist, setOnWaitlist] = useState(false);
-  const [joining, setJoining] = useState(false);
+  const [totalRecharged, setTotalRecharged] = useState<number | null>(null);
   const [points, setPoints] = useState<SvipPointsState | null>(null);
   const [pointsHistory, setPointsHistory] = useState<SvipPointsHistoryEntry[]>([]);
   const [pointsOpen, setPointsOpen] = useState(false);
@@ -165,7 +167,8 @@ export default function SvipScreen() {
     );
     const unsubPoints = subscribeSvipPoints(user.uid, setPoints, () => {});
     getSvipPointsHistory(user.uid).then(setPointsHistory).catch(() => {});
-    return () => { unsub(); unsubPoints(); };
+    const unsubRecharge = subscribeTotalRecharged(user.uid, setTotalRecharged);
+    return () => { unsub(); unsubPoints(); unsubRecharge(); };
   }, [user?.uid]);
 
   const active = isSvipActive(svip);
@@ -189,48 +192,12 @@ export default function SvipScreen() {
     if (idx >= 0) pagerRef.current?.scrollTo({ x: idx * pageW, animated });
   };
 
-  const handleJoin = async () => {
-    // PRODUCTION purchase (mirrors SvipMockupHost.handlePurchase):
-    // purchaseSvip -> grant rewards + clear waitlist + success alert;
-    // endpoint unreachable -> waitlist fallback; server rejection ->
-    // error alert, no auto-retry. Waitlisted non-members can still tap
-    // Join (2026-11-08 production Join-button fix).
-    if (!user?.uid || joining) return;
-    const buyTier = tiers.find((t) => t.tier === selectedTier) || tiers[0];
-    if (!buyTier) return;
-    setJoining(true);
-    try {
-      const res = await purchaseSvip(user.uid, buyTier.tier);
-      if (res.ok) {
-        // Membership refresh arrives via subscribeSvip; grant the tier's
-        // svip_page rewards now (idempotent — skips already-granted).
-        await grantSvipTierRewards(user.uid, res.tier, res.expiry).catch(() => {});
-        setOnWaitlist(false);
-        Alert.alert(
-          `Welcome to ${buyTier.name}`,
-          res.expiry
-            ? `Your ${buyTier.name} membership is active until ${formatSvipExpiry(res.expiry)}. Your rewards have been added to your collection.`
-            : `Your ${buyTier.name} membership is active. Your rewards have been added to your collection.`,
-        );
-      } else if (res.unavailable) {
-        // Endpoint unreachable (not deployed / down): waitlist fallback only.
-        await joinSvipWaitlist(user.uid);
-        setOnWaitlist(true);
-        Alert.alert(
-          'Purchase unavailable',
-          'SVIP purchase could not be reached right now. You are on the waitlist — we will notify you the moment it opens.',
-        );
-      } else {
-        // Server reached and rejected (e.g. insufficient diamonds): show
-        // the error, change nothing, no auto-retry — tap again to retry
-        // (the same persisted idempotency key is reused).
-        Alert.alert('Couldn\u2019t complete purchase', res.error);
-      }
-    } catch (e) {
-      Alert.alert('Couldn\u2019t complete purchase', getErrorCause(e));
-    } finally {
-      setJoining(false);
-    }
+  const handleJoin = () => {
+    // Boss order 2026-11-09: Recharge goes to the top-up page — the
+    // recharge path. The purchase endpoint is CLOSED by design (403
+    // "purchase is closed"), so purchaseSvip is NEVER called from here.
+    // Button label stays server-driven (svip_page.buyBar.ctaLabel).
+    router.push('/profile/topup');
   };
 
   if (!configReady) {
@@ -286,6 +253,35 @@ export default function SvipScreen() {
   const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
   const photoUrl = user?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
+
+  // ── Live recharge progress toward the NEXT SVIP tier ──────────────
+  // Thresholds come from the server svip_config tiers (priceDiamonds);
+  // the total is the live wallets/{uid}/totalRecharged subscription.
+  // Current level = the higher of the membership tier and the tier the
+  // lifetime recharge already earns — a granted membership never hides
+  // recharge progress, and heavy recharge never hides membership.
+  // Progress spans the range from the current tier's threshold to the
+  // next tier's (level 0 starts at 0); the bar is full at max tier.
+  const pricedTiers = tiers
+    .filter((t) => t.priceDiamonds > 0)
+    .sort((a, b) => a.tier - b.tier);
+  const derivedLevel = totalRecharged == null
+    ? 0
+    : pricedTiers.reduce(
+      (m, t) => (totalRecharged >= t.priceDiamonds ? Math.max(m, t.tier) : m),
+      0,
+    );
+  const progressLevel = Math.max(activeTierNum, derivedLevel);
+  const nextTier = pricedTiers.find((t) => t.tier > progressLevel) || null;
+  const topTier = pricedTiers[pricedTiers.length - 1] || null;
+  const rangeStart = pricedTiers.find((t) => t.tier === progressLevel)?.priceDiamonds || 0;
+  const rangeEnd = nextTier ? nextTier.priceDiamonds : rangeStart;
+  const progressPct = nextTier && totalRecharged != null && rangeEnd > rangeStart
+    ? Math.min(1, Math.max(0, (totalRecharged - rangeStart) / (rangeEnd - rangeStart)))
+    : 1;
+  const remainingToNext = nextTier && totalRecharged != null
+    ? Math.max(0, nextTier.priceDiamonds - totalRecharged)
+    : 0;
 
   /** Avatar disc shown UNDER a frame reward (popup + grid): the user's
    * photo, or the gold initial disc. The frame renders AFTER this (on
@@ -499,6 +495,60 @@ export default function SvipScreen() {
           </Pressable>
         ) : null}
 
+        {/* Live recharge progress — thin gold bar toward the NEXT tier,
+            at the SVIP Points line (boss order 2026-11-09). Shown for
+            every visitor once the live total has arrived (null = still
+            loading, never a misleading 0). Identical on every tier page:
+            it tracks the USER, not the tab being viewed. */}
+        {totalRecharged !== null && pricedTiers.length > 0 ? (
+          <View style={{ marginTop: 14, width: '100%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <Text style={{
+                fontSize: 10, fontWeight: '800', letterSpacing: 1.6,
+                color: theme.goldBright,
+              }}
+              >
+                {nextTier
+                  ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
+                  : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
+              </Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.inkSoft }}>
+                {formatPrice(totalRecharged)}
+                {nextTier ? ` / ${formatPrice(nextTier.priceDiamonds)}` : ''}
+              </Text>
+            </View>
+            <View style={{
+              marginTop: 6, height: 4, borderRadius: 2, overflow: 'visible',
+              backgroundColor: 'rgba(232, 184, 75, 0.18)',
+            }}
+            >
+              <LinearGradient
+                colors={[theme.goldBright, theme.gold, theme.goldDeep]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={{ height: 4, borderRadius: 2, width: `${Math.round(progressPct * 100)}%` }}
+              />
+              <View style={{
+                position: 'absolute',
+                left: `${Math.round(progressPct * 100)}%`,
+                top: -2,
+                marginLeft: -4,
+                width: 8, height: 8, borderRadius: 4,
+                backgroundColor: theme.goldBright,
+                borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.85)',
+              }}
+              />
+            </View>
+            <Text style={{
+              fontSize: 11, color: theme.inkSoft, textAlign: 'center', marginTop: 6,
+            }}
+            >
+              {nextTier
+                ? `💎 ${formatPrice(remainingToNext)} more diamonds to ${nextTier.name}`
+                : '👑 You hold the highest SVIP tier'}
+            </Text>
+          </View>
+        ) : null}
+
         <View style={{ flex: 1 }} />
       </View>
     );
@@ -626,7 +676,6 @@ export default function SvipScreen() {
             ) : (
               <Pressable
                 onPress={handleJoin}
-                disabled={joining}
                 style={{ borderRadius: 24, overflow: 'hidden' }}
               >
                 <LinearGradient
@@ -635,9 +684,7 @@ export default function SvipScreen() {
                   style={{ paddingVertical: 12, paddingHorizontal: 22, alignItems: 'center' }}
                 >
                   <Text style={{ fontSize: 15, fontWeight: '800', color: theme.onGold }}>
-                    {joining
-                      ? (page.buyBar.joiningLabel || page.buyBar.ctaLabel)
-                      : page.buyBar.ctaLabel}
+                    {page.buyBar.ctaLabel}
                   </Text>
                 </LinearGradient>
               </Pressable>

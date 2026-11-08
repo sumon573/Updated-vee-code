@@ -918,4 +918,62 @@ export function subscribeTransactionHistory(
   );
 }
 
+/**
+ * Subscribe to the user's cumulative lifetime recharge total (diamonds).
+ *
+ * Primary source: `wallets/{uid}/totalRecharged` — the lifetime counter
+ * maintained by the recharge hook (server-side, credited on every
+ * successful top-up). Live onValue: a new recharge updates the caller
+ * the moment it lands. Never hardcoded, never a one-shot read.
+ *
+ * Fallback: when the counter node is absent (older wallets / hook not
+ * yet deployed), sum the `recharge` transactions from the existing
+ * transaction history — the same source the Wallet screen's
+ * "Total Recharged" row uses. That history is limitToLast(50), so the
+ * fallback can undercount a wallet with 50+ recharges; the counter is
+ * authoritative whenever it exists, and the fallback is dropped the
+ * moment the counter appears so the two sources never fight.
+ */
+export function subscribeTotalRecharged(
+  uid: string,
+  callback: (total: number) => void,
+): () => void {
+  let unsubFallback: (() => void) | null = null;
+  let detached = false;
+  const toNum = (v: unknown): number => {
+    if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0, v);
+    if (typeof v === 'string') {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? Math.max(0, n) : 0;
+    }
+    return 0;
+  };
+  const startFallback = () => {
+    if (detached || unsubFallback) return;
+    unsubFallback = subscribeTransactionHistory(uid, (txs) => {
+      const total = txs
+        .filter((t) => t.type === 'recharge')
+        .reduce((sum, t) => sum + Math.abs(toNum(t.diamonds)), 0);
+      callback(total);
+    });
+  };
+  const unsub = onValue(
+    ref(database, `wallets/${uid}/totalRecharged`),
+    (snap) => {
+      if (!snap.exists()) {
+        startFallback();
+        return;
+      }
+      if (unsubFallback) { unsubFallback(); unsubFallback = null; }
+      callback(toNum(snap.val()));
+    },
+    () => startFallback(),
+  );
+  return () => {
+    detached = true;
+    unsub();
+    if (unsubFallback) unsubFallback();
+  };
+}
+
 
