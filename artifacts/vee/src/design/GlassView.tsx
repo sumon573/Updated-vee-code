@@ -54,6 +54,12 @@ export type GlassViewProps = {
    * Off by default — most glass uses the plain light border.
    */
   accentBorder?: string | null;
+  /**
+   * Top-edge inner highlight ("sheen"). Defaults to true.
+   * Pass false to hide it — e.g. the profile identity panel, where the
+   * bright strip reads as a white banner above the name (boss 2026-11-09).
+   */
+  sheen?: boolean;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
   testID?: string;
@@ -65,6 +71,7 @@ export function GlassView({
   candidate = 'A',
   resolved,
   accentBorder = null,
+  sheen = true,
   style,
   children,
   testID,
@@ -105,17 +112,21 @@ export function GlassView({
           overflow: 'hidden',
         }}
       >
-        {/* Top-edge inner highlight — the Glass Pod "sheen", static. */}
-        <View
-          pointerEvents="none"
-          style={[
-            styles.sheen,
-            {
-              backgroundColor: tokens.sheen,
-              borderRadius: tokens.borderRadius >= 999 ? 999 : 8,
-            },
-          ]}
-        />
+        {/* Top-edge inner highlight — the Glass Pod "sheen", static.
+            Hidden when sheen={false} (profile identity panel: the bright
+            strip reads as a white banner above the name, boss 2026-11-09). */}
+        {sheen ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.sheen,
+              {
+                backgroundColor: tokens.sheen,
+                borderRadius: tokens.borderRadius >= 999 ? 999 : 8,
+              },
+            ]}
+          />
+        ) : null}
         {children}
       </View>
     </View>

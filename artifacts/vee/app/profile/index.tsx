@@ -1547,7 +1547,11 @@ export default function ProfileScreen({
               </View>
             </Pressable>
           </View>
-          <GlassView variant="panel" mode="light">
+          {/* 2026-11-09 (boss): sheen={false} — the GlassView top-edge
+              highlight rendered as a white banner-like streak at the top
+              of the profile card, just above the name. The sheen is NOT
+              in the frame art; it is this panel's own highlight. */}
+          <GlassView variant="panel" mode="light" sheen={false}>
             <View style={{ paddingHorizontal: 16, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             <Text style={{ fontSize: 18, fontWeight: '500', color: isKing ? KING_GOLD : C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
