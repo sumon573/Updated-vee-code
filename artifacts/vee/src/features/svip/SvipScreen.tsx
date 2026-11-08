@@ -81,6 +81,16 @@ const LOADING_BG = '#130D31';
 const PAGE_PAD = 20;
 /** Popup gradient top stop (chrome); the bottom stop is the server theme. */
 const POPUP_BG_TOP = '#1e1547';
+/** SVIP 5 frame hole calibration (measured from the art, 384px cell).
+ * Boss order 2026-11-08 (23:37): the frame must ALWAYS sit FITTED on top
+ * of the avatar, exactly like King/Count — never a black round inside
+ * the frame. FRAME_AVATAR_FRAC = avatar diameter as a fraction of the
+ * frame size; FRAME_HOLE_CY = hole centre as a fraction of the frame
+ * height. Hole (transparent flood fill): current art 249x202, big-hole
+ * art 263x246, SAME centre (193, 181.5) in both — so this geometry is
+ * safe for the art live today and the big-hole art being staged now. */
+const FRAME_AVATAR_FRAC = 0.68;
+const FRAME_HOLE_CY = 181.5 / 384;
 
 function formatPrice(n: number): string {
   return n.toLocaleString('en-US');
@@ -109,28 +119,25 @@ export default function SvipScreen() {
   // page); inner content is padded by PAGE_PAD.
   const pageW = winW;
 
-  // Frame-preview popup geometry — measured from the SVIP 5 frame art.
-  // The avatar must FILL the frame's inner dark disc (the visual DP
-  // opening), not sit as a dot inside it. Measured 2026-11-06 (dragon
-  // surge, replaces the tiger): the calm-frame opening is a wide
-  // ellipse — centre-row run ~57.8-58.6% W, centre-col run only
-  // ~34.6-34.9% H (hole bbox 58.6% W x 45.6-47.1% H; the dragons
-  // intrude at top/bottom centre, so the hole is taller off-centre).
-  // A circular avatar is limited by the vertical centre run (~35%),
-  // so the avatar is 35% of the frame size (53px on a 150px frame).
-  // That fills the height exactly and leaves ~12% frame-width dark
-  // disc each side at mid-height (down from ~14% at 30%) — the popup
-  // background is dark, so the remainder reads as the dark opening,
-  // not a hole. An ellipse matching the opening (~59% W x ~35% H)
-  // was REJECTED: this popup is shared by every tier's frame (the
-  // slot carries no tier), so it would cover the ring art on SVIP 1
-  // (~29% vertical opening) and the old tiger disc (41% W x 30% H),
-  // and cover-fit in a 1.69:1 box would crop a square DP photo
-  // (forehead/chin cut). The old 30% was calibrated for the tiger
-  // disc (~41% W x ~30% H) — "কই ফিট হয়েছে" no longer applies.
+  // Frame-preview popup geometry — King/Count standard (boss order
+  // 2026-11-08, 23:37): the frame sits FITTED on top of the avatar.
+  // The old geometry did the OPPOSITE: a 35%-of-frame avatar (53px on
+  // a 150px frame) painted ON TOP of the frame, leaving the frame's
+  // 97x79px transparent hole showing the dark popup background around
+  // it — the black round in the boss's 23:36 popup / 23:35 grid shots.
+  // The old 35% came from the 2026-11-06 centre-column measurement
+  // (~35% H) — but the hole is an ellipse (flood fill 249x202, i.e.
+  // 97x79px at 150px), so the avatar was a dot inside a much wider
+  // dark disc. New geometry: avatar 68% of the frame (102px on
+  // 150px) = the hole width, centred on the hole centre (2.7% of the
+  // frame above the frame centre), and the frame renders AFTER the
+  // avatar (on top) — the ring tucks ~3px over the avatar's edge,
+  // like King (DP 80 vs 75.1px hole). Verified by simulation on both
+  // the live art and the big-hole art (hole 263x246): no dark gap
+  // inside the hole, dragon head + surge fully visible.
   const previewFrameSize = Math.min(150, Math.min(winW * 0.66, 235) - 40);
-  const previewAvatarSize = Math.round(previewFrameSize * 0.35);
-  const previewAvatarFont = Math.round(previewAvatarSize * 0.42);
+  const previewAvatarSize = Math.round(previewFrameSize * FRAME_AVATAR_FRAC);
+  const previewAvatarDy = (0.5 - FRAME_HOLE_CY) * previewFrameSize;
 
   // Live server config (both nodes) — a server edit reflects without restart.
   useEffect(() => {
@@ -280,9 +287,40 @@ export default function SvipScreen() {
   const photoUrl = user?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
 
-  const renderRewardArt = (reward: SvipRewardSlot, size: number) => {
-    if (reward.kind === 'frame' && reward.sprite && reward.art) {
+  /** Avatar disc shown UNDER a frame reward (popup + grid): the user's
+   * photo, or the gold initial disc. The frame renders AFTER this (on
+   * top), so the ring paints over the avatar's edge — King/Count. */
+  const renderFrameAvatar = (avatarSize: number) => {
+    if (photoUrl) {
       return (
+        <ExpoImage
+          source={{ uri: photoUrl }}
+          style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      );
+    }
+    return (
+      <View style={{
+        width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2,
+        backgroundColor: theme.gold, alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Text style={{ fontSize: Math.round(avatarSize * 0.42), fontWeight: '800', color: theme.onGold }}>{initial}</Text>
+      </View>
+    );
+  };
+
+  const renderRewardArt = (reward: SvipRewardSlot, size: number) => {
+    if (reward.kind === 'frame' && reward.art) {
+      // Frame on the avatar (boss order 2026-11-08): avatar FIRST
+      // (under), frame AFTER (on top). Avatar fills the hole (68% of
+      // the frame, centred on the hole centre); the ring covers its
+      // edge. A bare frame on the dark page shows its transparent hole
+      // as a black round — that is what the grid showed before this fix.
+      const avatarSize = Math.round(size * FRAME_AVATAR_FRAC);
+      const avatarDy = (0.5 - FRAME_HOLE_CY) * size;
+      const frameArt = reward.sprite ? (
         <SvipSpriteFrame
           artUrl={reward.art}
           size={size}
@@ -291,9 +329,26 @@ export default function SvipScreen() {
           frames={reward.sprite.frames}
           stepMs={reward.sprite.stepMs}
         />
+      ) : (
+        <ExpoImage
+          source={{ uri: reward.art }}
+          style={{ width: size, height: size }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+        />
+      );
+      return (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ transform: [{ translateY: -avatarDy }] }}>
+            {renderFrameAvatar(avatarSize)}
+          </View>
+          <View style={{ position: 'absolute', left: 0, top: 0 }}>
+            {frameArt}
+          </View>
+        </View>
       );
     }
-    if ((reward.kind === 'nameplate' || reward.kind === 'frame') && reward.art) {
+    if (reward.kind === 'nameplate' && reward.art) {
       return (
         <ExpoImage
           source={{ uri: reward.art }}
@@ -620,6 +675,9 @@ export default function SvipScreen() {
               {preview?.kind === 'frame' ? (
                 <View style={{ alignItems: 'center', marginTop: 4 }}>
                   <View style={{ width: previewFrameSize, height: previewFrameSize, alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ transform: [{ translateY: -previewAvatarDy }] }}>
+                      {renderFrameAvatar(previewAvatarSize)}
+                    </View>
                     {preview.art && preview.sprite ? (
                       <View style={{ position: 'absolute', left: 0, top: 0 }}>
                         <SvipSpriteFrame
@@ -632,22 +690,6 @@ export default function SvipScreen() {
                         />
                       </View>
                     ) : null}
-                    {photoUrl ? (
-                      <ExpoImage
-                        source={{ uri: photoUrl }}
-                        style={{ width: previewAvatarSize, height: previewAvatarSize, borderRadius: previewAvatarSize / 2 }}
-                        contentFit="cover"
-                        cachePolicy="memory-disk"
-                      />
-                    ) : (
-                      <View style={{
-                        width: previewAvatarSize, height: previewAvatarSize, borderRadius: previewAvatarSize / 2,
-                        backgroundColor: theme.gold, alignItems: 'center', justifyContent: 'center',
-                      }}
-                      >
-                        <Text style={{ fontSize: previewAvatarFont, fontWeight: '800', color: theme.onGold }}>{initial}</Text>
-                      </View>
-                    )}
                   </View>
                 </View>
               ) : (
