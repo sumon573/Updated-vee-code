@@ -1602,18 +1602,21 @@ export default function ProfileScreen({
               const mist = nameplateMistFor(plate.id);
               const iconUrl = /^https?:\/\//i.test(plate.icon || '');
               // 2026-11-09 (boss): SVIP plate first, noble plate right after
-              // it. SVIP / other URL plates render the 100x20 banner; noble
-              // plates render the 74x20 art (or the rank pill) — same boxes
-              // as before. (Fixes the old latent bug: the banner mist branch
-              // read activeNameplate.icon instead of the shown plate's icon.)
+              // it. SVIP / other URL plates render the 74x20 banner (boss
+              // 2026-11-09 09:15: same King-size slot as noble plates, was
+              // 100x20 — the wide SVIP banner looked too big next to King);
+              // noble plates render the 74x20 art (or the rank pill) — same
+              // boxes as before. (Fixes the old latent bug: the banner mist
+              // branch read activeNameplate.icon instead of the shown plate's
+              // icon.)
               if (!isNoblePlate) {
                 if (!iconUrl) return null;
                 return (
                   <View key={plate.id} style={{ marginRight: 6 }}>
                     {mist ? (
-                      <MistNameplate imageUrl={plate.icon} mistColor={mist} width={100} height={20} fit="cover" />
+                      <MistNameplate imageUrl={plate.icon} mistColor={mist} width={74} height={20} fit="cover" />
                     ) : (
-                      <Image source={{ uri: plate.icon }} style={{ width: 100, height: 20 }} contentFit="cover" />
+                      <Image source={{ uri: plate.icon }} style={{ width: 74, height: 20 }} contentFit="cover" />
                     )}
                   </View>
                 );
