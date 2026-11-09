@@ -1360,21 +1360,31 @@ export default function ProfileScreen({
   const nobleRankKey = nobleState && NOBLE_RANKS[nobleState.rankIndex] ? NOBLE_RANKS[nobleState.rankIndex].key : null;
   const rankPlateGrant = nobleRankKey ? grantedNameplates.find((n) => n.id === 'noble-plate-' + nobleRankKey) || null : null;
   const rankPlateCatalog = nobleRankKey ? getActiveCatalog().find((r) => r.rankKey === nobleRankKey)?.nameplate : undefined;
-  /* 2026-11-09 (boss): SVIP + noble nameplates auto-set and are non-removable.
-     SVIP wins over noble (this fixes SVIP5's plate losing to the noble rule).
-     An expired SVIP plate must never show via the stale stored pointer, so the
-     pointer is ignored when it names an svip plate while SVIP is inactive.
-     Display is derived from live state — no stored write path — so an expired
-     membership can never leave a stale auto plate behind. */
+  /* 2026-11-09 (boss): SVIP + noble nameplates BOTH show — SVIP first.
+     The SVIP tier's plate is auto (first, primary); the current noble
+     rank's plate is auto right after it. Whatever noble rank the user is
+     at, that rank's plate is ALWAYS attached to the ID. When only one
+     exists, just that one shows; when neither exists, the stored
+     activeNameplate shows as before. An expired SVIP plate must never show
+     via the stale stored pointer, so the pointer is ignored when it names
+     an svip plate while SVIP is inactive. Display is derived from live
+     state — no stored write path — so an expired membership can never leave
+     a stale auto plate behind. */
   const svipPlateGrant = isSvipActive(svipState) ? grantedNameplates.find((n) => n.id === 'svip' + svipState!.tier + '-nameplate') || null : null;
   const effectiveActiveNameplate = activeNameplate && activeNameplate.id.startsWith('svip') && activeNameplate.id.endsWith('-nameplate') && !isSvipActive(svipState) ? null : activeNameplate;
-  const displayNameplate = svipPlateGrant || rankPlateGrant || (nobleRankKey && rankPlateCatalog ? { id: 'noble-plate-' + nobleRankKey, icon: (rankPlateCatalog as any).designUrl || (rankPlateCatalog as any).fallbackIcon || '' } as GrantedNameplate : null) || effectiveActiveNameplate;
-  /* Mist color for Viscount+ nameplates */
-  const nameplateMist = (() => {
-    if (!displayNameplate) return null;
-    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === displayNameplate.id);
-    return entry?.nameplate.mistColor || null;
+  const noblePlate = rankPlateGrant || (nobleRankKey && rankPlateCatalog ? { id: 'noble-plate-' + nobleRankKey, icon: (rankPlateCatalog as any).designUrl || (rankPlateCatalog as any).fallbackIcon || '' } as GrantedNameplate : null);
+  const displayNameplates: GrantedNameplate[] = (() => {
+    const list: GrantedNameplate[] = [];
+    if (svipPlateGrant) list.push(svipPlateGrant);
+    if (noblePlate && noblePlate.id !== svipPlateGrant?.id) list.push(noblePlate);
+    if (list.length === 0 && effectiveActiveNameplate) list.push(effectiveActiveNameplate);
+    return list;
   })();
+  /* Mist color for a Viscount+ nameplate — resolved per plate at render. */
+  const nameplateMistFor = (plateId: string): string | null => {
+    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === plateId);
+    return entry?.nameplate.mistColor || null;
+  };
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
 
@@ -1587,66 +1597,85 @@ export default function ProfileScreen({
             {isKing ? <KingSparkle /> : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-            {displayNameplate && /^https?:\/\//i.test(displayNameplate.icon) && !(nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate.id.startsWith('noble-plate-')) ? (
-              <View style={{ marginRight: 6 }}>
-                {nameplateMist ? (
-                  <MistNameplate imageUrl={activeNameplate.icon} mistColor={nameplateMist} width={100} height={20} fit="cover" />
-                ) : (
-                  <Image
-                    source={{ uri: displayNameplate.icon }}
-                    style={{ width: 100, height: 20 }}
-                    contentFit="cover"
-                  />
-                )}
-              </View>
-            ) : null}
-            {/* 2026-10-31 (boss): tapping the NOBLE plate opens the Nobel page. */}
-            <Pressable onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-            {/* 2026-10-31 (boss): Count plate ART on the profile at LevelBadge
-                height (20), replacing the pill — Count only, URL icon only. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'count' && displayNameplate?.id === 'noble-plate-count' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
-              <View style={{ marginRight: 6 }}>
-                <Image
-                  source={{ uri: displayNameplate.icon }}
-                  style={{ width: 74, height: 20 }}
-                  contentFit="contain"
-                />
-              </View>
-            ) : null}
-            {/* 2026-10-31 (boss): Marquis plate ART on the profile at LevelBadge
-                height (20) + width 74, radius 10 — same box as Count's art.
-                Light animation via MistNameplate mist particles (#EC407A). */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'marquis' && displayNameplate?.id === 'noble-plate-marquis' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
-              <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#EC407A'} width={74} height={20} fit="cover" />
-              </View>
-            ) : null}
-            {/* 2026-10-31 (boss): Duke plate ART on the profile at LevelBadge
-                height (20) + width 74, radius 10 — same box as Count's/Marquis's art.
-                Light animation via MistNameplate mist particles (#FF7043). */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'duke' && displayNameplate?.id === 'noble-plate-duke' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
-              <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#FF7043'} width={74} height={20} fit="cover" />
-              </View>
-            ) : null}
-            {/* King plate ART on the profile at LevelBadge height (20) + width 74, radius 10 — same box as Duke's art. Mist #FBC02D. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && NOBLE_RANKS[nobleState.rankIndex].key === 'king' && displayNameplate?.id === 'noble-plate-king' && /^https?:\/\//i.test(displayNameplate.icon || '') ? (
-              <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                <MistNameplate imageUrl={displayNameplate.icon} mistColor={nameplateMist || '#FBC02D'} width={74} height={20} fit="cover" />
-              </View>
-            ) : null}
-            {/* 2026-10-30 (boss): pill follows the EQUIPPED plate, not just the rank —
-                Use -> shows, Remove -> hides. Rank alone must not display it. */}
-            {nobleState && NOBLE_RANKS[nobleState.rankIndex] && displayNameplate?.id === 'noble-plate-' + NOBLE_RANKS[nobleState.rankIndex].key && !((NOBLE_RANKS[nobleState.rankIndex].key === 'count' || NOBLE_RANKS[nobleState.rankIndex].key === 'marquis' || NOBLE_RANKS[nobleState.rankIndex].key === 'duke' || NOBLE_RANKS[nobleState.rankIndex].key === 'king') && /^https?:\/\//i.test(displayNameplate.icon || '')) ? (
-              <PremiumPill
-                padH={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 5 : NOBLE_RANKS[nobleState.rankIndex].key === 'knight' ? 7 : 8}
-                fontSize={NOBLE_RANKS[nobleState.rankIndex].key === 'viscount' ? 9 : 11}
-                label={NOBLE_RANKS[nobleState.rankIndex].name.toUpperCase()}
-                icon={nobleThemeFor(nobleState.rankIndex)?.entryIcon}
-                colors={[NOBLE_RANKS[nobleState.rankIndex].color, lightenHex(NOBLE_RANKS[nobleState.rankIndex].color, 60)]}
-              />
-            ) : null}
-            </Pressable>
+            {displayNameplates.map((plate) => {
+              const isNoblePlate = plate.id.startsWith('noble-plate-');
+              const mist = nameplateMistFor(plate.id);
+              const iconUrl = /^https?:\/\//i.test(plate.icon || '');
+              // 2026-11-09 (boss): SVIP plate first, noble plate right after
+              // it. SVIP / other URL plates render the 100x20 banner; noble
+              // plates render the 74x20 art (or the rank pill) — same boxes
+              // as before. (Fixes the old latent bug: the banner mist branch
+              // read activeNameplate.icon instead of the shown plate's icon.)
+              if (!isNoblePlate) {
+                if (!iconUrl) return null;
+                return (
+                  <View key={plate.id} style={{ marginRight: 6 }}>
+                    {mist ? (
+                      <MistNameplate imageUrl={plate.icon} mistColor={mist} width={100} height={20} fit="cover" />
+                    ) : (
+                      <Image source={{ uri: plate.icon }} style={{ width: 100, height: 20 }} contentFit="cover" />
+                    )}
+                  </View>
+                );
+              }
+              // Noble plate — only the CURRENT rank's plate renders (a stale
+              // old-rank plate via the stored pointer stays hidden, as before).
+              // Tapping it opens the Nobel page (2026-10-31, boss).
+              const rankKey = plate.id.slice('noble-plate-'.length);
+              if (rankKey !== nobleRankKey) return null;
+              const rankIndex = NOBLE_RANKS.findIndex((r) => r.key === rankKey);
+              if (iconUrl && rankKey === 'count') {
+                return (
+                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
+                    <View style={{ marginRight: 6 }}>
+                      <Image source={{ uri: plate.icon }} style={{ width: 74, height: 20 }} contentFit="contain" />
+                    </View>
+                  </Pressable>
+                );
+              }
+              if (iconUrl && rankKey === 'marquis') {
+                return (
+                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
+                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
+                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#EC407A'} width={74} height={20} fit="cover" />
+                    </View>
+                  </Pressable>
+                );
+              }
+              if (iconUrl && rankKey === 'duke') {
+                return (
+                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
+                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
+                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#FF7043'} width={74} height={20} fit="cover" />
+                    </View>
+                  </Pressable>
+                );
+              }
+              if (iconUrl && rankKey === 'king') {
+                return (
+                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
+                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
+                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#FBC02D'} width={74} height={20} fit="cover" />
+                    </View>
+                  </Pressable>
+                );
+              }
+              if (rankIndex >= 0) {
+                const rank = NOBLE_RANKS[rankIndex];
+                return (
+                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
+                    <PremiumPill
+                      padH={rank.key === 'viscount' ? 5 : rank.key === 'knight' ? 7 : 8}
+                      fontSize={rank.key === 'viscount' ? 9 : 11}
+                      label={rank.name.toUpperCase()}
+                      icon={nobleThemeFor(rankIndex)?.entryIcon}
+                      colors={[rank.color, lightenHex(rank.color, 60)]}
+                    />
+                  </Pressable>
+                );
+              }
+              return null;
+            })}
             <LevelBadge level={userLevel} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>

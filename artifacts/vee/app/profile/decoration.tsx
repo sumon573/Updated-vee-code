@@ -322,15 +322,17 @@ export default function DecorationScreen() {
     return typeof ri === 'number' && NOBLE_RANKS[ri] ? NOBLE_RANKS[ri].key : null;
   })();
 
-  // 2026-11-09 (boss): nameplate auto-set — SVIP tier's plate first (when the
-  // grant exists), else the current noble rank's plate. The auto plate is
-  // ALWAYS in use and has no Remove option; other plates keep Use/Remove.
-  const autoPlateId = (() => {
+  // 2026-11-09 (boss): nameplate auto-set — BOTH the SVIP tier's plate AND
+  // the current noble rank's plate are auto. Both are ALWAYS in use and have
+  // no Remove option; other plates keep Use/Remove.
+  const autoPlateIds: string[] = (() => {
+    const ids: string[] = [];
     if (isSvipActive(svipState)) {
       const svipId = 'svip' + svipState!.tier + '-nameplate';
-      if (nameplates.some((n) => n.id === svipId)) return svipId;
+      if (nameplates.some((n) => n.id === svipId)) ids.push(svipId);
     }
-    return nobleRankKey ? 'noble-plate-' + nobleRankKey : null;
+    if (nobleRankKey) ids.push('noble-plate-' + nobleRankKey);
+    return ids;
   })();
 
   const renderItemRow = (
@@ -339,10 +341,10 @@ export default function DecorationScreen() {
     field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect',
     sourceLabel: string,
   ) => {
-    // 2026-11-09 (boss): the auto plate (SVIP tier / current noble rank)
+    // 2026-11-09 (boss): an auto plate (SVIP tier / current noble rank)
     // counts as active even if the pointer is stale (heal syncs it); its
     // Remove button is hidden below.
-    const isAutoPlate = field === 'activeNameplate' && autoPlateId && item.id === autoPlateId;
+    const isAutoPlate = field === 'activeNameplate' && autoPlateIds.includes(item.id);
     const showActive = isActive || isAutoPlate;
     return (
     <View
