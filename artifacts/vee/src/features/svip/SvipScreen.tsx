@@ -43,19 +43,25 @@
  * (/profile/topup), the recharge path. The waitlist survives only as
  * the (now unreachable) fallback record; it is never written from here.
  *
- * Recharge progress (2026-11-09, boss order): a live thin gold bar at
- * the SVIP Points line shows lifetime recharge progress toward the
- * NEXT tier — wallets/{uid}/totalRecharged (live subscription via
+ * Recharge progress (2026-11-09, boss order; redesigned the same day,
+ * boss: "digital আর unique হতে হবে"): a pinned digital LED-meter bar
+ * above the buy bar shows lifetime recharge progress toward the NEXT
+ * tier — wallets/{uid}/totalRecharged (live subscription via
  * walletService.subscribeTotalRecharged, tx-history fallback) against
- * the server svip_config priceDiamonds thresholds. Max tier shows a
- * full bar with "Max".
+ * the server svip_config priceDiamonds thresholds. TIER-CORRECT: the
+ * fill counts a granted membership (effective = max(live total, own
+ * tier's threshold)), so a max-tier member always sees a FULL bar with
+ * a gold MAX LCD readout — never an empty bar under "MAX" text.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, Modal, useWindowDimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  Easing, useAnimatedStyle, useSharedValue, withTiming,
+} from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import PremiumLoader from '@/src/components/PremiumLoader';
@@ -71,7 +77,7 @@ import {
   subscribeSvipConfig, SvipTier,
 } from '@/src/features/svip/svipConfig';
 import {
-  subscribeSvipPageConfig, SvipPageConfig, SvipRewardSlot,
+  subscribeSvipPageConfig, SvipPageConfig, SvipPageTheme, SvipRewardSlot,
 } from '@/src/features/svip/svipPageConfig';
 import { SvipSpriteFrame } from '@/src/features/svip/SvipSpriteFrame';
 import {
@@ -125,6 +131,347 @@ function luminance(hex: string): number {
   });
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 }
+
+/** Segments in the LED-meter fill (mockups: mockup-a-max / mockup-b-mid).
+ * The fill is a banded gradient with hard stops — each segment wears
+ * the colour of the tier whose range it sits in — over a row of dim
+ * unlit segments, so the bar reads as a digital meter, never a plain
+ * rounded bar. */
+const BAR_SEGMENTS = 30;
+
+type SvipJourneyBarProps = {
+  totalRecharged: number;
+  activeTierNum: number;
+  pricedTiers: SvipTier[];
+  theme: SvipPageTheme;
+  contentW: number;
+};
+
+/** ── Digital LED-meter journey bar (redesign 2026-11-09, boss: "digital
+ * আর unique হতে হবে") ───────────────────────────────────────────────
+ * TIER-CORRECT FILL (the fix for "I'm SVIP 5 but the bar doesn't show
+ * it"): a granted membership counts. effectiveRecharged =
+ * max(live totalRecharged, the membership tier's own threshold), and
+ * the fill, the milestone circles, the LCD readout and the remaining
+ * caption ALL read from that ONE value — they can never disagree again.
+ * Mh (tier 5, totalRecharged 0): max(0, 60,000) = 60,000 → 100% full,
+ * all 5 nodes lit, LCD "60,000 / 60,000" + MAX. A member whose live
+ * recharge already passes their tier is unaffected (max is a no-op).
+ * No wallet/SVIP data is written anywhere — this is display logic only.
+ *
+ * DIGITAL character: segmented banded fill + tick scale (10K/20K/30K/
+ * 40K/60K) + LCD readout (monospace, gold glow, ghost "88,888" unlit
+ * segments behind the live digits) + HUD corner brackets + gold MAX
+ * treatment. No new emoji — the old 💎/👑 caption glyphs are dropped
+ * for a clean mono caption. SVIP_ICON_COLORS and the ①–⑤ nodes are
+ * unchanged; each node still wears its OWN tier's colour on every page.
+ *
+ * SMOOTH + ISOLATED: the bar is a memo'd component — it re-renders
+ * only when its own props change (totalRecharged / tier / tiers /
+ * theme / width), never when the rest of the page re-renders. The fill
+ * itself never re-renders at all: a Reanimated shared value glides it
+ * (withTiming, 650ms) on the UI thread via an overflow-hidden clip
+ * whose width animates — the full-width banded gradient inside never
+ * resizes, so its segment stripes stay aligned with the dim unlit
+ * segments beneath. The LCD digits are state text (they show the new
+ * reading at once, like a meter's digital display) while the fill
+ * glides to match; at rest they always agree. No polling, no
+ * intervals, no timers, no scroll listener — the only inputs are the
+ * existing live subscriptions passed in as props. */
+const SvipJourneyBar = memo(function SvipJourneyBar({
+  totalRecharged, activeTierNum, pricedTiers, theme, contentW,
+}: SvipJourneyBarProps) {
+  const topTier = pricedTiers[pricedTiers.length - 1] || null;
+  const topPrice = topTier ? topTier.priceDiamonds : 0;
+
+  // Tier-correct effective total — see the header comment above.
+  const tierThreshold = pricedTiers.find((t) => t.tier === activeTierNum)?.priceDiamonds ?? 0;
+  const effectiveRecharged = Math.max(totalRecharged, tierThreshold);
+  const derivedLevel = pricedTiers.reduce(
+    (m, t) => (effectiveRecharged >= t.priceDiamonds ? Math.max(m, t.tier) : m),
+    0,
+  );
+  const progressLevel = Math.max(activeTierNum, derivedLevel);
+  const nextTier = pricedTiers.find((t) => t.tier > progressLevel) || null;
+  const isMax = nextTier === null;
+  const denom = nextTier ? nextTier.priceDiamonds : topPrice;
+  const fillPct = topPrice > 0 ? Math.min(1, Math.max(0, effectiveRecharged / topPrice)) : 0;
+  const remainingToNext = nextTier ? Math.max(0, nextTier.priceDiamonds - effectiveRecharged) : 0;
+
+  // Track geometry (dp): panel padding 11 + track inset 11, each side.
+  const trackW = Math.max(0, contentW - 44);
+
+  // Banded segmented gradient: hard stops per segment, 2dp gaps that
+  // stay transparent so the dim unlit segments show through. Locations
+  // are computed from the same cell/gap geometry as the unlit row, so
+  // lit stripes and dim segments always line up. Falls back to a plain
+  // gold gradient on absurdly narrow widths.
+  const { fillColors, fillLocations } = useMemo<{
+    fillColors: [string, string, ...string[]];
+    fillLocations: [number, number, ...number[]];
+  }>(() => {
+    if (trackW < 80 || topPrice <= 0) {
+      return { fillColors: [theme.goldBright, theme.goldDeep], fillLocations: [0, 1] };
+    }
+    const gapPx = 2;
+    const cellW = (trackW - (BAR_SEGMENTS - 1) * gapPx) / BAR_SEGMENTS;
+    const colors: string[] = [];
+    const locations: number[] = [];
+    for (let i = 0; i < BAR_SEGMENTS; i++) {
+      const startPx = i * (cellW + gapPx);
+      const endPx = startPx + cellW;
+      const centre = ((i + 0.5) / BAR_SEGMENTS) * topPrice;
+      const band = pricedTiers.find((t) => centre <= t.priceDiamonds)
+        || pricedTiers[pricedTiers.length - 1];
+      const c = SVIP_ICON_COLORS[band.tier] || theme.gold;
+      if (i === BAR_SEGMENTS - 1) {
+        colors.push(c, c);
+        locations.push(startPx / trackW, 1);
+      } else {
+        // 0.5px epsilon keeps locations strictly increasing (a hard
+        // stop with duplicate locations is undefined behaviour in some
+        // gradient implementations).
+        colors.push(c, c, 'transparent', 'transparent');
+        locations.push(
+          startPx / trackW,
+          endPx / trackW,
+          (endPx + 0.5) / trackW,
+          (endPx + gapPx) / trackW,
+        );
+      }
+    }
+    // Both arrays always hold >= 2 entries (the fallback has 2; the
+    // loop pushes >= 2 per segment) — the casts satisfy the gradient's
+    // non-empty-tuple prop types.
+    return {
+      fillColors: colors as [string, string, ...string[]],
+      fillLocations: locations as [number, number, ...number[]],
+    };
+  }, [pricedTiers, topPrice, trackW, theme.gold, theme.goldBright, theme.goldDeep]);
+
+  // UI-thread glide: 0 on mount (glides up to the live value on first
+  // paint), then glides to every new target. No re-render per frame.
+  const fillSV = useSharedValue(0);
+  const trackWSV = useSharedValue(trackW);
+  useEffect(() => { trackWSV.value = trackW; }, [trackW, trackWSV]);
+  useEffect(() => {
+    fillSV.value = withTiming(fillPct, { duration: 650, easing: Easing.inOut(Easing.ease) });
+  }, [fillPct, fillSV]);
+  const clipStyle = useAnimatedStyle(() => ({ width: fillSV.value * trackWSV.value }));
+
+  return (
+    <View style={{ paddingTop: 10, paddingBottom: 8 }}>
+      <View style={{
+        position: 'relative',
+        backgroundColor: 'rgba(8, 5, 20, 0.72)',
+        borderWidth: 1,
+        borderColor: isMax ? theme.goldBright : 'rgba(232, 184, 75, 0.45)',
+        borderRadius: 8,
+        paddingHorizontal: 11,
+        paddingTop: 10,
+        paddingBottom: 10,
+        ...(isMax ? {
+          shadowColor: '#E8B84B', shadowOpacity: 0.35, shadowRadius: 12,
+          shadowOffset: { width: 0, height: 0 }, elevation: 4,
+        } : null),
+      }}
+      >
+        {/* HUD corner brackets. */}
+        <View style={{ position: 'absolute', top: -1, left: -1, width: 12, height: 12, borderTopWidth: 2, borderLeftWidth: 2, borderColor: theme.goldBright }} />
+        <View style={{ position: 'absolute', top: -1, right: -1, width: 12, height: 12, borderTopWidth: 2, borderRightWidth: 2, borderColor: theme.goldBright }} />
+        <View style={{ position: 'absolute', bottom: -1, left: -1, width: 12, height: 12, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: theme.goldBright }} />
+        <View style={{ position: 'absolute', bottom: -1, right: -1, width: 12, height: 12, borderBottomWidth: 2, borderRightWidth: 2, borderColor: theme.goldBright }} />
+
+        {/* Header row: label + LCD digital readout. */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{
+            fontFamily: 'monospace', fontSize: 10, fontWeight: '800',
+            letterSpacing: 1.6, color: theme.goldBright,
+          }}
+          >
+            {nextTier
+              ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
+              : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
+          </Text>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            backgroundColor: '#05030C',
+            borderWidth: 1, borderColor: 'rgba(232, 184, 75, 0.55)',
+            borderRadius: 5, paddingVertical: 3, paddingHorizontal: 8,
+            overflow: 'hidden',
+          }}
+          >
+            {/* Ghost unlit "88,888" segments behind the live digits —
+                the seven-segment LCD signature. */}
+            <Text style={{
+              position: 'absolute', left: 8, top: 3,
+              fontFamily: 'monospace', fontSize: 13, fontWeight: '700',
+              letterSpacing: 1, color: 'rgba(232, 184, 75, 0.13)',
+            }}
+            >
+              88,888 / 88,888
+            </Text>
+            <Text style={{
+              fontFamily: 'monospace', fontSize: 13, fontWeight: '700',
+              letterSpacing: 1, color: '#FFD76A',
+              textShadowColor: 'rgba(245, 197, 66, 0.85)',
+              textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 6,
+            }}
+            >
+              {formatPrice(effectiveRecharged)}
+              {' / '}
+              {formatPrice(denom)}
+            </Text>
+            {isMax ? (
+              <View style={{
+                backgroundColor: theme.gold, borderRadius: 3,
+                paddingHorizontal: 5, paddingVertical: 1,
+              }}
+              >
+                <Text style={{
+                  fontFamily: 'monospace', fontSize: 10, fontWeight: '800',
+                  letterSpacing: 1, color: theme.onGold,
+                }}
+                >
+                  MAX
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Track + circled milestones — one per tier, at its threshold's
+            share of the top tier's price. */}
+        <View style={{ marginHorizontal: 11, height: 28, marginTop: 6, position: 'relative' }}>
+          {/* Dim unlit segments (static). */}
+          <View style={{
+            position: 'absolute', left: 0, right: 0, top: 12, height: 6,
+            flexDirection: 'row', gap: 2,
+          }}
+          >
+            {Array.from({ length: BAR_SEGMENTS }, (_, i) => (
+              <View
+                key={i}
+                style={{
+                  flex: 1, borderRadius: 2,
+                  backgroundColor: 'rgba(232, 184, 75, 0.10)',
+                  borderWidth: 0.5, borderColor: 'rgba(232, 184, 75, 0.14)',
+                }}
+              />
+            ))}
+          </View>
+          {/* Lit banded fill — full-width gradient inside an animated
+              clip, so it glides without ever resizing (stripes stay
+              aligned with the dim segments beneath). */}
+          <Animated.View style={[{
+            position: 'absolute', left: 0, top: 12, height: 6, overflow: 'hidden',
+          }, clipStyle]}
+          >
+            <LinearGradient
+              colors={fillColors}
+              locations={fillLocations}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ width: trackW, height: 6 }}
+            />
+            {/* Bright leading-edge scan head. */}
+            <View style={{
+              position: 'absolute', right: 0, top: 0,
+              width: 3, height: 6, backgroundColor: '#FFF3C4',
+            }}
+            />
+          </Animated.View>
+          {pricedTiers.map((t) => {
+            const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
+            const reached = effectiveRecharged >= t.priceDiamonds;
+            // This circle's OWN tier colour (not the viewed page's) +
+            // its readable number colour.
+            const circleColor = SVIP_ICON_COLORS[t.tier] || theme.gold;
+            const circleNumColor = luminance(circleColor) > 0.25 ? '#241a04' : '#FFFFFF';
+            return (
+              <React.Fragment key={t.tier}>
+                {reached ? (
+                  <View style={{
+                    position: 'absolute', left: `${pct}%`, top: -1,
+                    width: 30, height: 30, borderRadius: 15,
+                    transform: [{ translateX: -15 }],
+                    borderWidth: 1, borderColor: circleColor, opacity: 0.35,
+                  }}
+                  />
+                ) : null}
+                <View
+                  style={{
+                    position: 'absolute', left: `${pct}%`, top: 3,
+                    width: 22, height: 22, borderRadius: 11,
+                    transform: [{ translateX: -11 }],
+                    backgroundColor: reached ? circleColor : 'transparent',
+                    borderWidth: reached ? 1 : 1.5,
+                    borderColor: circleColor,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 12, fontWeight: '800',
+                    color: reached ? circleNumColor : theme.ink,
+                  }}
+                  >
+                    {t.tier}
+                  </Text>
+                </View>
+              </React.Fragment>
+            );
+          })}
+        </View>
+
+        {/* Tick scale — threshold labels in mono. */}
+        <View style={{ marginHorizontal: 11, height: 18, marginTop: 2, position: 'relative' }}>
+          {pricedTiers.map((t) => {
+            const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
+            return (
+              <React.Fragment key={t.tier}>
+                <View style={{
+                  position: 'absolute', left: `${pct}%`, top: 0,
+                  width: 1, height: 5, marginLeft: -0.5,
+                  backgroundColor: 'rgba(232, 184, 75, 0.5)',
+                }}
+                />
+                <Text style={{
+                  position: 'absolute', left: `${pct}%`, top: 7,
+                  width: 40, marginLeft: -20, textAlign: 'center',
+                  fontFamily: 'monospace', fontSize: 8, letterSpacing: 0.5,
+                  color: theme.inkSoft,
+                }}
+                >
+                  {`${Math.round(t.priceDiamonds / 1000)}K`}
+                </Text>
+              </React.Fragment>
+            );
+          })}
+        </View>
+
+        <Text style={{
+          fontFamily: 'monospace', fontSize: 11, letterSpacing: 1,
+          color: theme.inkSoft, textAlign: 'center', marginTop: 6,
+        }}
+        >
+          {nextTier ? (
+            <>
+              <Text style={{ fontWeight: '700', color: '#FFD76A' }}>
+                {formatPrice(remainingToNext)}
+              </Text>
+              {` more diamonds to ${nextTier.name}`}
+            </>
+          ) : (
+            <>
+              {'You hold the highest SVIP tier — '}
+              <Text style={{ fontWeight: '700', color: '#FFD76A' }}>MAX</Text>
+            </>
+          )}
+        </Text>
+      </View>
+    </View>
+  );
+});
 
 export default function SvipScreen() {
   const router = useRouter();
@@ -304,42 +651,21 @@ export default function SvipScreen() {
   const photoUrl = veeProfile?.photoURL || user?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
 
-  // ── Live recharge progress toward the NEXT SVIP tier ──────────────
-  // Thresholds come from the server svip_config tiers (priceDiamonds);
-  // the total is the live wallets/{uid}/totalRecharged subscription.
-  // Current level = the higher of the membership tier and the tier the
-  // lifetime recharge already earns — a granted membership never hides
-  // recharge progress, and heavy recharge never hides membership.
-  // The pinned bar's fill spans the WHOLE journey (0 → top tier);
-  // the header + caption below it still track the NEXT tier.
-  const pricedTiers = tiers
+  // Priced tiers, memoised so the memo'd journey bar below keeps its
+  // props stable — a fresh array identity every parent render would
+  // defeat the memo and re-render the bar on every page tick.
+  const pricedTiers = useMemo(() => tiers
     .filter((t) => t.priceDiamonds > 0)
-    .sort((a, b) => a.tier - b.tier);
-  const derivedLevel = totalRecharged == null
-    ? 0
-    : pricedTiers.reduce(
-      (m, t) => (totalRecharged >= t.priceDiamonds ? Math.max(m, t.tier) : m),
-      0,
-    );
-  const progressLevel = Math.max(activeTierNum, derivedLevel);
-  const nextTier = pricedTiers.find((t) => t.tier > progressLevel) || null;
-  const topTier = pricedTiers[pricedTiers.length - 1] || null;
-  // Whole-journey fill (boss 2026-11-09): the bar spans 0 → the top
-  // tier's threshold, so the fill is the user's LIVE cumulative
-  // recharge against the full journey — not just the current range.
-  const topPrice = topTier ? topTier.priceDiamonds : 0;
-  const journeyPct = topPrice > 0 && totalRecharged != null
-    ? Math.min(1, Math.max(0, totalRecharged / topPrice))
-    : 0;
-  const remainingToNext = nextTier && totalRecharged != null
-    ? Math.max(0, nextTier.priceDiamonds - totalRecharged)
-    : 0;
-  // Milestone circles each wear their OWN tier's icon colour
+    .sort((a, b) => a.tier - b.tier), [tiers]);
+  // Live recharge progress (fill / circles / LCD / caption) is owned
+  // entirely by <SvipJourneyBar> below — it derives everything from
+  // totalRecharged + the membership tier, so the four can never
+  // disagree. Milestone circles each wear their OWN tier's icon colour
   // (SVIP_ICON_COLORS, sampled from that tier's hero art) on EVERY
   // page — so ①②③④⑤ are teal, purple, crimson, royal blue, gold
   // wherever the bar is shown. The per-circle colour is computed
-  // inside the pricedTiers.map loop below; the number inside picks
-  // the readable side of that circle's own colour via luminance().
+  // inside the pricedTiers.map loop in the bar; the number inside
+  // picks the readable side of that circle's own colour via luminance().
 
   /** Avatar disc shown UNDER a frame reward (popup + grid): the user's
    * photo, or the gold initial disc. The frame renders AFTER this (on
@@ -690,91 +1016,21 @@ export default function SvipScreen() {
           </ScrollView>
 
           {/* ── Live recharge journey — pinned above the buy bar ──
-              Boss 2026-11-09: visible on EVERY tier page, with circled
-              tier numbers ①–⑤ at the threshold positions, each circle
-              in its OWN tier's icon colour, and the fill from LIVE
-              recharge. It lived inside the tier page, where the tall
-              pages (hero + banner + rewards on every tier now) clipped
-              it — and its caption — behind the buy bar. Pinned here it
-              can never be cut off; the pages scroll vertically instead,
-              so no tier content is ever clipped either. The bar tracks
-              the USER, not the tab: same fill on every page, and the
-              circles keep their own tier colours on every page. Shown
-              once the live total has arrived (null = still loading,
-              never a misleading 0). */}
+              Boss 2026-11-09: visible on EVERY tier page. Digital
+              LED-meter redesign (same date, boss: "digital আর unique
+              হতে হবে"): segmented banded fill, tick scale, LCD readout,
+              HUD brackets, gold MAX treatment — see <SvipJourneyBar>
+              above for the tier-correct fill rule, the glide and the
+              isolation. Shown once the live total has arrived (null =
+              still loading, never a misleading 0). */}
           {totalRecharged !== null && pricedTiers.length > 0 ? (
-            <View style={{ paddingTop: 10, paddingBottom: 8 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <Text style={{
-                  fontSize: 10, fontWeight: '800', letterSpacing: 1.6,
-                  color: theme.goldBright,
-                }}
-                >
-                  {nextTier
-                    ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
-                    : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
-                </Text>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.inkSoft }}>
-                  {formatPrice(totalRecharged)}
-                  {nextTier ? ` / ${formatPrice(nextTier.priceDiamonds)}` : ''}
-                </Text>
-              </View>
-              {/* Track + circled milestones — one per tier, at its
-                  threshold's share of the top tier's price. */}
-              <View style={{ marginHorizontal: 11, height: 28, marginTop: 6, position: 'relative' }}>
-                <View style={{
-                  position: 'absolute', left: 0, right: 0, top: 12, height: 4,
-                  borderRadius: 2, backgroundColor: 'rgba(232, 184, 75, 0.18)',
-                }}
-                />
-                <LinearGradient
-                  colors={[theme.goldBright, theme.gold, theme.goldDeep]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={{
-                    position: 'absolute', left: 0, top: 12, height: 4,
-                    borderRadius: 2, width: `${Math.round(journeyPct * 100)}%`,
-                  }}
-                />
-                {pricedTiers.map((t) => {
-                  const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
-                  const reached = totalRecharged >= t.priceDiamonds;
-                  // This circle's OWN tier colour (not the viewed
-                  // page's) + its readable number colour.
-                  const circleColor = SVIP_ICON_COLORS[t.tier] || theme.gold;
-                  const circleNumColor = luminance(circleColor) > 0.25 ? '#241a04' : '#FFFFFF';
-                  return (
-                    <View
-                      key={t.tier}
-                      style={{
-                        position: 'absolute', left: `${pct}%`, top: 3,
-                        width: 22, height: 22, borderRadius: 11,
-                        transform: [{ translateX: -11 }],
-                        backgroundColor: reached ? circleColor : 'transparent',
-                        borderWidth: reached ? 1 : 1.5,
-                        borderColor: circleColor,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{
-                        fontSize: 12, fontWeight: '800',
-                        color: reached ? circleNumColor : theme.ink,
-                      }}
-                      >
-                        {t.tier}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={{
-                fontSize: 11, color: theme.inkSoft, textAlign: 'center', marginTop: 6,
-              }}
-              >
-                {nextTier
-                  ? `💎 ${formatPrice(remainingToNext)} more diamonds to ${nextTier.name}`
-                  : '👑 You hold the highest SVIP tier'}
-              </Text>
-            </View>
+            <SvipJourneyBar
+              totalRecharged={totalRecharged}
+              activeTierNum={activeTierNum}
+              pricedTiers={pricedTiers}
+              theme={theme}
+              contentW={contentW}
+            />
           ) : null}
 
           {/* Buy bar — identical on every page, pinned at the bottom.
