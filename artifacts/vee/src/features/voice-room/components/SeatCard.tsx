@@ -333,9 +333,16 @@ export const SeatCard = memo(function SeatCard({
                 আরেকটু নিচে হবে"): nudged a little LOWER, top: 6 → 10, so it
                 sits ON the frame's top-left edge instead of floating just
                 above it. Size (12dp) and left (-2) unchanged; still far
-                from the "SVIP" plate and the frame art's head. */}
+                from the "SVIP" plate and the frame art's head.
+                2026-11-09 01:44 (boss, testing OTA 01a1bcaa: "আরো নিচে
+                নামবে, এমন ভাবে থাকবে যেনো svip লেখা টা ঢেকে না যায়,
+                লেখা থেকে একটু হালকা উপরে"): moved DOWN MORE, top: 10 → 16,
+                so it sits clearly lower on the frame's left edge, its
+                bottom edge still well ABOVE the "SVIP" plate text at the
+                bottom of the frame (30dp clearance) — the writing is
+                never covered. Size (12dp) and left (-2) unchanged. */}
             <View style={{
-              position: 'absolute', top: 10, left: -2,
+              position: 'absolute', top: 16, left: -2,
               width: 12, height: 12, borderRadius: 6,
               backgroundColor: showMuted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
