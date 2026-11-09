@@ -31,8 +31,11 @@
  *   the page bg (same as the previous emblem screen).
  * - The preview name's "animated gold gradient" is a static gold —
  *   the tree has no gradient-text component.
- * - Preview DP/name use the LOGGED-IN user (the showcase's "M"/"Mh"
- *   was demo data).
+ * - Preview DP/name use the LOGGED-IN user's VEE profile (RTDB
+ *   users/{uid}: name + photoURL) — NEVER Firebase Auth: auth
+ *   displayName/photoURL are the Google provider values ("Md Sumon
+ *   Islam" + penguin) and showed in the popup before this fix. The
+ *   showcase's "M"/"Mh" was demo data; the live "Mh" is the Vee name.
  *
  * Purchase status (2026-11-09, boss order): the purchase endpoint is
  * CLOSED (403 "purchase is closed") by design — the Join/Recharge CTA
@@ -63,6 +66,7 @@ import {
   SvipState,
 } from '@/src/features/svip/svipService';
 import { subscribeTotalRecharged } from '@/src/features/wallet/walletService';
+import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import {
   subscribeSvipConfig, SvipTier,
 } from '@/src/features/svip/svipConfig';
@@ -138,6 +142,9 @@ export default function SvipScreen() {
   const [pointsOpen, setPointsOpen] = useState(false);
   const [selectedTier, setSelectedTier] = useState(0);
   const [preview, setPreview] = useState<SvipRewardSlot | null>(null);
+  // Vee profile (RTDB users/{uid}) — the popup name + DP source.
+  // subscribeUser also serves the cached profile instantly, then live.
+  const [veeProfile, setVeeProfile] = useState<VeeUser | null>(null);
   const pagerRef = useRef<ScrollView | null>(null);
 
   const contentW = Math.max(0, winW - PAGE_PAD * 2);
@@ -184,6 +191,12 @@ export default function SvipScreen() {
   useEffect(() => {
     if (!user?.uid) return;
     isOnSvipWaitlist(user.uid).then(setOnWaitlist).catch(() => {});
+    // Vee profile (RTDB users/{uid}: name + photoURL) — the SAME
+    // source the home screen uses for its top-left DP. The popup name
+    // + avatar MUST come from here, never from Firebase Auth: auth
+    // displayName/photoURL are the Google provider values ("Md Sumon
+    // Islam" + penguin) and leaked into the popup before this fix.
+    const unsubProfile = subscribeUser(user.uid, setVeeProfile);
     const unsub = subscribeSvip(
       user.uid,
       (s) => { setSvip(s); },
@@ -192,7 +205,7 @@ export default function SvipScreen() {
     const unsubPoints = subscribeSvipPoints(user.uid, setPoints, () => {});
     getSvipPointsHistory(user.uid).then(setPointsHistory).catch(() => {});
     const unsubRecharge = subscribeTotalRecharged(user.uid, setTotalRecharged);
-    return () => { unsub(); unsubPoints(); unsubRecharge(); };
+    return () => { unsub(); unsubPoints(); unsubRecharge(); unsubProfile(); };
   }, [user?.uid]);
 
   const active = isSvipActive(svip);
@@ -278,9 +291,17 @@ export default function SvipScreen() {
   const slotW = (contentW - layout.rewardsGapPx * (layout.rewardsCols - 1)) / layout.rewardsCols;
   const labelH = layout.rewardLabelSizePx + 6;
   const slotH = slotW + 6 + labelH;
-  const displayName = user?.displayName || (user?.email ? user.email.split('@')[0] : '');
+  // Popup identity — VEE profile first (RTDB users/{uid}: name +
+  // photoURL), Firebase Auth only as a last resort when NO Vee profile
+  // exists at all. Auth displayName/photoURL are the Google account
+  // values ("Md Sumon Islam" + penguin) and must never win over the
+  // Vee profile. This also feeds the frame avatar (popup + grid),
+  // which had the same Google leak.
+  const displayName = veeProfile?.name
+    || user?.displayName
+    || (user?.email ? user.email.split('@')[0] : '');
   const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
-  const photoUrl = user?.photoURL || '';
+  const photoUrl = veeProfile?.photoURL || user?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
 
   // ── Live recharge progress toward the NEXT SVIP tier ──────────────
