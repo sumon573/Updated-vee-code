@@ -340,9 +340,17 @@ export const SeatCard = memo(function SeatCard({
                 so it sits clearly lower on the frame's left edge, its
                 bottom edge still well ABOVE the "SVIP" plate text at the
                 bottom of the frame (30dp clearance) — the writing is
-                never covered. Size (12dp) and left (-2) unchanged. */}
+                never covered. Size (12dp) and left (-2) unchanged.
+                2026-11-09 08:56 (boss, testing OTA 01a1be39: "দেখলাম,
+                কতটুকু নিচে নামালে ঠিক অতোটুকু নামাও, মধ্যে হয়েছে আরও
+                নিচে নামবে" — it sits in the MIDDLE, go down MORE):
+                moved DOWN to the LOWER part of the left edge, top: 16 → 32,
+                so its centre (y=38) sits in the lower third of the avatar
+                instead of the middle (y=22). Bottom edge y=44, still 14dp
+                ABOVE the "SVIP" plate text (plate top y≈58) — the writing
+                is never covered. Size (12dp) and left (-2) unchanged. */}
             <View style={{
-              position: 'absolute', top: 16, left: -2,
+              position: 'absolute', top: 32, left: -2,
               width: 12, height: 12, borderRadius: 6,
               backgroundColor: showMuted ? C.red : '#FFFFFF',
               alignItems: 'center', justifyContent: 'center',
