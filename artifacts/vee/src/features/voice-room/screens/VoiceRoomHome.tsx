@@ -950,6 +950,17 @@ export default function VoiceRoomHome({
   const [pageTab, setPageTab] = useState<'room' | 'explore'>('room');
   const [followingsOpen, setFollowingsOpen] = useState(false);
   const [activeFollowings, setActiveFollowings] = useState<ActiveFollowing[]>([]);
+  // 2026-11-09 (pill mount-race): the load below snapshots roomsByIdRef
+  // once at home mount; if the room lists have not arrived yet it sees
+  // zero roomIds and loadActiveFollowings early-returns []. Nothing ever
+  // re-ran it, so a following in a room stayed invisible. roomsLoaded
+  // flips false -> true when the lists first arrive and re-runs the load
+  // once (guarded by pillRoomsRerunDoneRef, so later room-list churn
+  // never re-runs it — no polling, no subscription, no loop: setting
+  // activeFollowings cannot change roomsLoaded).
+  const roomsLoaded = allRooms.length + myRooms.length > 0;
+  const pillRoomsRerunDoneRef = useRef(false);
+  const pillLoadedUidRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     // Part 2b: skipped in pass2 home mode — the loaders read Firebase
     // and would serve stale cache while offline; the bar hides
@@ -959,12 +970,22 @@ export default function VoiceRoomHome({
     // room — expensive).
     if (pass2HomeActive) { setActiveFollowings([]); return; }
     if (!user?.uid) return;
+    // A new signed-in user gets a fresh one-shot re-run allowance.
+    if (pillLoadedUidRef.current !== user.uid) {
+      pillLoadedUidRef.current = user.uid;
+      pillRoomsRerunDoneRef.current = false;
+    }
+    // Already loaded (or re-run) with rooms present — skip. The mount
+    // load with an empty list does NOT set the flag, so the
+    // rooms-arrived run below still happens exactly once.
+    if (roomsLoaded && pillRoomsRerunDoneRef.current) return;
+    if (roomsLoaded) pillRoomsRerunDoneRef.current = true;
     let cancelled = false;
     loadActiveFollowings(user.uid, [...roomsByIdRef.current.keys()])
       .then((list) => { if (!cancelled) setActiveFollowings(list); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [user?.uid, pass2HomeActive]);
+  }, [user?.uid, pass2HomeActive, roomsLoaded]);
 
   // FlatList model (chat-list pattern): data items keep sticky indices
   // stable by construction — myrooms = 0, recheader = 1 (sticky), rooms = 2+.
