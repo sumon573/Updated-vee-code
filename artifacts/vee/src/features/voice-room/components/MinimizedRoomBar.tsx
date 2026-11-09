@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, View, Platform, Image, PanResponder, Dimensions } from 'react-native';
+import { Animated, Easing, Pressable, View, Platform, Image, PanResponder, Dimensions } from 'react-native';
 import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -117,11 +117,13 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
     Animated.spring(enterScale, { toValue: 1, useNativeDriver: false, speed: 14, bounciness: 6 }).start();
   }, [room?.id]);
 
-  // Voice ripple: 4 bars looping up/down — the "voice is live" vibe
-  // (boss 2026-10-25, imo reference). Runs while minimized+connected.
+  // Voice ripple: 4 bars looping in a HEARTBEAT rhythm — the "voice is
+  // live" vibe (boss 2026-10-25, imo reference; rhythm 2026-11-09, boss:
+  // "like a heartbeat"). One 1140ms lub-dub cycle — strong beat, brief
+  // pause, softer second beat, rest — staggered once per bar so the beat
+  // ripples left-to-right and never drifts. Runs while minimized+connected.
   const RIPPLE_MIN = [5, 7, 4, 6];
   const RIPPLE_MAX = [16, 13, 15, 12];
-  const RIPPLE_DUR = [520, 680, 600, 760];
   // 2026-11-01 (perf/heat): ripple bars animate scaleY on the NATIVE driver
   // (VoiceWaves precedent). Each bar keeps fixed height MAX and scales
   // MIN/MAX->1, with a translateY that pins the bottom edge, so the bars
@@ -138,14 +140,25 @@ export default function MinimizedRoomBar({ bottomOffsetOverride }: { bottomOffse
   })).current;
   useEffect(() => {
     if (!room) return;
-    const anims = ripples.map(({ s }, i) =>
-      Animated.loop(
+    const anims = ripples.map(({ s }, i) => {
+      const min = RIPPLE_MIN[i] / RIPPLE_MAX[i];
+      // Second beat slightly softer than the first (the "dub").
+      const peak2 = 1 - (1 - min) * 0.15;
+      const beat = (peak: number) =>
         Animated.sequence([
-          Animated.timing(s, { toValue: 1, duration: RIPPLE_DUR[i], useNativeDriver: true }),
-          Animated.timing(s, { toValue: RIPPLE_MIN[i] / RIPPLE_MAX[i], duration: RIPPLE_DUR[i], useNativeDriver: true }),
-        ]),
-      ),
-    );
+          Animated.timing(s, { toValue: peak, duration: 110, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          Animated.timing(s, { toValue: min, duration: 160, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]);
+      const cycle = Animated.sequence([
+        beat(1),
+        Animated.delay(120),
+        beat(peak2),
+        Animated.delay(480),
+      ]);
+      // Stagger once, BEFORE the loop: every bar's loop is the same
+      // length (1140ms), so the phase offset never drifts.
+      return Animated.sequence([Animated.delay(i * 60), Animated.loop(cycle)]);
+    });
     anims.forEach((a) => a.start());
     return () => anims.forEach((a) => a.stop());
   }, [room?.id]);

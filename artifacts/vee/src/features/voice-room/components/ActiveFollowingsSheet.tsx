@@ -10,13 +10,14 @@
  * Empty active state mirrors imo: outline person + "No active followings".
  * No demo rows ever: every row comes from following/userChats/rooms reads.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, Modal, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { followUser } from '@/src/services/followService';
+import HeartbeatVoiceBars from './HeartbeatVoiceBars';
 
 export type ActiveFollowing = {
   uid: string;
@@ -178,19 +179,25 @@ function Avatar({ name, photoURL, size }: { name: string; photoURL?: string; siz
   );
 }
 
-/** Black pill bar (imo): live friends' avatars + live waveform. Null when none live. */
+/** Black pill bar (imo): live friends' avatars + live waveform. Null when none live.
+ * 2026-11-09 (boss, marked screenshots: pill too big): COMPACT — height
+ * 52→44, avatars 32→26, padding 14→10, waveform scaled ~0.8, and the pill
+ * hugs its content at the bottom-right (alignSelf flex-end) instead of
+ * stretching full width. Still ≥44dp touch height, same black pill, same
+ * content/tap/position (bottom). */
 export function ActiveFollowingsBar({ active, onPress }: { active: ActiveFollowing[]; onPress: () => void }) {
   if (active.length === 0) return null;
   return (
     <Pressable
       onPress={onPress}
       style={{
-        height: 52,
+        height: 44,
+        alignSelf: 'flex-end',
         borderRadius: 999,
         backgroundColor: '#000000',
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
+        paddingHorizontal: 10,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -198,21 +205,21 @@ export function ActiveFollowingsBar({ active, onPress }: { active: ActiveFollowi
           <View
             key={a.uid}
             style={{
-              marginLeft: i === 0 ? 0 : -10,
-              borderWidth: 2,
+              marginLeft: i === 0 ? 0 : -8,
+              borderWidth: 1.5,
               borderColor: '#000000',
-              borderRadius: 16,
+              borderRadius: 13,
               overflow: 'hidden',
             }}
           >
-            <Avatar name={a.name} photoURL={a.photoURL} size={32} />
+            <Avatar name={a.name} photoURL={a.photoURL} size={26} />
           </View>
         ))}
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginLeft: 14, gap: 3 }}>
-        {[10, 16, 12, 8].map((h, i) => (
-          <View key={i} style={{ width: 3, height: h, borderRadius: 2, backgroundColor: '#FFFFFF' }} />
-        ))}
+      {/* 2026-11-09 (boss): voice bars beat like a heartbeat (lub-dub),
+          native-driver transform only — no layout, no heat. */}
+      <View style={{ marginLeft: 10 }}>
+        <HeartbeatVoiceBars color="#FFFFFF" maxHeight={13} barWidth={3} gap={2} />
       </View>
     </Pressable>
   );
@@ -224,12 +231,22 @@ export function ActiveFollowingsSheet({
   myUid,
   roomIds,
   onJoinRoom,
+  onActiveLoaded,
 }: {
   visible: boolean;
   onClose: () => void;
   myUid?: string;
   roomIds: string[];
   onJoinRoom: (roomId: string) => void;
+  /**
+   * 2026-11-09 (boss: pill showed 3 avatars, sheet said "No active
+   * followings"): the pill loads presence ONCE at home mount and never
+   * refreshes, so it goes stale while the sheet loads fresh on every open.
+   * The sheet reports its fresh list back here so the pill is re-synced
+   * to the truth on every open — one read burst, no polling, no extra
+   * reads (it reuses this sheet's own load).
+   */
+  onActiveLoaded?: (active: ActiveFollowing[]) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState<ActiveFollowing[]>([]);
@@ -237,6 +254,8 @@ export function ActiveFollowingsSheet({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [showRecommended, setShowRecommended] = useState(true);
   const [busyUid, setBusyUid] = useState<string | null>(null);
+  const onActiveLoadedRef = useRef(onActiveLoaded);
+  onActiveLoadedRef.current = onActiveLoaded;
   // Load once per open: parent room lists change identity on every live
   // update, and a reload mid-open would flash the spinner + reset rows.
   const loadedForOpenRef = useRef(false);
@@ -254,6 +273,7 @@ export function ActiveFollowingsSheet({
       .then(([a, r]) => {
         if (cancelled) return;
         setActive(a);
+        onActiveLoadedRef.current?.(a);
         setRecommended(r);
       })
       .catch(() => {})
@@ -267,18 +287,26 @@ export function ActiveFollowingsSheet({
 
   const visibleRecommended = recommended.filter((r) => !dismissed.has(r.uid));
 
+  // 2026-11-09 (boss): a Recommended friend who IS in a voice room right
+  // now gets the heartbeat voice icon next to their name (same meaning as
+  // in the Active rows); anyone not in a room gets no icon.
+  const activeUidSet = useMemo(() => new Set(active.map((a) => a.uid)), [active]);
+
   async function handleFollow(uid: string) {
     if (!myUid || busyUid) return;
     setBusyUid(uid);
     try {
       await followUser(myUid, uid);
       setRecommended((prev) => prev.filter((r) => r.uid !== uid));
-      const live = active.find((a) => a.uid === uid);
-      if (live) {
-        // Already live: it now belongs in Active too (it was filtered out
-        // before because it was not followed yet — re-derive below).
-        setActive((prev) => (prev.some((a) => a.uid === uid) ? prev : [live, ...prev]));
-      }
+      // 2026-11-09 (boss: after following, they must appear in the list
+      // above): re-derive Active from FRESH presence. The old code only
+      // patched the stale list — its "re-derive below" never existed — so
+      // someone who joined a room while the sheet was open never appeared
+      // above. One user-initiated reload, no polling. If they are not in
+      // a room they correctly stay out of Active (it is an in-room list).
+      const fresh = await loadActiveFollowings(myUid, roomIds);
+      setActive(fresh);
+      onActiveLoadedRef.current?.(fresh);
     } catch {
       // Follow failed — row stays, user can retry.
     } finally {
@@ -343,9 +371,14 @@ export function ActiveFollowingsSheet({
                       >
                         <Avatar name={a.name} photoURL={a.photoURL} size={48} />
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text numberOfLines={1} style={{ color: '#000000', fontSize: 16, fontWeight: '700' }}>
-                            {a.name}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
+                              {a.name}
+                            </Text>
+                            {/* 2026-11-09 (boss): heartbeat voice icon next
+                                to the name — this person IS in a voice room. */}
+                            <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />
+                          </View>
                           <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
                             in {a.roomName}
                           </Text>
@@ -367,9 +400,14 @@ export function ActiveFollowingsSheet({
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
                   <Avatar name={item.name} photoURL={item.photoURL} size={52} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text numberOfLines={1} style={{ color: '#000000', fontSize: 16, fontWeight: '700' }}>
-                      {item.name}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
+                        {item.name}
+                      </Text>
+                      {activeUidSet.has(item.uid) && (
+                        <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />
+                      )}
+                    </View>
                     <Text style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>Your Vee friend</Text>
                   </View>
                   <Pressable

@@ -339,6 +339,12 @@ export default function VoiceRoomHome({
     return (r.memberCount ?? 0) + (r.listenerCount ?? 0);
   }, []);
 
+  // Pull-to-refresh tick (declared here — BEFORE the pass2 effect below,
+  // whose dep array reads it; it was declared after the effect, which is
+  // a use-before-declaration error). Bumped by handleRefresh to re-run
+  // the room-feed subscribes on pull-to-refresh.
+  const [refreshTick, setRefreshTick] = useState(0);
+
   // Pass2 home mode (flag-gated, inert when off): private + mine come
   // from the tier (30s REST) instead of Firebase subscribes, and the
   // subscribeActiveRooms fallback never runs — cache + directory retry
@@ -578,7 +584,6 @@ export default function VoiceRoomHome({
   const MIN_REFRESH_MS = 700;
   const MAX_REFRESH_MS = 8000;
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
   const refreshingRef = useRef(false);
   const refreshStartRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1020,7 +1025,7 @@ export default function VoiceRoomHome({
         maxToRenderPerBatch={8}
         updateCellsBatchingPeriod={50}
         windowSize={10}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 60 : 0) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
           if (item.type === 'myrooms') {
@@ -1163,6 +1168,10 @@ export default function VoiceRoomHome({
         visible={followingsOpen}
         onClose={() => setFollowingsOpen(false)}
         myUid={user?.uid}
+        // 2026-11-09 (boss: pill showed 3 avatars, sheet said "No active
+        // followings"): the pill's presence snapshot is one-shot at home
+        // mount, so the sheet's fresh load re-syncs it on every open.
+        onActiveLoaded={(list) => setActiveFollowings(list)}
         roomIds={[...allRooms, ...myRooms].map((r) => r.id)}
         onJoinRoom={(roomId) => {
           setFollowingsOpen(false);
