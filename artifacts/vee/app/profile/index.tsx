@@ -1617,7 +1617,12 @@ export default function ProfileScreen({
                 // sizes/colors) as LevelBadge's max tier. হুবহু, copied —
                 // no new effect invented. Noble plates stay static.
                 const isSvipPlate = plate.id.startsWith('svip');
-                return (
+                // 2026-11-09 (boss): tapping the SVIP nameplate opens the
+                // SVIP page — mirrors the Noble plate tap below
+                // (router.push('/profile/nobel')). Non-SVIP non-Noble plates
+                // (fallback stored activeNameplate) stay a plain View — no
+                // dead tap target.
+                const plateView = (
                   <View key={plate.id} style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
                     {mist ? (
                       <MistNameplate imageUrl={plate.icon} mistColor={mist} width={74} height={20} fit="cover" />
@@ -1636,6 +1641,14 @@ export default function ProfileScreen({
                     )}
                   </View>
                 );
+                if (isSvipPlate) {
+                  return (
+                    <Pressable key={plate.id} onPress={() => router.push('/svip')} hitSlop={4}>
+                      {plateView}
+                    </Pressable>
+                  );
+                }
+                return plateView;
               }
               // Noble plate — only the CURRENT rank's plate renders (a stale
               // old-rank plate via the stored pointer stays hidden, as before).
