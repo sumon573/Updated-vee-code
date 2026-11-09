@@ -591,19 +591,22 @@ export default function VoiceRoomHome({
   // mid-return-animation): Android SwipeRefreshLayout loses that flip
   // and the circle freezes in pull position (static white circle +
   // black reload arrow) while JS `refreshing` is ALREADY false and no
-  // timer is pending — nothing in JS can ever clear it. Cure: on
-  // EVERY hide, bump refreshControlKey so the native spinner is
-  // recreated fresh with refreshing=false; a wedged view dies with
-  // the old one. The FlatList itself keeps its identity (only its
-  // refreshControl child changes), and the spinner's look, position
-  // and icon are untouched — visibility behaviour only.
+  // timer is pending — nothing in JS can ever clear it.
+  // 2026-11-09 F2: the 2026-11-09 key-bump "cure" (bump a key on every
+  // hide so the native spinner is recreated fresh) is REMOVED — it was
+  // the wedge, not the cure. The bump destroys the SwipeRefreshLayout
+  // (and, per RN 0.81.5 ScrollView.js Android wrapping, its child
+  // ScrollView) under a live gesture; the replacement never saw
+  // ACTION_DOWN, so it has no release path and the circle freezes
+  // forever. Hide is now a plain setRefreshing(false) (the
+  // pre-2026-11-09 known-good hide); the plain flip recovers on
+  // finger-up per stock androidx. See vee-refresh-invest3/DIAGNOSIS.md.
   // (2) SINGLE SHARED TIMER — the MIN-delay branch cancels the 8s
   // safety, leaving the one hide timer as the only guard. Cure: an
   // independent one-shot watchdog (own ref, never touched by
   // clearRefreshTimer) that force-hides at 10s. No new interval/poll.
   const WATCHDOG_REFRESH_MS = 10000;
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshControlKey, setRefreshControlKey] = useState(0);
   const refreshingRef = useRef(false);
   const refreshStartRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -643,13 +646,22 @@ export default function VoiceRoomHome({
     clearRefreshWatchdog();
     refreshHideScheduledRef.current = false;
     refreshingRef.current = false;
+    // F2 (2026-11-09): plain hide only — no remount. The key bump that
+    // used to live here destroyed the native layout mid-drag and froze
+    // the circle forever; the plain flip recovers on finger-up.
     setRefreshing(false);
-    // 2026-11-09: recreate the native spinner fresh (see above) so a
-    // flip lost mid-drag can never leave a frozen circle behind.
-    setRefreshControlKey((k) => k + 1);
   }, []);
   const handleRefresh = useCallback(() => {
-    if (refreshingRef.current) return;
+    if (refreshingRef.current) {
+      // F2d (2026-11-09): re-entrant pull while already refreshing —
+      // re-arm the hide to 700ms after THIS pull so it cannot land
+      // mid-second-drag. Reset the start, clear the scheduled hide,
+      // and let finishRefresh's MIN branch reschedule at +700ms.
+      refreshStartRef.current = Date.now();
+      refreshHideScheduledRef.current = false;
+      finishRefresh();
+      return;
+    }
     refreshingRef.current = true;
     refreshStartRef.current = Date.now();
     refreshHideScheduledRef.current = false;
@@ -1084,7 +1096,7 @@ export default function VoiceRoomHome({
         updateCellsBatchingPeriod={50}
         windowSize={10}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 60 : 0) }}
-        refreshControl={<RefreshControl key={refreshControlKey} refreshing={refreshing} onRefresh={handleRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
           if (item.type === 'myrooms') {
             return (
