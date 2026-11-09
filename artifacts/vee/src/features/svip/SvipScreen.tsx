@@ -51,7 +51,7 @@
  * the server svip_config priceDiamonds thresholds. TIER-CORRECT: the
  * fill counts a granted membership (effective = max(live total, own
  * tier's threshold)), so a max-tier member always sees a FULL bar with
- * a gold MAX LCD readout — never an empty bar under "MAX" text.
+ * a gold MAX header — never an empty bar under "MAX" text.
  */
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -148,23 +148,33 @@ type SvipJourneyBarProps = {
 };
 
 /** ── Digital LED-meter journey bar (redesign 2026-11-09, boss: "digital
- * আর unique হতে হবে") ───────────────────────────────────────────────
+ * আর unique হতে হবে"; refined 2026-11-09 — readout removed, 105dp) ──
  * TIER-CORRECT FILL (the fix for "I'm SVIP 5 but the bar doesn't show
  * it"): a granted membership counts. effectiveRecharged =
  * max(live totalRecharged, the membership tier's own threshold), and
- * the fill, the milestone circles, the LCD readout and the remaining
- * caption ALL read from that ONE value — they can never disagree again.
+ * the fill, the milestone circles and the remaining caption ALL read
+ * from that ONE value — they can never disagree again.
  * Mh (tier 5, totalRecharged 0): max(0, 60,000) = 60,000 → 100% full,
- * all 5 nodes lit, LCD "60,000 / 60,000" + MAX. A member whose live
+ * all 5 nodes lit, header "SVIP 5 — MAX". A member whose live
  * recharge already passes their tier is unaffected (max is a no-op).
  * No wallet/SVIP data is written anywhere — this is display logic only.
  *
+ * SLIM REFINED BAR (105dp both states, was ~148dp at MAX / ~135dp
+ * non-max): the digital readout is GONE — no ghost unlit digits, no
+ * live digits, no MAX badge — and MAX appears exactly ONCE, in the
+ * centred header label ("SVIP 5 — MAX"; non-max "RECHARGE TO SVIP N").
+ * The header label is centred on the same axis as the centred caption
+ * and the symmetric track/nodes. The MAX caption is one plain line
+ * ("You hold the highest SVIP tier", no "— MAX" suffix); the non-max
+ * caption ("5,000 more diamonds to SVIP 4") is the only numeric
+ * progress text in the bar.
+ *
  * DIGITAL character: segmented banded fill + tick scale (10K/20K/30K/
- * 40K/60K) + LCD readout (monospace, gold glow, ghost "88,888" unlit
- * segments behind the live digits) + HUD corner brackets + gold MAX
- * treatment. No new emoji — the old 💎/👑 caption glyphs are dropped
- * for a clean mono caption. SVIP_ICON_COLORS and the ①–⑤ nodes are
- * unchanged; each node still wears its OWN tier's colour on every page.
+ * 40K/60K) + HUD corner brackets + gold MAX treatment (gold border +
+ * gold shadow at MAX). No new emoji — the old 💎/👑 caption glyphs are
+ * dropped for a clean mono caption. SVIP_ICON_COLORS and the ①–⑤ nodes
+ * are unchanged; each node still wears its OWN tier's colour on every
+ * page.
  *
  * SMOOTH + ISOLATED: the bar is a memo'd component — it re-renders
  * only when its own props change (totalRecharged / tier / tiers /
@@ -173,11 +183,10 @@ type SvipJourneyBarProps = {
  * (withTiming, 650ms) on the UI thread via an overflow-hidden clip
  * whose width animates — the full-width banded gradient inside never
  * resizes, so its segment stripes stay aligned with the dim unlit
- * segments beneath. The LCD digits are state text (they show the new
- * reading at once, like a meter's digital display) while the fill
- * glides to match; at rest they always agree. No polling, no
- * intervals, no timers, no scroll listener — the only inputs are the
- * existing live subscriptions passed in as props. */
+ * segments beneath. The caption text shows the new reading at once
+ * while the fill glides to match; at rest they always agree. No
+ * polling, no intervals, no timers, no scroll listener — the only
+ * inputs are the existing live subscriptions passed in as props. */
 const SvipJourneyBar = memo(function SvipJourneyBar({
   totalRecharged, activeTierNum, pricedTiers, theme, contentW,
 }: SvipJourneyBarProps) {
@@ -194,7 +203,6 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
   const progressLevel = Math.max(activeTierNum, derivedLevel);
   const nextTier = pricedTiers.find((t) => t.tier > progressLevel) || null;
   const isMax = nextTier === null;
-  const denom = nextTier ? nextTier.priceDiamonds : topPrice;
   const fillPct = topPrice > 0 ? Math.min(1, Math.max(0, effectiveRecharged / topPrice)) : 0;
   const remainingToNext = nextTier ? Math.max(0, nextTier.priceDiamonds - effectiveRecharged) : 0;
 
@@ -260,7 +268,7 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
   const clipStyle = useAnimatedStyle(() => ({ width: fillSV.value * trackWSV.value }));
 
   return (
-    <View style={{ paddingTop: 10, paddingBottom: 8 }}>
+    <View style={{ paddingTop: 6, paddingBottom: 6 }}>
       <View style={{
         position: 'relative',
         backgroundColor: 'rgba(8, 5, 20, 0.72)',
@@ -268,8 +276,8 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
         borderColor: isMax ? theme.goldBright : 'rgba(232, 184, 75, 0.45)',
         borderRadius: 8,
         paddingHorizontal: 11,
-        paddingTop: 10,
-        paddingBottom: 10,
+        paddingTop: 8,
+        paddingBottom: 8,
         ...(isMax ? {
           shadowColor: '#E8B84B', shadowOpacity: 0.35, shadowRadius: 12,
           shadowOffset: { width: 0, height: 0 }, elevation: 4,
@@ -282,67 +290,21 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
         <View style={{ position: 'absolute', bottom: -1, left: -1, width: 12, height: 12, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: theme.goldBright }} />
         <View style={{ position: 'absolute', bottom: -1, right: -1, width: 12, height: 12, borderBottomWidth: 2, borderRightWidth: 2, borderColor: theme.goldBright }} />
 
-        {/* Header row: label + LCD digital readout. */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{
-            fontFamily: 'monospace', fontSize: 10, fontWeight: '800',
-            letterSpacing: 1.6, color: theme.goldBright,
-          }}
-          >
-            {nextTier
-              ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
-              : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
-          </Text>
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 6,
-            backgroundColor: '#05030C',
-            borderWidth: 1, borderColor: 'rgba(232, 184, 75, 0.55)',
-            borderRadius: 5, paddingVertical: 3, paddingHorizontal: 8,
-            overflow: 'hidden',
-          }}
-          >
-            {/* Ghost unlit "88,888" segments behind the live digits —
-                the seven-segment LCD signature. */}
-            <Text style={{
-              position: 'absolute', left: 8, top: 3,
-              fontFamily: 'monospace', fontSize: 13, fontWeight: '700',
-              letterSpacing: 1, color: 'rgba(232, 184, 75, 0.13)',
-            }}
-            >
-              88,888 / 88,888
-            </Text>
-            <Text style={{
-              fontFamily: 'monospace', fontSize: 13, fontWeight: '700',
-              letterSpacing: 1, color: '#FFD76A',
-              textShadowColor: 'rgba(245, 197, 66, 0.85)',
-              textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 6,
-            }}
-            >
-              {formatPrice(effectiveRecharged)}
-              {' / '}
-              {formatPrice(denom)}
-            </Text>
-            {isMax ? (
-              <View style={{
-                backgroundColor: theme.gold, borderRadius: 3,
-                paddingHorizontal: 5, paddingVertical: 1,
-              }}
-              >
-                <Text style={{
-                  fontFamily: 'monospace', fontSize: 10, fontWeight: '800',
-                  letterSpacing: 1, color: theme.onGold,
-                }}
-                >
-                  MAX
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
+        {/* Header row: label alone, centred — the digital readout is gone
+            (refined bar, 2026-11-09); MAX appears exactly once, here. */}
+        <Text style={{
+          fontFamily: 'monospace', fontSize: 10, fontWeight: '800',
+          letterSpacing: 1.6, color: theme.goldBright, textAlign: 'center',
+        }}
+        >
+          {nextTier
+            ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
+            : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
+        </Text>
 
         {/* Track + circled milestones — one per tier, at its threshold's
             share of the top tier's price. */}
-        <View style={{ marginHorizontal: 11, height: 28, marginTop: 6, position: 'relative' }}>
+        <View style={{ marginHorizontal: 11, height: 28, marginTop: 4, position: 'relative' }}>
           {/* Dim unlit segments (static). */}
           <View style={{
             position: 'absolute', left: 0, right: 0, top: 12, height: 6,
@@ -424,7 +386,7 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
         </View>
 
         {/* Tick scale — threshold labels in mono. */}
-        <View style={{ marginHorizontal: 11, height: 18, marginTop: 2, position: 'relative' }}>
+        <View style={{ marginHorizontal: 11, height: 16, marginTop: 1, position: 'relative' }}>
           {pricedTiers.map((t) => {
             const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
             return (
@@ -436,7 +398,7 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
                 }}
                 />
                 <Text style={{
-                  position: 'absolute', left: `${pct}%`, top: 7,
+                  position: 'absolute', left: `${pct}%`, top: 6,
                   width: 40, marginLeft: -20, textAlign: 'center',
                   fontFamily: 'monospace', fontSize: 8, letterSpacing: 0.5,
                   color: theme.inkSoft,
@@ -450,8 +412,8 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
         </View>
 
         <Text style={{
-          fontFamily: 'monospace', fontSize: 11, letterSpacing: 1,
-          color: theme.inkSoft, textAlign: 'center', marginTop: 6,
+          fontFamily: 'monospace', fontSize: 10, letterSpacing: 0.5,
+          color: theme.inkSoft, textAlign: 'center', marginTop: 4,
         }}
         >
           {nextTier ? (
@@ -462,10 +424,7 @@ const SvipJourneyBar = memo(function SvipJourneyBar({
               {` more diamonds to ${nextTier.name}`}
             </>
           ) : (
-            <>
-              {'You hold the highest SVIP tier — '}
-              <Text style={{ fontWeight: '700', color: '#FFD76A' }}>MAX</Text>
-            </>
+            'You hold the highest SVIP tier'
           )}
         </Text>
       </View>
@@ -663,7 +622,7 @@ export default function SvipScreen() {
 
   // pricedTiers lives above the early returns (see above) — a hook
   // must never sit after a conditional return.
-  // Live recharge progress (fill / circles / LCD / caption) is owned
+  // Live recharge progress (fill / circles / caption) is owned
   // entirely by <SvipJourneyBar> below — it derives everything from
   // totalRecharged + the membership tier, so the four can never
   // disagree. Milestone circles each wear their OWN tier's icon colour
@@ -1024,7 +983,7 @@ export default function SvipScreen() {
           {/* ── Live recharge journey — pinned above the buy bar ──
               Boss 2026-11-09: visible on EVERY tier page. Digital
               LED-meter redesign (same date, boss: "digital আর unique
-              হতে হবে"): segmented banded fill, tick scale, LCD readout,
+              হতে হবে"): segmented banded fill, tick scale,
               HUD brackets, gold MAX treatment — see <SvipJourneyBar>
               above for the tier-correct fill rule, the glide and the
               isolation. Shown once the live total has arrived (null =
