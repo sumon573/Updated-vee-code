@@ -1611,12 +1611,28 @@ export default function ProfileScreen({
               // icon.)
               if (!isNoblePlate) {
                 if (!iconUrl) return null;
+                // 2026-11-09 (boss, 09:19): SVIP nameplate animates EXACTLY
+                // like the Lv Max badge — same ShimmerOverlay (speed 900,
+                // opacity 0.8) + same 5 Sparkles (same delays/positions/
+                // sizes/colors) as LevelBadge's max tier. হুবহু, copied —
+                // no new effect invented. Noble plates stay static.
+                const isSvipPlate = plate.id.startsWith('svip');
                 return (
-                  <View key={plate.id} style={{ marginRight: 6 }}>
+                  <View key={plate.id} style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
                     {mist ? (
                       <MistNameplate imageUrl={plate.icon} mistColor={mist} width={74} height={20} fit="cover" />
                     ) : (
                       <Image source={{ uri: plate.icon }} style={{ width: 74, height: 20 }} contentFit="cover" />
+                    )}
+                    {isSvipPlate && (
+                      <>
+                        <ShimmerOverlay speed={900} opacity={0.8} />
+                        <Sparkle delay={0} left={15} top={3} size={5} color="#FFD700" />
+                        <Sparkle delay={300} left={55} top={12} size={4} color="#FFFFFF" />
+                        <Sparkle delay={600} left={80} top={5} size={5} color="#FFD700" />
+                        <Sparkle delay={200} left={35} top={10} size={3} color="#FFE873" />
+                        <Sparkle delay={700} left={65} top={4} size={4} color="#FFD700" />
+                      </>
                     )}
                   </View>
                 );
