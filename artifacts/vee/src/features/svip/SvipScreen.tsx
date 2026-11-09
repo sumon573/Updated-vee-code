@@ -575,6 +575,16 @@ export default function SvipScreen() {
 
   const configReady = pageLoaded && tiersLoaded;
 
+  // Priced tiers, memoised so the memo'd journey bar below keeps its
+  // props stable — a fresh array identity every parent render would
+  // defeat the memo and re-render the bar on every page tick.
+  // HOOK ORDER: this useMemo MUST stay above the early returns below
+  // (a hook after a conditional return changes the hook count between
+  // the loading and loaded renders and crashes React).
+  const pricedTiers = useMemo(() => tiers
+    .filter((t) => t.priceDiamonds > 0)
+    .sort((a, b) => a.tier - b.tier), [tiers]);
+
   const selectTier = (tierNum: number, animated: boolean) => {
     setSelectedTier(tierNum);
     const idx = tiers.findIndex((t) => t.tier === tierNum);
@@ -651,12 +661,8 @@ export default function SvipScreen() {
   const photoUrl = veeProfile?.photoURL || user?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
 
-  // Priced tiers, memoised so the memo'd journey bar below keeps its
-  // props stable — a fresh array identity every parent render would
-  // defeat the memo and re-render the bar on every page tick.
-  const pricedTiers = useMemo(() => tiers
-    .filter((t) => t.priceDiamonds > 0)
-    .sort((a, b) => a.tier - b.tier), [tiers]);
+  // pricedTiers lives above the early returns (see above) — a hook
+  // must never sit after a conditional return.
   // Live recharge progress (fill / circles / LCD / caption) is owned
   // entirely by <SvipJourneyBar> below — it derives everything from
   // totalRecharged + the membership tier, so the four can never
