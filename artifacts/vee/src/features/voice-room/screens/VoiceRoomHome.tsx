@@ -583,15 +583,42 @@ export default function VoiceRoomHome({
   // no new timer/interval/poll.
   const MIN_REFRESH_MS = 700;
   const MAX_REFRESH_MS = 8000;
+  // 2026-11-09 (boss: refresh circle STUCK on home, 18:19 screenshot):
+  // the 2026-11-07 MIN-700ms fix only stretches the JS true→false flip.
+  // It cannot fix the two ways the circle still sticks:
+  // (1) NATIVE WEDGE — the hide flip lands while a pull-drag is still
+  // in flight (a second pull inside the 700ms window, or the circle
+  // mid-return-animation): Android SwipeRefreshLayout loses that flip
+  // and the circle freezes in pull position (static white circle +
+  // black reload arrow) while JS `refreshing` is ALREADY false and no
+  // timer is pending — nothing in JS can ever clear it. Cure: on
+  // EVERY hide, bump refreshControlKey so the native spinner is
+  // recreated fresh with refreshing=false; a wedged view dies with
+  // the old one. The FlatList itself keeps its identity (only its
+  // refreshControl child changes), and the spinner's look, position
+  // and icon are untouched — visibility behaviour only.
+  // (2) SINGLE SHARED TIMER — the MIN-delay branch cancels the 8s
+  // safety, leaving the one hide timer as the only guard. Cure: an
+  // independent one-shot watchdog (own ref, never touched by
+  // clearRefreshTimer) that force-hides at 10s. No new interval/poll.
+  const WATCHDOG_REFRESH_MS = 10000;
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshControlKey, setRefreshControlKey] = useState(0);
   const refreshingRef = useRef(false);
   const refreshStartRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshHideScheduledRef = useRef(false);
   const clearRefreshTimer = () => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
+    }
+  };
+  const clearRefreshWatchdog = () => {
+    if (refreshWatchdogRef.current) {
+      clearTimeout(refreshWatchdogRef.current);
+      refreshWatchdogRef.current = null;
     }
   };
   const finishRefresh = useCallback(() => {
@@ -613,9 +640,13 @@ export default function VoiceRoomHome({
       return;
     }
     clearRefreshTimer();
+    clearRefreshWatchdog();
     refreshHideScheduledRef.current = false;
     refreshingRef.current = false;
     setRefreshing(false);
+    // 2026-11-09: recreate the native spinner fresh (see above) so a
+    // flip lost mid-drag can never leave a frozen circle behind.
+    setRefreshControlKey((k) => k + 1);
   }, []);
   const handleRefresh = useCallback(() => {
     if (refreshingRef.current) return;
@@ -625,11 +656,17 @@ export default function VoiceRoomHome({
     setRefreshing(true);
     setRefreshTick((n) => n + 1);
     clearRefreshTimer();
+    clearRefreshWatchdog();
     refreshTimerRef.current = setTimeout(finishRefresh, MAX_REFRESH_MS);
+    // 2026-11-09: independent watchdog — its own ref, so the MIN-delay
+    // branch above can never cancel it. Fires finishRefresh (elapsed
+    // is past MIN by then, so it hides immediately + remounts).
+    refreshWatchdogRef.current = setTimeout(finishRefresh, WATCHDOG_REFRESH_MS);
   }, [finishRefresh]);
   // Clear any pending refresh timeout on unmount (no stale setState).
   useEffect(() => () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    if (refreshWatchdogRef.current) clearTimeout(refreshWatchdogRef.current);
   }, []);
 
   // Subscribe to my rooms: created rooms first, then rooms I've joined
@@ -1026,7 +1063,7 @@ export default function VoiceRoomHome({
         updateCellsBatchingPeriod={50}
         windowSize={10}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 60 : 0) }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        refreshControl={<RefreshControl key={refreshControlKey} refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
           if (item.type === 'myrooms') {
             return (
