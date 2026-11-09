@@ -98,6 +98,19 @@ function formatPrice(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/** Relative luminance (0–1) of a #RRGGBB colour — picks the readable
+ * number colour on a tier-coloured milestone circle (dark number on a
+ * light tier colour, white on a dark one). */
+function luminance(hex: string): number {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return 0;
+  const c = [0, 2, 4].map((i) => {
+    const v = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+
 export default function SvipScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -175,12 +188,17 @@ export default function SvipScreen() {
   const activeTierNum = active && svip ? svip.tier : 0;
 
   // Default to the member's own tier; otherwise the first server tier.
+  // The selection moves the pager too (selectTier scrolls) — the tab
+  // highlight alone is not the page: without the scroll the pager
+  // stays on tier 1's page while the tab says the member's tier.
+  // Runs again when svip arrives after tiers (async), so the pager
+  // follows the 1 → own-tier flip too.
   useEffect(() => {
     if (tiers.length === 0) return;
     if (activeTierNum && tiers.some((t) => t.tier === activeTierNum)) {
-      setSelectedTier(activeTierNum);
+      selectTier(activeTierNum, false);
     } else if (!selectedTier) {
-      setSelectedTier(tiers[0].tier);
+      selectTier(tiers[0].tier, false);
     }
   }, [tiers, activeTierNum]);
 
@@ -260,8 +278,8 @@ export default function SvipScreen() {
   // Current level = the higher of the membership tier and the tier the
   // lifetime recharge already earns — a granted membership never hides
   // recharge progress, and heavy recharge never hides membership.
-  // Progress spans the range from the current tier's threshold to the
-  // next tier's (level 0 starts at 0); the bar is full at max tier.
+  // The pinned bar's fill spans the WHOLE journey (0 → top tier);
+  // the header + caption below it still track the NEXT tier.
   const pricedTiers = tiers
     .filter((t) => t.priceDiamonds > 0)
     .sort((a, b) => a.tier - b.tier);
@@ -274,14 +292,23 @@ export default function SvipScreen() {
   const progressLevel = Math.max(activeTierNum, derivedLevel);
   const nextTier = pricedTiers.find((t) => t.tier > progressLevel) || null;
   const topTier = pricedTiers[pricedTiers.length - 1] || null;
-  const rangeStart = pricedTiers.find((t) => t.tier === progressLevel)?.priceDiamonds || 0;
-  const rangeEnd = nextTier ? nextTier.priceDiamonds : rangeStart;
-  const progressPct = nextTier && totalRecharged != null && rangeEnd > rangeStart
-    ? Math.min(1, Math.max(0, (totalRecharged - rangeStart) / (rangeEnd - rangeStart)))
-    : 1;
+  // Whole-journey fill (boss 2026-11-09): the bar spans 0 → the top
+  // tier's threshold, so the fill is the user's LIVE cumulative
+  // recharge against the full journey — not just the current range.
+  const topPrice = topTier ? topTier.priceDiamonds : 0;
+  const journeyPct = topPrice > 0 && totalRecharged != null
+    ? Math.min(1, Math.max(0, totalRecharged / topPrice))
+    : 0;
   const remainingToNext = nextTier && totalRecharged != null
     ? Math.max(0, nextTier.priceDiamonds - totalRecharged)
     : 0;
+  // Milestone circles take the VIEWED page's tier colour (boss
+  // 2026-11-09: one colour per level — the tier's own server colour,
+  // the same `color` field SvipBadge already uses), so every page's
+  // bar wears that page's colour. The number inside picks the
+  // readable side of that colour.
+  const milestoneColor = tier.color || theme.gold;
+  const milestoneNumColor = luminance(milestoneColor) > 0.25 ? '#241a04' : '#FFFFFF';
 
   /** Avatar disc shown UNDER a frame reward (popup + grid): the user's
    * photo, or the gold initial disc. The frame renders AFTER this (on
@@ -377,15 +404,29 @@ export default function SvipScreen() {
     for (let i = 1; i <= layout.rewardsSlots; i++) {
       slots.push(rewards.find((r) => r.slot === i) || null);
     }
+    // Vertical scroll per tier page (boss 2026-11-09: the tall pages —
+    // hero + banner + rewards on every tier now — clipped the bottom
+    // of the page behind the buy bar). The pager stays horizontal;
+    // the inner scroll only moves vertically (nestedScrollEnabled).
     return (
-      <View style={{ flex: 1, paddingHorizontal: PAGE_PAD }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: PAGE_PAD, paddingBottom: 16, flexGrow: 1 }}
+      >
         {/* Hero — hidden entirely when the server supplies no hero art. */}
         {tp.heroArt ? (
           <View
             style={{
               position: 'relative',
               alignItems: 'center',
-              marginTop: tp.heroMarginTopPx || 0,
+              // Negative top margin would pull the hero above the page
+              // top and clip it — the SVIP 5 crown tip was cut by the
+              // server's heroMarginTopPx -30 (quality gate 2026-11-09).
+              // The hero is the page's first child, so only >= 0 can
+              // ever render; positive margins still work as before.
+              marginTop: Math.max(0, tp.heroMarginTopPx || 0),
               height: heroSize,
             }}
           >
@@ -508,62 +549,13 @@ export default function SvipScreen() {
           </Pressable>
         ) : null}
 
-        {/* Live recharge progress — thin gold bar toward the NEXT tier,
-            at the SVIP Points line (boss order 2026-11-09). Shown for
-            every visitor once the live total has arrived (null = still
-            loading, never a misleading 0). Identical on every tier page:
-            it tracks the USER, not the tab being viewed. */}
-        {totalRecharged !== null && pricedTiers.length > 0 ? (
-          <View style={{ marginTop: 14, width: '100%' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Text style={{
-                fontSize: 10, fontWeight: '800', letterSpacing: 1.6,
-                color: theme.goldBright,
-              }}
-              >
-                {nextTier
-                  ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
-                  : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
-              </Text>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.inkSoft }}>
-                {formatPrice(totalRecharged)}
-                {nextTier ? ` / ${formatPrice(nextTier.priceDiamonds)}` : ''}
-              </Text>
-            </View>
-            <View style={{
-              marginTop: 6, height: 4, borderRadius: 2, overflow: 'visible',
-              backgroundColor: 'rgba(232, 184, 75, 0.18)',
-            }}
-            >
-              <LinearGradient
-                colors={[theme.goldBright, theme.gold, theme.goldDeep]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={{ height: 4, borderRadius: 2, width: `${Math.round(progressPct * 100)}%` }}
-              />
-              <View style={{
-                position: 'absolute',
-                left: `${Math.round(progressPct * 100)}%`,
-                top: -2,
-                marginLeft: -4,
-                width: 8, height: 8, borderRadius: 4,
-                backgroundColor: theme.goldBright,
-                borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.85)',
-              }}
-              />
-            </View>
-            <Text style={{
-              fontSize: 11, color: theme.inkSoft, textAlign: 'center', marginTop: 6,
-            }}
-            >
-              {nextTier
-                ? `💎 ${formatPrice(remainingToNext)} more diamonds to ${nextTier.name}`
-                : '👑 You hold the highest SVIP tier'}
-            </Text>
-          </View>
-        ) : null}
+        {/* The live recharge journey bar moved out of the tier page —
+            it is pinned above the buy bar (see the main return), so it
+            is visible on EVERY tier page and its caption can never be
+            clipped behind the buy bar. */}
 
         <View style={{ flex: 1 }} />
-      </View>
+      </ScrollView>
     );
   };
 
@@ -643,6 +635,16 @@ export default function SvipScreen() {
             showsHorizontalScrollIndicator={false}
             bounces={false}
             style={{ flex: 1, marginHorizontal: -PAGE_PAD }}
+            onLayout={() => {
+              // Mount/rotation fallback for the default selection: the
+              // effect scrolls the pager, but if the pager mounted
+              // AFTER the selection was already made (page config
+              // arriving after tiers), the effect never re-runs — the
+              // layout pass re-asserts the selected page. Same target,
+              // same non-animated scroll; never fires on swipe/scroll.
+              const idx = tiers.findIndex((t) => t.tier === selectedTier);
+              if (idx >= 0) pagerRef.current?.scrollTo({ x: idx * pageW, animated: false });
+            }}
             onMomentumScrollEnd={(e) => {
               const idx = Math.round(e.nativeEvent.contentOffset.x / pageW);
               const t = tiers[idx];
@@ -655,6 +657,90 @@ export default function SvipScreen() {
               </View>
             ))}
           </ScrollView>
+
+          {/* ── Live recharge journey — pinned above the buy bar ──
+              Boss 2026-11-09: visible on EVERY tier page, with circled
+              tier numbers ①–⑤ at the threshold positions, coloured by
+              the page being viewed, and the fill from LIVE recharge.
+              It lived inside the tier page, where the tall pages
+              (hero + banner + rewards on every tier now) clipped it —
+              and its caption — behind the buy bar. Pinned here it can
+              never be cut off; the pages scroll vertically instead, so
+              no tier content is ever clipped either. The bar tracks the
+              USER, not the tab: same fill on every page, only the
+              circle colour follows the viewed tier. Shown once the live
+              total has arrived (null = still loading, never a
+              misleading 0). */}
+          {totalRecharged !== null && pricedTiers.length > 0 ? (
+            <View style={{ paddingTop: 10, paddingBottom: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <Text style={{
+                  fontSize: 10, fontWeight: '800', letterSpacing: 1.6,
+                  color: theme.goldBright,
+                }}
+                >
+                  {nextTier
+                    ? `RECHARGE TO ${nextTier.name.toUpperCase()}`
+                    : `${(topTier?.name || 'SVIP 5').toUpperCase()} — MAX`}
+                </Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.inkSoft }}>
+                  {formatPrice(totalRecharged)}
+                  {nextTier ? ` / ${formatPrice(nextTier.priceDiamonds)}` : ''}
+                </Text>
+              </View>
+              {/* Track + circled milestones — one per tier, at its
+                  threshold's share of the top tier's price. */}
+              <View style={{ marginHorizontal: 11, height: 28, marginTop: 6, position: 'relative' }}>
+                <View style={{
+                  position: 'absolute', left: 0, right: 0, top: 12, height: 4,
+                  borderRadius: 2, backgroundColor: 'rgba(232, 184, 75, 0.18)',
+                }}
+                />
+                <LinearGradient
+                  colors={[theme.goldBright, theme.gold, theme.goldDeep]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{
+                    position: 'absolute', left: 0, top: 12, height: 4,
+                    borderRadius: 2, width: `${Math.round(journeyPct * 100)}%`,
+                  }}
+                />
+                {pricedTiers.map((t) => {
+                  const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
+                  const reached = totalRecharged >= t.priceDiamonds;
+                  return (
+                    <View
+                      key={t.tier}
+                      style={{
+                        position: 'absolute', left: `${pct}%`, top: 3,
+                        width: 22, height: 22, borderRadius: 11,
+                        transform: [{ translateX: -11 }],
+                        backgroundColor: reached ? milestoneColor : 'transparent',
+                        borderWidth: reached ? 1 : 1.5,
+                        borderColor: milestoneColor,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 12, fontWeight: '800',
+                        color: reached ? milestoneNumColor : theme.ink,
+                      }}
+                      >
+                        {t.tier}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={{
+                fontSize: 11, color: theme.inkSoft, textAlign: 'center', marginTop: 6,
+              }}
+              >
+                {nextTier
+                  ? `💎 ${formatPrice(remainingToNext)} more diamonds to ${nextTier.name}`
+                  : '👑 You hold the highest SVIP tier'}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Buy bar — identical on every page, pinned at the bottom.
               Full-bleed border via the -20px margins (showcase CSS);
