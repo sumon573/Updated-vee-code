@@ -36,7 +36,7 @@ export interface SvipSpriteSpec {
 
 export interface SvipRewardSlot {
   slot: number;
-  kind: string; // 'nameplate' | 'frame' | 'empty' (other kinds render as empty)
+  kind: string; // 'nameplate' | 'frame' | 'badge' | 'empty' (other kinds render as empty)
   id?: string;
   label?: string;
   art?: string;

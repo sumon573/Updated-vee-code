@@ -354,6 +354,19 @@ export default function SvipScreen() {
         />
       );
     }
+    if (reward.kind === 'badge' && reward.art) {
+      // Badge art renders exactly like a nameplate (plain contain image).
+      // Stars are NOT rendered on the SVIP page (no reward shows stars
+      // there); stars show in Decoration/Honor via the grant's stars field.
+      return (
+        <ExpoImage
+          source={{ uri: reward.art }}
+          style={{ width: size, height: size }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+        />
+      );
+    }
     return null;
   };
 
