@@ -14,14 +14,23 @@
 import { ref, onValue, set } from 'firebase/database';
 import { database } from '../config/firebase';
 import type { GrantedBadge } from '../data/honor';
+import { grantStars } from '../components/NobleStarPill';
 
 /**
- * 2026-10-13 (Sumon): Ranking — official/special items at top.
- * Order: 1) "Vee Official" badge/frame first, 2) other official source,
- * 3) rest by newest. Applies to badges, frames, nameplates.
+ * 2026-11-09 (boss order 09:32): Ranking — MORE STARS FIRST, everywhere.
+ * Order: 1) most stars first (grant's server `stars` field wins, else the
+ * noble rank spec from the id; starless = 0, never invented), 2) "Vee
+ * Official" badge/frame first, 3) other official source, 4) rest by newest.
+ * Starless items keep their previous relative order (stable sort).
+ * This SUPERSEDES the 2026-10-13 Vee-Official-first rule (now a tie-breaker
+ * only). Applies to badges, frames, nameplates, ripples, entry effects.
  */
-function rankHonors<T extends { name?: string; source?: string; obtainedAt?: number }>(items: T[]): T[] {
+function rankHonors<T extends { id: string; name?: string; source?: string; obtainedAt?: number; stars?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
+    const aStars = grantStars(a) ?? 0;
+    const bStars = grantStars(b) ?? 0;
+    if (aStars !== bStars) return bStars - aStars;
+
     const aIsVeeOfficial = (a.name || '').toLowerCase().includes('vee official') ? 0 : 1;
     const bIsVeeOfficial = (b.name || '').toLowerCase().includes('vee official') ? 0 : 1;
     if (aIsVeeOfficial !== bIsVeeOfficial) return aIsVeeOfficial - bIsVeeOfficial;

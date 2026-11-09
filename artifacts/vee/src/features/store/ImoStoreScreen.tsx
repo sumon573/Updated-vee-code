@@ -892,7 +892,12 @@ export function ImoStoreScreen() {
   const categories = tab === 'personal' ? PERSONAL_CATEGORIES : ROOM_CATEGORIES;
 
   const itemsFor = useCallback((category: string): StoreCatalogItem[] => {
-    return catalog.filter((i) => i.tab === tab && i.category === category);
+    // 2026-11-09 (boss order 09:32): more stars FIRST, app-wide — 5-star
+    // items before 4-star, unstarred last. Stable sort: within equal stars
+    // the catalog order (sortOrder, name, from fetchStoreCatalog) is kept.
+    return catalog
+      .filter((i) => i.tab === tab && i.category === category)
+      .sort((a, b) => (b.star ?? 0) - (a.star ?? 0));
   }, [catalog, tab]);
 
   const isOwned = useCallback((item: StoreCatalogItem) => {
