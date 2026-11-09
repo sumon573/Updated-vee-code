@@ -3,7 +3,9 @@
  *
  * Google (primary) + Email/Password (secondary). Phone system removed.
  * back arrow | globe + change-language | "?" help, title, subtitle,
- * terms links, Google button, Email button.
+ * terms links, Email button — and the Google button PINNED in a footer
+ * outside the ScrollView (2026-11-09: the only way in must never be
+ * below the fold again, at any font scale, in any loading state).
  */
 import { useState } from 'react';
 import { View, Text, Pressable, Modal, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
@@ -27,12 +29,9 @@ import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   signInWithGoogle, getGoogleAuthErrorKey, GOOGLE_AUTH_CANCELLED } from '@/src/services/googleAuthService';
 import { withTimeout } from '@/src/utils/withTimeout';
-
-const SYNC_CONTACTS_KEY = '@vee/sync_contacts_opt_in';
 
 const C = {
   bg: '#FFFFFF',
@@ -79,12 +78,10 @@ export default function ImoLoginScreen() {
   const { t } = useTranslation();
   const { language, changeLanguage } = useLanguage();
 
-  const [syncContacts, setSyncContacts] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [docOpen, setDocOpen] = useState<'terms' | 'privacy' | null>(null);
   const [notice, setNotice] = useState<{ kind: NoticeKind; text: string } | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [syncLoading, setSyncLoading] = useState(false);
   // 2026-10-19 stability fix: the OS can kill the browser activity (or the
   // deep link back) without the OAuth promise ever settling — the spinner
   // would run forever. Bound the session and offer an explicit retry.
@@ -96,33 +93,6 @@ export default function ImoLoginScreen() {
 
   function clearNotice() {
     setNotice(null);
-  }
-
-  // ─── Sync Contacts checkbox ─────────────────────────────────────────────────
-
-  async function handleToggleSyncContacts() {
-    if (syncLoading) return;
-    const next = !syncContacts;
-    if (!next) {
-      setSyncContacts(false);
-      await AsyncStorage.setItem(SYNC_CONTACTS_KEY, 'false');
-      return;
-    }
-    // Enabling: save preference. The OS contacts permission is requested
-    // when the user opens the Contacts tab (existing flow, no new native module).
-    try {
-      setSyncLoading(true);
-      setSyncContacts(true);
-      await AsyncStorage.setItem(SYNC_CONTACTS_KEY, 'true');
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (e) {
-      Alert.alert(
-        t('auth.phoneLogin.syncContacts'),
-        t('auth.errors.generic'),
-      );
-    } finally {
-      setSyncLoading(false);
-    }
   }
 
   // ─── Google ─────────────────────────────────────────────────────────────────
@@ -251,7 +221,7 @@ export default function ImoLoginScreen() {
                 {/* ── Title ─────────────────────────────────────────── */}
                 <Text
                   style={{
-                    fontSize: 34,
+                    fontSize: 28,
                     fontWeight: '800',
                     color: C.text,
                     textAlign: 'center',
@@ -261,11 +231,11 @@ export default function ImoLoginScreen() {
                 </Text>
                 <Text
                   style={{
-                    fontSize: 19,
+                    fontSize: 16,
                     color: C.text,
                     textAlign: 'center',
                     marginTop: 14,
-                    lineHeight: 27,
+                    lineHeight: 22,
                     paddingHorizontal: 8 }}
                 >
                   {t('auth.login.subtitle')}
@@ -277,7 +247,7 @@ export default function ImoLoginScreen() {
                     fontSize: 15,
                     color: C.lightMuted,
                     textAlign: 'center',
-                    marginTop: 12,
+                    marginTop: 8,
                     lineHeight: 22,
                     paddingHorizontal: 16 }}
                 >
@@ -297,40 +267,6 @@ export default function ImoLoginScreen() {
                   </Text>
                   {t('auth.phoneLogin.termsSuffix')}
                 </Text>
-
-                {/* ── Sync Contacts (glass chip toggle) ─────────────────── */}
-                <GlassView variant="chip" resolved={AUTH_GLASS} style={{ alignSelf: 'center', marginTop: 22 }}>
-                <Pressable
-                  onPress={handleToggleSyncContacts}
-                  disabled={syncLoading}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 12,
-                    paddingHorizontal: 18,
-                    paddingVertical: 10,
-                    opacity: syncLoading ? 0.6 : 1 }}
-                  hitSlop={10}
-                >
-                  <View
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 15,
-                      borderWidth: 2,
-                      borderColor: syncContacts ? C.blue : '#9AA0A8',
-                      backgroundColor: syncContacts ? C.blue : 'transparent',
-                      alignItems: 'center',
-                      justifyContent: 'center' }}
-                  >
-                    {syncContacts && <Feather name="check" size={17} color="#FFFFFF" />}
-                  </View>
-                  <Text style={{ fontSize: 21, color: C.text, fontWeight: '400' }}>
-                    {t('auth.phoneLogin.syncContacts')}
-                  </Text>
-                </Pressable>
-                </GlassView>
 
                 {/* ── Notice banner ─────────────────────────────────── */}
                 {!!notice && (
@@ -365,32 +301,6 @@ export default function ImoLoginScreen() {
                     </Text>
                   </View>
                 )}
-
-                {/* ── Google sign-in (system-browser OAuth, glass pill) ───── */}
-                <GlassView variant="chip" resolved={AUTH_GLASS} style={{ marginTop: 24 }}>
-                <Pressable
-                  onPress={handleGoogle}
-                  disabled={googleLoading}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 56,
-                    gap: 12,
-                    opacity: googleLoading ? 0.7 : pressed ? 0.75 : 1 })}
-                >
-                  {googleLoading ? (
-                    <PremiumLoader size="medium" />
-                  ) : (
-                    <>
-                      <GoogleGLogo size={22} />
-                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
-                        {t('auth.phoneLogin.continueWithGoogle')}
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-                </GlassView>
 
                 {/* ── Stuck-in-browser recovery (2026-10-19) ────────────────
                     Visible only after the OAuth session timed out without
@@ -435,6 +345,35 @@ export default function ImoLoginScreen() {
                 </Pressable>
                 </GlassView>
           </ScrollView>
+
+          {/* ── Google sign-in — PINNED FOOTER (2026-11-09, boss order:
+              "এরকম যেন ভবিষ্যতে না হয়"). The only way in lives OUTSIDE
+              the ScrollView so it is always on screen, above the fold, at
+              any font scale, with no scroll and no conditional that can
+              hide it. It is never gated on async state: while loading it
+              stays disabled with its label visible and the spinner beside
+              the label — never a bare spinner, never invisible. */}
+          <View style={{ paddingHorizontal: 30, paddingBottom: 16 }}>
+            <GlassView variant="chip" resolved={AUTH_GLASS}>
+              <Pressable
+                onPress={handleGoogle}
+                disabled={googleLoading}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: 56,
+                  gap: 12,
+                  opacity: googleLoading ? 0.7 : pressed ? 0.75 : 1 })}
+              >
+                <GoogleGLogo size={22} />
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#3C4043' }}>
+                  {t('auth.phoneLogin.continueWithGoogle')}
+                </Text>
+                {googleLoading && <PremiumLoader size="small" />}
+              </Pressable>
+            </GlassView>
+          </View>
         </KeyboardAvoidingView>
 
         {/* ── Language sheet ─────────────────────────────────────────── */}

@@ -91,7 +91,7 @@ const en = {
       googleTab: 'Google',
       title: 'Enter Your Phone',
       subtitle: 'Your number and address book are used to connect you with your friends.',
-      termsPrefix: "By tapping Verify you are agreeing to Vee's ",
+      termsPrefix: "By continuing you agree to Vee's ",
       termsOfService: 'Terms of Service',
       termsAnd: ' and ',
       privacyPolicy: 'Privacy Policy',
