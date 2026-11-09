@@ -384,12 +384,40 @@ export const SeatCard = memo(function SeatCard({
               so a long name overflowed its 20%-wide cell, spilling left into
               the adjacent seat's name. The row is now exactly the cell width
               and the Text shrinks with tail ellipsis inside its own column. */}
+          {/* 2026-11-09 (seat-name readability, PERMANENT fix): the name used to
+              sit directly on the room background with no shadow/pill, so a
+              King name in fixed gold #FBC02D was invisible on the Golden
+              Sunset gradient (1.02:1 vs #FDBA74 — same hue/lightness).
+              King names now sit in a semi-transparent dark pill
+              (rgba(0,0,0,0.70)) with a strong dark text shadow, so gold is
+              readable on ANY theme (worst light stop 5.45:1, WCAG AA 4.5:1
+              passed everywhere; shadow adds edge contrast on top). King
+              gold #FBC02D is UNCHANGED (boss standing rule 2026-11-01
+              "King names gold + chik chik"). Non-King names get NO pill:
+              measured, a dark pill DESTROYS their contrast (dark onBg
+              #431407: 9.28:1 bare vs 1.21:1 behind a 0.75 pill) — the theme
+              onBg is already designed readable on its own bg, so non-Kings
+              render exactly as before. Font/size (11.5/700) unchanged.
+              Pill is tight (padding 6/2, radius 9) and shrink-wrapped to the
+              name + sparkle — the outer row keeps its full-cell width so
+              long names still ellipsis inside their own column. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 5, width: '100%' }}>
-            <Text style={{
-              color: isKing ? KING_GOLD : (nameColor ?? C.text), fontSize: 11.5, fontWeight: '700',
-              textAlign: 'center', flexShrink: 1,
-            }} numberOfLines={1} ellipsizeMode="tail">{seatName(member.name)}</Text>
-            {isKing ? <KingSparkle /> : null}
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              backgroundColor: isKing ? 'rgba(0,0,0,0.70)' : 'transparent',
+              borderRadius: isKing ? 9 : 0,
+              paddingHorizontal: isKing ? 6 : 0, paddingVertical: isKing ? 2 : 0,
+              maxWidth: '100%', flexShrink: 1,
+            }}>
+              <Text style={{
+                color: isKing ? KING_GOLD : (nameColor ?? C.text), fontSize: 11.5, fontWeight: '700',
+                textAlign: 'center', flexShrink: 1,
+                textShadowColor: isKing ? 'rgba(0,0,0,0.85)' : undefined,
+                textShadowOffset: isKing ? { width: 0, height: 1 } : undefined,
+                textShadowRadius: isKing ? 3 : 0,
+              }} numberOfLines={1} ellipsizeMode="tail">{seatName(member.name)}</Text>
+              {isKing ? <KingSparkle /> : null}
+            </View>
             {vibeArtUrl ? <VibeHandFx artUrl={vibeArtUrl} /> : null}
           </View>
 
