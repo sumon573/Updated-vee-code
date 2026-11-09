@@ -9,11 +9,11 @@
  */
 import type { ComponentProps } from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, Text, Alert, Modal, TextInput, Pressable, Linking, RefreshControl } from 'react-native';
+import { View, Text, Alert, Modal, TextInput, Pressable, Linking } from 'react-native';
 import PremiumLoader from '@/src/components/PremiumLoader';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScrollView as GHScrollView, FlatList } from 'react-native-gesture-handler';
+import { ScrollView as GHScrollView, FlatList, RefreshControl } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -592,18 +592,25 @@ export default function VoiceRoomHome({
   // and the circle freezes in pull position (static white circle +
   // black reload arrow) while JS `refreshing` is ALREADY false and no
   // timer is pending — nothing in JS can ever clear it. Cure: on
-  // EVERY hide, bump refreshControlKey so the native spinner is
-  // recreated fresh with refreshing=false; a wedged view dies with
-  // the old one. The FlatList itself keeps its identity (only its
-  // refreshControl child changes), and the spinner's look, position
-  // and icon are untouched — visibility behaviour only.
+  // EVERY hide, bump flatListKey so the ENTIRE list is recreated
+  // fresh with refreshing=false; a wedged view dies with the old one.
+  // The remount is on the FlatList, not on the RefreshControl: the
+  // 19:02 fix bumped refreshControlKey, but the key change on the
+  // refreshControl element alone did NOT destroy + recreate the
+  // native SwipeRefreshLayout (diagnosis round 2, sim S4) — the wedge
+  // survived it. Recreating the whole native subtree (layout +
+  // ScrollView + cells) cannot be a no-op at that element level.
+  // Cost: scroll position resets to top on hide (the list IS at top
+  // during a pull) and cells re-mount identically (images are
+  // memory/disk cached). The spinner's look, position and icon are
+  // untouched — visibility behaviour only.
   // (2) SINGLE SHARED TIMER — the MIN-delay branch cancels the 8s
   // safety, leaving the one hide timer as the only guard. Cure: an
   // independent one-shot watchdog (own ref, never touched by
   // clearRefreshTimer) that force-hides at 10s. No new interval/poll.
   const WATCHDOG_REFRESH_MS = 10000;
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshControlKey, setRefreshControlKey] = useState(0);
+  const [flatListKey, setFlatListKey] = useState(0);
   const refreshingRef = useRef(false);
   const refreshStartRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -644,9 +651,12 @@ export default function VoiceRoomHome({
     refreshHideScheduledRef.current = false;
     refreshingRef.current = false;
     setRefreshing(false);
-    // 2026-11-09: recreate the native spinner fresh (see above) so a
-    // flip lost mid-drag can never leave a frozen circle behind.
-    setRefreshControlKey((k) => k + 1);
+    // 2026-11-09 (round 2): recreate the WHOLE list fresh (see above)
+    // so a flip lost mid-drag can never leave a frozen circle behind.
+    // The RefreshControl-level key bump is dropped — the FlatList
+    // remount subsumes it (the wedged SwipeRefreshLayout dies with
+    // the old subtree).
+    setFlatListKey((k) => k + 1);
   }, []);
   const handleRefresh = useCallback(() => {
     if (refreshingRef.current) return;
@@ -1072,6 +1082,7 @@ export default function VoiceRoomHome({
           GestureDetector (chats/contacts use GH FlatList and scroll);
           the flex:1 wrapper mirrors the chats page structure. */}
       <FlatList
+        key={flatListKey}
         style={{ flex: 1 }}
         data={homeItems}
         keyExtractor={(item) => item.key}
@@ -1084,7 +1095,7 @@ export default function VoiceRoomHome({
         updateCellsBatchingPeriod={50}
         windowSize={10}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 60 : 0) }}
-        refreshControl={<RefreshControl key={refreshControlKey} refreshing={refreshing} onRefresh={handleRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
           if (item.type === 'myrooms') {
             return (
