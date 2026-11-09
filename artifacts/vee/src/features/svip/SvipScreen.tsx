@@ -94,6 +94,17 @@ const POPUP_BG_TOP = '#1e1547';
 const FRAME_AVATAR_FRAC = 0.68;
 const FRAME_HOLE_CY = 181.5 / 384;
 
+/** Milestone-circle colours — one per tier, sampled from that tier's
+ * own live hero art (2026-11-09): 1 teal shield/ribbon, 2 purple
+ * ribbon + crown velvet (= the tier's server `color`), 3 crimson
+ * ribbon + crown velvet, 4 royal-blue peacock/banner, 5 gold dragon.
+ * Gold is deliberately NOT used for 3 (it appears in every tier's
+ * hero) and red is NOT used for 5 (it would near-collide with 3's
+ * crimson). Each circle wears its OWN tier's colour on every page. */
+const SVIP_ICON_COLORS: Record<number, string> = {
+  1: '#0E9F8A', 2: '#7E57C2', 3: '#A71C32', 4: '#1E5AA8', 5: '#E8B84B',
+};
+
 function formatPrice(n: number): string {
   return n.toLocaleString('en-US');
 }
@@ -302,13 +313,12 @@ export default function SvipScreen() {
   const remainingToNext = nextTier && totalRecharged != null
     ? Math.max(0, nextTier.priceDiamonds - totalRecharged)
     : 0;
-  // Milestone circles take the VIEWED page's tier colour (boss
-  // 2026-11-09: one colour per level — the tier's own server colour,
-  // the same `color` field SvipBadge already uses), so every page's
-  // bar wears that page's colour. The number inside picks the
-  // readable side of that colour.
-  const milestoneColor = tier.color || theme.gold;
-  const milestoneNumColor = luminance(milestoneColor) > 0.25 ? '#241a04' : '#FFFFFF';
+  // Milestone circles each wear their OWN tier's icon colour
+  // (SVIP_ICON_COLORS, sampled from that tier's hero art) on EVERY
+  // page — so ①②③④⑤ are teal, purple, crimson, royal blue, gold
+  // wherever the bar is shown. The per-circle colour is computed
+  // inside the pricedTiers.map loop below; the number inside picks
+  // the readable side of that circle's own colour via luminance().
 
   /** Avatar disc shown UNDER a frame reward (popup + grid): the user's
    * photo, or the gold initial disc. The frame renders AFTER this (on
@@ -660,17 +670,17 @@ export default function SvipScreen() {
 
           {/* ── Live recharge journey — pinned above the buy bar ──
               Boss 2026-11-09: visible on EVERY tier page, with circled
-              tier numbers ①–⑤ at the threshold positions, coloured by
-              the page being viewed, and the fill from LIVE recharge.
-              It lived inside the tier page, where the tall pages
-              (hero + banner + rewards on every tier now) clipped it —
-              and its caption — behind the buy bar. Pinned here it can
-              never be cut off; the pages scroll vertically instead, so
-              no tier content is ever clipped either. The bar tracks the
-              USER, not the tab: same fill on every page, only the
-              circle colour follows the viewed tier. Shown once the live
-              total has arrived (null = still loading, never a
-              misleading 0). */}
+              tier numbers ①–⑤ at the threshold positions, each circle
+              in its OWN tier's icon colour, and the fill from LIVE
+              recharge. It lived inside the tier page, where the tall
+              pages (hero + banner + rewards on every tier now) clipped
+              it — and its caption — behind the buy bar. Pinned here it
+              can never be cut off; the pages scroll vertically instead,
+              so no tier content is ever clipped either. The bar tracks
+              the USER, not the tab: same fill on every page, and the
+              circles keep their own tier colours on every page. Shown
+              once the live total has arrived (null = still loading,
+              never a misleading 0). */}
           {totalRecharged !== null && pricedTiers.length > 0 ? (
             <View style={{ paddingTop: 10, paddingBottom: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -707,6 +717,10 @@ export default function SvipScreen() {
                 {pricedTiers.map((t) => {
                   const pct = topPrice > 0 ? (t.priceDiamonds / topPrice) * 100 : 0;
                   const reached = totalRecharged >= t.priceDiamonds;
+                  // This circle's OWN tier colour (not the viewed
+                  // page's) + its readable number colour.
+                  const circleColor = SVIP_ICON_COLORS[t.tier] || theme.gold;
+                  const circleNumColor = luminance(circleColor) > 0.25 ? '#241a04' : '#FFFFFF';
                   return (
                     <View
                       key={t.tier}
@@ -714,15 +728,15 @@ export default function SvipScreen() {
                         position: 'absolute', left: `${pct}%`, top: 3,
                         width: 22, height: 22, borderRadius: 11,
                         transform: [{ translateX: -11 }],
-                        backgroundColor: reached ? milestoneColor : 'transparent',
+                        backgroundColor: reached ? circleColor : 'transparent',
                         borderWidth: reached ? 1 : 1.5,
-                        borderColor: milestoneColor,
+                        borderColor: circleColor,
                         alignItems: 'center', justifyContent: 'center',
                       }}
                     >
                       <Text style={{
                         fontSize: 12, fontWeight: '800',
-                        color: reached ? milestoneNumColor : theme.ink,
+                        color: reached ? circleNumColor : theme.ink,
                       }}
                       >
                         {t.tier}
