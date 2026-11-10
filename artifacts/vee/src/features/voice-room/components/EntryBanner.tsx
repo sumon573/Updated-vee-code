@@ -37,6 +37,38 @@ interface EntryBannerProps {
   onDismiss: () => void;
 }
 
+// 2026-11-11 (boss): SVIP entry shimmer — same technique as the SVIP
+// nameplate Lv Max animation (ShimmerOverlay, speed 900, opacity 0.8):
+// a bright band sweeping across, transform/opacity-only with the native
+// driver (no heat, no JS loop). `color` = the band colour (white over the
+// gold badge, gold over the white name text); `sweepWidth` = how far right
+// the band travels (tuned to the container width). The parent must have
+// overflow: 'hidden' to clip the band. Boss explicitly ordered animation
+// for THIS SVIP5 entry badge only (overrides the Noble-badge "never
+// animated" rule for this badge only).
+function EntryShimmer({ color, opacity = 0.8, speed = 900, sweepWidth = 200 }: { color: string; opacity?: number; speed?: number; sweepWidth?: number }) {
+  const shimmer = useRef(new Animated.Value(-1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(shimmer, { toValue: 2, duration: speed, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [speed, shimmer]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute', top: 0, bottom: 0, left: 0, width: 40,
+        backgroundColor: color, opacity,
+        transform: [
+          { translateX: shimmer.interpolate({ inputRange: [-1, 2], outputRange: [-60, sweepWidth] }) },
+          { skewX: '-20deg' },
+        ],
+      }}
+    />
+  );
+}
+
 export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntryEffect, entryEffectArtUrl, onDismiss }: EntryBannerProps) {
   // 2026-11-11 (SVIP entry effect): an SVIP id starts with 'svip'
   // (e.g. 'svip5-entry-effect'); noble ids start with 'noble-effect-'.
@@ -218,6 +250,30 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
           style={{ width: dragonW, height: dragonH }}
           contentFit="contain"
         />
+        {/* 2026-11-11 (boss): gold "SVIP5" badge in the empty space between
+            the dragon and the name row. Solid SVIP gold #E8B84B
+            (theme-agnostic — reads on light and dark themes alike) with
+            dark text. The white shimmer band sweeps across the gold pill
+            (under the text, so the dark text stays readable). */}
+        <View
+          style={{
+            alignSelf: 'center',
+            marginTop: 10,
+            marginBottom: 2,
+            borderRadius: 999,
+            backgroundColor: '#E8B84B',
+            borderColor: '#C9972B',
+            borderWidth: 1,
+            paddingHorizontal: 14,
+            paddingVertical: 5,
+            overflow: 'hidden',
+          }}
+        >
+          <EntryShimmer color="#FFFFFF" opacity={0.8} speed={900} sweepWidth={120} />
+          <Text style={{ color: '#1A1A1A', fontSize: 13, fontWeight: '800', letterSpacing: 1 }} allowFontScaling={false}>
+            SVIP5
+          </Text>
+        </View>
         <View
           style={{
             flexDirection: 'row',
@@ -247,20 +303,30 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
               </Text>
             </View>
           )}
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontSize: 18,
-              fontWeight: '800',
-              textShadowColor: 'rgba(0,0,0,0.9)',
-              textShadowOffset: { width: 0, height: 0 },
-              textShadowRadius: 4,
-            }}
-            numberOfLines={1}
-            allowFontScaling={false}
-          >
-            {name} is Coming...
-          </Text>
+          {/* 2026-11-11 (boss): gold shimmer sweep across the "is Coming..."
+              text — the text stays WHITE + dark halo (readable on any
+              theme); the gold band sweeping OVER it tints it gold as it
+              passes, giving the animated-colour premium look. The wrapper
+              has padding 6 so the halo (radius 4) is not clipped by
+              overflow: 'hidden'. Same ShimmerOverlay technique, native
+              driver only (no heat). */}
+          <View style={{ overflow: 'hidden', padding: 6 }}>
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: 18,
+                fontWeight: '800',
+                textShadowColor: 'rgba(0,0,0,0.9)',
+                textShadowOffset: { width: 0, height: 0 },
+                textShadowRadius: 4,
+              }}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
+              {name} is Coming...
+            </Text>
+            <EntryShimmer color="#FFD700" opacity={0.7} speed={900} sweepWidth={220} />
+          </View>
         </View>
       </Animated.View>
     );
