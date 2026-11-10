@@ -30,11 +30,22 @@ interface EntryBannerProps {
   nobleRankIndex?: number;
   /** Equipped entry effect id (sender's activeEntryEffect). Absent = old sender. */
   activeEntryEffect?: string;
+  /** SVIP entry-effect art URL (sender's grant icon), sent with the entry
+      event. Only used when activeEntryEffect is an SVIP id. */
+  entryEffectArtUrl?: string | null;
   /** Called when the banner should be dismissed */
   onDismiss: () => void;
 }
 
-export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss }: EntryBannerProps) {
+export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntryEffect, entryEffectArtUrl, onDismiss }: EntryBannerProps) {
+  // 2026-11-11 (SVIP entry effect): an SVIP id starts with 'svip'
+  // (e.g. 'svip5-entry-effect'); noble ids start with 'noble-effect-'.
+  // The SVIP branch renders ONLY when the id is SVIP *and* the sender
+  // supplied the art URL — otherwise the noble/standard path is untouched.
+  const isSvipEntryEffect = typeof activeEntryEffect === 'string' && activeEntryEffect.startsWith('svip');
+  const svipArtUrl = isSvipEntryEffect && typeof entryEffectArtUrl === 'string' && /^https?:\/\//i.test(entryEffectArtUrl)
+    ? entryEffectArtUrl
+    : null;
   // 2026-10-15 (Sumon): per-rank theme. Non-nobles get the standard blue.
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
   const rankName = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.name : null;
@@ -67,6 +78,25 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (svipArtUrl) {
+      // 2026-11-11 (SVIP entry effect): the art animates itself — fade in
+      // fast, hold for the art's ~3.7s play, fade out. Same 3650ms dismiss
+      // as the noble art branch; NO new timer beyond this existing pattern.
+      // The banner unmounts on dismiss, so the WebP stops with it.
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+      const timer = setTimeout(() => {
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => onDismiss());
+      }, 3650);
+      return () => clearTimeout(timer);
+    }
     if (hasEntryArt) {
       if (isViscountArt || isCountArt || isDukeArt || isKingArt) {
         // Viscount/Count: static banner art — slide in from the right, stop
@@ -161,6 +191,81 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, onDismiss 
   // King canvas 1814x562 (v4 clean base): DP center (13.8% W, 43.4% H), disc 15.3% of W;
   // name slot starts at 28.8% W, top 25.6% H (gold name + white 'is coming...' below at 52.0% H).
   // name slot starts at 34.9% W, top 31% H (gold name + white 'is coming...' below at 53% H).
+  // 2026-11-11 (SVIP entry effect): the equipped SVIP effect wins over the
+  // noble art branch (a user can be both King and SVIP 5 — the active
+  // effect is the SVIP dragon). Transparent animated WebP on top, live DP +
+  // live name + "is Coming..." below it — NO solid background, pill, badge
+  // or opaque container anywhere, so it blends with the room background.
+  // The art is 315x311 (near-square); the whole branch dismisses on the
+  // existing 3650ms timer above and unmounts with it.
+  if (svipArtUrl) {
+    const dragonW = Math.min(Dimensions.get('window').width * 0.86, 320);
+    const dragonH = (dragonW * 311) / 315;
+    return (
+      <Animated.View
+        style={{
+          opacity: opacityAnim,
+          position: 'absolute',
+          top: '28%',
+          alignSelf: 'center',
+          zIndex: 100,
+          alignItems: 'center',
+        }}
+        pointerEvents="none"
+      >
+        <ExpoImage
+          source={{ uri: svipArtUrl }}
+          style={{ width: dragonW, height: dragonH }}
+          contentFit="contain"
+        />
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: 8,
+          }}
+        >
+          {photoURL ? (
+            <Image
+              source={{ uri: photoURL }}
+              style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: 'rgba(255,255,255,0.25)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 10,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>
+                {initials}
+              </Text>
+            </View>
+          )}
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: 18,
+              fontWeight: '800',
+              textShadowColor: 'rgba(0,0,0,0.65)',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 4,
+            }}
+            numberOfLines={1}
+            allowFontScaling={false}
+          >
+            {name} is Coming...
+          </Text>
+        </View>
+      </Animated.View>
+    );
+  }
+
   if (hasEntryArt && theme) {
     const bannerW = Math.min(Dimensions.get('window').width * 0.94, 470);
     // Viscount canvas is 1903x826 (own banner art); Marquis is 1600x533.

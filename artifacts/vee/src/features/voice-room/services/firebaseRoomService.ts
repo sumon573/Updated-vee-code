@@ -2081,6 +2081,14 @@ export type RoomEntryEvent = {
    * on it. Absent = old sender (rank-based fallback). Empty = none equipped.
    */
   activeEntryEffect?: string;
+  /**
+   * 2026-11-11 (SVIP entry effect): the joiner's EQUIPPED SVIP entry-effect
+   * art URL (their grant users/{uid}/entryEffects/{id}/icon) — sent ONLY
+   * when activeEntryEffect is an SVIP id (starts with 'svip'). Receivers
+   * render the animated WebP above the DP + name banner. Absent = old
+   * sender or a non-SVIP effect (receivers fall back to the noble path).
+   */
+  entryEffectArtUrl?: string | null;
 };
 
 /**
