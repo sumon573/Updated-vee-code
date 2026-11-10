@@ -252,8 +252,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
               color: '#FFFFFF',
               fontSize: 18,
               fontWeight: '800',
-              textShadowColor: 'rgba(0,0,0,0.65)',
-              textShadowOffset: { width: 0, height: 1 },
+              textShadowColor: 'rgba(0,0,0,0.9)',
+              textShadowOffset: { width: 0, height: 0 },
               textShadowRadius: 4,
             }}
             numberOfLines={1}
