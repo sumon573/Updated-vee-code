@@ -294,13 +294,13 @@ export default function VoiceRoomScreen() {
       ? sendPass2SeatMute(rId, seatIdx, value)
       : setSeatMute(rId, seatIdx, value);
 
-  const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string; activeFrame?: string } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ name: string; photoURL?: string; activeFrame?: string; activeEntryEffect?: string } | null>(null);
   const [myVerified, setMyVerified] = useState(false);
   useEffect(() => {
     if (!myUid || myUid === 'anonymous') return;
     if (pass2PollActive) return; // pass2 REST profile owns this (effect below)
     const unsub = subscribeUser(myUid, (p) => {
-      if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: (p as any).activeFrame || undefined });
+      if (p) setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: (p as any).activeFrame || undefined, activeEntryEffect: (p as any).activeEntryEffect || undefined });
     });
     import('@/src/services/verifiedService').then(({ hasOfficialBadge }) => {
       hasOfficialBadge(myUid).then(setMyVerified).catch(() => {});
@@ -2128,7 +2128,7 @@ export default function VoiceRoomScreen() {
     if (!pass2PollActive || !myUid || myUid === 'anonymous') return;
     const unsub = subscribePass2MyProfile(myUid, (p) => {
       if (p && p.name) {
-        setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: p.activeFrame || undefined });
+        setMyProfile({ name: p.name, photoURL: p.photoURL || undefined, activeFrame: p.activeFrame || undefined, activeEntryEffect: (p as any).activeEntryEffect || undefined });
       }
     });
     fetchPass2WalletMe().then((w) => {
