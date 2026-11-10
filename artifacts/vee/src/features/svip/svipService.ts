@@ -274,6 +274,7 @@ export async function grantSvipTierRewards(
   const validity = typeof expiry === 'number' && expiry > now ? expiry : now + 30 * 86400000;
   const { ref, get, set } = await import('firebase/database');
   const { database } = await import('@/src/config/firebase');
+  let grantedEntryEffect = false;
   for (const reward of rewards) {
     const node = SVIP_REWARD_NODE[reward.kind];
     try {
@@ -305,9 +306,19 @@ export async function grantSvipTierRewards(
         grantedBy: 'svip-system',
       });
       granted.push(reward.id);
+      if (reward.kind === 'entryEffect') grantedEntryEffect = true;
     } catch {
       failed.push(reward.id);
     }
+  }
+  // 2026-11-11 (boss): entry effects auto-use by stars — a newly granted
+  // SVIP entry effect outranks a lower active one, so it becomes active.
+  // Reconcile is a no-op when the active one already outranks it.
+  if (grantedEntryEffect) {
+    try {
+      const { reconcileActiveEntryEffectFromDb } = await import('@/src/services/entryEffectService');
+      await reconcileActiveEntryEffectFromDb(uid);
+    } catch { /* non-critical — Decoration load reconciles on next open */ }
   }
   return { granted, failed };
 }

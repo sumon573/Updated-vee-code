@@ -14,7 +14,7 @@
  * 2026-10-31 (boss): Nobel tab removed from Decoration (Nobel page now opens
  * from the profile nameplate); noble rank plates auto-use, no remove option.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
 import { View, Text, ScrollView, Pressable, FlatList } from 'react-native';
@@ -38,6 +38,7 @@ import {
   type GrantedRipple,
   type GrantedEntryEffect } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
+import { isSvipEntryEffect, reconcileActiveEntryEffect } from '@/src/services/entryEffectService';
 import * as Haptics from 'expo-haptics';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 
@@ -295,6 +296,25 @@ export default function DecorationScreen() {
     return subscribeSvip(targetUid, setSvipState);
   }, [targetUid]);
 
+  // 2026-11-11 (boss): entry effects auto-use by stars — on Decoration
+  // load, the highest-ranked held entry effect becomes the active one
+  // (SVIP 5-star beats Nobel 5-star beats other). Runs once per
+  // (uid, held ids, active id) — reconcile itself no-ops when the
+  // active one is already the highest, so no write loop, no polling.
+  const entryEffectReconcileKey = useRef('');
+  useEffect(() => {
+    if (!isMe || !user?.uid || loading) return;
+    const activeId = (profile as any)?.activeEntryEffect;
+    const key = `${user.uid}|${entryEffects.map((e) => e.id).sort().join(',')}|${typeof activeId === 'string' ? activeId : ''}`;
+    if (entryEffectReconcileKey.current === key) return;
+    entryEffectReconcileKey.current = key;
+    void reconcileActiveEntryEffect(
+      user.uid,
+      entryEffects,
+      typeof activeId === 'string' ? activeId : undefined,
+    ).catch(() => {});
+  }, [isMe, user?.uid, loading, entryEffects, profile]);
+
   const handleEquip = async (field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect', id: string) => {
     if (!isMe || !user?.uid) return;
     try {
@@ -345,6 +365,10 @@ export default function DecorationScreen() {
     // counts as active even if the pointer is stale (heal syncs it); its
     // Remove button is hidden below.
     const isAutoPlate = field === 'activeNameplate' && autoPlateIds.includes(item.id);
+    // 2026-11-11 (boss): the auto-used entry effect (the USING one) stays
+    // USING and cannot be removed — its Remove button is hidden below.
+    // Non-active entry effects keep their Use/Remove behaviour.
+    const isAutoEntryEffect = field === 'activeEntryEffect' && isActive;
     const showActive = isActive || isAutoPlate;
     return (
     <View
@@ -370,6 +394,11 @@ export default function DecorationScreen() {
               <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>NOBEL</Text>
             </View>
           )}
+          {field === 'activeEntryEffect' && isSvipEntryEffect(item) && (
+            <View style={{ marginLeft: 8, backgroundColor: C.gold, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>SVIP</Text>
+            </View>
+          )}
           <NobleStarPill grantId={item.id} stars={item.stars} />
         </View>
         <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
@@ -387,7 +416,7 @@ export default function DecorationScreen() {
             <View style={{ backgroundColor: C.successBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: C.success }}>✓ USING</Text>
             </View>
-            {!isAutoPlate && (
+            {!isAutoPlate && !isAutoEntryEffect && (
             <Pressable
               style={{ backgroundColor: C.errorBg, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
               onPress={() => handleRemove(field)}
@@ -442,7 +471,9 @@ export default function DecorationScreen() {
         data={items}
         keyExtractor={(item: any) => item.id}
         renderItem={({ item }: { item: any }) =>
-          renderItemRow(item, data.active === item.id, data.field, item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
+          // 2026-11-11 (boss): an SVIP entry effect reads "SVIP", not
+          // "Nobel" — derived from source/id, entry effects only.
+          renderItemRow(item, data.active === item.id, data.field, tab === 'entryfx' && isSvipEntryEffect(item) ? 'SVIP' : item.source === 'noble' ? 'Nobel' : item.source === 'event' ? 'Event reward' : data.label)
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 100 }}

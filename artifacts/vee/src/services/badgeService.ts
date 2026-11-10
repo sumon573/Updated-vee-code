@@ -104,9 +104,14 @@ export interface GrantedEntryEffect {
   icon: string;
   obtainedAt: number;
   validity: 'permanent' | number;
-  source: 'official' | 'event' | 'noble';
+  /** 'svip' for SVIP rewards (server grants carry it; client SVIP grants
+   * may still say 'official' — the id prefix `svip*` identifies those). */
+  source: 'official' | 'event' | 'noble' | 'svip';
   description?: string;
   grantedBy?: string;
+  /** 2026-11-11: server-driven star count (SVIP 5 = 5, King = 5) —
+   * drives the entry-effect auto-use ranking. Absent = no star known. */
+  stars?: number;
 }
 
 /**

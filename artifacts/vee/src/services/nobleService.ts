@@ -403,6 +403,13 @@ async function grantNobleRankItems(uid: string, rankIndex: number): Promise<void
       description: desc,
       grantedBy: 'noble-system',
     });
+    // 2026-11-11 (boss): entry effects auto-use by stars — a newly
+    // granted noble entry effect becomes active only if it outranks
+    // the current active one (reconcile no-ops otherwise).
+    try {
+      const { reconcileActiveEntryEffectFromDb } = await import('./entryEffectService');
+      await reconcileActiveEntryEffectFromDb(uid);
+    } catch { /* non-critical — Decoration load reconciles on next open */ }
   }
 }
 
