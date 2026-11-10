@@ -11,16 +11,26 @@
  * Recommended is NO LONGER the inbox list. It is the popular / very-active
  * ranking — occupants of currently-live rooms first (by room occupancy,
  * then follower count), filled from this week's gift leaderboards — and it
- * is the MAIN content when Active is empty. There is no "No active
- * followings" empty state anywhere in this sheet: when nothing can be
- * loaded at all the sheet shows the loading state instead of an empty
- * state. No demo rows ever: every row comes from rooms / followers /
- * leaderboard reads. One-shot get()s on open only — no timers, polls or
- * subscriptions. The Active sweep is shared with Recommended (one sweep
- * per open, not two).
+ * is the MAIN content when Active is empty. When Active is empty the sheet
+ * says so plainly ("No active followings", imo-style) and still shows
+ * Recommended; when nothing at all can be loaded it shows the empty state
+ * plus a Retry button — never a bare spinner, never a fake row. No demo
+ * rows ever: every row comes from rooms / followers / leaderboard reads.
+ * One-shot get()s on open only — no polls or subscriptions, one 8s load
+ * timeout (a hung get() ends in the empty state + Retry). The Active
+ * sweep is shared with Recommended (one sweep per open, not two).
+ * 2026-11-09 (boss: "এটা imo, এটার মত" + "smooth scroll, polished"):
+ * the sheet container is absolute bottom-anchored (LeaderboardModal
+ * pattern) so it sizes to its content when short and caps at 85% when
+ * tall; the scrollable content sits in a flex:1 wrapper so the FlatList
+ * gets a bounded height (a flex:1 list in a content-sized parent
+ * measures 0px);
+ * the load effect never orphans (no roomIds dep, run-id token, .finally
+ * always clears loading); rows are memoised 72px rows with getItemLayout;
+ * the empty state lives OUTSIDE the FlatList so layout can never swallow it.
  */
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, Modal, Pressable, FlatList, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import { View, Text, Modal, Pressable, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { get, ref, query, orderByChild, limitToLast } from 'firebase/database';
@@ -98,6 +108,10 @@ async function loadCandidateUids(myUid: string): Promise<{ followed: Set<string>
 const FRESH_HEARTBEAT_MS = 150_000;
 const RECOMMENDED_CAP = 30;
 const FOLLOWER_SHORTLIST = 10;
+/** One row spec, both sections: 52 avatar + 2x10 padding = 72px rows. */
+const ROW_HEIGHT = 72;
+/** Hung get()s end in the empty state + Retry instead of a stuck spinner. */
+const LOAD_TIMEOUT_MS = 8000;
 
 type RoomSweep = {
   /** uid -> roomId, highest-occupancy room wins. */
@@ -439,6 +453,160 @@ export function ActiveFollowingsBar({ active, onPress }: { active: ActiveFollowi
   );
 }
 
+/**
+ * One row spec for both sections (boss 2026-11-09 23:47 polish):
+ * horizontal padding 16, vertical 10, avatar 52, name 16/700, subtitle
+ * 13 grey → every row is exactly ROW_HEIGHT (72px) tall, which is what
+ * getItemLayout relies on. Rows are React.memo so a state change (follow
+ * in flight, dismiss, collapse) re-renders only the affected row.
+ */
+const ActiveRow = memo(function ActiveRow({
+  row,
+  onJoin,
+}: {
+  row: ActiveFollowing;
+  onJoin: (roomId: string) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onJoin(row.roomId)}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Avatar name={row.name} photoURL={row.photoURL} size={52} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
+            {row.name}
+          </Text>
+          {/* 2026-11-09 (boss): heartbeat voice icon next to the name —
+              this person IS in a voice room. */}
+          <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />
+        </View>
+        <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
+          in {row.roomName}
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={18} color="#C7C7CC" />
+    </Pressable>
+  );
+});
+
+const RecommendedRow = memo(function RecommendedRow({
+  item,
+  followDisabled,
+  isBusy,
+  onFollow,
+  onDismiss,
+  onJoin,
+}: {
+  item: RecommendedFriend;
+  /** Any follow in flight — the other Follow buttons stay disabled. */
+  followDisabled: boolean;
+  /** This row's own follow is in flight — shows '...' instead. */
+  isBusy: boolean;
+  onFollow: (uid: string) => void;
+  onDismiss: (uid: string) => void;
+  onJoin: (roomId: string) => void;
+}) {
+  // In-room rows tap to join (same as an Active row); the Follow / X
+  // buttons stay tappable on their own.
+  const inRoom = !!item.roomId;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
+      <Pressable
+        onPress={() => {
+          if (!inRoom || !item.roomId) return;
+          onJoin(item.roomId);
+        }}
+        style={({ pressed }) => ({
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          opacity: pressed && inRoom ? 0.6 : 1,
+        })}
+      >
+        <Avatar name={item.name} photoURL={item.photoURL} size={52} />
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
+              {item.name}
+            </Text>
+            {inRoom && <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />}
+          </View>
+          <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
+            {inRoom
+              ? `in ${item.roomName}`
+              : item.source === 'sender'
+                ? 'Top gift sender this week'
+                : item.source === 'receiver'
+                  ? 'Top gift receiver this week'
+                  : 'Popular on Vee'}
+          </Text>
+        </View>
+        {inRoom && <Feather name="chevron-right" size={18} color="#C7C7CC" />}
+      </Pressable>
+      <Pressable
+        onPress={() => onFollow(item.uid)}
+        disabled={followDisabled}
+        style={({ pressed }) => ({
+          borderWidth: 1,
+          borderColor: '#2196F3',
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          marginLeft: 8,
+          opacity: pressed || isBusy ? 0.6 : followDisabled ? 0.5 : 1,
+        })}
+      >
+        <Text style={{ color: '#2196F3', fontSize: 14, fontWeight: '700' }}>
+          {isBusy ? '...' : '+ Follow'}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onDismiss(item.uid)}
+        hitSlop={8}
+        style={({ pressed }) => ({ marginLeft: 12, opacity: pressed ? 0.6 : 1 })}
+      >
+        <Feather name="x" size={18} color="#8E8E93" />
+      </Pressable>
+    </View>
+  );
+});
+
+/** Skeleton loading rows (boss 23:47 polish): 4 grey placeholder rows on
+ * the same 72px pitch as real rows, so the sheet never jumps from a bare
+ * spinner to full height when data arrives. Static — no animation. */
+function SkeletonRow() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
+      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: '#E5E5EA' }} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ width: '55%', height: 14, borderRadius: 7, backgroundColor: '#E5E5EA' }} />
+        <View style={{ width: '35%', height: 12, borderRadius: 6, backgroundColor: '#F2F2F7', marginTop: 8 }} />
+      </View>
+    </View>
+  );
+}
+
+/** imo-style empty block: person outline + "No active followings".
+ * Rendered OUTSIDE the FlatList so a layout bug can never swallow it. */
+function NoActiveFollowingsBlock() {
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 24, paddingHorizontal: 32 }}>
+      <Feather name="user" size={48} color="#C7C7CC" />
+      <Text style={{ color: '#8E8E93', fontSize: 16, marginTop: 12, textAlign: 'center' }}>
+        No active followings
+      </Text>
+    </View>
+  );
+}
+
 export function ActiveFollowingsSheet({
   visible,
   onClose,
@@ -462,74 +630,199 @@ export function ActiveFollowingsSheet({
    */
   onActiveLoaded?: (active: ActiveFollowing[]) => void;
 }) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<ActiveFollowing[]>([]);
   const [recommended, setRecommended] = useState<RecommendedFriend[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [showRecommended, setShowRecommended] = useState(true);
   const [busyUid, setBusyUid] = useState<string | null>(null);
+  // Retry bumps this so the load effect re-runs for the same open.
+  const [retryNonce, setRetryNonce] = useState(0);
   const onActiveLoadedRef = useRef(onActiveLoaded);
   onActiveLoadedRef.current = onActiveLoaded;
   // Load once per open: parent room lists change identity on every live
   // update, and a reload mid-open would flash the spinner + reset rows.
   const loadedForOpenRef = useRef(false);
+  // Run-id token: only the latest load run may set rows. (The old code
+  // used a bare `cancelled` flag whose cleanup also swallowed .finally,
+  // leaving `loading` stuck true forever when the parent re-rendered
+  // mid-load — roomIds is a fresh array on every parent render.)
+  const loadRunRef = useRef(0);
+  const mountedRef = useRef(true);
+  // The sheet's room list snapshot: roomIds is a fresh array on every
+  // parent render, so callbacks read it through this ref instead of
+  // closing over (and churning on) its identity.
+  const roomIdsRef = useRef(roomIds);
+  roomIdsRef.current = roomIds;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible) {
       loadedForOpenRef.current = false;
+      // Next open starts on the skeleton, never a one-frame flash of the
+      // previous open's empty state.
+      setLoading(true);
       return;
     }
-    if (loadedForOpenRef.current || !myUid) return;
+    if (!myUid) {
+      setLoading(false);
+      return;
+    }
+    if (loadedForOpenRef.current) return;
     loadedForOpenRef.current = true;
-    let cancelled = false;
+    const runId = ++loadRunRef.current;
     setLoading(true);
     // One shared load: Active + Recommended from a single room sweep.
-    loadSheetData(myUid, roomIds)
+    // roomIds is the snapshot from the open moment — the sheet must not
+    // reload mid-open when the parent's room list churns, so roomIds is
+    // deliberately NOT in the dep array ([visible, myUid, retryNonce]).
+    const loadPromise = loadSheetData(myUid, roomIds);
+    // Hung get()s (offline/flaky LTE) end in the empty state + Retry
+    // instead of a permanent spinner. One-shot timer, not a poll.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('ActiveFollowingsSheet load timeout')), LOAD_TIMEOUT_MS);
+    });
+    Promise.race([loadPromise, timeoutPromise])
       .then(({ active: a, recommended: r }) => {
-        if (cancelled) return;
+        if (!mountedRef.current || runId !== loadRunRef.current) return;
         setActive(a);
         onActiveLoadedRef.current?.(a);
         setRecommended(r);
       })
-      .catch(() => {})
+      .catch(() => {
+        // Failed / timed-out load: rows stay as they are and the sheet
+        // falls through to the empty state + Retry below.
+      })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (timer !== undefined) clearTimeout(timer);
+        // Only the LATEST run may clear loading (run-id + mounted
+        // guard): a stale run settling after the sheet was closed +
+        // reopened mid-load must not clear `loading` while the new run
+        // is still in flight — that would flash the empty state under
+        // a live load. The latest run always clears it, so a load that
+        // settles can never leave the sheet stuck on the skeleton.
+        if (mountedRef.current && runId === loadRunRef.current) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, myUid, roomIds]);
+  }, [visible, myUid, retryNonce]);
 
-  const visibleRecommended = recommended.filter((r) => !dismissed.has(r.uid));
+  const visibleRecommended = useMemo(
+    () => recommended.filter((r) => !dismissed.has(r.uid)),
+    [recommended, dismissed],
+  );
 
-  // 2026-11-09 (boss): no empty state anywhere in this sheet.
-  // When Active is empty the Recommended section IS the sheet's content.
-  // Only when nothing at all could be loaded (no rooms live, boards
-  // empty, reads failed) the sheet keeps the loading state — never an
-  // empty icon/text, never a fake row.
+  // 2026-11-09 (boss, "এটা imo, এটার মত"): when Active is empty the
+  // sheet says so plainly ("No active followings") AND still shows
+  // Recommended. Only when BOTH are empty is it truly empty — honest
+  // copy + Retry, never a bare spinner or a fake row.
   const nothingToShow = !loading && active.length === 0 && visibleRecommended.length === 0;
 
-  async function handleFollow(uid: string) {
-    if (!myUid || busyUid) return;
-    setBusyUid(uid);
-    try {
-      await followUser(myUid, uid);
-      setRecommended((prev) => prev.filter((r) => r.uid !== uid));
-      // 2026-11-09 (boss: after following, they must appear in the list
-      // above): re-derive Active from FRESH presence. The old code only
-      // patched the stale list — its "re-derive below" never existed — so
-      // someone who joined a room while the sheet was open never appeared
-      // above. One user-initiated reload, no polling. If they are not in
-      // a room they correctly stay out of Active (it is an in-room list).
-      const fresh = await loadActiveFollowings(myUid, roomIds);
-      setActive(fresh);
-      onActiveLoadedRef.current?.(fresh);
-    } catch {
-      // Follow failed — row stays, user can retry.
-    } finally {
-      setBusyUid(null);
-    }
-  }
+  const handleFollow = useCallback(
+    async (uid: string) => {
+      if (!myUid || busyUid) return;
+      setBusyUid(uid);
+      try {
+        await followUser(myUid, uid);
+        setRecommended((prev) => prev.filter((r) => r.uid !== uid));
+        // 2026-11-09 (boss: after following, they must appear in the list
+        // above): re-derive Active from FRESH presence. The old code only
+        // patched the stale list — its "re-derive below" never existed — so
+        // someone who joined a room while the sheet was open never appeared
+        // above. One user-initiated reload, no polling. If they are not in
+        // a room they correctly stay out of Active (it is an in-room list).
+        const fresh = await loadActiveFollowings(myUid, roomIdsRef.current);
+        setActive(fresh);
+        onActiveLoadedRef.current?.(fresh);
+      } catch {
+        // Follow failed — row stays, user can retry.
+      } finally {
+        setBusyUid(null);
+      }
+    },
+    [myUid, busyUid],
+  );
+
+  const handleDismiss = useCallback((uid: string) => {
+    setDismissed((prev) => new Set(prev).add(uid));
+  }, []);
+
+  const handleJoinRoom = useCallback(
+    (roomId: string) => {
+      onClose();
+      onJoinRoom(roomId);
+    },
+    [onClose, onJoinRoom],
+  );
+
+  const handleRetry = useCallback(() => {
+    loadedForOpenRef.current = false;
+    setRetryNonce((n) => n + 1);
+  }, []);
+
+  // -- FlatList memoisation (boss 23:47: smooth 60fps scroll) ------------
+  // Rows are memo components; the header element, renderItem and data are
+  // stable across renders, so a state change (follow in flight, dismiss,
+  // collapse) re-renders only the affected row — never the whole list.
+  const keyExtractor = useCallback((item: RecommendedFriend) => item.uid, []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: RecommendedFriend }) => (
+      <RecommendedRow
+        item={item}
+        followDisabled={busyUid !== null}
+        isBusy={busyUid === item.uid}
+        onFollow={handleFollow}
+        onDismiss={handleDismiss}
+        onJoin={handleJoinRoom}
+      />
+    ),
+    [busyUid, handleFollow, handleDismiss, handleJoinRoom],
+  );
+
+  // Rows are exactly ROW_HEIGHT tall (52 avatar + 2x10 padding, both
+  // sections — one row spec). The header height is variable (Active rows
+  // + Recommended header), so getItemLayout covers items only and the
+  // header is measured by the list; item offsets are item-relative.
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<RecommendedFriend> | null | undefined, index: number) => ({
+      length: ROW_HEIGHT,
+      offset: ROW_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <View>
+        {active.map((a) => (
+          <ActiveRow key={a.uid} row={a} onJoin={handleJoinRoom} />
+        ))}
+        {visibleRecommended.length > 0 && (
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
+              <Text style={{ flex: 1, color: '#8E8E93', fontSize: 15 }}>Recommended</Text>
+              <Pressable
+                onPress={() => setShowRecommended((v) => !v)}
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              >
+                <Feather name={showRecommended ? 'chevron-up' : 'chevron-down'} size={20} color="#8E8E93" />
+              </Pressable>
+            </View>
+            <View style={{ height: 1, backgroundColor: '#F2F2F7' }} />
+          </View>
+        )}
+      </View>
+    ),
+    [active, visibleRecommended.length, showRecommended, handleJoinRoom],
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -540,6 +833,10 @@ export function ActiveFollowingsSheet({
         />
         <View
           style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
             backgroundColor: '#FFFFFF',
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
@@ -554,133 +851,67 @@ export function ActiveFollowingsSheet({
             Active Followings
           </Text>
           <View style={{ height: 1, backgroundColor: '#F2F2F7' }} />
-          {loading ? (
-            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-              <ActivityIndicator size="large" color="#8E8E93" />
-            </View>
-          ) : (
-            <FlatList
-              data={showRecommended ? visibleRecommended : []}
-              keyExtractor={(item) => item.uid}
-              style={{ flex: 1 }}
-              showsVerticalScrollIndicator={false}
-              removeClippedSubviews
-              windowSize={10}
-              maxToRenderPerBatch={10}
-              initialNumToRender={15}
-              updateCellsBatchingPeriod={50}
-              ListHeaderComponent={
-                <View>
-                  {active.map((a) => (
-                    <Pressable
-                      key={a.uid}
-                      onPress={() => {
-                        onClose();
-                        onJoinRoom(a.roomId);
-                      }}
-                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}
-                    >
-                      <Avatar name={a.name} photoURL={a.photoURL} size={48} />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
-                            {a.name}
-                          </Text>
-                          {/* 2026-11-09 (boss): heartbeat voice icon next
-                              to the name — this person IS in a voice room. */}
-                          <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />
-                        </View>
-                        <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
-                          in {a.roomName}
-                        </Text>
-                      </View>
-                      <Feather name="chevron-right" size={18} color="#C7C7CC" />
-                    </Pressable>
-                  ))}
-                  {nothingToShow ? (
-                    <View style={{ alignItems: 'center', paddingVertical: 36 }}>
-                      <ActivityIndicator size="large" color="#8E8E93" />
-                      <Text style={{ color: '#8E8E93', fontSize: 14, marginTop: 12, textAlign: 'center', paddingHorizontal: 32 }}>
-                        Couldn&apos;t load recommendations right now
-                      </Text>
-                    </View>
-                  ) : (
-                    <View>
-                      <View style={{ height: 8, backgroundColor: '#F2F2F7' }} />
-                      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
-                        <Text style={{ flex: 1, color: '#8E8E93', fontSize: 15 }}>Recommended</Text>
-                        <Pressable onPress={() => setShowRecommended((v) => !v)} hitSlop={8}>
-                          <Feather name={showRecommended ? 'chevron-up' : 'chevron-down'} size={20} color="#8E8E93" />
-                        </Pressable>
-                      </View>
-                    </View>
-                  )}
+          {/* LeaderboardModal pattern: the scrollable content (skeleton,
+              empty state, FlatList) sits in a flex:1 wrapper so the list
+              gets a bounded height while the absolute sheet container
+              stays content-sized, capped by maxHeight. */}
+          <View style={{ flex: 1 }}>
+            {loading ? (
+              <View style={{ paddingBottom: 24 }}>
+                <SkeletonRow />
+                <SkeletonRow />
+                <SkeletonRow />
+                <SkeletonRow />
+              </View>
+            ) : nothingToShow ? (
+              <View style={{ paddingBottom: 24 }}>
+                <NoActiveFollowingsBlock />
+                <View style={{ height: 1, backgroundColor: '#F2F2F7' }} />
+                <Text style={{ color: '#8E8E93', fontSize: 14, textAlign: 'center', marginTop: 16, paddingHorizontal: 32 }}>
+                  No recommendations right now
+                </Text>
+                <View style={{ alignItems: 'center', marginTop: 16 }}>
+                  <Pressable
+                    onPress={handleRetry}
+                    style={({ pressed }) => ({
+                      borderWidth: 1,
+                      borderColor: '#2196F3',
+                      borderRadius: 8,
+                      paddingHorizontal: 20,
+                      paddingVertical: 8,
+                      opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Text style={{ color: '#2196F3', fontSize: 15, fontWeight: '700' }}>Retry</Text>
+                  </Pressable>
                 </View>
-              }
-              renderItem={({ item }) => {
-                // In-room rows tap to join (same as an Active row); the
-                // Follow / X buttons stay tappable on their own.
-                const inRoom = !!item.roomId;
-                return (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
-                    <Pressable
-                      onPress={() => {
-                        if (!inRoom || !item.roomId) return;
-                        onClose();
-                        onJoinRoom(item.roomId);
-                      }}
-                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                    >
-                      <Avatar name={item.name} photoURL={item.photoURL} size={52} />
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
-                            {item.name}
-                          </Text>
-                          {inRoom && (
-                            <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />
-                          )}
-                        </View>
-                        <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
-                          {inRoom
-                            ? `in ${item.roomName}`
-                            : item.source === 'sender'
-                              ? 'Top gift sender this week'
-                              : item.source === 'receiver'
-                                ? 'Top gift receiver this week'
-                                : 'Popular on Vee'}
-                        </Text>
-                      </View>
-                      {inRoom && <Feather name="chevron-right" size={18} color="#C7C7CC" />}
-                    </Pressable>
-                    <Pressable
-                      onPress={() => void handleFollow(item.uid)}
-                      style={({ pressed }) => ({
-                        borderWidth: 1,
-                        borderColor: '#2196F3',
-                        borderRadius: 8,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        marginLeft: 8,
-                        opacity: pressed || busyUid === item.uid ? 0.6 : 1,
-                      })}
-                    >
-                      <Text style={{ color: '#2196F3', fontSize: 14, fontWeight: '700' }}>
-                        {busyUid === item.uid ? '...' : '+ Follow'}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setDismissed((prev) => new Set(prev).add(item.uid))}
-                      hitSlop={8}
-                      style={{ marginLeft: 12 }}
-                    >
-                      <Feather name="x" size={18} color="#8E8E93" />
-                    </Pressable>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                {active.length === 0 && (
+                  <View>
+                    <NoActiveFollowingsBlock />
+                    <View style={{ height: 1, backgroundColor: '#F2F2F7' }} />
                   </View>
-                );
-              }}
-            />
-          )}
+                )}
+                <FlatList
+                  data={showRecommended ? visibleRecommended : []}
+                  keyExtractor={keyExtractor}
+                  renderItem={renderItem}
+                  ListHeaderComponent={listHeader}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  showsVerticalScrollIndicator={false}
+                  removeClippedSubviews
+                  windowSize={10}
+                  maxToRenderPerBatch={10}
+                  initialNumToRender={10}
+                  updateCellsBatchingPeriod={50}
+                  getItemLayout={getItemLayout}
+                />
+              </View>
+            )}
+          </View>
         </View>
       </View>
     </Modal>
