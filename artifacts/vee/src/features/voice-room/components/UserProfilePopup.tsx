@@ -51,6 +51,12 @@ function ageFromBirthday(birthday: string | undefined | null): number | null {
   return age;
 }
 
+/** "1 badge" / "0 badges" / "2 gifts" — imo shows the singular for 1
+    (boss, 2026-11-11 polish: "1 badges" on his phone was wrong). */
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole, isCommentBlocked, accent, onClose, onViewFullProfile, onGift, onMention, onToggleCommentBlock, onInviteDirect, onRemoveMember, onSetAdmin, onDismissAdmin, onReport }: {
   /** Null = closed. The room passes the tapped seat/audience member. */
   member: Participant | null;
@@ -238,7 +244,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
           onPress={(e) => e.stopPropagation()}
           style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '88%', overflow: 'hidden' }}
         >
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
             {/* Cover + overlay header: back, "@", "..." */}
             <View>
               {coverImageUrl ? (
@@ -333,22 +339,32 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                 <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Privilege</Text>
                 <Feather name="chevron-right" size={18} color={C.muted} />
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled directionalLockEnabled>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled directionalLockEnabled decelerationRate={0.997} overScrollMode="never">
                 <View style={{ flexDirection: 'row' }}>
-                  <Pressable onPress={handleDpPress} style={{ width: 96, marginRight: 10, backgroundColor: C.card, borderRadius: 14, padding: 12, alignItems: 'flex-start' }}>
-                    <Feather name="award" size={22} color="#F59E0B" />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Achievement</Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{achievementCount} badges</Text>
+                  {/* 2026-11-11 (boss, polish): imo-style rich cards — coloured
+                      backgrounds (blue Achievement / pink Honor / yellow Gift
+                      Wall), large 32px art, horizontal layout (art left, label
+                      + count right) so "Achievement" fits on ONE line. */}
+                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#E3F2FD', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="award" size={32} color="#F59E0B" />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Achievement</Text>
+                      <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(achievementCount, 'badge', 'badges')}</Text>
+                    </View>
                   </Pressable>
-                  <Pressable onPress={handleDpPress} style={{ width: 96, marginRight: 10, backgroundColor: C.card, borderRadius: 14, padding: 12, alignItems: 'flex-start' }}>
-                    <Feather name="shield" size={22} color="#3B82F6" />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Honor</Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{grantedBadges.length} badges</Text>
+                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="shield" size={32} color="#3B82F6" />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Honor</Text>
+                      <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedBadges.length, 'badge', 'badges')}</Text>
+                    </View>
                   </Pressable>
-                  <Pressable onPress={handleDpPress} style={{ width: 96, marginRight: 10, backgroundColor: C.card, borderRadius: 14, padding: 12, alignItems: 'flex-start' }}>
-                    <Feather name="gift" size={22} color="#EC4899" />
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Gift Wall</Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{giftTotal} gifts</Text>
+                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="gift" size={32} color="#EC4899" />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Gift Wall</Text>
+                      <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(giftTotal, 'gift', 'gifts')}</Text>
+                    </View>
                   </Pressable>
                 </View>
               </ScrollView>
@@ -372,7 +388,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
               style={{ flex: 1, backgroundColor: isFollowingTarget ? C.card : '#E3F2FD', borderRadius: 16, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', opacity: followBusy ? 0.6 : 1 }}
             >
               <Feather name={isFollowingTarget ? 'check' : 'plus'} size={16} color={C.primary} />
-              <Text style={{ fontSize: 15, fontWeight: '600', color: C.primary, marginLeft: 6 }} numberOfLines={1}>{isFollowingTarget ? 'Following' : '+ Follow'}</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: C.primary, marginLeft: 6 }} numberOfLines={1}>{isFollowingTarget ? 'Following' : 'Follow'}</Text>
             </Pressable>
             <Pressable
               onPress={() => setSayHiOpen(true)}

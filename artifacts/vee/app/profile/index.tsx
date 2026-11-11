@@ -307,6 +307,12 @@ function fmtCompact(n: number): string {
   return `${n}`;
 }
 
+// 2026-11-11 (boss, polish): "1 badge" / "0 badges" / "2 gifts" — imo shows
+// the singular for 1 ("1 badges" on his phone was wrong).
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 
 
 // ─── 2026-10-29 (boss, profile mirror): shared profile helpers ───
@@ -1540,7 +1546,7 @@ export default function ProfileScreen({
           Header is the imo-style overlay (2026-10-30): NO bar, NO name text — white icons sit ON the cover and scroll away with it. Inline vId +
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} scrollEventThrottle={16} onScroll={handleProfileScroll}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} scrollEventThrottle={16} decelerationRate={0.997} onScroll={handleProfileScroll}>
         <View>
         <Pressable
           onPress={isMe ? handleCoverTap : undefined}
@@ -1800,6 +1806,8 @@ export default function ProfileScreen({
               contentContainerStyle={{ paddingHorizontal: 15 }}
               nestedScrollEnabled
               directionalLockEnabled
+              decelerationRate={0.997}
+              overScrollMode="never"
             >
               {rooms.slice(0, 10).map((item, i) => (
                 <RoomCard
@@ -1824,6 +1832,8 @@ export default function ProfileScreen({
               contentContainerStyle={{ paddingHorizontal: 15 }}
               nestedScrollEnabled
               directionalLockEnabled
+              decelerationRate={0.997}
+              overScrollMode="never"
             >
               <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
                 <View style={{ flexDirection: 'row' }}>
@@ -1873,27 +1883,41 @@ export default function ProfileScreen({
             contentContainerStyle={{ paddingHorizontal: 15 }}
             nestedScrollEnabled
             directionalLockEnabled
+            decelerationRate={0.997}
+            overScrollMode="never"
           >
             <View style={{ flexDirection: 'row' }}>
-              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
-                <Feather name="award" size={22} color="#F59E0B" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Achievement</Text>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{achievementCount} badges</Text>
+              {/* 2026-11-11 (boss, polish): imo-style rich cards — coloured
+                  backgrounds (blue Achievement / pink Honor / yellow Gift Wall /
+                  purple Decoration), large 32px art, horizontal layout (art left,
+                  label + count right) so "Achievement" fits on ONE line. */}
+              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#E3F2FD', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="award" size={32} color="#F59E0B" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Achievement</Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(achievementCount, 'badge', 'badges')}</Text>
+                </View>
               </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
-                <Feather name="shield" size={22} color="#3B82F6" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Honor</Text>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{grantedBadges.length} badges</Text>
+              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="shield" size={32} color="#3B82F6" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Honor</Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedBadges.length, 'badge', 'badges')}</Text>
+                </View>
               </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
-                <Feather name="gift" size={22} color="#EC4899" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Gift Wall</Text>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{totalGifts} gifts</Text>
+              <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="gift" size={32} color="#EC4899" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Gift Wall</Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(totalGifts, 'gift', 'gifts')}</Text>
+                </View>
               </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
-                <Feather name="image" size={22} color="#8B5CF6" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Decoration</Text>
-                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{grantedFrames.length} frames</Text>
+              <Pressable onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#F3E5F5', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                <Feather name="image" size={32} color="#8B5CF6" />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Decoration</Text>
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedFrames.length, 'frame', 'frames')}</Text>
+                </View>
               </Pressable>
             </View>
           </ScrollView>
@@ -1915,6 +1939,8 @@ export default function ProfileScreen({
             contentContainerStyle={{ paddingHorizontal: 15 }}
             nestedScrollEnabled
             directionalLockEnabled
+            decelerationRate={0.997}
+            overScrollMode="never"
           >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
               <CoupleTile
@@ -1963,6 +1989,8 @@ export default function ProfileScreen({
               contentContainerStyle={{ paddingHorizontal: 15 }}
               nestedScrollEnabled
               directionalLockEnabled
+              decelerationRate={0.997}
+              overScrollMode="never"
             >
               <Pressable
                 onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
@@ -2041,7 +2069,7 @@ export default function ProfileScreen({
             >
               <Feather name={isFollowingTarget ? 'check' : 'plus'} size={16} color={C.blue} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
-                {isFollowingTarget ? t('userProfile.following', 'Following') : '+ Follow'}
+                {isFollowingTarget ? t('userProfile.following', 'Following') : 'Follow'}
               </Text>
             </Pressable>
             <Pressable

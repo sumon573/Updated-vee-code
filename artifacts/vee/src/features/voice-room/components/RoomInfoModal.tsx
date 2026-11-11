@@ -87,7 +87,10 @@ type MemberRowProps = {
   isAdmin: boolean;
   /** True when THIS row is the room owner (uid === ownerId). */
   rowIsOwner: boolean;
-  onVisitProfile?: (uid: string, name: string) => void;
+  /** 2026-11-11 (boss, polish): row tap opens the profile POPUP (same
+      as a seat tap) — the whole Participant rides along so the popup
+      works for joined-but-not-live members too. */
+  onVisitProfile?: (m: Participant) => void;
   onSetAdmin: (uid: string) => void;
   onDismissAdmin: (uid: string) => void;
   onRemoveMember: (uid: string) => void;
@@ -132,7 +135,7 @@ const MemberRow = memo(function MemberRow({ m, live, isMe, isOwner, isAdmin, row
 
   return (
     <Pressable
-      onPress={() => onVisitProfile?.(m.id, m.name)}
+      onPress={() => onVisitProfile?.(m)}
       style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 20,
         borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: DIVIDER }}
     >
@@ -249,8 +252,10 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   ownerId?: string;
   /** Called when the owner confirms "Disband Room". */
   onDisband?: () => void;
-  /** Called when a member row is tapped — navigates to their profile. */
-  onVisitProfile?: (uid: string, name: string) => void;
+  /** Called when a member row is tapped — opens their profile POPUP
+      (same as tapping their seat; own row opens the self manage modal).
+      The "..." menu on a row is a separate control and is untouched. */
+  onVisitProfile?: (m: Participant) => void;
   myUid: string; myName: string;
   /** Opens the existing Room Settings modal (gear / Management Center / Edit). */
   onOpenSettings: () => void;
@@ -406,7 +411,7 @@ export function RoomInfoModal({ visible, onClose, allMembers, roomTopic,
   liveIdsRef.current = new Set(allMembers.map((p) => p.id));
   const handlersRef = useRef({ onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember });
   handlersRef.current = { onVisitProfile, onSetAdmin, onDismissAdmin, onRemoveMember };
-  const stableVisit = useCallback((uid: string, name: string) => handlersRef.current.onVisitProfile?.(uid, name), []);
+  const stableVisit = useCallback((m: Participant) => handlersRef.current.onVisitProfile?.(m), []);
   const stableSetAdmin = useCallback((uid: string) => handlersRef.current.onSetAdmin(uid), []);
   const stableDismissAdmin = useCallback((uid: string) => handlersRef.current.onDismissAdmin(uid), []);
   const stableRemoveMember = useCallback((uid: string) => handlersRef.current.onRemoveMember(uid), []);

@@ -181,7 +181,15 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         isAdmin={p.myRole === 'admin'}
         ownerId={p.ownerId}
         onDisband={p.handleDisband}
-        onVisitProfile={p.handleViewOtherProfile}
+        // 2026-11-11 (boss, polish): a member row opens the profile
+        // POPUP — the same entry point as a seat tap (own row opens the
+        // self manage modal, exactly like the Live Audience list).
+        // The panel closes first, then the popup opens on top.
+        onVisitProfile={(m) => {
+          p.setRoomInfoOpen(false);
+          if (m.id === p.myUid) p.setActiveMember(m);
+          else p.setPopupMember(m);
+        }}
         myUid={p.myUid}
         myName={p.myName}
         onOpenSettings={() => p.setSettingsOpen(true)}
