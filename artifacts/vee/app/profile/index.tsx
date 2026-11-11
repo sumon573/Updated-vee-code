@@ -658,13 +658,13 @@ export default function ProfileScreen({
       setListedVisitorTotal(countListed(map));
     });
   }, [isMe, user?.uid]);
-  // 2026-10-30 (boss, visitors bell): bell sway loop, stronger +-15deg (own profile only; boss 08:01: clearly visible, still gentle).
+  // 2026-10-30 (boss, visitors bell): bell sway loop, stronger +-25deg (own profile only; boss 2026-11-11 21:42: clearly vigorous, not gentle).
   useEffect(() => {
     if (!isMe) return;
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(bellSway, { toValue: 1, duration: 1100, useNativeDriver: true }),
-      Animated.timing(bellSway, { toValue: -1, duration: 2200, useNativeDriver: true }),
-      Animated.timing(bellSway, { toValue: 0, duration: 1100, useNativeDriver: true }),
+      Animated.timing(bellSway, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(bellSway, { toValue: -1, duration: 1400, useNativeDriver: true }),
+      Animated.timing(bellSway, { toValue: 0, duration: 700, useNativeDriver: true }),
     ]));
     loop.start();
     return () => loop.stop();
@@ -711,7 +711,7 @@ export default function ProfileScreen({
   // 2026-10-30 (boss, imo bell design): beside-number = TOTAL listed visitors
   // (7-day window, same as the Recent Visitors TitleBar count), 99+ cap.
   const [listedVisitorTotal, setListedVisitorTotal] = useState(0);
-  // 2026-10-30 (boss, visitors bell): bell sway value (+-15deg; stronger per boss 08:01).
+  // 2026-10-30 (boss, visitors bell): bell sway value (+-25deg; stronger per boss 2026-11-11).
   const bellSway = useRef(new Animated.Value(0)).current;
   // 2026-10-30 (boss, imo-style overlay header): status-bar inset for the
   // overlay icons (cover reaches the screen top; icons sit below the bar).
@@ -1227,7 +1227,7 @@ export default function ProfileScreen({
   // ── 2026-10-29 (boss, imo mirror): Cover Change flow — reached from
   // the cover viewer's Change button (or directly when no cover is set),
   // exactly like DP change, NOT inside the Edit Profile sub-flow.
-  // Fixed 180dp cover for ALL users.
+  // Fixed 207dp cover for ALL users.
   const handleChangeCover = useCallback(async () => {
     if (!user?.uid) return;
     Alert.alert('Cover photo', 'Change your profile cover photo?', [
@@ -1283,7 +1283,7 @@ export default function ProfileScreen({
   // When the user scrolls down the profile, a compact white bar fades in
   // at the top (small avatar + name + the same right actions as the overlay
   // header) — imo / Instagram collapsing-header pattern. Measured geometry:
-  // cover 180dp + DP block 140→232dp + panel marginTop 8 → name top ≈240dp,
+  // cover 207dp + DP block 140→232dp (marginTop -67) + panel marginTop 8 → name top ≈240dp,
   // name bottom ≈264dp. So the bar fades in over scrollY 170→210 (cover gone,
   // DP nearly gone, name about to leave) and is fully visible just as the
   // name scrolls off. Toggle at the 190 midpoint. Transform/opacity ONLY,
@@ -1537,7 +1537,7 @@ export default function ProfileScreen({
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['bottom', 'left', 'right']}>
       {/* ─── 2026-10-29 (boss, imo mirror): cover + DP + chips ───
-          Cover is fixed 180dp for ALL users; DP is 80dp for ALL users.
+          Cover is fixed 207dp for ALL users; DP is 80dp for ALL users.
           Cover tap (own only) opens the full-screen cover viewer first
           (same viewer as DP, same Change pill); Change opens the change
           option — NOT inside the Edit Profile sub-flow. The whole page scrolls as ONE container (imo-like, 2026-10-29 Fix #4):
@@ -1549,7 +1549,7 @@ export default function ProfileScreen({
         <View>
         <Pressable
           onPress={isMe ? handleCoverTap : undefined}
-          style={{ height: 180, backgroundColor: '#E8E8ED', alignItems: 'center', justifyContent: 'center' }}
+          style={{ height: 207, backgroundColor: '#E8E8ED', alignItems: 'center', justifyContent: 'center' }}
         >
           {profile?.coverImageUrl ? (
             <Image source={{ uri: profile.coverImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
@@ -1568,7 +1568,7 @@ export default function ProfileScreen({
             physical left/right so they can never mirror-flip: back left;
             right group left-to-right = bell, gear, three-dot. Bell is white
             outline + plain number beside it (listed total, 99+ cap) + green
-            dot iff unseen; bell sways left-right, stronger +-15deg (own only). */}
+            dot iff unseen; bell sways left-right, stronger +-25deg (own only). */}
         <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + 56 }}>
           {!embedded && (
             <Pressable onPress={goBack} style={{ position: 'absolute', left: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
@@ -1576,9 +1576,9 @@ export default function ProfileScreen({
             </Pressable>
           )}
           {isMe ? (
-            <Pressable onPress={() => router.push('/profile/visitors')} style={{ position: 'absolute', right: vId ? 84 : 44, top: insets.top + 8, height: 40, flexDirection: 'row', alignItems: 'center' }} hitSlop={8}>
+            <Pressable onPress={() => router.push('/profile/visitors')} style={{ position: 'absolute', right: vId ? 84 : 44, top: insets.top, height: 40, flexDirection: 'row', alignItems: 'center' }} hitSlop={8}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={{ transform: [{ rotate: bellSway.interpolate({ inputRange: [-1, 1], outputRange: ['-15deg', '15deg'] }) }] }}>
+                <Animated.View style={{ transform: [{ rotate: bellSway.interpolate({ inputRange: [-1, 1], outputRange: ['-25deg', '25deg'] }) }] }}>
                   <Feather name="bell" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
                 </Animated.View>
                 {unseenVisitorCount > 0 ? (
@@ -1591,12 +1591,12 @@ export default function ProfileScreen({
             </Pressable>
           ) : null}
           {isMe ? (
-            <Pressable onPress={() => router.push('/profile/settings')} style={{ position: 'absolute', right: vId ? 44 : 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ position: 'absolute', right: vId ? 44 : 4, top: insets.top, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
               <Feather name="settings" size={22} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
             </Pressable>
           ) : null}
           {vId ? (
-            <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+            <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: insets.top, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
               <Feather name="more-horizontal" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
             </Pressable>
           ) : null}
@@ -1617,7 +1617,7 @@ export default function ProfileScreen({
             same 92 box, same frame geometry); the panel holds name/badges/
             chips/bio only. Glass never covers the DP, the frame, or art. */}
         <View>
-          <View style={{ marginTop: -40, paddingHorizontal: 16 }}>
+          <View style={{ marginTop: -67, paddingHorizontal: 16 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable
                 stretches to the full header width (column parent defaults to
                 stretch), so taps on the EMPTY space right of the DP opened the
