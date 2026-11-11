@@ -38,6 +38,26 @@ interface EntryBannerProps {
   onDismiss: () => void;
 }
 
+// 2026-11-11 (boss): SVIP tier colours — the SAME values as
+// SVIP_ICON_COLORS in src/features/svip/SvipScreen.tsx (the source of
+// truth, sampled from each tier's hero art). Duplicated here rather than
+// imported: SvipScreen is a screen module and importing it into the
+// voice-room banner would drag the whole screen in.
+const SVIP_TIER_COLORS: Record<number, string> = {
+  1: '#0E9F8A', 2: '#7E57C2', 3: '#A71C32', 4: '#1E5AA8', 5: '#E8B84B',
+};
+
+// 2026-11-11 (boss): per-tier SVIP entry accents — glow stops, sparkle
+// colours, name-bar edge. SVIP 5 gold and SVIP 3 crimson are the two
+// live entry effects (tuned, not just the anchor: 5 keeps its gold
+// glow/sparkles, 3 gets a light-red -> crimson glow and red sparkles).
+// Any OTHER tier has no entry effect yet and falls back to its own
+// SVIP_TIER_COLORS colour (generic, not hardcoded to 3 and 5).
+const SVIP_ENTRY_ACCENTS: Record<number, { glowLight: string; glowMid: string; sparkle: string; sparkleSoft: string; edge: string }> = {
+  3: { glowLight: '#FF8A8A', glowMid: '#E5484D', sparkle: '#FF6B6B', sparkleSoft: '#A71C32', edge: '#A71C32' },
+  5: { glowLight: '#FFE27A', glowMid: '#FFD700', sparkle: '#FFD700', sparkleSoft: '#FFE27A', edge: '#C9A227' },
+};
+
 // 2026-11-11 (boss): SVIP entry shimmer — same technique as the SVIP
 // nameplate Lv Max animation (ShimmerOverlay, speed 900, opacity 0.8):
 // a bright band sweeping across, transform/opacity-only with the native
@@ -71,15 +91,17 @@ function EntryShimmer({ color, opacity = 0.8, speed = 900, sweepWidth = 200 }: {
 }
 
 // 2026-11-11 (boss, imo GIF reference): SVIP entry glow — a bright, soft
-// golden-white radiant haze behind the dragon, pulsing gently like a
+// tier-coloured radiant haze behind the art, pulsing gently like a
 // breathing glow (opacity 0.75 -> 1.0 -> 0.75, 1800ms cycle). True smooth
 // radial gradient via react-native-svg RadialGradient (already a
 // dependency) — code-only, no asset, no media upload, no new dependency.
 // Opacity-only, native driver (no heat). Unmounts with the banner.
 // The glow is bright enough to read as a real halo of light (a clear
-// golden glow, not a faint whisper) but fades to transparent at the edges
-// so it blends with any theme and never washes out the dragon.
-function EntryGlow({ size }: { size: number }) {
+// tier-coloured glow, not a faint whisper) but fades to transparent at
+// the edges so it blends with any theme and never washes out the art.
+// `light`/`mid`/`base` are the gradient stops (0% / 35% / 65-100%);
+// `base` is the tier's own SVIP_TIER_COLORS colour.
+function EntryGlow({ size, light, mid, base }: { size: number; light: string; mid: string; base: string }) {
   const pulse = useRef(new Animated.Value(0.75)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -96,10 +118,10 @@ function EntryGlow({ size }: { size: number }) {
       <Svg width={size} height={size} viewBox="0 0 100 100">
         <Defs>
           <RadialGradient id="svipEntryGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="#FFE27A" stopOpacity="0.95" />
-            <Stop offset="35%" stopColor="#FFD700" stopOpacity="0.55" />
-            <Stop offset="65%" stopColor="#E8B84B" stopOpacity="0.22" />
-            <Stop offset="100%" stopColor="#E8B84B" stopOpacity="0" />
+            <Stop offset="0%" stopColor={light} stopOpacity="0.95" />
+            <Stop offset="35%" stopColor={mid} stopOpacity="0.55" />
+            <Stop offset="65%" stopColor={base} stopOpacity="0.22" />
+            <Stop offset="100%" stopColor={base} stopOpacity="0" />
           </RadialGradient>
         </Defs>
         <Rect x="0" y="0" width="100" height="100" fill="url(#svipEntryGlow)" />
@@ -108,8 +130,8 @@ function EntryGlow({ size }: { size: number }) {
   );
 }
 
-// 2026-11-11 (boss): SVIP entry sparkle — a small twinkling 4-point gold
-// star around the dragon. Mirrors the KingSparkle pattern (same SVG star
+// 2026-11-11 (boss): SVIP entry sparkle — a small twinkling 4-point star
+// in the tier's accent colour around the art. Mirrors the KingSparkle pattern (same SVG star
 // path, opacity twinkle, native driver) with a staggered `delay` so the
 // sparkles don't all flash at once, plus a slight scale (0.85 -> 1.15) as
 // it brightens. Opacity + scale (transform) only, native driver (no heat).
@@ -158,6 +180,21 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   const svipArtUrl = isSvipEntryEffect && typeof entryEffectArtUrl === 'string' && /^https?:\/\//i.test(entryEffectArtUrl)
     ? entryEffectArtUrl
     : null;
+  // 2026-11-11 (boss): SVIP tier — parsed from the equipped effect id
+  // ('svip3-entry-effect' -> 3, 'svip5-entry-effect' -> 5). Unparsable
+  // ids fall back to SVIP 5 gold (the current behaviour — safe fallback).
+  const svipTierMatch = typeof activeEntryEffect === 'string' ? /^svip(\d+)/i.exec(activeEntryEffect) : null;
+  const svipTier = svipTierMatch ? parseInt(svipTierMatch[1], 10) : 5;
+  // Tier accent (glow / sparkles / bar edge). The glow's outer anchor is
+  // always the tier's own SVIP_TIER_COLORS colour; tiers without a tuned
+  // accent fall back to that colour throughout (generic).
+  const svipTierColor = SVIP_TIER_COLORS[svipTier] ?? '#E8B84B';
+  const svipAccent = SVIP_ENTRY_ACCENTS[svipTier] ?? { glowLight: '#FFFFFF', glowMid: svipTierColor, sparkle: svipTierColor, sparkleSoft: svipTierColor, edge: svipTierColor };
+  // 2026-11-11 (boss): the "SVIP{N}" badge renders ONLY for SVIP 5 —
+  // the dragon GIF has no text on it. SVIP 3's lion GIF already has
+  // "SVIP3" on its base, so SVIP 3 (and any other tier) gets NO badge:
+  // art -> DP + "is Coming..." bar, nothing else below the art.
+  const showSvipBadge = activeEntryEffect === 'svip5-entry-effect';
   // 2026-10-15 (Sumon): per-rank theme. Non-nobles get the standard blue.
   const theme = nobleRankIndex != null ? nobleThemeFor(nobleRankIndex) : null;
   const rankName = nobleRankIndex != null ? NOBLE_RANKS[nobleRankIndex]?.name : null;
@@ -303,15 +340,19 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   // King canvas 1814x562 (v4 clean base): DP center (13.8% W, 43.4% H), disc 15.3% of W;
   // name slot starts at 28.8% W, top 25.6% H (gold name + white 'is coming...' below at 52.0% H).
   // name slot starts at 34.9% W, top 31% H (gold name + white 'is coming...' below at 53% H).
-  // 2026-11-11 (SVIP entry effect): the equipped SVIP effect wins over the
-  // noble art branch (a user can be both King and SVIP 5 — the active
-  // effect is the SVIP dragon). Transparent animated WebP on top, gold
-  // "SVIP5" badge, then live DP + live name + "is Coming..." on a dark
-  // navy bar with gold edges (like the imo reference — the bar provides
-  // the contrast, readable on any theme). The rest of the banner stays
-  // transparent and blends with the room background. The art is 315x311
-  // (near-square); the whole branch dismisses on the existing 3650ms
-  // timer above and unmounts with it.
+  // 2026-11-11 (SVIP entry effect, tier-aware): the equipped SVIP effect
+  // wins over the noble art branch (a user can be both King and SVIP 5 —
+  // the active effect is the SVIP art). Transparent animated art on top,
+  // then — SVIP 5 ONLY — a gold "SVIP5" badge (the dragon GIF has no text
+  // on it; SVIP 3's lion GIF already has "SVIP3" on its base, so SVIP 3
+  // gets no badge), then live DP + live name + "is Coming..." on a dark
+  // navy bar with tier-coloured edges (like the imo reference — the bar
+  // provides the contrast, readable on any theme). The glow, sparkles
+  // and bar edge all wear the tier's accent (SVIP 5 gold, SVIP 3
+  // crimson #A71C32, other tiers their SVIP_TIER_COLORS colour). The
+  // rest of the banner stays transparent and blends with the room
+  // background. The art is 315x311 (near-square); the whole branch
+  // dismisses on the existing 3650ms timer above and unmounts with it.
   if (svipArtUrl) {
     const dragonW = Math.min(Dimensions.get('window').width * 0.86, 320);
     const dragonH = (dragonW * 311) / 315;
@@ -328,34 +369,40 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
         }}
         pointerEvents="none"
       >
-        {/* 2026-11-11 (boss, imo GIF reference): dragon + glow + sparkles.
+        {/* 2026-11-11 (boss, imo GIF reference): art + glow + sparkles.
             The wrapper is relative so the glow (behind) and sparkles
-            (around, at the edges — never over the dragon's face) centre on
-            the dragon. The glow is a bright radiant golden haze that
-            breathes gently; the sparkles twinkle around it. The dragon
+            (around, at the edges — never over the art's face) centre on
+            the art. The glow is a bright radiant tier-coloured haze that
+            breathes gently; the sparkles twinkle around it. The art
             stays the hero. */}
         <View style={{ width: dragonW, height: dragonH, alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ position: 'absolute', left: (dragonW - glowSize) / 2, top: (dragonH - glowSize) / 2, width: glowSize, height: glowSize, pointerEvents: 'none' }}>
-            <EntryGlow size={glowSize} />
+            <EntryGlow size={glowSize} light={svipAccent.glowLight} mid={svipAccent.glowMid} base={svipTierColor} />
           </View>
           <ExpoImage
             source={{ uri: svipArtUrl }}
             style={{ width: dragonW, height: dragonH }}
             contentFit="contain"
           />
-          <EntrySparkle size={14} color="#FFD700" delay={0} top={dragonH * 0.06} left={dragonW * 0.08} />
+          <EntrySparkle size={14} color={svipAccent.sparkle} delay={0} top={dragonH * 0.06} left={dragonW * 0.08} />
           <EntrySparkle size={11} color="#FFFFFF" delay={300} top={dragonH * 0.08} left={dragonW * 0.86} />
-          <EntrySparkle size={12} color="#FFE27A" delay={600} top={dragonH * 0.30} left={dragonW * 0.02} />
-          <EntrySparkle size={16} color="#FFD700" delay={900} top={dragonH * 0.28} left={dragonW * 0.92} />
+          <EntrySparkle size={12} color={svipAccent.sparkleSoft} delay={600} top={dragonH * 0.30} left={dragonW * 0.02} />
+          <EntrySparkle size={16} color={svipAccent.sparkle} delay={900} top={dragonH * 0.28} left={dragonW * 0.92} />
           <EntrySparkle size={10} color="#FFFFFF" delay={1200} top={dragonH * 0.62} left={dragonW * 0.06} />
-          <EntrySparkle size={13} color="#FFD700" delay={1500} top={dragonH * 0.65} left={dragonW * 0.90} />
-          <EntrySparkle size={11} color="#FFE27A" delay={1800} top={dragonH * 0.88} left={dragonW * 0.78} />
+          <EntrySparkle size={13} color={svipAccent.sparkle} delay={1500} top={dragonH * 0.65} left={dragonW * 0.90} />
+          <EntrySparkle size={11} color={svipAccent.sparkleSoft} delay={1800} top={dragonH * 0.88} left={dragonW * 0.78} />
         </View>
         {/* 2026-11-11 (boss): gold "SVIP5" badge in the empty space between
-            the dragon and the name row. Solid SVIP gold #E8B84B
-            (theme-agnostic — reads on light and dark themes alike) with
-            dark text. The white shimmer band sweeps across the gold pill
-            (under the text, so the dark text stays readable).
+            the dragon and the name row — SVIP 5 ONLY (see showSvipBadge).
+            Solid SVIP gold #E8B84B (theme-agnostic — reads on light and
+            dark themes alike) with dark text. The white shimmer band
+            sweeps across the gold pill (under the text, so the dark text
+            stays readable). SVIP 3 renders NO badge here: its lion GIF
+            already has "SVIP3" on its base, and the name row below sits
+            close under the lion instead (marginTop 3 — the lion carries
+            only 7-9px transparent padding at its bottom, PIL-measured
+            over all 14 frames, so the visual gap is ~10-12dp with no
+            overlap of the lion's opaque pixels on any frame).
             2026-11-11 (gap fix): the dragon art carries 24-40px transparent
             padding at its bottom (avg ~34px, measured with PIL over all 16
             frames), so the badge sat ~44dp below the dragon's real base.
@@ -363,6 +410,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
             into that transparent area: visual gap is now ~2dp on the
             tightest frame (f2, 24px pad) and ~12dp on average — tight,
             with NO overlap of the dragon's opaque pixels on any frame. */}
+        {showSvipBadge ? (
         <View
           style={{
             alignSelf: 'center',
@@ -382,11 +430,16 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
             SVIP5
           </Text>
         </View>
+        ) : null}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            marginTop: 8,
+            // SVIP 5 keeps 8 below the badge; without a badge (SVIP 3)
+            // the name row sits close under the lion — marginTop 3 plus
+            // the lion's ~7dp bottom transparent padding = ~10dp visual
+            // gap below the lion's real base.
+            marginTop: showSvipBadge ? 8 : 3,
           }}
         >
           {photoURL ? (
@@ -412,7 +465,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
             </View>
           )}
           {/* 2026-11-11 (boss): name on a BANNER BAR like the imo reference —
-              dark navy bar with gold edges, plain white bold text centred.
+              dark navy bar with tier-coloured edges, plain white bold text centred.
               The bar provides the contrast (readable on any theme), so the
               text halo is removed. The gold shimmer on the name text was
               caught mid-sweep as a solid yellow block (ugly) — it is gone
@@ -421,7 +474,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
             style={{
               backgroundColor: 'rgba(10,20,45,0.88)',
               borderWidth: 1.5,
-              borderColor: '#C9A227',
+              borderColor: svipAccent.edge,
               borderRadius: 10,
               paddingHorizontal: 22,
               paddingVertical: 8,
