@@ -393,9 +393,20 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
 
   return (
     <Modal visible={!!member} animationType="slide" transparent onRequestClose={handleClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={handleClose}>
-        <Pressable
-          onPress={(e) => e.stopPropagation()}
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* 2026-11-11 (boss, scroll fix #2): the backdrop is a SIBLING
+            behind the sheet (not a parent wrapping it), and the sheet is a
+            plain View (not a Pressable). The old structure — a Pressable
+            backdrop wrapping a Pressable sheet wrapping the ScrollView —
+            made the Pressables compete for the touch responder on Android,
+            so vertical drags starting on non-scrollable children (cover /
+            DP / name / chips) never reached the ScrollView ("only the lower
+            areas scroll"). A plain View claims no touches, so the ScrollView
+            owns the gesture from anywhere on the sheet; the sibling backdrop
+            only receives taps that land OUTSIDE the sheet (on the dimmed
+            room), so tap-outside-to-close still works. */}
+        <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={handleClose} />
+        <View
           style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: POPUP_SHEET_HEIGHT, overflow: 'hidden' }}
         >
           {/* 2026-11-11 (hotfix, blank popup): the sheet MUST have a DEFINITE
@@ -470,16 +481,16 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                   nobleRankIndex={member.nobleRankIndex}
                 />
               </Pressable>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
                 <Text style={{ fontSize: 22, fontWeight: '800', color: isKing ? '#FBC02D' : C.text }} numberOfLines={1}>{displayName}</Text>
                 {isKing ? <KingSparkle /> : null}
               </View>
               {displayNameplates.length > 0 ? (
-                <View style={{ marginTop: 8 }}>
+                <View style={{ marginTop: 6 }}>
                   <NameplateRow plates={displayNameplates} size="small" nobleRankKey={nobleRankKey} />
                 </View>
               ) : null}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
                 <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{roleLabel}</Text>
                 </View>
@@ -525,12 +536,12 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
             </View>
 
             {/* Privilege — horizontally scrollable */}
-            <View style={{ marginTop: 14 }}>
+            <View style={{ marginTop: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingBottom: 6 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Privilege</Text>
                 <Feather name="chevron-right" size={18} color={C.muted} />
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled directionalLockEnabled decelerationRate={0.997} overScrollMode="never">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled decelerationRate={0.997} overScrollMode="never">
                 <View style={{ flexDirection: 'row' }}>
                   {/* 2026-11-11 (boss, polish): imo-style rich cards — coloured
                       backgrounds (blue Achievement / pink Honor / yellow Gift
@@ -602,7 +613,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                 values); empty slots (+) show only on the OWN popup, up to
                 MAX_FRIENDS (5); other users with no friends get
                 "No friends yet" — exactly the full profile's rules. */}
-            <View style={{ marginTop: 14 }}>
+            <View style={{ marginTop: 10 }}>
               <Pressable onPress={handleIntimacyPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingBottom: 6 }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Intimacy</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -610,7 +621,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                   <Feather name="chevron-right" size={18} color={C.muted} />
                 </View>
               </Pressable>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled directionalLockEnabled decelerationRate={0.997} overScrollMode="never">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled decelerationRate={0.997} overScrollMode="never">
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                   <CoupleTile
                     coupled={!!intimacyCouple}
@@ -640,7 +651,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
           </ScrollView>
 
           {/* Bottom buttons: + Follow / Say hi / gift */}
-          <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+          <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
             {!isSelf ? (
             <>
             <Pressable
@@ -687,7 +698,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
           />
           ) : null}
           <RoomToast message={toast} />
-        </Pressable>
+        </View>
 
         <SayHiSheet visible={sayHiOpen} targetName={displayName} targetPhotoURL={photoURL} onClose={() => setSayHiOpen(false)} onSend={handleSayHiSend} />
         <PermissionSettingsSheet
@@ -701,7 +712,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
           onRemoveFromMember={() => { setPermissionOpen(false); onRemoveMember(); handleClose(); }}
           onClose={() => setPermissionOpen(false)}
         />
-      </Pressable>
+      </View>
     </Modal>
   );
 }
