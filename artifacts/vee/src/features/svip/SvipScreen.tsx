@@ -716,6 +716,31 @@ export default function SvipScreen() {
         />
       );
     }
+    if (reward.kind === 'entryEffect' && reward.art) {
+      // Entry effect (e.g. SVIP 5 dragon): animated via sprite sheet
+      // when the server supplies a sprite config (same pattern as
+      // frames); otherwise a plain still image (never blank).
+      if (reward.sprite) {
+        return (
+          <SvipSpriteFrame
+            artUrl={reward.art}
+            size={size}
+            cols={reward.sprite.cols}
+            rows={reward.sprite.rows}
+            frames={reward.sprite.frames}
+            stepMs={reward.sprite.stepMs}
+          />
+        );
+      }
+      return (
+        <ExpoImage
+          source={{ uri: reward.art }}
+          style={{ width: size, height: size }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+        />
+      );
+    }
     return null;
   };
 
@@ -1121,19 +1146,31 @@ export default function SvipScreen() {
                     <View style={{
                       marginTop: 12, width: '100%', backgroundColor: '#FFFFFF',
                       borderRadius: layout.radiusSlot, padding: 8,
+                      alignItems: 'center',
                     }}
                     >
-                      <ExpoImage
-                        source={{ uri: preview.art }}
-                        style={{
-                          width: '100%',
-                          height: preview.artW && preview.artH
-                            ? ((Math.min(winW * 0.66, 235) - 32 - 16) * preview.artH) / preview.artW
-                            : 60,
-                        }}
-                        contentFit="contain"
-                        cachePolicy="memory-disk"
-                      />
+                      {preview.sprite ? (
+                        <SvipSpriteFrame
+                          artUrl={preview.art}
+                          size={Math.min(winW * 0.66, 235) - 32 - 16}
+                          cols={preview.sprite.cols}
+                          rows={preview.sprite.rows}
+                          frames={preview.sprite.frames}
+                          stepMs={preview.sprite.stepMs}
+                        />
+                      ) : (
+                        <ExpoImage
+                          source={{ uri: preview.art }}
+                          style={{
+                            width: '100%',
+                            height: preview.artW && preview.artH
+                              ? ((Math.min(winW * 0.66, 235) - 32 - 16) * preview.artH) / preview.artW
+                              : 60,
+                          }}
+                          contentFit="contain"
+                          cachePolicy="memory-disk"
+                        />
+                      )}
                     </View>
                   ) : null}
                 </View>

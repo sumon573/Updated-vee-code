@@ -264,7 +264,7 @@ function sanitizeReward(raw: any): SvipRewardSlot | null {
   const artW = Math.floor(num(raw.artW, 0, 1, 10000));
   const artH = Math.floor(num(raw.artH, 0, 1, 10000));
   if (artW && artH) { out.artW = artW; out.artH = artH; }
-  if (kind === 'frame') {
+  if (kind === 'frame' || kind === 'entryEffect') {
     const sprite = sanitizeSprite(raw.sprite);
     if (sprite) out.sprite = sprite;
   }
