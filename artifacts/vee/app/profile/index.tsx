@@ -1405,6 +1405,37 @@ export default function ProfileScreen({
     else router.replace('/home' as never);
   };
 
+  // ── 2026-11-11 (boss, imo mirror): thin top bar on scroll ───
+  // When the user scrolls down the profile, a compact white bar fades in
+  // at the top (small avatar + name + the same right actions as the overlay
+  // header) — imo / Instagram collapsing-header pattern. Measured geometry:
+  // cover 180dp + DP block 140→232dp + panel marginTop 8 → name top ≈240dp,
+  // name bottom ≈264dp. So the bar fades in over scrollY 170→210 (cover gone,
+  // DP nearly gone, name about to leave) and is fully visible just as the
+  // name scrolls off. Toggle at the 190 midpoint. Transform/opacity ONLY,
+  // native driver — no layout thrash, no timers, no scroll-physics change.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [thinBarVisible, setThinBarVisible] = useState(false);
+  const thinBarVisibleRef = useRef(false);
+  const THIN_BAR_FADE_START = 170;
+  const THIN_BAR_FADE_END = 210;
+  const THIN_BAR_TOGGLE_Y = 190;
+  const handleProfileScroll = useCallback((e: any) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    const show = y > THIN_BAR_TOGGLE_Y;
+    if (show !== thinBarVisibleRef.current) { thinBarVisibleRef.current = show; setThinBarVisible(show); }
+  }, []);
+  const thinBarOpacity = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [0, 1], extrapolate: 'clamp' });
+  const thinBarTranslateY = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [-8, 0], extrapolate: 'clamp' });
+  // Same DP-viewer navigation as the main DP (thin-bar avatar tap).
+  const openDpViewer = useCallback(() => {
+    if (isMe) {
+      router.push('/profile/dp-viewer');
+    } else {
+      router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
+    }
+  }, [isMe, displayUid]);
+
   // ── 2026-10-29 (boss, imo mirror): derived profile values ───
   const roleForRoom = (room: any): 'owner' | 'admin' | 'member' => {
     if (room.ownerId === displayUid) return 'owner';
@@ -1433,7 +1464,7 @@ export default function ProfileScreen({
           Header is the imo-style overlay (2026-10-30): NO bar, NO name text — white icons sit ON the cover and scroll away with it. Inline vId +
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: handleProfileScroll })}>
         <View>
         <Pressable
           onPress={isMe ? handleCoverTap : undefined}
@@ -2032,6 +2063,69 @@ export default function ProfileScreen({
         )}
       </View>
       </ScrollView>
+
+      {/* ─── 2026-11-11 (boss, imo mirror): THIN TOP BAR on scroll ───
+          Fixed sibling AFTER the ScrollView (never inside it — it must not
+          scroll away). Fades in over scrollY 170→210, fully visible just as
+          the large name scrolls off (~240dp); hides again at the top.
+          White bar (C.card, hairline C.border bottom) like imo's, dark icons
+          (C.text) — NOT the white overlay icons on the cover. Content:
+          back arrow + 32dp avatar + bold name (flex: 1, truncates, never
+          overlaps the actions) + the SAME right actions as the overlay
+          header, same order/handlers/conditions: bell (own only, green dot
+          iff unseen visitors — NO count text here, compactness choice; the
+          count is one tap away in visitors) + settings gear (own only) +
+          three-dot (vId only). No imo "person" icon — Vee has no such
+          action on the profile. pointerEvents off while hidden so the bar
+          can never eat taps at the top. */}
+      <Animated.View
+        pointerEvents={thinBarVisible ? 'auto' : 'none'}
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: insets.top + 56, paddingTop: insets.top,
+          backgroundColor: C.card,
+          borderBottomWidth: 1, borderBottomColor: C.border,
+          zIndex: 10, elevation: 4,
+          opacity: thinBarOpacity,
+          transform: [{ translateY: thinBarTranslateY }],
+        }}
+      >
+        <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+          {!embedded && (
+            <Pressable onPress={goBack} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="arrow-left" size={24} color={C.text} />
+            </Pressable>
+          )}
+          <Pressable onPress={openDpViewer} hitSlop={6} style={{ marginLeft: 4 }}>
+            {photoURL ? (
+              <Image source={{ uri: photoURL }} style={{ width: 32, height: 32, borderRadius: 16 }} />
+            ) : (
+              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.blueLight, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: C.blue }}>{displayName[0]?.toUpperCase()}</Text>
+              </View>
+            )}
+          </Pressable>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: isKing ? KING_GOLD : C.text, marginLeft: 10 }} numberOfLines={1}>{displayName}</Text>
+          {isMe ? (
+            <Pressable onPress={() => router.push('/profile/visitors')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="bell" size={24} color={C.text} />
+              {unseenVisitorCount > 0 ? (
+                <View style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: C.green, borderWidth: 1, borderColor: C.card }} />
+              ) : null}
+            </Pressable>
+          ) : null}
+          {isMe ? (
+            <Pressable onPress={() => router.push('/profile/settings')} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="settings" size={22} color={C.text} />
+            </Pressable>
+          ) : null}
+          {vId ? (
+            <Pressable onPress={() => setShowVidPopup(true)} style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Feather name="more-horizontal" size={24} color={C.text} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
 
       {/* ─── 2026-10-29 (boss): "..." popup — white pill with copy icon + VoiceClub ID.
           The ID is the SAME value as the Room Profile row (profile vId), NOT the short ID. */}
