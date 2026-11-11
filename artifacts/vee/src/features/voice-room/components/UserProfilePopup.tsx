@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Alert, Pressable, Modal, ScrollView } from 'react-native';
+import { View, Text, Alert, Pressable, Modal, ScrollView, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -20,9 +20,14 @@ import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFram
 import type { GrantedBadge } from '@/src/data/honor';
 import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
-import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
+import { subscribeTransactionHistory, subscribeGiftCounts } from '@/src/features/wallet/walletService';
+import { subscribeGiftCatalog, type CatalogGift } from '@/src/features/voice-room/services/giftCatalogService';
 import { subscribeCoupleState, type CoupleState } from '@/src/features/intimacy/coupleLevels';
-import { subscribeUserFriends, type FriendEntry } from '@/src/features/intimacy/friendService';
+import { subscribeUserFriends, MAX_FRIENDS, type FriendEntry } from '@/src/features/intimacy/friendService';
+import { CoupleTile, IntimacyFriendTile, FriendPlusTile } from '@/src/features/intimacy/IntimacyTiles';
+import { subscribeMyIntimacies, intimacyLevelFor, type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
+import { subscribeLevel } from '@/src/services/levelService';
+import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { createOrGetChat, sendMessage } from '@/src/features/chat/services/firebaseDmService';
 import { getActiveCatalog } from '@/src/services/nobleRewardsCatalog';
 import { useIsKing } from '@/src/hooks/useNobleRank';
@@ -41,6 +46,37 @@ import type { Participant, Role } from '../types/room';
    2026-11-11 thin-bar crash). Handlers are plain functions after the
    early return (never useCallback below it). */
 
+/* ── 2026-11-11 (boss, half-screen popup): the sheet height ─────────────
+   EXACTLY half the DISPLAY (the physical screen), as a definite pixel
+   value — NOT `height: '50%'` (a percentage of the sheet's parent, the
+   Modal's content area; on a device where that parent is inset by the
+   status bar, 50% of the parent is LESS than half the display).
+   `Dimensions.get('screen')` IS the display (status bar + nav bar
+   included); `window` is the app window (status bar excluded) and would
+   give the same shortfall. Measured from the boss's own screenshot
+   (OTA 01a1ca8e, 1000230614): cover top y=1024/2048 = exactly 50.00% —
+   the parent happens to be full-screen on his phone, so this value
+   renders identically there; it locks exact-half in BY CONSTRUCTION on
+   every device. A definite height also keeps the flex:1 ScrollView
+   rendering (the OTA 01a1ca60 blank-popup collapse — never go back to
+   maxHeight). */
+const POPUP_SHEET_HEIGHT = Dimensions.get('screen').height * 0.5;
+
+/* LEGACY_GIFT_ID_MAP — copied verbatim from app/profile/gifts.tsx (the Gift
+   Wall's canonicalisation: api-server tx giftIds are legacy numeric '1'–'8').
+   Used only to merge gift counts per canonical id, exactly like the Gift
+   Wall (Fix #15). */
+const LEGACY_GIFT_ID_MAP: Record<string, string> = {
+  '1': 'heart',
+  '2': 'pink-rose',
+  '3': 'pink-rose',
+  '4': 'winter-dream',
+  '5': 'golden-crown',
+  '6': 'blossom-dream',
+  '7': 'golden-crown',
+  '8': 'dream-rider',
+};
+
 function ageFromBirthday(birthday: string | undefined | null): number | null {
   if (!birthday || typeof birthday !== 'string') return null;
   const m = birthday.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -56,6 +92,44 @@ function ageFromBirthday(birthday: string | undefined | null): number | null {
     (boss, 2026-11-11 polish: "1 badges" on his phone was wrong). */
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Popup friend tile (2026-11-11, boss: Intimacy tiles must show in the
+ * popup, reference 1000230624/1000230625) — mirrors the full profile's
+ * CardFriendTile (app/profile/index.tsx): live photo (useLiveUserProfile,
+ * so a photo change shows everywhere), blue Lv pill = the pair's intimacy
+ * level when a pair exists, else the friend's own user total level
+ * (Lv Max at 49); no pill when neither record exists. Tap → that friend's
+ * full profile (same as a DP tap). Module-level so its hooks never
+ * re-mount on popup re-renders.
+ */
+function PopupFriendTile({ friendUid, pairValue, onOpenProfile }: {
+  friendUid: string;
+  pairValue: number | undefined;
+  onOpenProfile: (uid: string, name: string) => void;
+}) {
+  const [totalLevel, setTotalLevel] = useState<number | null>(null);
+  const livePeer = useLiveUserProfile(friendUid);
+  useEffect(() => {
+    if (!friendUid) return;
+    return subscribeLevel(friendUid, (l) => setTotalLevel(l.totalLevel));
+  }, [friendUid]);
+  const pairLabel = pairValue !== undefined ? `Lv.${intimacyLevelFor(pairValue).id}` : null;
+  const ownLabel = totalLevel === null
+    ? null
+    : totalLevel >= 49
+      ? 'Lv Max'
+      : `Lv.${totalLevel}`;
+  const label = pairLabel ?? ownLabel;
+  return (
+    <IntimacyFriendTile
+      photoURL={livePeer.avatar ?? null}
+      name={livePeer.name || ''}
+      levelLabel={label}
+      onPress={() => onOpenProfile(friendUid, livePeer.name || '')}
+    />
+  );
 }
 
 export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole, isCommentBlocked, accent, onClose, onViewFullProfile, onGift, onMention, onToggleCommentBlock, onInviteDirect, onRemoveMember, onSetAdmin, onDismissAdmin, onReport }: {
@@ -90,8 +164,16 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   const [svipState, setSvipState] = useState<SvipState | null>(null);
   const [grantedBadges, setGrantedBadges] = useState<GrantedBadge[]>([]);
   const [giftTotal, setGiftTotal] = useState(0);
+  // 2026-11-11 (boss, Gift Wall card "এবং Gifts এও"): first-gift artwork
+  // needs the per-gift counts (lifetime aggregate + recent-tx window) and
+  // the server gift catalog.
+  const [lifetimeGiftCounts, setLifetimeGiftCounts] = useState<Record<string, number>>({});
+  const [txGiftCounts, setTxGiftCounts] = useState<Record<string, number>>({});
+  const [giftCatalog, setGiftCatalog] = useState<CatalogGift[]>([]);
   const [intimacyCouple, setIntimacyCouple] = useState<CoupleState | null>(null);
   const [intimacyFriends, setIntimacyFriends] = useState<FriendEntry[]>([]);
+  // 2026-11-11 (boss, Intimacy tiles): pair values for the friend Lv pills.
+  const [intimacyEntries, setIntimacyEntries] = useState<IntimacyEntry[]>([]);
   const [extraFields, setExtraFields] = useState<{ city?: string; country?: string; birthday?: string }>({});
   const [sayHiOpen, setSayHiOpen] = useState(false);
   const [permissionOpen, setPermissionOpen] = useState(false);
@@ -106,6 +188,9 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isKing = useIsKing(member?.id);
   const liveFrameId = useActiveFrame(member?.id);
+  // 2026-11-11 (boss, Intimacy tiles): the couple partner's live photo/name
+  // (null = no couple; the hook accepts null and subscribes to nothing).
+  const liveCouplePartner = useLiveUserProfile(intimacyCouple?.partnerUid ?? null);
 
   useEffect(() => { if (!member?.id) return; return subscribeUser(member.id, setTargetUser); }, [member?.id]);
   useEffect(() => { if (!member?.id) return; return subscribeFollowCounts(member.id, setFollowCounts); }, [member?.id]);
@@ -119,10 +204,28 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
     if (!member?.id) return;
     return subscribeTransactionHistory(member.id, (txs) => {
       setGiftTotal(txs.filter((tx) => tx.type === 'gift_received').length);
+      // Per-gift received counts from the recent-tx window (deduped by
+      // idempotencyKey, like the Gift Wall) — merged with the lifetime
+      // aggregate below to find the first (most-received) gift.
+      const counts: Record<string, number> = {};
+      const seen = new Set<string>();
+      for (const t of txs) {
+        if (!t || t.type !== 'gift_received' || typeof t.giftId !== 'string' || t.giftId.length === 0) continue;
+        const rawKey = (t as unknown as { idempotencyKey?: unknown }).idempotencyKey;
+        const key = typeof rawKey === 'string' && rawKey.length > 0 ? rawKey : `tx:${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts[t.giftId] = (counts[t.giftId] ?? 0) + 1;
+      }
+      setTxGiftCounts(counts);
     });
   }, [member?.id]);
+  useEffect(() => { if (!member?.id) return; return subscribeGiftCounts(member.id, setLifetimeGiftCounts); }, [member?.id]);
+  // Server gift catalog is global (same for every user) — subscribe once.
+  useEffect(() => { return subscribeGiftCatalog(setGiftCatalog); }, []);
   useEffect(() => { if (!member?.id) return; return subscribeCoupleState(member.id, setIntimacyCouple); }, [member?.id]);
   useEffect(() => { if (!member?.id) return; return subscribeUserFriends(member.id, setIntimacyFriends); }, [member?.id]);
+  useEffect(() => { if (!member?.id) return; return subscribeMyIntimacies(member.id, setIntimacyEntries); }, [member?.id]);
   // Raw profile fields (city/country/birthday) — NOT in VeeUser (same
   // direct read as the profile screen).
   useEffect(() => {
@@ -169,6 +272,35 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
     return list;
   })();
   const achievementCount = grantedBadges.filter((b) => b.source === 'event').length;
+  // 2026-11-11 (boss, Honor card): the card shows the FIRST Honor badge's
+  // artwork, not a generic shield. grantedBadges is already rankHonors-ordered
+  // (stars desc, Vee Official, official source, obtainedAt desc — the same
+  // order the Honor screen lists), so [0] IS the first badge there. Mh's
+  // first = noble-badge-king ("King Noble", 5 stars).
+  const firstHonorBadge = grantedBadges.length > 0 ? grantedBadges[0] : null;
+  // 2026-11-11 (boss, Gift Wall card "এবং Gifts এও"): the card shows the
+  // FIRST gift's artwork, not a generic gift icon. "First" = the Gift Wall's
+  // default order (quantity desc): the gift with the highest received count.
+  // Counts merge the lifetime aggregate + the recent-tx window (max per raw
+  // id, then sum per canonical id), exactly like the Gift Wall (Fix #15).
+  // Mh's first = golden-dragon (945 received).
+  const firstGift = (() => {
+    const perRaw: Record<string, number> = {};
+    for (const [id, count] of Object.entries(lifetimeGiftCounts)) perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    for (const [id, count] of Object.entries(txGiftCounts)) perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    const merged: Record<string, number> = {};
+    for (const [id, count] of Object.entries(perRaw)) {
+      const canonical = LEGACY_GIFT_ID_MAP[id] || id;
+      merged[canonical] = (merged[canonical] ?? 0) + count;
+    }
+    let best: CatalogGift | null = null;
+    let bestCount = 0;
+    for (const gift of giftCatalog) {
+      const count = merged[gift.id] ?? 0;
+      if (count > 0 && count > bestCount) { best = gift; bestCount = count; }
+    }
+    return best;
+  })();
   const intimacyCount = (intimacyCouple ? 1 : 0) + intimacyFriends.length;
   const age = ageFromBirthday(extraFields.birthday);
   const location = extraFields.city || extraFields.country || '';
@@ -264,15 +396,22 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={handleClose}>
         <Pressable
           onPress={(e) => e.stopPropagation()}
-          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '50%', overflow: 'hidden' }}
+          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: POPUP_SHEET_HEIGHT, overflow: 'hidden' }}
         >
           {/* 2026-11-11 (hotfix, blank popup): the sheet MUST have a DEFINITE
               height. With maxHeight only, the sheet's height was content-sized
               and the ScrollView (flex: 1, flexBasis 0) measured 0px tall — the
               whole popup content was invisible and the sheet collapsed to just
-              the buttons row (boss's phone, OTA 01a1ca60). height: '50%' gives
-              the ScrollView a bounded viewport so it renders AND scrolls. */}
-          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
+              the buttons row (boss's phone, OTA 01a1ca60). POPUP_SHEET_HEIGHT
+              (screen height x 0.5) gives the ScrollView a bounded viewport so
+              it renders AND scrolls, and is exactly half the display. */}
+          {/* 2026-11-11 (boss, scroll): nestedScrollEnabled — the horizontal
+              Privilege ScrollView inside swallows vertical drags that start
+              on its cards unless the outer vertical ScrollView takes part in
+              Android nested scrolling; without it the popup scrolls only when
+              the drag starts outside the Privilege cards ("sometimes it
+              scrolls, sometimes it doesn't"). */}
+          <ScrollView style={{ flex: 1 }} nestedScrollEnabled showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
             {/* Cover + overlay header: back, "@", "..." */}
             <View>
               {coverImageUrl ? (
@@ -404,15 +543,39 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(achievementCount, 'badge', 'badges')}</Text>
                     </View>
                   </Pressable>
+                  {/* 2026-11-11 (boss, Honor card + imo reference 1000230628):
+                      the Honor card shows the user's FIRST Honor badge's
+                      artwork (the actual badge, like imo's purple LV.6 crown
+                      badge), NOT a generic shield. URL icon -> expo-image
+                      (contain, 32px); glyph icon -> Text; no badges at all ->
+                      the generic shield stays (nothing to show, never fake). */}
                   <Pressable onPress={handleHonorPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                    <Feather name="shield" size={32} color="#3B82F6" />
+                    {firstHonorBadge ? (
+                      /^https?:\/\//i.test(firstHonorBadge.icon || '') ? (
+                        <Image source={{ uri: firstHonorBadge.icon }} style={{ width: 32, height: 32 }} contentFit="contain" />
+                      ) : (
+                        <Text style={{ fontSize: 32 }}>{firstHonorBadge.icon}</Text>
+                      )
+                    ) : (
+                      <Feather name="shield" size={32} color="#3B82F6" />
+                    )}
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Honor</Text>
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedBadges.length, 'badge', 'badges')}</Text>
                     </View>
                   </Pressable>
+                  {/* 2026-11-11 (boss, Gift Wall card "এবং Gifts এও" — same rule
+                      as Honor): the Gift Wall card shows the user's FIRST
+                      gift's artwork (the most-received gift, Gift Wall
+                      default order), NOT a generic gift icon. No gifts at
+                      all (or no thumbnail) -> the generic gift icon stays
+                      (nothing to show, never fake). */}
                   <Pressable onPress={handleGiftsPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                    <Feather name="gift" size={32} color="#EC4899" />
+                    {firstGift && firstGift.thumbnailUrl ? (
+                      <Image source={{ uri: firstGift.thumbnailUrl }} style={{ width: 32, height: 32 }} contentFit="contain" />
+                    ) : (
+                      <Feather name="gift" size={32} color="#EC4899" />
+                    )}
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Gift Wall</Text>
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(giftTotal, 'gift', 'gifts')}</Text>
@@ -429,14 +592,51 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
               </ScrollView>
             </View>
 
-            {/* Intimacy — tap → intimacy page */}
-            <Pressable onPress={handleIntimacyPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Intimacy</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: 14, color: C.muted, marginRight: 2 }}>{intimacyCount}</Text>
-                <Feather name="chevron-right" size={18} color={C.muted} />
-              </View>
-            </Pressable>
+            {/* Intimacy — horizontal tiles (Couple + Friends), SAME tiles as
+                the full profile (IntimacyTiles). 2026-11-11 (boss, "Intimacy
+                ও দেখায় না" + references 1000230624 RAKIB / 1000230625 Rolex):
+                the popup showed only a header row ("Intimacy — 0 >"); the
+                reference shows Couple / Friend / Friend tiles with photos,
+                + circles when empty, and Lv. badges. Tiles render from the
+                popup user's REAL data (couple partner + friends + pair
+                values); empty slots (+) show only on the OWN popup, up to
+                MAX_FRIENDS (5); other users with no friends get
+                "No friends yet" — exactly the full profile's rules. */}
+            <View style={{ marginTop: 14 }}>
+              <Pressable onPress={handleIntimacyPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingBottom: 6 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Intimacy</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 14, color: C.muted, marginRight: 2 }}>{intimacyCount}</Text>
+                  <Feather name="chevron-right" size={18} color={C.muted} />
+                </View>
+              </Pressable>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }} nestedScrollEnabled directionalLockEnabled decelerationRate={0.997} overScrollMode="never">
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                  <CoupleTile
+                    coupled={!!intimacyCouple}
+                    partnerPhotoURL={intimacyCouple?.partnerUid ? (liveCouplePartner.avatar ?? null) : null}
+                    partnerName={intimacyCouple?.partnerUid ? (liveCouplePartner.name || '') : ''}
+                    onPress={handleIntimacyPress}
+                  />
+                  {intimacyFriends.map((f) => (
+                    <PopupFriendTile
+                      key={f.uid}
+                      friendUid={f.uid}
+                      pairValue={intimacyEntries.find((e) => e.otherUid === f.uid)?.value}
+                      onOpenProfile={(uid, name) => { handleClose(); onViewFullProfile(uid, name); }}
+                    />
+                  ))}
+                  {isSelf && Array.from({ length: Math.max(0, MAX_FRIENDS - intimacyFriends.length) }).map((_, i) => (
+                    <FriendPlusTile key={`friend-plus-${i}`} onPress={handleIntimacyPress} />
+                  ))}
+                  {!isSelf && intimacyFriends.length === 0 && (
+                    <View style={{ alignSelf: 'center', paddingLeft: 8 }}>
+                      <Text style={{ color: C.muted, fontSize: 13 }}>No friends yet</Text>
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
           </ScrollView>
 
           {/* Bottom buttons: + Follow / Say hi / gift */}
@@ -460,9 +660,15 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
             </Pressable>
             </>
             ) : null}
+            {/* 2026-11-11 (boss, own popup): the gift button needs the same
+                height as the Follow / Say hi buttons. In the own popup those
+                two are absent, so without paddingVertical the button collapsed
+                to its 20px icon — a small pill at the bottom-left (boss's red
+                arrow, 1000230616). paddingVertical 13 matches the siblings,
+                so the gift button is 52x~46 in BOTH popups. */}
             <Pressable
               onPress={handleGiftPress}
-              style={{ width: 52, backgroundColor: '#2196F3', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: 52, backgroundColor: '#2196F3', borderRadius: 16, paddingVertical: 13, alignItems: 'center', justifyContent: 'center' }}
             >
               <Feather name="gift" size={20} color="#FFFFFF" />
             </Pressable>
