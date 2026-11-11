@@ -14,6 +14,7 @@ import { SayHiSheet } from './SayHiSheet';
 import { PermissionSettingsSheet } from './PermissionSettingsSheet';
 import { RoomToast, useRoomToast } from './RoomToast';
 import { NameplateRow } from '@/src/components/NameplateRow';
+import { PremiumLocationIcon } from '@/src/components/PremiumLocationIcon';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { subscribeFollowCounts, subscribeIsFollowing, followUser, unfollowUser } from '@/src/services/followService';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
@@ -47,25 +48,27 @@ import type { Participant, Role } from '../types/room';
    early return (never useCallback below it). */
 
 /* ── 2026-11-11 (boss, taller popup): the sheet height ──────────────────
-   62.5% of the DISPLAY (5/8 of the physical screen), as a definite pixel
-   value — NOT `height: '62.5%'` (a percentage of the sheet's parent, the
+   75% of the DISPLAY (3/4 of the physical screen), as a definite pixel
+   value - NOT `height: '75%'` (a percentage of the sheet's parent, the
    Modal's content area; on a device where that parent is inset by the
    status bar, a percentage of the parent is LESS than the intended
    fraction of the display). `Dimensions.get('screen')` IS the display
    (status bar + nav bar included); `window` is the app window (status
    bar excluded) and would give the same shortfall. The fraction comes
-   from the boss's own mark (2026-11-11 19:57, screenshot 1000230656,
-   SHAKIB popup, OTA 01a1cad2 live): "এবার এটা বড় করো, মার্ক করেছি
-   সেখান পর্যন্ত, মানে শেষ সিটের লাইন বরাবর" — make it bigger, up to
-   the line of the last seat row. Measured: his red-arrow tip lands at
-   y=769/2048 = 37.55% (seat 6 label y 744–765); sheet height =
-   (2048 − 769) / 2048 = 62.45% → 0.625 puts the top at y=768, 1px
-   above the mark. (Was 0.5 = exact half, OTA 01a1ca8e/01a1cab3/01a1cad2;
-   the scroll was praised "Good job" at 0.5 — this height change must
-   NOT touch the Modal/ScrollView structure.) A definite height also
-   keeps the flex:1 ScrollView rendering (the OTA 01a1ca60 blank-popup
-   collapse — never go back to maxHeight). */
-const POPUP_SHEET_HEIGHT = Dimensions.get('screen').height * 0.625;
+   from the boss's own mark (2026-11-11 20:41, screenshot 1000230680,
+   Gentleman popup, OTA 01a1cb09 live): "পপ-আপটা আরেকবার বাড়াও মানে
+   উপরের দিকে উঠাও সিটের প্রথম লাইন এবং দ্বিতীয় লাইনের মাঝখানে বরাবর
+   উঠবে" - make it bigger again, up to the middle of the gap between
+   seat row 1 and seat row 2. Measured: his red-arrow tip lands at
+   y=519/2048 = 25.34% (seat row 1 circles y 355-479, row 2 y 598-721,
+   gap midpoint y=539); sheet height = (2048 - 519) / 2048 = 74.66% -
+   0.75 puts the top at y=512, on the arrow tip, mid-gap. (Was 0.625,
+   OTA 01a1cafc; was 0.5 = exact half, OTA 01a1ca8e/01a1cab3/01a1cad2;
+   the scroll was praised "Good job" - this height change must NOT
+   touch the Modal/ScrollView structure.) A definite height also keeps
+   the flex:1 ScrollView rendering (the OTA 01a1ca60 blank-popup
+   collapse - never go back to maxHeight). */
+const POPUP_SHEET_HEIGHT = Dimensions.get('screen').height * 0.75;
 
 /* LEGACY_GIFT_ID_MAP — copied verbatim from app/profile/gifts.tsx (the Gift
    Wall's canonicalisation: api-server tx giftIds are legacy numeric '1'–'8').
@@ -419,9 +422,9 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
               and the ScrollView (flex: 1, flexBasis 0) measured 0px tall — the
               whole popup content was invisible and the sheet collapsed to just
               the buttons row (boss's phone, OTA 01a1ca60). POPUP_SHEET_HEIGHT
-              (screen height x 0.625) gives the ScrollView a bounded viewport so
-              it renders AND scrolls, and is 62.5% of the display (top on the
-              last seat row line, boss 2026-11-11 19:57). */}
+              (screen height x 0.75) gives the ScrollView a bounded viewport so
+              it renders AND scrolls, and is 75% of the display (top between
+              seat row 1 and row 2, boss 2026-11-11 20:41). */}
           {/* 2026-11-11 (boss, scroll): nestedScrollEnabled — the horizontal
               Privilege ScrollView inside swallows vertical drags that start
               on its cards unless the outer vertical ScrollView takes part in
@@ -496,20 +499,26 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                   <NameplateRow plates={displayNameplates} size="small" nobleRankKey={nobleRankKey} />
                 </View>
               ) : null}
+              {/* 2026-11-11 (boss, taller-2): each chip gets its own LIGHT pastel
+                  fill + a matching soft border (role blue, followers amber,
+                  location green, age pink) - distinct but light, dark text stays
+                  readable. Location uses the profile screen's real PremiumLocationIcon,
+                  NOT the demo lollipop emoji. */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-                <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
+                <View style={{ backgroundColor: '#E3F2FD', borderWidth: 0.5, borderColor: '#90CAF9', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{roleLabel}</Text>
                 </View>
-                <Pressable onPress={handleFollowersPress} hitSlop={4} style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
+                <Pressable onPress={handleFollowersPress} hitSlop={4} style={{ backgroundColor: '#FFF8E1', borderWidth: 0.5, borderColor: '#FFE082', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>⭐ {followCounts.followers} Followers</Text>
                 </Pressable>
                 {location ? (
-                  <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>📍 {location}</Text>
+                  <View style={{ backgroundColor: '#E8F5E9', borderWidth: 0.5, borderColor: '#A5D6A7', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4, flexDirection: 'row', alignItems: 'center' }}>
+                    <PremiumLocationIcon />
+                    <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{location}</Text>
                   </View>
                 ) : null}
                 {age !== null ? (
-                  <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
+                  <View style={{ backgroundColor: '#FCE4EC', borderWidth: 0.5, borderColor: '#F48FB1', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                     <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{age}</Text>
                   </View>
                 ) : null}
