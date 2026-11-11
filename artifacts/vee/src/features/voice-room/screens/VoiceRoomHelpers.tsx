@@ -134,10 +134,14 @@ export function formatMembersCount(n: number): string {
   return `${s.endsWith('.0') ? s.slice(0, -2) : s}${suf}`;
 }
 
-export function LiveAudiencePill({ count, onPress, person }: { count: number; onPress: () => void; person?: Participant }) {
+export function LiveAudiencePill({ count, onPress, person, loading }: { count: number; onPress: () => void; person?: Participant; loading?: boolean }) {
   // 2026-10-27 (boss, imo format): exact number below 1000 (e.g. 103,
   // never "1+"/"2+"); 1000+ shows "{floor(n/1000)}k+" (1500 -> "1k+").
+  // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): while loading
+  // (no live snapshot yet and nobody counted), show "…" — never a confident
+  // "0" before any live data has arrived.
   const formatCount = (n: number): string => {
+    if (loading) return '…';
     if (n >= 1000) return `${Math.floor(n / 1000)}k+`;
     return `${n}`;
   };

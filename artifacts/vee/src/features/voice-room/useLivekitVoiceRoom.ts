@@ -211,6 +211,12 @@ export async function awaitPendingVoiceRoomLeave(): Promise<void> {
  *  a settled room drops out of the set; a still-hung one stays for the
  *  next join/leave. Never throws. */
 function drainZombieRooms(): void {
+  // 2026-11-11 (boss: audio heard after exit, PERMANENT): register the
+  // foreground drain here — zombies were drained ONLY on the next join, so
+  // a user who exits and stays out of rooms never drained. A foreground
+  // return is the other natural re-attempt point (the network that hung
+  // the disconnect may have recovered while backgrounded).
+  ensureZombieForegroundDrain();
   if (zombieRooms.size === 0) return;
   const rooms = [...zombieRooms];
   void (async () => {
@@ -223,6 +229,22 @@ function drainZombieRooms(): void {
       }
     }
   })();
+}
+
+/** 2026-11-11 (boss: audio heard after exit, PERMANENT): drain zombies on
+ *  app foreground, not only on join. Registered once, lazily, the first
+ *  time a drain is attempted; never throws. */
+let _zombieForegroundDrainRegistered = false;
+function ensureZombieForegroundDrain(): void {
+  if (_zombieForegroundDrainRegistered) return;
+  _zombieForegroundDrainRegistered = true;
+  try {
+    AppState.addEventListener('change', (next) => {
+      if (next === 'active') drainZombieRooms();
+    });
+  } catch {
+    // non-critical — join/leave drains still apply
+  }
 }
 
 // ─── Minimized-room watchdog (2026-10-25, boss: mic/connection must NEVER
@@ -1312,6 +1334,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
    *  participant / reconnect event. One participant refresh at the end
    *  (not one per user — the per-user path thrashed the seat grid). */
   private applyRemoteSubscriptions(): void {
+    // 2026-11-11 (boss: audio heard after exit, PERMANENT): never
+    // re-subscribe during/after a leave. TrackPublished / Reconnected
+    // events firing between silenceNow() and teardownRoom()'s
+    // removeAllListeners() used to re-subscribe seated identities and
+    // resurrect audio the leave had just silenced. leaveInitiated is set
+    // at the top of leave() and cleared at the top of join(), so repair
+    // leaves (watchdog leave + re-join) are unaffected — the re-join
+    // clears it before subscriptions are applied again.
+    if (this.leaveInitiated) return;
     const room = this.room;
     if (!room) return;
     const allowed = this.remoteAudioAllowed;
@@ -1382,7 +1413,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
             }
             try {
               const track = rp.track;
-              if (track) track.stop();
+              if (track) {
+                track.stop();
+                // 2026-11-11 (boss: audio heard after exit, PERMANENT):
+                // RemoteTrack.stop() only sets `enabled = false` (the SDK
+                // keeps the transceiver reusable) — the whole local silence
+                // rested on the native playout honouring that flag, while a
+                // hung disconnect kept the SFU forwarding. Stop the
+                // underlying native track outright: a stopped track cannot
+                // render, whatever the `enabled` path does. Safe on leave:
+                // the room is dying and a repair re-creates its tracks.
+                try {
+                  const mst = (track as unknown as {
+                    mediaStreamTrack?: { enabled?: boolean; stop?: () => void } | null;
+                  }).mediaStreamTrack;
+                  if (mst) {
+                    try { mst.enabled = false; } catch { /* non-critical */ }
+                    try { mst.stop?.(); } catch { /* non-critical */ }
+                  }
+                } catch {
+                  // non-critical — track.stop() above already ran
+                }
+              }
             } catch {
               // non-critical
             }
@@ -1411,10 +1463,10 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     const room = this.room;
     this.room = null;
     if (!room) return !this.disconnectPending;
-    // 2026-10-27 audio-leak fix — kill inbound audio BEFORE disconnect:
-    // if disconnect() hangs, the native Room stays connected and remote
-    // tracks would otherwise keep playing with no bubble/notification.
-    this.stopAllRemoteAudio(room);
+    // 2026-11-11 (boss: audio heard after exit, PERMANENT): remove
+    // listeners FIRST, then stop audio. The old order (stop, then
+    // removeListeners) left a window where a TrackPublished / Reconnected
+    // event re-subscribed a track the stop pass had just silenced.
     try {
       room.removeAllListeners();
     } catch {
@@ -1425,15 +1477,28 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     } catch {
       // non-critical
     }
+    // 2026-10-27 audio-leak fix — kill inbound audio BEFORE disconnect:
+    // if disconnect() hangs, the native Room stays connected and remote
+    // tracks would otherwise keep playing with no bubble/notification.
+    this.stopAllRemoteAudio(room);
     this.disconnectPending = true;
+    // 2026-11-11 (boss: audio heard after exit, PERMANENT): the bare
+    // `await room.disconnect()` here was UNBOUNDED — a hung native
+    // disconnect left disconnectPending true forever and a detached promise
+    // holding the Room. Bound it at 5s and report honestly: false when the
+    // disconnect did not settle, so leave() registers the zombie + runs the
+    // mic fallback (leave() now reads this value — see the 2026-11-11 note
+    // there). A promptly-throwing disconnect is still a finished teardown.
+    let disconnected = false;
     try {
-      await room.disconnect();
+      const r = await withTimeout(room.disconnect(), 5000);
+      disconnected = r.done;
     } catch {
-      // non-critical
+      disconnected = true;
     } finally {
       this.disconnectPending = false;
     }
-    return true;
+    return disconnected;
   }
 
   /* ── VoiceEngine interface ── */
@@ -1746,6 +1811,21 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
     // and the minimize path never calls leave() at all — so a minimized
     // room's notification correctly stays.
     stopVoiceForegroundService();
+    // 2026-11-11 (boss: audio heard after exit, PERMANENT): release the OS
+    // audio session EARLY, before the teardown attempts — the old code
+    // stopped it only after teardown, so a hung queue/disconnect delayed
+    // it. Fire-and-forget, bounded; the existing stop after teardown stays
+    // as the safety net (idempotent).
+    try {
+      const session = this.rnSdk?.AudioSession;
+      if (session) {
+        void withTimeout(session.stopAudioSession(), 3000).catch(() => {
+          // non-critical — the late stop below still runs
+        });
+      }
+    } catch {
+      // non-critical — the late stop below still runs
+    }
     // Capture the room BEFORE teardownRoom() nulls it: if teardown hangs,
     // the mic fallback below still has a participant to unpublish.
     const roomBefore = this.room;
@@ -1763,18 +1843,27 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       // a native op is wedged is the lesser evil versus a leaked mic.
       let teardownDone = false;
       try {
-        teardownDone = (
-          await withTimeout(
-            this.enqueueNativeOp(() => this.teardownRoom()),
-            5000,
-          )
-        ).done;
+        // 2026-11-11 (boss: audio heard after exit, PERMANENT): read
+        // teardownRoom()'s VALUE, not just withTimeout's `.done`. `.done`
+        // is only the timing flag (settled within 5s); the VALUE is the
+        // verdict. When attempt 1's disconnect hangs, attempt 2's
+        // teardownRoom() returns false immediately (room already nulled,
+        // disconnect still pending) — but `.done` is true, so the old code
+        // read teardownDone as vacuously true and SKIPPED the zombie
+        // registration + mic fallback. The room then stayed connected with
+        // no reference left to silence it.
+        const r1 = await withTimeout(
+          this.enqueueNativeOp(() => this.teardownRoom()),
+          5000,
+        );
+        teardownDone = r1.done && r1.value === true;
       } catch {
         teardownDone = false;
       }
       if (!teardownDone) {
         try {
-          teardownDone = (await withTimeout(this.teardownRoom(), 5000)).done;
+          const r2 = await withTimeout(this.teardownRoom(), 5000);
+          teardownDone = r2.done && r2.value === true;
         } catch {
           teardownDone = false;
         }
@@ -1814,6 +1903,13 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       } catch {
         // non-critical
       }
+      // 2026-11-11 (boss: audio heard after exit, PERMANENT): zombies were
+      // drained ONLY on the next join — a user who exits and stays out of
+      // rooms never drained, so a hung disconnect played until app kill.
+      // Drain here too: an old zombie whose network has since recovered
+      // disconnects now, and the one just registered (if any) gets its
+      // first re-attempt. Fire-and-forget, 2s per room, never throws.
+      drainZombieRooms();
     } finally {
       // FIX #41: the foreground-service stop moved to the top of leave()
       // (synchronous) — it no longer waits on teardown, so there is

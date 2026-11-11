@@ -990,13 +990,14 @@ export async function joinRoomAsAudience(
   // server guard healed the label (up to a minute of lost powers — and any
   // seat claimed in that window carried 'member' too). Stamp the registry
   // role into the entry at write time.
-  let entry: RoomAudienceMember = member;
-  try {
-    const adminSnap = await get(ref(database, `rooms/${roomId}/admins/${member.userId}`));
-    if (adminSnap.exists() && adminSnap.val() === true) {
-      entry = { ...member, role: 'admin', roleLevel: 8000 };
-    }
-  } catch { /* best-effort — the live registry subscription still applies */ }
+  // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): the presence
+  // write used to wait behind that blocking admin-registry `get()` (a full
+  // server round-trip) before the `set()` even started — on a slow/flaky
+  // link the entry landed late or never, and the room count showed 0 while
+  // the user was already in the room. Write the entry FIRST (presence is
+  // the urgent part), then patch the admin role in a follow-up update.
+  // Same end state; the live registry subscription + server guard still
+  // apply the role if this patch is lost.
   // 2026-10-20 (boss): stamp the heartbeat so a crashed session's leftover
   // entry ages out (see sweepStaleAudience) instead of showing a phantom
   // member in an empty room forever.
@@ -1006,7 +1007,13 @@ export async function joinRoomAsAudience(
   // when the user is also absent from LiveKit. Never a remove(): a
   // background socket drop must never delete a live user (2026-10-22).
   onDisconnect(audienceRef).update({ connDead: true }).catch(() => {});
-  await set(audienceRef, { ...entry, ts: serverTimestamp() });
+  await set(audienceRef, { ...member, ts: serverTimestamp() });
+  try {
+    const adminSnap = await get(ref(database, `rooms/${roomId}/admins/${member.userId}`));
+    if (adminSnap.exists() && adminSnap.val() === true) {
+      await update(audienceRef, { role: 'admin', roleLevel: 8000 });
+    }
+  } catch { /* best-effort — the live registry subscription still applies */ }
   // 2026-10-22 ROOT FIX (boss, server-log proven): NO onDisconnect removal
   // for presence entries anymore. The old BUG 14/15 arm deleted the entry
   // on ANY RTDB socket drop — and backgrounded phones drop that socket

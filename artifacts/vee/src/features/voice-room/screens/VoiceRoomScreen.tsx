@@ -524,6 +524,18 @@ export default function VoiceRoomScreen() {
   const [seats,         setSeats]        = useState<Array<Participant | null>>(Array(10).fill(null));
   const [lockedSeats,   setLockedSeats]  = useState<Set<number>>(new Set<number>());
   const [audience,      setAudience]     = useState<Participant[]>([]);
+  // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): true once the
+  // seats or audience subscription has delivered its first live snapshot
+  // (or the cached-first paint showed occupied seats). While false AND the
+  // member list is empty, the header pill shows "…" — never a confident
+  // "0" before any live data has arrived (same null-gate principle as
+  // joinedMemberCount). Reset on room change only — heal resubscribes do
+  // NOT reset, so the pill never flickers on a transient stall.
+  const [liveCountsReady, setLiveCountsReady] = useState(false);
+  // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): throttle for
+  // the presence re-register triggered by a snapshot without self — at
+  // most once per 10s, so a snapshot storm never spams presence writes.
+  const lastPresenceReregisterAtRef = useRef(0);
 
   // 2026-11-09 (boss: seat frame late): uids whose frame art is already
   // warmed this screen mount — one RTDB read + download per uid, max.
@@ -1683,6 +1695,7 @@ export default function VoiceRoomScreen() {
   const seatsLoadedRef = useRef(false);
   const handleSeats = (fbSeats: Array<RoomSeat | null>) => {
     seatsLoadedRef.current = true;
+    setLiveCountsReady(true);
     lastSeatsSnapAtRef.current = Date.now();
     const mapped = fbSeats.map(seat =>
       seat ? fbSeatToParticipant(seat, speakingRef.current) : null,
@@ -1712,6 +1725,7 @@ export default function VoiceRoomScreen() {
       prevLiveRoomIdRef.current = roomId;
       setSeats(Array(10).fill(null));
       setAudience([]);
+      setLiveCountsReady(false);
     }
     if (watcherPollActive || pass2PollActive) return;
     return subscribeSeats(roomId, handleSeats);
@@ -1744,6 +1758,11 @@ export default function VoiceRoomScreen() {
         roleLevel: s.roleLevel, activeFrame: s.activeFrame,
         nobleRankIndex: s.nobleRankIndex,
       } : null)));
+      // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): occupied
+      // cached seats are real members for the pill — mark the count ready
+      // so it shows the cached number instead of "…" while live data is
+      // still in flight. Empty cache paints nothing, so the gate stays.
+      if (cached.seats.some((s) => s !== null)) setLiveCountsReady(true);
     })();
     return () => { cancelled = true; };
   }, [roomId]);
@@ -1773,8 +1792,21 @@ export default function VoiceRoomScreen() {
     });
   }, [seats, roomName, roomTopic, roomImageUri, roomId]);
 
+  // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): self as a
+  // Participant — same fields as the 2026-10-31 optimistic add. Used by
+  // handleAudience self-preservation and the allMembers display union.
+  const buildSelfParticipant = useCallback((): Participant => fbAudToParticipant({
+    userId: myUid,
+    userName: myName,
+    initials: myInitials,
+    color: myColor,
+    ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+    ...(myNobleRankRef.current != null ? { nobleRankIndex: myNobleRankRef.current } : {}),
+  }), [myUid, myName, myInitials, myColor, myPhotoURL]);
+
   const handleAudience = (fbAudience: RoomAudienceMember[]) => {
     lastAudienceSnapAtRef.current = Date.now();
+    setLiveCountsReady(true);
     const participants = fbAudience.map(fbAudToParticipant);
     // Perf guard (2026-10-22): same heartbeat-skip as seats above.
     const sig = participants.map(m =>
@@ -1782,7 +1814,26 @@ export default function VoiceRoomScreen() {
     ).join(';');
     if (sig === audienceSigRef.current) return;
     audienceSigRef.current = sig;
-    setAudience(participants);
+    // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): a snapshot
+    // without self used to wipe the optimistic self-add wholesale (the
+    // 2026-10-31 fix) — the count dropped to 0 and stayed there when the
+    // presence write had failed, because nothing ever retried it. If I am
+    // in this room and the snapshot does not have me, keep self in the list
+    // AND re-create the server presence (throttled): the snapshot itself
+    // becomes the retry trigger, so a failed write heals on the next
+    // snapshot instead of sticking at 0 for the whole visit.
+    let next = participants;
+    if (!participants.some((m) => m.id === myUid)
+      && (presenceReadyRef.current || voiceJoinedRef.current)
+      && !hasLeftRef.current) {
+      next = [...participants, buildSelfParticipant()];
+      const now = Date.now();
+      if (now - lastPresenceReregisterAtRef.current >= 10_000) {
+        lastPresenceReregisterAtRef.current = now;
+        void reRegisterPresenceRef.current?.();
+      }
+    }
+    setAudience(next);
   };
 
   useEffect(() => {
@@ -3023,8 +3074,16 @@ export default function VoiceRoomScreen() {
     for (const p of [...seatMembers, ...audience]) {
       if (!map.has(p.id)) map.set(p.id, p);
     }
+    // 2026-11-11 (boss: count shows 0 after entry, PERMANENT): display-
+    // layer backstop — if I am in this room (entry completed or voice
+    // joined) but neither the seats nor the audience snapshot has me yet,
+    // count self. The state layer (handleAudience) does the same; this
+    // covers the window before the first audience snapshot lands.
+    if (!map.has(myUid) && (presenceReadyRef.current || voiceJoined) && !hasLeftRef.current) {
+      map.set(myUid, buildSelfParticipant());
+    }
     return [...map.values()];
-  }, [seatMembers, audience]);
+  }, [seatMembers, audience, myUid, voiceJoined, buildSelfParticipant]);
 
   const myRole: Role = useMemo(() => {
     // 2026-10-22 (boss): role resolution order FIXED. The old code read
@@ -4805,6 +4864,7 @@ export default function VoiceRoomScreen() {
               count={allMembers.length}
               onPress={() => setMembersOpen(true)}
               person={allMembers[0]}
+              loading={!liveCountsReady && allMembers.length === 0}
             />
             {/* 2026-10-23 (boss): announcement entry REMOVED from the header.
                 Posting/editing now lives inside Settings; a posted
