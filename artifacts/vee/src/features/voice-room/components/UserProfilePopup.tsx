@@ -46,21 +46,26 @@ import type { Participant, Role } from '../types/room';
    2026-11-11 thin-bar crash). Handlers are plain functions after the
    early return (never useCallback below it). */
 
-/* ── 2026-11-11 (boss, half-screen popup): the sheet height ─────────────
-   EXACTLY half the DISPLAY (the physical screen), as a definite pixel
-   value — NOT `height: '50%'` (a percentage of the sheet's parent, the
+/* ── 2026-11-11 (boss, taller popup): the sheet height ──────────────────
+   62.5% of the DISPLAY (5/8 of the physical screen), as a definite pixel
+   value — NOT `height: '62.5%'` (a percentage of the sheet's parent, the
    Modal's content area; on a device where that parent is inset by the
-   status bar, 50% of the parent is LESS than half the display).
-   `Dimensions.get('screen')` IS the display (status bar + nav bar
-   included); `window` is the app window (status bar excluded) and would
-   give the same shortfall. Measured from the boss's own screenshot
-   (OTA 01a1ca8e, 1000230614): cover top y=1024/2048 = exactly 50.00% —
-   the parent happens to be full-screen on his phone, so this value
-   renders identically there; it locks exact-half in BY CONSTRUCTION on
-   every device. A definite height also keeps the flex:1 ScrollView
-   rendering (the OTA 01a1ca60 blank-popup collapse — never go back to
-   maxHeight). */
-const POPUP_SHEET_HEIGHT = Dimensions.get('screen').height * 0.5;
+   status bar, a percentage of the parent is LESS than the intended
+   fraction of the display). `Dimensions.get('screen')` IS the display
+   (status bar + nav bar included); `window` is the app window (status
+   bar excluded) and would give the same shortfall. The fraction comes
+   from the boss's own mark (2026-11-11 19:57, screenshot 1000230656,
+   SHAKIB popup, OTA 01a1cad2 live): "এবার এটা বড় করো, মার্ক করেছি
+   সেখান পর্যন্ত, মানে শেষ সিটের লাইন বরাবর" — make it bigger, up to
+   the line of the last seat row. Measured: his red-arrow tip lands at
+   y=769/2048 = 37.55% (seat 6 label y 744–765); sheet height =
+   (2048 − 769) / 2048 = 62.45% → 0.625 puts the top at y=768, 1px
+   above the mark. (Was 0.5 = exact half, OTA 01a1ca8e/01a1cab3/01a1cad2;
+   the scroll was praised "Good job" at 0.5 — this height change must
+   NOT touch the Modal/ScrollView structure.) A definite height also
+   keeps the flex:1 ScrollView rendering (the OTA 01a1ca60 blank-popup
+   collapse — never go back to maxHeight). */
+const POPUP_SHEET_HEIGHT = Dimensions.get('screen').height * 0.625;
 
 /* LEGACY_GIFT_ID_MAP — copied verbatim from app/profile/gifts.tsx (the Gift
    Wall's canonicalisation: api-server tx giftIds are legacy numeric '1'–'8').
@@ -414,8 +419,9 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
               and the ScrollView (flex: 1, flexBasis 0) measured 0px tall — the
               whole popup content was invisible and the sheet collapsed to just
               the buttons row (boss's phone, OTA 01a1ca60). POPUP_SHEET_HEIGHT
-              (screen height x 0.5) gives the ScrollView a bounded viewport so
-              it renders AND scrolls, and is exactly half the display. */}
+              (screen height x 0.625) gives the ScrollView a bounded viewport so
+              it renders AND scrolls, and is 62.5% of the display (top on the
+              last seat row line, boss 2026-11-11 19:57). */}
           {/* 2026-11-11 (boss, scroll): nestedScrollEnabled — the horizontal
               Privilege ScrollView inside swallows vertical drags that start
               on its cards unless the outer vertical ScrollView takes part in
