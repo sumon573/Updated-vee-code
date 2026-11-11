@@ -48,6 +48,16 @@ import {
 import type { GrantedBadge } from '@/src/data/honor';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 
+/** 2026-11-11 (boss): badge labels show just the name — strip a trailing
+ * " Badge" (exact suffix, case-sensitive, only at the end). Render-time only;
+ * the catalog/grant data keeps "SVIP 5 Badge". A name that IS exactly
+ * "Badge" is left alone (never an empty label). Nameplates are untouched
+ * ("King Nameplate" stays). */
+function badgeDisplayName(name: string): string {
+  if (name === 'Badge') return name;
+  return name.endsWith(' Badge') ? name.slice(0, -' Badge'.length) : name;
+}
+
 /** Lighten a hex color - second stop of the pill gradient (same helper as profile + Decoration). */
 function lightenHex(hex: string, amt: number): string {
   const n = hex.replace('#', '');
@@ -458,7 +468,7 @@ export default function HonorScreen() {
               )}
             </Animated.View>
             <Text style={{ fontSize: 26, fontWeight: '800', fontStyle: 'italic', color: '#FFFFFF', marginTop: 24, textAlign: 'center' }}>
-              {selected?.name}
+              {selected ? badgeDisplayName(selected.name) : null}
             </Text>
             {/* Validity — badge OWNER only */}
             {isOwn && selected?.validity && (
@@ -523,7 +533,7 @@ function BadgeSection({
             <Text style={{
               fontSize: 11, fontWeight: '700', color: C.text,
               marginTop: 5, textAlign: 'center' }} numberOfLines={2}>
-              {b.name}
+              {badgeDisplayName(b.name)}
             </Text>
           </Pressable>
         ))}

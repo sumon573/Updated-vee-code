@@ -156,13 +156,57 @@ function subscribeList<T extends { id: string }>(
  * choke point — an expired badge/frame must be visible NOWHERE, per the
  * product rule. The expired record stays in the DB (history/audit) but
  * never reaches any UI. */
+/**
+ * 2026-11-11 (boss order 20:49): Badge-tab order — Official first, then
+ * Assistant, then SVIP (tier desc), then Noble (rank desc), then anything
+ * else. Category precedence beats the star count: SVIP 5 (5 stars) stays in
+ * the SVIP group even though King Noble also has 5 stars. Within a category:
+ * SVIP tier desc, then stars desc, then newest. Applies ONLY to badges
+ * (subscribeBadges) — the 2026-11-09 "MORE STARS FIRST, everywhere" rule
+ * still governs nameplates, frames, ripples and entry effects via rankHonors.
+ * NOTE: Marquis and Duke both have 4 stars in the noble spec, so inside
+ * Noble they tie on stars and fall back to newest-first.
+ */
+function badgeCategory(b: { id: string; name?: string }): number {
+  const name = (b.name || '').toLowerCase();
+  const id = (b.id || '').toLowerCase();
+  if (name.includes('vee official')) return 0;
+  if (name.includes('official assistant') || id.includes('assistant')) return 1;
+  if (id.startsWith('svip') || name.includes('svip')) return 2;
+  if (id.startsWith('noble') || name.includes('noble')) return 3;
+  return 4;
+}
+
+function svipTier(b: { id: string; name?: string }): number {
+  const m = /svip\s*(\d+)/i.exec(b.name || '') || /svip\s*(\d+)/i.exec(b.id || '');
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function rankBadges<T extends { id: string; name?: string; source?: string; obtainedAt?: number; stars?: number }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const ca = badgeCategory(a);
+    const cb = badgeCategory(b);
+    if (ca !== cb) return ca - cb;
+    // Within SVIP: tier desc (5 → 1) before the star tie-breaker.
+    if (ca === 2) {
+      const ta = svipTier(a);
+      const tb = svipTier(b);
+      if (ta !== tb) return tb - ta;
+    }
+    const aStars = grantStars(a) ?? 0;
+    const bStars = grantStars(b) ?? 0;
+    if (aStars !== bStars) return bStars - aStars;
+    return (b.obtainedAt || 0) - (a.obtainedAt || 0);
+  });
+}
+
 export function subscribeBadges(
   uid: string,
   callback: (badges: GrantedBadge[]) => void,
 ): () => void {
   return subscribeList<GrantedBadge>(uid, 'badges', (items) =>
     callback(
-      rankHonors(
+      rankBadges(
         items
           .filter((b) => typeof (b as any).icon === 'string')
           .filter((b) => isStillValid(b.validity))
