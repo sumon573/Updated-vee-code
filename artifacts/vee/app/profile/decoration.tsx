@@ -15,8 +15,8 @@
  * from the profile nameplate); noble rank plates auto-use, no remove option.
  */
 import { useEffect, useRef, useState } from 'react';
-import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
-import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
+import { checkNobleMaintenance, NOBLE_RANKS, nobleThemeFor, subscribeNoble, type NobleState } from '@/src/services/nobleService';
+import { subscribeSvip, isSvipActive, ensureSvipRewards, type SvipState } from '@/src/features/svip/svipService';
 import { View, Text, ScrollView, Pressable, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -258,6 +258,12 @@ export default function DecorationScreen() {
   // 2026-11-09 (boss): SVIP state for the auto nameplate — the current SVIP
   // tier's plate is always USING and cannot be removed.
   const [svipState, setSvipState] = useState<SvipState | null>(null);
+  // 2026-11-11 (boss): noble state for the auto nameplate — the rank MUST
+  // come from this live subscription (same as app/profile/index.tsx).
+  // profile.noble is dropped by sanitizeVeeUser, so reading the rank off
+  // the sanitized profile always returned null and the current rank's
+  // plate (e.g. King) showed a "Remove" button it must never have.
+  const [nobleState, setNobleState] = useState<NobleState | null>(null);
   const [tab, setTab] = useState<TabKey>('frames'); // 2026-10-31 (boss): Nobel tab removed; Frames is first
 
   useEffect(() => {
@@ -296,6 +302,12 @@ export default function DecorationScreen() {
     return subscribeSvip(targetUid, setSvipState);
   }, [targetUid]);
 
+  // 2026-11-11 (boss): noble state for the auto nameplate (see above).
+  useEffect(() => {
+    if (!targetUid) { setNobleState(null); return; }
+    return subscribeNoble(targetUid, setNobleState);
+  }, [targetUid]);
+
   // 2026-11-11 (boss): entry effects auto-use by stars — on Decoration
   // load, the highest-ranked held entry effect becomes the active one
   // (SVIP 5-star beats Nobel 5-star beats other). Runs once per
@@ -320,6 +332,27 @@ export default function DecorationScreen() {
       typeof manualId === 'string' ? manualId : undefined,
     ).catch(() => {});
   }, [isMe, user?.uid, loading, entryEffects, profile]);
+
+  // 2026-11-11 (boss): SVIP tier rewards self-heal — whoever is at tier N
+  // gets tier N's nameplate (ALL levels 1–5). Runs ONLY when the current
+  // tier's plate is missing from the loaded collection, so the common
+  // case writes nothing; the per-mount key + the session-once guard
+  // inside ensureSvipRewards make it one-shot — no write loop, no
+  // polling. This closes the tier-change gap: the SVIP page is no longer
+  // the only grant path, so an admin/server tier change self-heals the
+  // moment the user opens Decoration. Grants the whole tier set
+  // (frame/nameplate/badge/entry effect) from svip_page config,
+  // idempotent — already-granted rewards are never rewritten.
+  const svipEnsureKey = useRef('');
+  useEffect(() => {
+    if (!isMe || !user?.uid || loading || !isSvipActive(svipState)) return;
+    const svipId = 'svip' + svipState!.tier + '-nameplate';
+    if (nameplates.some((n) => n.id === svipId)) return;
+    const key = `${user.uid}:${svipState!.tier}`;
+    if (svipEnsureKey.current === key) return;
+    svipEnsureKey.current = key;
+    void ensureSvipRewards(user.uid, svipState).catch(() => {});
+  }, [isMe, user?.uid, loading, svipState, nameplates]);
 
   const handleEquip = async (field: 'activeFrame' | 'activeNameplate' | 'activeRipple' | 'activeEntryEffect', id: string) => {
     if (!isMe || !user?.uid) return;
@@ -358,10 +391,11 @@ export default function DecorationScreen() {
 
   // 2026-10-31 (boss): noble plates auto-use — the current rank's plate is
   // ALWAYS in use on the profile; no remove option for it. Other items unchanged.
-  const nobleRankKey = (() => {
-    const ri = (profile as any)?.noble?.rankIndex;
-    return typeof ri === 'number' && NOBLE_RANKS[ri] ? NOBLE_RANKS[ri].key : null;
-  })();
+  // 2026-11-11 (boss fix): the rank MUST come from the live noble
+  // subscription (nobleState) — the sanitized profile drops `noble`, so
+  // the old profile.noble read always returned null and the rank plate
+  // showed a "Remove" button. Same derivation as app/profile/index.tsx.
+  const nobleRankKey = nobleState && NOBLE_RANKS[nobleState.rankIndex] ? NOBLE_RANKS[nobleState.rankIndex].key : null;
 
   // 2026-11-09 (boss): nameplate auto-set — BOTH the SVIP tier's plate AND
   // the current noble rank's plate are auto. Both are ALWAYS in use and have
@@ -386,6 +420,11 @@ export default function DecorationScreen() {
     // counts as active even if the pointer is stale (heal syncs it); its
     // Remove button is hidden below.
     const isAutoPlate = field === 'activeNameplate' && autoPlateIds.includes(item.id);
+    // 2026-11-11 (boss): SVIP nameplates stay auto-applied like Nobel ones
+    // — NO "Remove" on ANY SVIP or Nobel nameplate, auto or not. A
+    // manually-Used off-tier SVIP plate shows USING with no Remove either.
+    const isProtectedPlate = field === 'activeNameplate' &&
+      ((item.id.startsWith('svip') && item.id.endsWith('-nameplate')) || item.id.startsWith('noble-plate-'));
     // 2026-11-11 (boss): the auto-used entry effect (the USING one) stays
     // USING and cannot be removed — its Remove button is hidden below.
     // Non-active entry effects keep their Use/Remove behaviour.
@@ -437,7 +476,7 @@ export default function DecorationScreen() {
             <View style={{ backgroundColor: C.successBg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 6 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: C.success }}>✓ USING</Text>
             </View>
-            {!isAutoPlate && !isAutoEntryEffect && (
+            {!isAutoPlate && !isAutoEntryEffect && !isProtectedPlate && (
             <Pressable
               style={{ backgroundColor: C.errorBg, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 }}
               onPress={() => handleRemove(field)}
