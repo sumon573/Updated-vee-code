@@ -1399,6 +1399,12 @@ export default function VoiceRoomScreen() {
   const [pkOpen, setPkOpen] = useState(false);
   const [pk, setPk] = useState<RoomPk | null>(null);
   const pkAlertShownRef = useRef('');
+  // 2026-11-11 (boss, PK host-only rule): the Host is the person on the
+  // Host seat (seat 0, the crown seat), falling back to the room ownerId
+  // when seat 0 is empty. A PK can only be set WITH the Host — this uid
+  // is passed to the PK modal + service so challenge/accept/rematch all
+  // enforce it (see roomPkService isHostParticipant).
+  const hostUid = seats[0]?.id ?? ownerId ?? '';
   useEffect(() => {
     if (!roomId) {
       setPk(null);
@@ -1464,10 +1470,10 @@ export default function VoiceRoomScreen() {
       `${pk.challenger.name} challenged you to a ${Math.round(((pk.durationMs > 0 ? pk.durationMs : 300000) / 60000))}-minute 1vs1 PK battle!`,
       [
         { text: 'Decline', style: 'cancel', onPress: () => removePk(roomId).catch(() => {}) },
-        { text: 'Accept', onPress: () => { setPkOpen(true); acceptPk(roomId).catch(() => {}); } },
+        { text: 'Accept', onPress: () => { setPkOpen(true); acceptPk(roomId, hostUid).catch(() => {}); } },
       ],
     );
-  }, [pk, myUid, pkOpen, roomId]);
+  }, [pk, myUid, pkOpen, roomId, hostUid]);
   // 2026-10-19 (IMO gap fill): live room announcement banner.
   useEffect(() => {
     if (!roomId) {
@@ -3438,7 +3444,7 @@ export default function VoiceRoomScreen() {
     });
   }, [muteRemoteUser, playUserStream, seats, roomId, t]);
 
-  const downFromSeat = useCallback((seatIdx: number) => {
+  const performDownFromSeat = useCallback((seatIdx: number) => {
     const member = seats[seatIdx];
     if (!member) return;
     if (member.id === myUid) {
@@ -3472,6 +3478,120 @@ export default function VoiceRoomScreen() {
       );
     });
   }, [seats, myUid, roomId, stopPublishing, stopUserStream, t]);
+
+  // 2026-11-11 (boss, PK cancel-on-leave): stepping DOWN from my own seat
+  // while I am in an ACTIVE PK warns first — OK cancels the PK then steps
+  // down, Cancel stays seated and the PK continues. This is ONLY the
+  // step-down path: a seat SWITCH never calls this (joinSeat moves the
+  // seat directly in both pass2 and Firebase mode), so the 21:35
+  // refinement (seat → seat allowed, no warning, PK continues) holds by
+  // construction. An admin moving SOMEONE ELSE down never warns either
+  // (that is the involuntary path — the grace-checked effect below ends
+  // the PK if a battler leaves the room).
+  const downFromSeat = useCallback((seatIdx: number) => {
+    const member = seats[seatIdx];
+    if (!member) return;
+    const iAmInActivePk =
+      pk?.status === 'active' && (pk.challenger.uid === myUid || pk.opponent.uid === myUid);
+    if (member.id === myUid && iAmInActivePk) {
+      Alert.alert(
+        t('voiceRoom.screen.pkLeaveWarningTitle'),
+        t('voiceRoom.screen.pkLeaveWarningMsg'),
+        [
+          { text: t('voiceRoom.screen.pkLeaveWarningCancel'), style: 'cancel' },
+          {
+            text: t('voiceRoom.screen.pkLeaveWarningOk'),
+            onPress: () => {
+              // Cancel the PK FIRST (fire-and-forget — the step-down must
+              // never be blocked by a failed delete; the grace-checked
+              // effect below is the backstop), then step down.
+              removePk(roomId).catch(() => {});
+              performDownFromSeat(seatIdx);
+            },
+          },
+        ],
+      );
+      return;
+    }
+    performDownFromSeat(seatIdx);
+  }, [seats, myUid, roomId, pk, performDownFromSeat, t]);
+
+  // 2026-11-11 (boss, PK cancel-on-leave, involuntary): if a battler
+  // leaves the room mid-PK — kicked, removed, disconnected, or the app
+  // crashed — no warning is possible, so the PK must still end. The other
+  // side must not be stuck in a battle with someone who is gone. When a
+  // battler is observed absent from the room (not in seats AND not in
+  // audience) and stays absent for a 5s grace re-check, the PK is removed.
+  // The grace exists so a seat SWITCH — briefly unseated between seats —
+  // never cancels the PK (the re-check finds the battler seated again and
+  // does nothing). Gated to the other battler (still here) or an
+  // owner/admin, so bystanders never act. A kick removes the seat +
+  // audience entries synchronously (removeMemberFromRoom), so it is
+  // observed promptly; a disconnect/crash is observed when the presence
+  // sweep drops the stale entries (up to ~60s), then the 5s grace.
+  const pkGoneKeyRef = useRef<string | null>(null);
+  const pkGoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // `seatsRef` / `audienceRef` already exist above (kept in sync by their
+  // own effects) — the grace re-check below reads the latest room state
+  // through them, so a seat switch is observed, not a stale snapshot.
+  const pkRef = useRef(pk);
+  useEffect(() => {
+    pkRef.current = pk;
+  }, [pk]);
+  useEffect(() => {
+    const clearGoneCheck = () => {
+      if (pkGoneTimerRef.current) {
+        clearTimeout(pkGoneTimerRef.current);
+        pkGoneTimerRef.current = null;
+      }
+      pkGoneKeyRef.current = null;
+    };
+    const cur = pkRef.current;
+    if (!cur || cur.status !== 'active') {
+      clearGoneCheck();
+      return;
+    }
+    const inRoom = (uid: string) =>
+      seatsRef.current.some((s) => s?.id === uid) ||
+      audienceRef.current.some((a) => a.id === uid);
+    const absent = [cur.challenger.uid, cur.opponent.uid].filter((uid) => !inRoom(uid));
+    if (absent.length === 0) {
+      clearGoneCheck();
+      return;
+    }
+    // Only the other battler (still here) or an owner/admin cancels.
+    // A bystander never acts, and the absent battler cannot act.
+    const iMayCancel =
+      inRoom(myUid) &&
+      (isOwnerOrAdmin || cur.challenger.uid === myUid || cur.opponent.uid === myUid);
+    if (!iMayCancel) {
+      clearGoneCheck();
+      return;
+    }
+    const key = absent.slice().sort().join(',');
+    if (pkGoneKeyRef.current === key) return; // grace re-check already pending
+    clearGoneCheck();
+    pkGoneKeyRef.current = key;
+    pkGoneTimerRef.current = setTimeout(() => {
+      pkGoneTimerRef.current = null;
+      pkGoneKeyRef.current = null;
+      const latest = pkRef.current;
+      if (!latest || latest.status !== 'active') return;
+      const stillAbsent = [latest.challenger.uid, latest.opponent.uid].filter(
+        (uid) =>
+          !seatsRef.current.some((s) => s?.id === uid) &&
+          !audienceRef.current.some((a) => a.id === uid),
+      );
+      if (stillAbsent.length === 0) return; // back in the room (seat switch) — do nothing
+      removePk(roomId).catch(() => {});
+    }, 5000);
+  }, [pk, seats, audience, myUid, isOwnerOrAdmin, roomId]);
+  // Clear the grace timer on unmount (the effect above manages it
+  // imperatively and deliberately returns no cleanup, so a seats/audience
+  // update never cancels a pending re-check).
+  useEffect(() => () => {
+    if (pkGoneTimerRef.current) clearTimeout(pkGoneTimerRef.current);
+  }, []);
 
   const buildSeatData = useCallback((): NonNullable<RoomSeat> => {
     const seatRole: Role = (ownerId && ownerId === myUid) ? 'host' : myRole;
@@ -4037,6 +4157,38 @@ export default function VoiceRoomScreen() {
       else router.replace('/home');
     }
   }, [mySeatIdx, hasJoined, myUid, myRole, seats, audience, roomId, stopPublishing, myPhotoURL, voiceUserName]);
+
+  // 2026-11-11 (boss, PK cancel-on-leave): exiting the room while I am
+  // in an ACTIVE PK warns first — OK cancels the PK then exits, Cancel
+  // stays in the room and the PK continues. Minimizing is NOT an exit
+  // (handleMinimize is a separate path) and shows no warning. Passed to
+  // VoiceRoomModals as `handleLeave` so the ExitModal's "Leave Room"
+  // row goes through this gate.
+  const requestLeave = useCallback(() => {
+    const iAmInActivePk =
+      pk?.status === 'active' && (pk.challenger.uid === myUid || pk.opponent.uid === myUid);
+    if (!iAmInActivePk) {
+      handleLeave();
+      return;
+    }
+    Alert.alert(
+      t('voiceRoom.screen.pkLeaveWarningTitle'),
+      t('voiceRoom.screen.pkLeaveWarningMsg'),
+      [
+        { text: t('voiceRoom.screen.pkLeaveWarningCancel'), style: 'cancel' },
+        {
+          text: t('voiceRoom.screen.pkLeaveWarningOk'),
+          onPress: () => {
+            // Cancel the PK FIRST (fire-and-forget — the exit must never
+            // be blocked by a failed delete; the grace-checked effect
+            // is the backstop), then exit.
+            removePk(roomId).catch(() => {});
+            handleLeave();
+          },
+        },
+      ],
+    );
+  }, [pk, myUid, roomId, handleLeave, t]);
 
   // 2026-10-30 (boss: unjoin = demote to AUDIENCE, never eject): unjoin
   // removes membership + the admin registry entry (unjoinToAudience) and
@@ -4965,7 +5117,7 @@ export default function VoiceRoomScreen() {
               opponentPhotoURL={seats.find((s) => s?.id === pk.opponent.uid)?.photoURL}
               canRetry={pk.challenger.uid === myUid || pk.opponent.uid === myUid || isOwnerOrAdmin}
               onRetry={() => {
-                rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000).catch(() => {
+                rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000, hostUid).catch(() => {
                   Alert.alert('Error', 'Could not start a rematch.');
                 });
               }}
@@ -5459,7 +5611,7 @@ export default function VoiceRoomScreen() {
         handleMention={handleMention}
         handleGiftSent={handleGiftSent}
         handleGiftPlay={handleGiftPlay}
-        handleLeave={handleLeave}
+        handleLeave={requestLeave}
         handleMinimize={handleMinimize}
         downFromSeat={downFromSeat}
         joinSeat={joinSeat}
@@ -5577,6 +5729,7 @@ export default function VoiceRoomScreen() {
         mySeatIdx={mySeatIdx}
         seats={seats}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        hostUid={hostUid}
       />
       <PkResultPopup
         visible={!!pkResult}

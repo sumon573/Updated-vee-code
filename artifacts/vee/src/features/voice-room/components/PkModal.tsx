@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Alert, Pressable, Modal, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import { C } from '../constants/theme';
 import {
   subscribeRoomPk,
@@ -15,6 +16,7 @@ import {
   formatPkDuration,
   PK_CHALLENGE_TIMEOUT_MS,
   PK_DURATION_OPTIONS_MIN,
+  PK_HOST_ONLY_ERROR,
   type RoomPk,
 } from '../services/roomPkService';
 import type { Participant } from '../types/room';
@@ -29,15 +31,20 @@ import { PkDigitalScore } from './PkDigitalScore';
  * value is the score. Higher score wins when the timer ends.
  * Scoring is done by the VPS scorer bot (giftFeed watcher) — this modal
  * only shows the battle and drives challenge/accept/decline/cancel.
- * BOSS RULES (peer PK, 2026-10-25): ANY seated user can challenge ANY
- * other seated user (NOT host-only — the old host-only gate was removed
- * when the boss reported only the host could PK); BOTH battlers must be
- * seated; the challenger picks the battle length (3/5/10 min) at start
- * and the room host (owner/admin) can cancel mid-battle (a battler can
- * never cancel to dodge a loss). One PK per room at a time.
+ * BOSS RULES (host-only PK, 2026-11-11 — SUPERSEDES the 2026-10-25 peer-PK
+ * rule): a PK can only be set WITH the Host — one of the two participants
+ * must be the Host (seat 0, `hostUid` prop). The Host may challenge ANY
+ * seated user; a non-host user may challenge ONLY the Host. BOTH battlers
+ * must be seated; the challenger picks the battle length (3/5/10 min) at
+ * start and the room host (owner/admin) can cancel mid-battle (a battler
+ * can never cancel to dodge a loss). One PK per room at a time.
+ * (The old 2026-10-25 peer rule — ANY seated user could challenge ANY
+ * seated user — was itself a fix for an over-strict host-only gate that
+ * blocked peer PK entirely. This 2026-11-11 rule is different: it gates
+ * on "the Host is a participant", not on "only the Host may initiate".)
  */
 export function PkModal({
-  visible, onClose, roomId, myUid, myName, mySeatIdx, seats, isOwnerOrAdmin,
+  visible, onClose, roomId, myUid, myName, mySeatIdx, seats, isOwnerOrAdmin, hostUid,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -47,7 +54,10 @@ export function PkModal({
   mySeatIdx: number;
   seats: Array<Participant | null>;
   isOwnerOrAdmin: boolean;
+  /** The Host uid (seat 0 occupant, falling back to the room ownerId). */
+  hostUid: string;
 }) {
+  const { t } = useTranslation();
   const [pk, setPk] = useState<RoomPk | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
@@ -82,8 +92,34 @@ export function PkModal({
     }
   };
 
+  // Same as `act`, but a host-only rejection (challenge/accept/rematch
+  // where neither participant is the Host) shows the host-only message
+  // instead of the generic one. Decline/cancel/clear are not host-gated,
+  // so they keep using `act`.
+  const pkAct = async (fn: () => Promise<void>, errMsg: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: unknown) {
+      Alert.alert(
+        'Error',
+        (e as Error)?.message === PK_HOST_ONLY_ERROR
+          ? t('voiceRoom.screen.pkHostOnly')
+          : errMsg,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Host-only challenge list (2026-11-11, boss): the Host may challenge
+  // ANY seated user; a non-host user may challenge ONLY the Host. Two
+  // non-host users never see each other here.
+  const iAmHost = hostUid !== '' && myUid === hostUid;
   const opponents = seats.filter(
-    (s): s is Participant => !!s && s.id !== myUid,
+    (s): s is Participant => !!s && s.id !== myUid && (iAmHost || s.id === hostUid),
   );
   const iAmChallenger = pk?.challenger.uid === myUid;
   const iAmOpponent = pk?.opponent.uid === myUid;
@@ -163,7 +199,7 @@ export function PkModal({
             </Pressable>
           </View>
 
-          {/* ── No PK: start (any seated user + both battlers seated — boss rules) ── */}
+          {/* ── No PK: start (host-only — boss rule 2026-11-11; both battlers seated) ── */}
           {!pk && (
             <>
               {mySeatIdx < 0 ? (
@@ -172,7 +208,9 @@ export function PkModal({
                 </Text>
               ) : opponents.length === 0 ? (
                 <Text style={{ color: C.muted, fontSize: 14, textAlign: 'center', paddingVertical: 24 }}>
-                  No one else is seated right now.
+                  {iAmHost
+                    ? 'No one else is seated right now.'
+                    : t('voiceRoom.screen.pkHostOnly')}
                 </Text>
               ) : (
                 <>
@@ -198,13 +236,18 @@ export function PkModal({
                   <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginBottom: 4 }}>
                     Challenge someone to a battle
                   </Text>
+                  {!iAmHost && (
+                    <Text style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>
+                      {t('voiceRoom.screen.pkHostOnlyNote')}
+                    </Text>
+                  )}
                   {opponents.map((s) => (
                     <Pressable
                       key={s.id}
                       disabled={busy}
                       onPress={() =>
-                        act(
-                          () => challengeToPk(roomId, { uid: myUid, name: myName }, { uid: s.id, name: s.name }, durationMin * 60000),
+                        pkAct(
+                          () => challengeToPk(roomId, { uid: myUid, name: myName }, { uid: s.id, name: s.name }, durationMin * 60000, hostUid),
                           'Could not send the challenge (a PK may already be running).',
                         )
                       }
@@ -214,6 +257,11 @@ export function PkModal({
                       <Text style={{ color: C.text, fontSize: 15, fontWeight: '700', flex: 1, marginLeft: 12 }}>
                         {s.name}
                       </Text>
+                      {!iAmHost && s.id === hostUid && (
+                        <Text style={{ color: '#B45309', fontSize: 11, fontWeight: '800', backgroundColor: '#FEF3C7', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, marginRight: 8 }}>
+                          HOST
+                        </Text>
+                      )}
                       <Text style={{ color: C.red, fontSize: 13, fontWeight: '800' }}>Challenge</Text>
                     </Pressable>
                   ))}
@@ -244,7 +292,7 @@ export function PkModal({
                     <Text style={{ color: C.sub, fontWeight: '800' }}>Decline</Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => act(() => acceptPk(roomId), 'Could not accept.')}
+                    onPress={() => pkAct(() => acceptPk(roomId, hostUid), 'Could not accept.')}
                     disabled={busy}
                     style={{ flex: 2, backgroundColor: C.red, borderRadius: 14,
                       paddingVertical: 13, alignItems: 'center' }}>
@@ -397,7 +445,7 @@ export function PkModal({
               )}
               {(iAmChallenger || iAmOpponent || isOwnerOrAdmin) && (
                 <Pressable
-                  onPress={() => act(() => rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000), 'Could not start a rematch.')}
+                  onPress={() => pkAct(() => rematchPk(roomId, pk.challenger, pk.opponent, pk.durationMs > 0 ? pk.durationMs : 300000, hostUid), 'Could not start a rematch.')}
                   disabled={busy}
                   style={{ marginTop: 16, backgroundColor: C.red, borderRadius: 14,
                     paddingVertical: 12, paddingHorizontal: 32, alignItems: 'center' }}>

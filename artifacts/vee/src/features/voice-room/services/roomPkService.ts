@@ -437,14 +437,35 @@ export function subscribeRoomPk(roomId: string, cb: (pk: RoomPk | null) => void)
   };
 }
 
+/** Host-only rule (2026-11-11, boss): a PK can only be set WITH the Host —
+ * one of the two participants must be the Host (the person on the Host
+ * seat, seat 0; `hostUid` is seats[0]?.id ?? ownerId, computed by the
+ * caller from live room state). The Host may challenge anyone; anyone may
+ * challenge the Host; two non-host users may never PK. Rejects (throws
+ * PK_HOST_ONLY_ERROR) when neither participant is the Host — the caller
+ * shows the host-only message. The old 2026-10-25 peer-PK rule (any seated
+ * user could challenge any seated user) is SUPERSEDED by this rule. */
+export const PK_HOST_ONLY_ERROR = 'PK_HOST_ONLY';
+
+/** True when the Host is one of the two PK participants. */
+export function isHostParticipant(challengerUid: string, opponentUid: string, hostUid: string): boolean {
+  return hostUid !== '' && (challengerUid === hostUid || opponentUid === hostUid);
+}
+
 /** Send a PK challenge (fails if a PK already exists — rules backstop).
- * durationMs is the host-chosen battle length (clamped 1–10 min). */
+ * durationMs is the host-chosen battle length (clamped 1–10 min).
+ * `hostUid` is REQUIRED (fail-closed): the challenge is rejected unless
+ * the Host is one of the two participants. */
 export async function challengeToPk(
   roomId: string,
   challenger: PkUser,
   opponent: PkUser,
   durationMs: number,
+  hostUid: string,
 ): Promise<void> {
+  if (!isHostParticipant(challenger.uid, opponent.uid, hostUid)) {
+    throw new Error(PK_HOST_ONLY_ERROR);
+  }
   const now = Date.now();
   const dur = Math.min(PK_DURATION_MAX_MS, Math.max(PK_DURATION_MIN_MS, durationMs || PK_DURATION_MS));
   await update(pkRef(roomId), {
@@ -457,11 +478,24 @@ export async function challengeToPk(
   });
 }
 
-/** Opponent accepts: the battle starts for the host-chosen duration. */
-export async function acceptPk(roomId: string): Promise<void> {
+/** Opponent accepts: the battle starts for the host-chosen duration.
+ * `hostUid` is REQUIRED (fail-closed, same host-only rule): if neither
+ * participant is the Host anymore (the Host left/changed while the
+ * challenge was pending), the stale challenge is CANCELLED (removed) and
+ * the accept is rejected with PK_HOST_ONLY_ERROR. Also rejects when the
+ * node is missing or no longer a pending challenge. */
+export async function acceptPk(roomId: string, hostUid: string): Promise<void> {
   const now = Date.now();
   const snap = await get(pkRef(roomId));
-  const stored = snap.val()?.durationMs as number | undefined;
+  const v = snap.val();
+  if (!v || v.status !== 'challenge' || !v.challenger || !v.opponent) {
+    throw new Error('PK_NOT_PENDING');
+  }
+  if (!isHostParticipant(v.challenger.uid, v.opponent.uid, hostUid)) {
+    await remove(pkRef(roomId));
+    throw new Error(PK_HOST_ONLY_ERROR);
+  }
+  const stored = v.durationMs as number | undefined;
   const dur = Math.min(
     PK_DURATION_MAX_MS,
     Math.max(PK_DURATION_MIN_MS, typeof stored === 'number' && stored > 0 ? stored : PK_DURATION_MS),
@@ -505,15 +539,18 @@ export function pkTopDonor(pk: RoomPk | null): PkDonor | null {
 /** Rematch: clear the ended node FIRST, then challenge the same pair.
  * Ordering matters — the one-PK-per-room rules backstop rejects a
  * challenge while the ended node still exists, so the remove must
- * complete before the challenge is written. */
+ * complete before the challenge is written. The host-only rule applies
+ * here too (`hostUid` is passed through to challengeToPk): a rematch
+ * whose pair no longer includes the Host is rejected. */
 export async function rematchPk(
   roomId: string,
   challenger: PkUser,
   opponent: PkUser,
   durationMs: number,
+  hostUid: string,
 ): Promise<void> {
   await removePk(roomId);
-  await challengeToPk(roomId, challenger, opponent, durationMs);
+  await challengeToPk(roomId, challenger, opponent, durationMs, hostUid);
 }
 
 /** Compact diamond count, matching the gift cards (1.2k / 1.5k). */
