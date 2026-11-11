@@ -322,6 +322,8 @@ export function PkResultPopup({
         myName={myName}
         pk={pk}
         roomName={roomName}
+        challengerPhotoURL={challengerPhoto}
+        opponentPhotoURL={opponentPhoto}
       />
     </Modal>
   );

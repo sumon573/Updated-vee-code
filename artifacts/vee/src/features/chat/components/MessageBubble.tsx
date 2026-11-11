@@ -27,6 +27,7 @@ import { alertPermissionPermanentlyDenied } from '@/src/utils/permissionAlert';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { formatMsgTime } from '@/src/utils/formatMsgTime';
 import VoiceMessageBubble from './VoiceMessageBubble';
+import { PkResultCard } from './PkResultCard';
 
 const { width, height } = Dimensions.get('window');
 const BUBBLE_MAX = width * 0.72;
@@ -353,7 +354,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   // Pin/Unpin (any non-deleted message) rows. NO dead rows: a row
   // renders only when its action applies.
   const canForward = !message.deletedForEveryone
-    && ['text', 'image', 'video', 'voice', 'sticker'].includes(message.type);
+    && ['text', 'image', 'video', 'voice', 'sticker', 'pk_result'].includes(message.type);
   const canPin = !message.deletedForEveryone;
   const menuReply = () => { closeMenu(); onReply(message); };
   const menuForward = () => { closeMenu(); onForward?.(message); };
@@ -389,8 +390,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   const isMediaMsg = message.type === 'image' || message.type === 'video';
   const isImageMsg = message.type === 'image';
   const isCallMsg = message.type === 'call';
+  const isPkResultMsg = message.type === 'pk_result';
   const isStickerMsg = message.type === 'sticker';
-  const noChrome = message.type === 'video' || isStickerMsg;
+  const noChrome = message.type === 'video' || isStickerMsg || isPkResultMsg;
   // 2026-10-27 (inbox polish): my-bubble timestamp was white-on-light-blue
   // (#bbdefb) — unreadable. Dark timestamp on both bubble colours.
   const timeColor = (isMediaMsg && !isImageMsg) ? C.muted : isMe ? 'rgba(0,0,0,0.5)' : C.muted;
@@ -488,6 +490,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
     message.type === 'voice' ? '🎤 Voice message'
     : message.type === 'call' ? '📞 Call'
     : message.type === 'sticker' ? '😊 Sticker'
+    : message.type === 'pk_result' ? '🏆 PK Result'
     : '📷 Media';
 
   // Fix #31 (imo-exact thread rows): peer DP at the left of incoming
@@ -517,7 +520,7 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
   const menuLabelStyle = { color: '#FFFFFF', fontSize: 15, fontWeight: '600' as const };
 
   const bubbleBody = (
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg ? width * 0.78 : BUBBLE_MAX }}>
+      <Animated.View style={{ transform: [{ scale: scaleAnim }], maxWidth: isCallMsg || isPkResultMsg ? width * 0.78 : BUBBLE_MAX }}>
         {/* Reply preview inside bubble — 2026-10-30 (boss: quote
             tap jumps to the original): tappable. This Pressable is a
             SIBLING of the main bubble Pressable, not nested inside it,
@@ -540,7 +543,9 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
             </Text>
             <Text style={{ color: C.muted, fontSize: 12 }} numberOfLines={1}>
               {message.replyTo.type !== 'text'
-                ? (message.replyTo.type === 'voice' ? '🎤 Voice message' : '📷 Media')
+                ? (message.replyTo.type === 'voice' ? '🎤 Voice message'
+                  : message.replyTo.type === 'pk_result' ? '🏆 PK Result'
+                  : '📷 Media')
                 : message.replyTo.preview}
             </Text>
           </Pressable>
@@ -696,6 +701,18 @@ function MessageBubble({ message, chatId, myUid, onReply, onRetry, onMediaPress,
               />
             ) : (
               <Text style={{ fontSize: 72, lineHeight: 84 }}>
+                {message.content}
+              </Text>
+            )
+          ) : message.type === 'pk_result' ? (
+            // 2026-11-11 (boss 23:49): a PK result shared to the inbox
+            // renders as a professional CARD, never plain text. A missing
+            // or legacy payload degrades to the text fallback (content)
+            // so the message never renders blank.
+            message.pkResult ? (
+              <PkResultCard payload={message.pkResult} />
+            ) : (
+              <Text style={{ color: textColor, fontSize: 15, lineHeight: 21 }}>
                 {message.content}
               </Text>
             )

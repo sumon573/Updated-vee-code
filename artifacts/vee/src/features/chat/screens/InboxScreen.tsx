@@ -1383,7 +1383,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     if (!src || forwardSending) return;
     setForwardSending(true);
     try {
-      await sendMessage(targetChat.id, myUid, targetChat.participantId, src.content, src.type, undefined, src.cloudinaryId, myRealName || user?.displayName || undefined, undefined, src.durationSec);
+      await sendMessage(targetChat.id, myUid, targetChat.participantId, src.content, src.type, undefined, src.cloudinaryId, myRealName || user?.displayName || undefined, undefined, src.durationSec, src.pkResult);
       setForwardTarget(null);
       Alert.alert(t('chat.forwarded'));
     } catch {

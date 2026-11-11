@@ -22,7 +22,7 @@ import {
   query, orderByKey, limitToLast, endBefore, startAfter,
 } from 'firebase/database';
 import { database } from '@/src/config/firebase';
-import { DmMessage, DmReplyPreview } from '../types/dm';
+import { DmMessage, DmReplyPreview, PkResultPayload } from '../types/dm';
 import { Chat } from '../types';
 import { sendPushNotification } from '@/src/services/notifyService';
 import { getBlockDirection, BlockedInteractionError } from '@/src/services/blockService';
@@ -39,6 +39,47 @@ export function buildChatId(uidA: string, uidB: string): string {
   return [uidA, uidB].sort().join('_');
 }
 
+/** Deserialize a PK result card payload defensively (RTDB data is
+ * untrusted): battlers must have uids, everything else falls back to
+ * safe defaults. Returns undefined when the payload is unusable — the
+ * bubble then degrades to the plain-text content, never blank. */
+function snapToPkResult(v: unknown): PkResultPayload | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const r = v as Record<string, unknown>;
+  const person = (x: unknown): PkResultPayload['challenger'] | null => {
+    if (!x || typeof x !== 'object') return null;
+    const p = x as Record<string, unknown>;
+    if (typeof p.uid !== 'string' || !p.uid) return null;
+    return {
+      uid: p.uid,
+      name: typeof p.name === 'string' ? p.name : 'User',
+      photoURL: typeof p.photoURL === 'string' ? p.photoURL : null,
+    };
+  };
+  const challenger = person(r.challenger);
+  const opponent = person(r.opponent);
+  if (!challenger || !opponent) return undefined;
+  let topDonor: PkResultPayload['topDonor'] = null;
+  if (r.topDonor && typeof r.topDonor === 'object') {
+    const d = person(r.topDonor);
+    const total = (r.topDonor as Record<string, unknown>).total;
+    if (d && typeof total === 'number') topDonor = { ...d, total };
+  }
+  return {
+    challenger,
+    opponent,
+    challengerScore: typeof r.challengerScore === 'number' ? r.challengerScore : 0,
+    opponentScore: typeof r.opponentScore === 'number' ? r.opponentScore : 0,
+    winnerUid: typeof r.winnerUid === 'string' ? r.winnerUid : null,
+    draw: r.draw === true,
+    margin: typeof r.margin === 'number' ? r.margin : 0,
+    topDonor,
+    roomName: typeof r.roomName === 'string' ? r.roomName : undefined,
+    durationLabel: typeof r.durationLabel === 'string' ? r.durationLabel : '',
+    endedAt: typeof r.endedAt === 'number' ? r.endedAt : 0,
+  };
+}
+
 function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
   if (!snap.exists()) return null;
   const v = snap.val() as Record<string, unknown>;
@@ -48,6 +89,7 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
   // C2 FIX: Deserialize callInfo so call history renders correctly.
   // Without this, call duration/direction/result are lost on read.
   const rawCallInfo = v.callInfo as { direction?: string; result?: string; durationSec?: number } | undefined;
+  const pkResult = snapToPkResult(v.pkResult);
   return {
     id: snap.key!,
     chatId: v.chatId as string,
@@ -74,6 +116,7 @@ function snapToMessage(snap: DataSnapshot, myUid: string): DmMessage | null {
         durationSec: typeof rawCallInfo.durationSec === 'number' ? rawCallInfo.durationSec : 0,
       },
     } : {}),
+    ...(pkResult ? { pkResult } : {}),
   };
 }
 
@@ -195,6 +238,10 @@ export async function sendMessage(
   clientKey?: string,
   // 2026-10-19 voice messages: duration in seconds (type='voice' only).
   durationSec?: number,
+  // 2026-11-11 (boss 23:49): PK result card payload (type='pk_result'
+  // only) — structured result data; `content` stays the plain-text
+  // fallback for old clients / chat-list preview / push.
+  pkResult?: PkResultPayload,
 ): Promise<void> {
   // Block enforcement: neither side can message if blocked either way.
   const direction = await getBlockDirection(myUid, participantUid);
@@ -228,6 +275,7 @@ export async function sendMessage(
     ...(replyTo ? { replyTo } : {}),
     ...(cloudinaryId ? { cloudinaryId } : {}),
     ...(typeof durationSec === 'number' ? { durationSec } : {}),
+    ...(pkResult ? { pkResult } : {}),
     deletedForMe: false,
     deletedForEveryone: false,
   };
@@ -247,6 +295,7 @@ export async function sendMessage(
       : type === 'voice' ? '🎤 Voice message'
       : type === 'call' ? '📞 Call'
       : type === 'sticker' ? '😊 Sticker'
+      : type === 'pk_result' ? '🏆 PK Result'
       : '📎 Attachment',
     lastMessageType: type,
     lastMessageTime: Date.now(),

@@ -21,6 +21,7 @@
 
 import { ref, update, remove, onValue, onChildAdded, query, limitToLast, get } from 'firebase/database';
 import { database, auth } from '@/src/config/firebase';
+import type { PkResultPayload } from '@/src/features/chat/types/dm';
 
 export const PK_DURATION_MS = 5 * 60 * 1000;
 /** Host-pickable battle lengths (minutes) — the host sets it at start. */
@@ -564,6 +565,34 @@ export function formatPkResultMessage(pk: RoomPk | null, roomName?: string): str
   const winnerName = pk.winnerUid === pk.challenger.uid ? pk.challenger.name : pk.opponent.name;
   const margin = Math.abs(c - o);
   return `PK Result${where}\n${winnerName} won! ${scoreLine}\nMargin: ${formatPkFull(margin)} diamonds${donorLine}`;
+}
+
+/** Build the PK result card payload for the inbox share — winner,
+ * scores, margin, top donor, room, battle length, and the battlers'
+ * photos (resolved by the caller via usePkBattlerPhotos: seat photo,
+ * else users/{uid}/photoURL). Pure function; scoring untouched (the VPS
+ * bot stays authoritative). Returns null when there is no PK. */
+export function buildPkResultPayload(
+  pk: RoomPk | null,
+  roomName: string | undefined,
+  challengerPhotoURL: string | null | undefined,
+  opponentPhotoURL: string | null | undefined,
+): PkResultPayload | null {
+  if (!pk) return null;
+  const donor = pkTopDonor(pk);
+  return {
+    challenger: { uid: pk.challenger.uid, name: pk.challenger.name, photoURL: challengerPhotoURL ?? null },
+    opponent: { uid: pk.opponent.uid, name: pk.opponent.name, photoURL: opponentPhotoURL ?? null },
+    challengerScore: pkScoreOf(pk, pk.challenger.uid),
+    opponentScore: pkScoreOf(pk, pk.opponent.uid),
+    winnerUid: pk.draw ? null : pk.winnerUid,
+    draw: pk.draw === true,
+    margin: pkMarginOf(pk),
+    topDonor: donor ? { uid: donor.uid, name: donor.name, photoURL: donor.photoURL ?? null, total: donor.total } : null,
+    roomName: roomName || undefined,
+    durationLabel: formatPkDuration(pk),
+    endedAt: Date.now(),
+  };
 }
 
 /** Rematch: clear the ended node FIRST, then challenge the same pair.

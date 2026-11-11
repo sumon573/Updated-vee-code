@@ -14,7 +14,8 @@ import { Feather } from '@expo/vector-icons';
 import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { createOrGetChat, sendMessage } from '@/src/features/chat/services/firebaseDmService';
-import { formatPkResultMessage, type RoomPk } from '../services/roomPkService';
+import { buildPkResultPayload, formatPkResultMessage, type RoomPk } from '../services/roomPkService';
+import { PkResultCard } from '@/src/features/chat/components/PkResultCard';
 import { useRoomToast, RoomToast } from './RoomToast';
 
 /* ── PkShareSheet — share the PK result ──────────────────────────────
@@ -22,11 +23,13 @@ import { useRoomToast, RoomToast } from './RoomToast';
  * sending the PK result to friends in the inbox — not just the system
  * share sheet. This sheet lists friends (followings + inbox contacts,
  * one-shot get()s — the same source the Active Followings sheet uses)
- * and sends the result as a text message via the existing DM flow
+ * and sends the result as a PK result CARD via the existing DM flow
  * (createOrGetChat + sendMessage — the same flow Say hi uses, with the
- * same block enforcement). "Share via…" keeps the old system share.
- * The message carries the outcome (winner, scores, margin, top donor,
- * room) — never a bare link. One-shot reads only; no subscription, no
+ * same block enforcement). "Share via…" keeps the old system share
+ * (plain text — outside apps cannot render a Vee card). The card
+ * carries the outcome (winner, scores, margin, top donor, room) — never
+ * a bare link; the plain text stays as the message content fallback.
+ * One-shot reads only; no subscription, no
  * poll, no timer (the toast is the shared useRoomToast one-shot 2200ms
  * timer). After sending, the sheet closes and the result popup stays
  * open, so the user can share to more friends. */
@@ -39,6 +42,8 @@ export function PkShareSheet({
   myName,
   pk,
   roomName,
+  challengerPhotoURL,
+  opponentPhotoURL,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -46,6 +51,10 @@ export function PkShareSheet({
   myName: string;
   pk: RoomPk | null;
   roomName?: string;
+  /** Resolved battler photos (seat photo, else users/{uid}/photoURL) —
+      the card carries real photos, never an initial fallback. */
+  challengerPhotoURL?: string | null;
+  opponentPhotoURL?: string | null;
 }) {
   const { toast, showToast } = useRoomToast();
   const [friends, setFriends] = useState<ShareFriend[] | null>(null);
@@ -100,13 +109,14 @@ export function PkShareSheet({
 
   if (!pk) return null;
   const message = formatPkResultMessage(pk, roomName);
+  const payload = buildPkResultPayload(pk, roomName, challengerPhotoURL, opponentPhotoURL);
 
   const sendToFriend = async (friend: ShareFriend) => {
     if (sendingUid) return;
     setSendingUid(friend.uid);
     try {
       const chatId = await createOrGetChat(myUid, myName, friend.uid, friend.name);
-      await sendMessage(chatId, myUid, friend.uid, message);
+      await sendMessage(chatId, myUid, friend.uid, message, 'pk_result', undefined, undefined, undefined, undefined, undefined, payload ?? undefined);
       showToast(`PK result sent to ${friend.name}`);
       onClose();
     } catch {
@@ -179,17 +189,11 @@ export function PkShareSheet({
               <Feather name="x" size={22} color="#64748B" />
             </Pressable>
           </View>
-          <View
-            style={{
-              marginTop: 12,
-              backgroundColor: '#F8F7FF',
-              borderWidth: 1,
-              borderColor: '#E5E0FF',
-              borderRadius: 12,
-              padding: 10,
-            }}>
-            <Text style={{ color: '#374151', fontSize: 13, lineHeight: 20 }}>{message}</Text>
-          </View>
+          {payload && (
+            <View style={{ marginTop: 12 }}>
+              <PkResultCard payload={payload} />
+            </View>
+          )}
           <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 4 }}>
             SEND TO FRIENDS
           </Text>
