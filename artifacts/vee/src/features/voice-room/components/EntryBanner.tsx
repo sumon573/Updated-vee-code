@@ -16,6 +16,7 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated, Dimensions, Easing } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import Svg, { Defs, RadialGradient, Stop, Rect, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NOBLE_RANKS, nobleThemeFor } from '@/src/services/nobleService';
 import { KingSparkle } from './KingShimmerName';
@@ -66,6 +67,85 @@ function EntryShimmer({ color, opacity = 0.8, speed = 900, sweepWidth = 200 }: {
         ],
       }}
     />
+  );
+}
+
+// 2026-11-11 (boss, imo GIF reference): SVIP entry glow — a bright, soft
+// golden-white radiant haze behind the dragon, pulsing gently like a
+// breathing glow (opacity 0.75 -> 1.0 -> 0.75, 1800ms cycle). True smooth
+// radial gradient via react-native-svg RadialGradient (already a
+// dependency) — code-only, no asset, no media upload, no new dependency.
+// Opacity-only, native driver (no heat). Unmounts with the banner.
+// The glow is bright enough to read as a real halo of light (a clear
+// golden glow, not a faint whisper) but fades to transparent at the edges
+// so it blends with any theme and never washes out the dragon.
+function EntryGlow({ size }: { size: number }) {
+  const pulse = useRef(new Animated.Value(0.75)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.75, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return (
+    <Animated.View style={{ width: size, height: size, opacity: pulse, pointerEvents: 'none' }}>
+      <Svg width={size} height={size} viewBox="0 0 100 100">
+        <Defs>
+          <RadialGradient id="svipEntryGlow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor="#FFE27A" stopOpacity="0.95" />
+            <Stop offset="35%" stopColor="#FFD700" stopOpacity="0.55" />
+            <Stop offset="65%" stopColor="#E8B84B" stopOpacity="0.22" />
+            <Stop offset="100%" stopColor="#E8B84B" stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100" height="100" fill="url(#svipEntryGlow)" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+// 2026-11-11 (boss): SVIP entry sparkle — a small twinkling 4-point gold
+// star around the dragon. Mirrors the KingSparkle pattern (same SVG star
+// path, opacity twinkle, native driver) with a staggered `delay` so the
+// sparkles don't all flash at once, plus a slight scale (0.85 -> 1.15) as
+// it brightens. Opacity + scale (transform) only, native driver (no heat).
+// Unmounts with the banner. `top`/`left` are the centre point in the
+// dragon wrapper (the star is centred on them).
+function EntrySparkle({ size = 12, color = '#FFD700', delay = 0, top, left }: { size?: number; color?: string; delay?: number; top: number; left: number }) {
+  const tw = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(tw, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        Animated.timing(tw, { toValue: 0, duration: 1000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [tw, delay]);
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: top - size / 2,
+        left: left - size / 2,
+        opacity: tw.interpolate({ inputRange: [0, 1], outputRange: [0.15, 1] }),
+        transform: [{ scale: tw.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.15] }) }],
+        pointerEvents: 'none',
+      }}
+    >
+      <Svg width={size} height={size} viewBox="16 2.4 4.7 4.7" fill="none">
+        <Path
+          d="M18.4 2.4l.62 1.72 1.72.62-1.72.62-.62 1.72-.62-1.72-1.72-.62 1.72-.62.62-1.72Z"
+          fill={color}
+        />
+      </Svg>
+    </Animated.View>
   );
 }
 
@@ -225,14 +305,17 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   // name slot starts at 34.9% W, top 31% H (gold name + white 'is coming...' below at 53% H).
   // 2026-11-11 (SVIP entry effect): the equipped SVIP effect wins over the
   // noble art branch (a user can be both King and SVIP 5 — the active
-  // effect is the SVIP dragon). Transparent animated WebP on top, live DP +
-  // live name + "is Coming..." below it — NO solid background, pill, badge
-  // or opaque container anywhere, so it blends with the room background.
-  // The art is 315x311 (near-square); the whole branch dismisses on the
-  // existing 3650ms timer above and unmounts with it.
+  // effect is the SVIP dragon). Transparent animated WebP on top, gold
+  // "SVIP5" badge, then live DP + live name + "is Coming..." on a dark
+  // navy bar with gold edges (like the imo reference — the bar provides
+  // the contrast, readable on any theme). The rest of the banner stays
+  // transparent and blends with the room background. The art is 315x311
+  // (near-square); the whole branch dismisses on the existing 3650ms
+  // timer above and unmounts with it.
   if (svipArtUrl) {
     const dragonW = Math.min(Dimensions.get('window').width * 0.86, 320);
     const dragonH = (dragonW * 311) / 315;
+    const glowSize = dragonW * 1.4;
     return (
       <Animated.View
         style={{
@@ -245,11 +328,29 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
         }}
         pointerEvents="none"
       >
-        <ExpoImage
-          source={{ uri: svipArtUrl }}
-          style={{ width: dragonW, height: dragonH }}
-          contentFit="contain"
-        />
+        {/* 2026-11-11 (boss, imo GIF reference): dragon + glow + sparkles.
+            The wrapper is relative so the glow (behind) and sparkles
+            (around, at the edges — never over the dragon's face) centre on
+            the dragon. The glow is a bright radiant golden haze that
+            breathes gently; the sparkles twinkle around it. The dragon
+            stays the hero. */}
+        <View style={{ width: dragonW, height: dragonH, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ position: 'absolute', left: (dragonW - glowSize) / 2, top: (dragonH - glowSize) / 2, width: glowSize, height: glowSize, pointerEvents: 'none' }}>
+            <EntryGlow size={glowSize} />
+          </View>
+          <ExpoImage
+            source={{ uri: svipArtUrl }}
+            style={{ width: dragonW, height: dragonH }}
+            contentFit="contain"
+          />
+          <EntrySparkle size={14} color="#FFD700" delay={0} top={dragonH * 0.06} left={dragonW * 0.08} />
+          <EntrySparkle size={11} color="#FFFFFF" delay={300} top={dragonH * 0.08} left={dragonW * 0.86} />
+          <EntrySparkle size={12} color="#FFE27A" delay={600} top={dragonH * 0.30} left={dragonW * 0.02} />
+          <EntrySparkle size={16} color="#FFD700" delay={900} top={dragonH * 0.28} left={dragonW * 0.92} />
+          <EntrySparkle size={10} color="#FFFFFF" delay={1200} top={dragonH * 0.62} left={dragonW * 0.06} />
+          <EntrySparkle size={13} color="#FFD700" delay={1500} top={dragonH * 0.65} left={dragonW * 0.90} />
+          <EntrySparkle size={11} color="#FFE27A" delay={1800} top={dragonH * 0.88} left={dragonW * 0.78} />
+        </View>
         {/* 2026-11-11 (boss): gold "SVIP5" badge in the empty space between
             the dragon and the name row. Solid SVIP gold #E8B84B
             (theme-agnostic — reads on light and dark themes alike) with
@@ -303,29 +404,34 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
               </Text>
             </View>
           )}
-          {/* 2026-11-11 (boss): gold shimmer sweep across the "is Coming..."
-              text — the text stays WHITE + dark halo (readable on any
-              theme); the gold band sweeping OVER it tints it gold as it
-              passes, giving the animated-colour premium look. The wrapper
-              has padding 6 so the halo (radius 4) is not clipped by
-              overflow: 'hidden'. Same ShimmerOverlay technique, native
-              driver only (no heat). */}
-          <View style={{ overflow: 'hidden', padding: 6 }}>
+          {/* 2026-11-11 (boss): name on a BANNER BAR like the imo reference —
+              dark navy bar with gold edges, plain white bold text centred.
+              The bar provides the contrast (readable on any theme), so the
+              text halo is removed. The gold shimmer on the name text was
+              caught mid-sweep as a solid yellow block (ugly) — it is gone
+              entirely; the bar is static, no shimmer on it. */}
+          <View
+            style={{
+              backgroundColor: 'rgba(10,20,45,0.88)',
+              borderWidth: 1.5,
+              borderColor: '#C9A227',
+              borderRadius: 10,
+              paddingHorizontal: 22,
+              paddingVertical: 8,
+            }}
+          >
             <Text
               style={{
                 color: '#FFFFFF',
                 fontSize: 18,
                 fontWeight: '800',
-                textShadowColor: 'rgba(0,0,0,0.9)',
-                textShadowOffset: { width: 0, height: 0 },
-                textShadowRadius: 4,
+                textAlign: 'center',
               }}
               numberOfLines={1}
               allowFontScaling={false}
             >
               {name} is Coming...
             </Text>
-            <EntryShimmer color="#FFD700" opacity={0.7} speed={900} sweepWidth={220} />
           </View>
         </View>
       </Animated.View>
