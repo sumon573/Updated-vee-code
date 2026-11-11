@@ -243,6 +243,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   // (3000ms). Read once at mount — the banner mounts fresh per entry,
   // so the mount-time props are the entry's own values.
   const SVIP_ENTRY_EFFECT_DURATIONS_MS: Record<string, number> = {
+    'svip1-entry-effect': 1440,
+    'svip2-entry-effect': 2160,
     'svip3-entry-effect': 1680,
     'svip4-entry-effect': 1920,
     'svip5-entry-effect': 3680,
