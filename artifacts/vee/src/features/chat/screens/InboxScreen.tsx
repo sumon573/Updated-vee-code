@@ -1893,10 +1893,16 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         <View style={{ flex: 1, paddingTop: topPad }}>
 
           {/* ── Header ─────────────────────────────────────────────────────── */}
+          {/* 2026-11-11 (boss: imo-exact header height): paddingVertical
+              10 → 4 — the name sat ~6dp lower than imo's (screenshot:
+              imo name first row y=520 vs Vee y=527). The header content
+              (44dp action buttons) is unchanged; only the dead top/bottom
+              space is gone, so the name + back arrow + icons rise to
+              imo's line. SafeAreaView top inset (status bar) untouched. */}
           <View style={{
             flexDirection: 'row', alignItems: 'center',
             backgroundColor: C.headerBg,
-            paddingHorizontal: 14, paddingVertical: 10,
+            paddingHorizontal: 14, paddingVertical: 4,
             borderBottomWidth: 1, borderBottomColor: C.border }}>
             <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginRight: 10 }}>
               <Feather name="arrow-left" size={24} color="#000000" />
@@ -2206,6 +2212,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
             {/* ── Input bar (IMO style) ──────────────────────────────────── */}
             {/* 2026-10-17 (Sumon): Vee Team system account — no reply input. */}
+            {/* 2026-11-11 (boss: imo-exact composer): the normal composer
+                container below was a full-width white #FFFFFF strip with
+                a top border — an "extra banner" around the pill that imo
+                does not have (imo's pill floats straight on the grey chat
+                bg). Now that container is the chat bg itself with no
+                border, so ONLY the white pill + the mic circle show,
+                floating on #ECECF0 like imo. Pill / mic / padding
+                unchanged. (Comment lives here, ABOVE the ternary — a
+                block comment inside the ternary's parens breaks JSX.) */}
             {isSystemChat ? (
               <View style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -2264,8 +2279,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
             <View ref={composerRef} style={{
               flexDirection: 'row', alignItems: 'flex-end',
               paddingHorizontal: 12, paddingVertical: 10,
-              borderTopWidth: 1, borderTopColor: C.border,
-              backgroundColor: '#FFFFFF', gap: 10,
+              backgroundColor: C.bg, gap: 10,
               opacity: blockDirection !== 'none' ? 0.4 : 1 }}>
               {/* Fix #31 (imo-exact composer): white pill — smiley (toggles
                   the quick-reaction row) + input + image + plus. */}
@@ -2309,12 +2323,18 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
 
               {/* IMO send/mic circle: 52dp #009dff — mic when the input is
                   empty, send arrow when there is text. */}
+              {/* 2026-11-11 (boss: polished standalone mic): the circle now
+                  floats on the chat bg (white strip gone), so it carries a
+                  soft shadow + elevation — a standalone polished button
+                  like imo's, not a flat disc glued to a banner. */}
               {inputText.trim() ? (
                 <Pressable onPress={handleSend} disabled={blockDirection !== 'none' || !user?.uid} hitSlop={8}>
                   <View style={{
                     width: 52, height: 52, borderRadius: 26,
                     backgroundColor: '#009dff',
-                    alignItems: 'center', justifyContent: 'center' }}>
+                    alignItems: 'center', justifyContent: 'center',
+                    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
                     <Feather name="send" size={22} color="#fff" />
                   </View>
                 </Pressable>
@@ -2324,7 +2344,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
                     width: 52, height: 52, borderRadius: 26,
                     backgroundColor: '#009dff',
                     alignItems: 'center', justifyContent: 'center',
-                    opacity: uploadingVoice ? 0.6 : 1 }}>
+                    opacity: uploadingVoice ? 0.6 : 1,
+                    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
                     <Feather name={uploadingVoice ? 'loader' : 'mic'} size={22} color="#fff" />
                   </View>
                 </Pressable>
