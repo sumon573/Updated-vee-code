@@ -264,8 +264,14 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={handleClose}>
         <Pressable
           onPress={(e) => e.stopPropagation()}
-          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%', overflow: 'hidden' }}
+          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '50%', overflow: 'hidden' }}
         >
+          {/* 2026-11-11 (hotfix, blank popup): the sheet MUST have a DEFINITE
+              height. With maxHeight only, the sheet's height was content-sized
+              and the ScrollView (flex: 1, flexBasis 0) measured 0px tall — the
+              whole popup content was invisible and the sheet collapsed to just
+              the buttons row (boss's phone, OTA 01a1ca60). height: '50%' gives
+              the ScrollView a bounded viewport so it renders AND scrolls. */}
           <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
             {/* Cover + overlay header: back, "@", "..." */}
             <View>
