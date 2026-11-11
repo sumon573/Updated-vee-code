@@ -735,7 +735,31 @@ export function DeliciousGameSheet({ visible, myUid, onClose }: {
   // derivation nets pending against paid growth, so a confirm can never
   // double-count (same mechanism as displayBetByTarget).
   const optimisticPending = useMemo(() => Object.keys(displayBetByTarget).reduce((s, k) => s + Math.max(0, (displayBetByTarget[k] ?? 0) - (myBetByTarget[k] ?? 0)), 0), [displayBetByTarget, myBetByTarget]);
-  const headerBalance = Math.max(0, balance - optimisticPending);
+  // REAL-TIME WIN (boss 2026-11-11): the pill adds the win the instant the
+  // payout resolves — not 1-2s later when the mirror/truth lands it. The
+  // win is captured with the EFFECTIVE balance (mirror minus optimistic
+  // pending bets) as its baseline; the display adds the payout minus any
+  // growth in the effective balance since the baseline (that growth IS
+  // the mirror landing the win), so it can never double-count. Netting
+  // against the EFFECTIVE balance (not the raw mirror) keeps a new-round
+  // bet from corrupting the netting: a bet debit drops the raw balance
+  // but the optimistic pending drops by the same amount, so the effective
+  // balance is stable across bet debits and only a real credit grows it.
+  // The win state survives a round change on purpose — a win the mirror
+  // has not landed yet is still real money owed, and it clears itself
+  // (to 0) the moment the mirror lands it.
+  const [winState, setWinState] = useState<{ roundN: number; amount: number; baseline: number } | null>(null);
+  const effBalanceRef = useRef(0);
+  effBalanceRef.current = balance - optimisticPending;
+  useEffect(() => {
+    if (myPayout == null || roundN == null) return;
+    setWinState((prev) => {
+      if (prev && prev.roundN === roundN && prev.amount === myPayout) return prev;
+      return { roundN, amount: myPayout, baseline: effBalanceRef.current };
+    });
+  }, [myPayout, roundN]);
+  const optimisticWin = winState ? Math.max(0, winState.amount - Math.max(0, (balance - optimisticPending) - winState.baseline)) : 0;
+  const headerBalance = Math.max(0, balance - optimisticPending + optimisticWin);
   // REAL-TIME (boss 2026-10-31): record the current round outcome the
   // moment its payout resolves, so it stays visible after the pop-up.
   useEffect(() => {

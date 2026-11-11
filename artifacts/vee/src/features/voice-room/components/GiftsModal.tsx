@@ -999,6 +999,13 @@ export function GiftsModal({
               renderItem={renderGiftTile}
               keyExtractor={(g) => g.id}
               numColumns={4}
+              // REAL-TIME POLISH (boss 2026-11-11): the tiles are
+              // (screenW - 40 - 24) / 4 wide, so 4 of them leave 24px
+              // unfilled — with no column gap that 24px sat as EMPTY
+              // space on the right. 3 x 8px gaps realise the reserved
+              // 24px, so the row fills the content width exactly (0px
+              // on the right) and a partial last row stays left-aligned.
+              columnWrapperStyle={{ gap: 8 }}
               showsVerticalScrollIndicator={false}
               extraData={selectedGift?.id}
               removeClippedSubviews
