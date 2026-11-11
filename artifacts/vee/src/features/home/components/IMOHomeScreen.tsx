@@ -706,15 +706,29 @@ export default function IMOHomeScreen() {
   // keep it mounted beside the voice/contacts pages.
   const chatsPage = useMemo(() => (
     <View key="pager-chats" style={{ flex: 1 }}>
-      <IMOStoryRow
-        stories={imoStories}
-        onAddStory={handleAddStory}
-        onStoryPress={handleStoryPress}
-      />
       <FlatList
         data={imoChats}
         keyExtractor={(item) => item.id}
         getItemLayout={getRowLayout}
+        // 2026-11-11 (boss: Story + Planet bar scrolls with the list):
+        // the strip was a fixed sibling above the list, so it stayed
+        // pinned while chats scrolled underneath. It is now the list's
+        // ListHeaderComponent, so it scrolls away with the content and
+        // returns on scroll-back-to-top. Top bar / bottom bar untouched.
+        // getItemLayout offsets are NOT adjusted for the header: they feed
+        // only the windowing math (no scrollToIndex is used on this list),
+        // and windowSize 5 keeps ~2 viewports of overscan each side, which
+        // dwarfs the ~110px header — the windowing is unaffected in
+        // practice. (Verified in @react-native/virtualized-lists,
+        // RN 0.81.5: getItemLayout offsets are used verbatim for the
+        // windowing frames; the header is a separate always-mounted cell.)
+        ListHeaderComponent={(
+          <IMOStoryRow
+            stories={imoStories}
+            onAddStory={handleAddStory}
+            onStoryPress={handleStoryPress}
+          />
+        )}
         // 2026-11-07 (IMO home scroll smoothness): windowSize 11 -> 5.
         // With removeClippedSubviews={false} (required — the pager Pan
         // gesture breaks if clipping is on), windowSize 11 kept ~5.5
