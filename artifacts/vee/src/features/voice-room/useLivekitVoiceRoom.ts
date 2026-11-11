@@ -65,6 +65,7 @@ import type {
   RemoteParticipant,
   RemoteTrackPublication,
   ConnectionState,
+  ReconnectPolicy,
 } from 'livekit-client';
 
 /** Runtime handles for the LiveKit SDKs — loaded lazily via require() so the
@@ -712,6 +713,60 @@ async function withTimeout<T>(
     if (timer) clearTimeout(timer);
   }
 }
+
+// ─── Robust voice reconnection (2026-11-11, boss: voice must NEVER drop,
+// not even for a second; the user must never sit confused on a dead
+// banner) ─────────────────────────────────────────────────────────────
+// The 19:58 incident (DIAGNOSIS.md §10): the boss's 4G path to LiveKit
+// broke at 19:54:51 (signal websocket dropped, the ONLY signal drop among
+// all users) and no LiveKit session existed for "Rest House" during
+// 19:54–20:00 — the app sat on "Reconnecting" with nothing underneath for
+// ~5.5 min. The server was healthy (drain 0.05 ms, box CPU 45%). The gap
+// was app-side: the SDK's reconnect gave up after 15 attempts (~80 s)
+// and the app did NOTHING while 'reconnecting' (no watchdog).
+//
+// VEE_RECONNECT_POLICY — the SDK's in-place reconnect, made to never give
+// up: delays 0 / 300 / 700 / 1500 ms, then 3000 ms (+0–500 ms jitter)
+// FOREVER (never returns null). Rationale: the in-place reconnect heals
+// with the mic track intact (no leave, no fresh join, no token refetch,
+// no fresh entry for everyone) — it is strictly the fastest recovery for
+// a network flap, and it recovers within one 3 s interval of the network
+// returning. The old policy (DefaultReconnectPolicy, 15 attempts, ~80 s,
+// 7 s cap) gave up and forced a heavy leave + fresh join; the SDK
+// default (10 attempts, ~49 s) was worse. A steady 3 s interval (not
+// 7 s) recovers ~4 s sooner when the network returns. Attempts are
+// sequential and SDK-driven, so there is no reconnect storm; the
+// +0–500 ms jitter spreads the load if many clients drop at once
+// (e.g. a server restart). The policy NEVER throws (a throwing policy
+// makes the SDK stop retrying — see RTCEngine.getNextRetryDelay).
+// The stuck-reconnect watchdog below is the escape hatch if the
+// in-place reconnect is truly wedged (it forces the same leave + fresh
+// join the 'failed' path uses, which also refetches the token — so an
+// expired token during a long outage is covered too).
+const VEE_RECONNECT_POLICY: ReconnectPolicy = {
+  nextRetryDelayInMs: (context) => {
+    const delays = [0, 300, 700, 1500];
+    if (context.retryCount < delays.length) return delays[context.retryCount];
+    return 3000 + Math.random() * 500;
+  },
+};
+
+// Stuck-'reconnecting' watchdog threshold (10 s). Justification: with the
+// policy above, the SDK makes ~6 in-place attempts by 10 s (at 0 / 0.3 /
+// 1.0 / 2.5 / 5.5 / 8.5 s). A healthy reconnect heals within the first
+// 2–3 attempts (<2.5 s) — the network return is detected within one 3 s
+// interval — so 10 s gives the in-place path 4 extra attempts of grace.
+// Beyond 10 s the in-place path is either a long outage (a fresh join
+// is equally likely to fail but costs little) or a wedged SDK (a fresh
+// join is the ONLY fix). Tearing down at 10 s is safe: retryConnection()
+// is the same leave + fresh join the proven 'failed' path already uses,
+// and the mic intent is re-applied by the screen on re-join. The
+// watchdog re-checks the live state at fire time and never fires while
+// an auto-retry is pending, a repair is in progress, or the hook is
+// unmounted — so it can never tear down a healthy reconnect that healed.
+// The boss rejected 60 s as far too slow; 10 s is the shortest threshold
+// that still lets the in-place path win the common case.
+const RECONNECT_WATCHDOG_MS = 10_000;
 
 class LivekitVoiceRoomEngine implements VoiceEngine {
   readonly providerName = 'livekit' as const;
@@ -1506,20 +1561,15 @@ class LivekitVoiceRoomEngine implements VoiceEngine {
       const room = new lk.Room({
         adaptiveStream: true,
         dynacast: true,
-        // 2026-11-07 (Area D, low-network audio): patient in-place
-        // reconnect. The SDK default policy gives up after 10 attempts
-        // (~45 s: 0/300/1200/2700/4800/7000x5) and the app then pays for a
-        // full leave + fresh join (new token, audio-session restart, fresh
-        // entry for everyone). 15 attempts (~80 s, same 7 s cap) keeps
-        // more glitches healing in place with the mic track intact — no
-        // reconnect storm: attempts are sequential, SDK-driven, 7 s apart
-        // at most. The hook's unbounded auto-retry stays the backstop
-        // after a genuine give-up.
-        reconnectPolicy: new lk.DefaultReconnectPolicy([
-          0, 300, 1200, 2700, 4800,
-          7000, 7000, 7000, 7000, 7000,
-          7000, 7000, 7000, 7000, 7000,
-        ]),
+        // 2026-11-11 (boss: voice must NEVER drop, not even for a second):
+        // VEE_RECONNECT_POLICY (module level) — the SDK's in-place
+        // reconnect never gives up (0/300/700/1500 ms, then 3 s forever),
+        // so a network flap heals in place with the mic track intact
+        // instead of giving up after 15 attempts (~80 s, the 2026-11-07
+        // Area D policy this replaces) and forcing a heavy leave + fresh
+        // join. The stuck-reconnect watchdog (10 s, below) is the escape
+        // hatch if the in-place reconnect is truly wedged.
+        reconnectPolicy: VEE_RECONNECT_POLICY,
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -2025,6 +2075,12 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
   // silent auto-recovery bookkeeping — see onLocalStateChange below.
   const autoRetryAttemptsRef = useRef(0);
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Stuck-'reconnecting' watchdog timer (2026-11-11) — fires
+   *  RECONNECT_WATCHDOG_MS (10 s) after the state first becomes
+   *  'reconnecting', unless the state heals first. A single setTimeout,
+   *  not a poll: it only exists while 'reconnecting'. See
+   *  arm/clearReconnectWatchdog in the init effect. */
+  const reconnectWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryConnectionRef = useRef<() => void>(() => {});
   /** True while the plain-background session watchdog (below) is
    * mid-repair — the AppState return handler must not start a second
@@ -2064,6 +2120,53 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
     // Captured for retryConnection (leave + re-join after a failure).
     identityRef.current = { roomID, userID, userName };
 
+    // ── Stuck-'reconnecting' watchdog (2026-11-11, boss: voice must NEVER
+    // drop, not even for a second; user must never sit confused on a dead
+    // banner) ─────────────────────────────────────────────────────────────
+    // The app used to do NOTHING while 'reconnecting' (by design: "the
+    // SDK heals it in place"). The 19:58 incident proved the gap: a stuck
+    // 'reconnecting' sat on a dead banner for ~5.5 min with no session at
+    // all. The watchdog arms when the state first becomes 'reconnecting'
+    // and fires RECONNECT_WATCHDOG_MS (10 s) later — but ONLY if the live
+    // state is STILL 'reconnecting' at fire time (re-checked, so a heal
+    // that raced the timer is never torn down), the hook is still mounted,
+    // no auto-retry timer is pending, and no session-watchdog repair is
+    // in progress. It then calls retryConnection() — the SAME leave +
+    // fresh join the proven 'failed' path uses (new token, mic intent
+    // re-applied by the screen on re-join). It never fires for a stale
+    // engine: retryConnection() itself refuses a non-active engine.
+    // Room-change case (Vee Help Care → Rest House, 19:58): a new room
+    // gets a fresh engine, so a stale 'reconnecting' cannot leak — but if
+    // the new room's state itself sticks in 'reconnecting', the watchdog
+    // fires for the CURRENT room (identityRef is the new room) and forces
+    // its fresh join. A restored (minimized) 'reconnecting' engine arms
+    // the watchdog from the restore branch below, for the same reason.
+    const clearReconnectWatchdog = () => {
+      if (reconnectWatchdogTimerRef.current) {
+        clearTimeout(reconnectWatchdogTimerRef.current);
+        reconnectWatchdogTimerRef.current = null;
+      }
+    };
+    const armReconnectWatchdog = () => {
+      if (reconnectWatchdogTimerRef.current) return;
+      reconnectWatchdogTimerRef.current = setTimeout(() => {
+        reconnectWatchdogTimerRef.current = null;
+        if (!mountedRef.current || isCleaningUpRef.current) return;
+        if (autoRetryTimerRef.current) return;
+        if (sessionWatchdogRepairingRef.current) return;
+        const engine = engineRef.current;
+        if (!engine) return;
+        let conn = '';
+        try {
+          conn = engine.getLocalState().connection;
+        } catch {
+          return;
+        }
+        if (conn !== 'reconnecting') return;
+        retryConnectionRef.current();
+      }, RECONNECT_WATCHDOG_MS);
+    };
+
     // ── Event wiring (shared by restore and normal init paths) ────────────
     function attachHandlers(engine: LivekitVoiceRoomEngine) {
       engine.setEventHandlers({
@@ -2089,8 +2192,17 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
               clearTimeout(autoRetryTimerRef.current);
               autoRetryTimerRef.current = null;
             }
+            clearReconnectWatchdog();
             setError(s.error);
+          } else if (s.connection === 'reconnecting' && !isCleaningUpRef.current) {
+            // 2026-11-11 (boss: never a dead banner for minutes): arm the
+            // stuck-reconnect watchdog — it fires at 10 s unless the SDK
+            // heals in place first (the common case: <2.5 s). The
+            // 'failed' path below has its own auto-retry; this timer is
+            // only for a 'reconnecting' that never heals and never gives up.
+            armReconnectWatchdog();
           } else if (s.connection === 'failed' && !isCleaningUpRef.current) {
+            clearReconnectWatchdog();
             // 2026-10-24 (boss: PERMANENT fix): recovery NEVER gives up
             // while the user stays in the room. The old 6-attempt cap left
             // a dead manual-Retry state after ~1 min of outage — server
@@ -2108,6 +2220,7 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
               }, delay);
             }
           } else {
+            clearReconnectWatchdog();
             setError(s.error);
           }
           setConnection(s.connection);
@@ -2336,6 +2449,10 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       // speaker tracks, because already-subscribed tracks do not re-emit
       // subscription events after a restore — only new tracks trigger them.
       setWasRestored(true);
+      // 2026-11-11: a restored 'reconnecting' engine arms the stuck-
+      // reconnect watchdog too — the SDK heals it in place in the common
+      // case, but a wedged restore must not sit on a dead banner either.
+      if (s.connection === 'reconnecting') armReconnectWatchdog();
     } else {
       // ── Normal init (async IIFE so we can await the stale teardown) ──────
       (async () => {
@@ -2490,6 +2607,13 @@ export function useLivekitVoiceRoom(options: LivekitRoomOptions): LivekitRoomRet
       if (autoRetryTimerRef.current) {
         clearTimeout(autoRetryTimerRef.current);
         autoRetryTimerRef.current = null;
+      }
+      // 2026-11-11: the stuck-reconnect watchdog must not outlive the
+      // screen either — a pending fire after unmount would resurrect a
+      // dead engine's join.
+      if (reconnectWatchdogTimerRef.current) {
+        clearTimeout(reconnectWatchdogTimerRef.current);
+        reconnectWatchdogTimerRef.current = null;
       }
       autoRetryAttemptsRef.current = 0;
 

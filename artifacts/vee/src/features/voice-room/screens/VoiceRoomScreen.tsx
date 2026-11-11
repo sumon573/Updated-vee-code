@@ -489,6 +489,24 @@ export default function VoiceRoomScreen() {
     userID: voiceBan ? 'anonymous' : myUid,
     userName: voiceUserName });
 
+  // 2026-11-11 (boss: a 1 s flap must not flash the banner — the user
+  // must never be confused): the "Reconnecting" banner waits 3 s before
+  // appearing. A reconnect that heals faster is invisible (the SDK's
+  // in-place reconnect heals a brief flap in <2.5 s with the mic track
+  // intact). A reconnect that lasts >3 s shows the banner — the user is
+  // told the truth, and the app is already fixing it on its own (the
+  // 10 s stuck-reconnect watchdog bounds the worst case). Single
+  // setTimeout, not a poll: it only exists while voice is down.
+  const [showReconnectBanner, setShowReconnectBanner] = useState(false);
+  useEffect(() => {
+    if (voiceConnection === 'reconnecting' || voiceConnection === 'failed') {
+      const t = setTimeout(() => setShowReconnectBanner(true), 3000);
+      return () => clearTimeout(t);
+    }
+    setShowReconnectBanner(false);
+    return undefined;
+  }, [voiceConnection]);
+
   // 2026-10-24 (boss: room entry must be SUPER FAST): the gift catalog
   // load also prefetches EVERY gift's animation into the image cache —
   // dozens of animated WebPs competing with the voice connect for
@@ -4810,7 +4828,7 @@ export default function VoiceRoomScreen() {
 
         {}
         {}
-        {!voiceError && (voiceConnection === 'reconnecting' || voiceConnection === 'failed') && (
+        {!voiceError && showReconnectBanner && (
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 8,
             backgroundColor: 'rgba(245,158,11,0.12)',
