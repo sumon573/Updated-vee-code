@@ -7,6 +7,7 @@ import {
   pkTopDonor,
   type RoomPk,
 } from '../services/roomPkService';
+import { PkDigitalScore } from './PkDigitalScore';
 
 /* ─────────────────────── 1v1 PK result popup ─────────────────────── */
 
@@ -115,9 +116,13 @@ export function PkResultPopup({
                 <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 10, textAlign: 'center' }}>
                   {pk.challenger.name}
                 </Text>
-                <Text style={{ color: '#FDE68A', fontSize: 15, fontWeight: '900', marginTop: 2 }}>
-                  🔥 {formatPkScore(challengerScore)}
-                </Text>
+                <View style={{ marginTop: 4 }}>
+                  <PkDigitalScore
+                    value={challengerScore}
+                    digitHeight={20}
+                    color={challengerScore > opponentScore ? '#FDE68A' : '#A5F3FC'}
+                  />
+                </View>
               </View>
               <View
                 style={{
@@ -136,9 +141,13 @@ export function PkResultPopup({
                 <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 14, fontWeight: '800', marginTop: 10, textAlign: 'center' }}>
                   {pk.opponent.name}
                 </Text>
-                <Text style={{ color: '#FDE68A', fontSize: 15, fontWeight: '900', marginTop: 2 }}>
-                  🔥 {formatPkScore(opponentScore)}
-                </Text>
+                <View style={{ marginTop: 4 }}>
+                  <PkDigitalScore
+                    value={opponentScore}
+                    digitHeight={20}
+                    color={opponentScore > challengerScore ? '#FDE68A' : '#A5F3FC'}
+                  />
+                </View>
               </View>
             </View>
             {pk.draw && (

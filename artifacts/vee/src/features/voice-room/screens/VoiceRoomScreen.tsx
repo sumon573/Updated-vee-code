@@ -1400,6 +1400,11 @@ export default function VoiceRoomScreen() {
   // snapshot is frozen into local state so the card survives the bot's
   // 3-minute ended-node cleanup. Joining an already-ended battle does
   // NOT auto-open it (the ended banner + modal still show the result).
+  // 2026-11-11 (PK realtime): the service flips to 'ended' locally at
+  // endsAt (instant result), and the bot's ended node — or a late grace
+  // gift — can still CORRECT the winner after that. So the popup also
+  // re-opens when an already-shown result's winner changes (prev ended
+  // + a new key); the join-guard above still holds.
   const [pkResult, setPkResult] = useState<RoomPk | null>(null);
   const pkResultShownRef = useRef('');
   const pkPrevStatusRef = useRef<string | null>(null);
@@ -1411,9 +1416,12 @@ export default function VoiceRoomScreen() {
   useEffect(() => {
     const prev = pkPrevStatusRef.current;
     pkPrevStatusRef.current = pk?.status ?? null;
-    if (!pk || pk.status !== 'ended' || prev !== 'active') return;
+    if (!pk || pk.status !== 'ended') return;
     const key = `${roomId}:${pk.endsAt}:${pk.winnerUid ?? 'draw'}`;
     if (pkResultShownRef.current === key) return;
+    const isNewBattle = prev === 'active';
+    const isCorrection = prev === 'ended' && pkResultShownRef.current !== '';
+    if (!isNewBattle && !isCorrection) return;
     pkResultShownRef.current = key;
     setPkResult(pk);
   }, [pk, roomId]);

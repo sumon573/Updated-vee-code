@@ -19,6 +19,7 @@ import {
 } from '../services/roomPkService';
 import type { Participant } from '../types/room';
 import { PkScoreBar } from './PkScoreBar';
+import { PkDigitalScore } from './PkDigitalScore';
 
 /* ─────────────────────────── 1v1 PK Modal ─────────────────────────── */
 
@@ -288,9 +289,13 @@ export function PkModal({
                   <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
                     {pk.challenger.name}
                   </Text>
-                  <Text style={{ color: C.red, fontSize: 16, fontWeight: '900', marginTop: 2 }}>
-                    {formatPkScore(challengerScore)}
-                  </Text>
+                  <View style={{ marginTop: 4 }}>
+                    <PkDigitalScore
+                      value={challengerScore}
+                      digitHeight={24}
+                      color={challengerScore > opponentScore ? '#FDE68A' : '#A5F3FC'}
+                    />
+                  </View>
                 </View>
                 <View style={{ alignItems: 'center', paddingHorizontal: 8 }}>
                   <Text style={{ color: C.text, fontSize: 18, fontWeight: '900' }}>VS</Text>
@@ -303,9 +308,13 @@ export function PkModal({
                   <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
                     {pk.opponent.name}
                   </Text>
-                  <Text style={{ color: C.red, fontSize: 16, fontWeight: '900', marginTop: 2 }}>
-                    {formatPkScore(opponentScore)}
-                  </Text>
+                  <View style={{ marginTop: 4 }}>
+                    <PkDigitalScore
+                      value={opponentScore}
+                      digitHeight={24}
+                      color={opponentScore > challengerScore ? '#FDE68A' : '#A5F3FC'}
+                    />
+                  </View>
                 </View>
               </View>
               <View style={{ marginTop: 12 }}>
@@ -362,9 +371,25 @@ export function PkModal({
                   ? 'It\'s a draw!'
                   : `${pk.winnerUid === pk.challenger.uid ? pk.challenger.name : pk.opponent.name} wins!`}
               </Text>
-              <Text style={{ color: C.sub, fontSize: 14, fontWeight: '700', marginTop: 8 }}>
-                {pk.challenger.name} {formatPkScore(challengerScore)} — {formatPkScore(opponentScore)} {pk.opponent.name}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, gap: 8 }}>
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>
+                  {pk.challenger.name}
+                </Text>
+                <PkDigitalScore
+                  value={challengerScore}
+                  digitHeight={20}
+                  color={challengerScore > opponentScore ? '#FDE68A' : '#A5F3FC'}
+                />
+                <Text style={{ color: C.sub, fontSize: 14, fontWeight: '700' }}>—</Text>
+                <PkDigitalScore
+                  value={opponentScore}
+                  digitHeight={20}
+                  color={opponentScore > challengerScore ? '#FDE68A' : '#A5F3FC'}
+                />
+                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>
+                  {pk.opponent.name}
+                </Text>
+              </View>
               {topDonor && (
                 <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 6 }}>
                   Top donor: {topDonor.name} • {formatPkScore(topDonor.total)}

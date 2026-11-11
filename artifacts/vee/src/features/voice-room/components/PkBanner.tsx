@@ -3,10 +3,10 @@ import { View, Text, Pressable, Image } from 'react-native';
 import { C } from '../constants/theme';
 import {
   pkScoreOf,
-  formatPkScore,
   type RoomPk,
 } from '../services/roomPkService';
 import { PkScoreBar } from './PkScoreBar';
+import { PkDigitalScore } from './PkDigitalScore';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
 
@@ -148,15 +148,19 @@ export function PkBanner({
               {pk.challenger.name}
             </Text>
             {isChallengerKing ? <KingSparkle /> : null}
-            <Text style={{ color: leaderUid === pk.challenger.uid ? '#FDE68A' : '#FFF', fontSize: 15, fontWeight: '900' }}>
-              {formatPkScore(challengerScore)}
-            </Text>
+            <PkDigitalScore
+              value={challengerScore}
+              digitHeight={18}
+              color={leaderUid === pk.challenger.uid ? '#FDE68A' : '#A5F3FC'}
+            />
           </View>
           <Text style={{ color: C.muted, fontSize: 13, fontWeight: '800', paddingHorizontal: 10 }}>VS</Text>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-            <Text style={{ color: leaderUid === pk.opponent.uid ? '#FDE68A' : '#FFF', fontSize: 15, fontWeight: '900' }}>
-              {formatPkScore(opponentScore)}
-            </Text>
+            <PkDigitalScore
+              value={opponentScore}
+              digitHeight={18}
+              color={leaderUid === pk.opponent.uid ? '#FDE68A' : '#A5F3FC'}
+            />
             <Text numberOfLines={1} style={{ color: isOpponentKing ? KING_GOLD : '#FFF', fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' }}>
               {pk.opponent.name}
             </Text>
