@@ -142,6 +142,7 @@ const ar = {
       listeners: '{{count}} مستمع',
       messagePlaceholder: 'رسالة...',
       commentBlockedPlaceholder: 'تم حظر تعليقك',
+      commentBlockedPill: 'محظور',
       accessDenied: 'تم رفض الوصول',
       accessDeniedMsg: 'لقد تم حظرك من هذه الغرفة.',
       lockedSeat: 'مقعد مقفل',

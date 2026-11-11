@@ -1219,6 +1219,10 @@ export default function VoiceRoomScreen() {
   const [actionMsg,    setActionMsg]    = useState<ChatMsg | null>(null);
   const [copiedToast,  setCopiedToast]  = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-11-11 (boss 20:59): comment-blocked toast — tapping the blocked
+  // Say pill shows this (same one-shot pattern as copiedToast).
+  const [blockedToast,  setBlockedToast]  = useState(false);
+  const blockedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleCopyMsg = useCallback(async () => {
     if (!actionMsg) return;
@@ -4101,6 +4105,20 @@ export default function VoiceRoomScreen() {
     sendingMsgRef.current = false;
   }, [chatInput, replyingTo, roomId, myUid, myName, myColor, t, amChatBlocked, markEchoSendState]);
 
+  // 2026-11-11 (boss 20:59): Say-pill tap. Blocked → the pill already
+  // shows the blocked state; the tap explains it with a toast and the
+  // composer must NOT open. Not blocked → open the composer as before.
+  const handleSayPress = useCallback(() => {
+    if (amChatBlocked) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setBlockedToast(true);
+      if (blockedTimerRef.current) clearTimeout(blockedTimerRef.current);
+      blockedTimerRef.current = setTimeout(() => setBlockedToast(false), 1400);
+      return;
+    }
+    setComposerOpen(true);
+  }, [amChatBlocked]);
+
   const handleMention  = useCallback((name: string) => { setChatInput((prev: string) => `@${name} ${prev}`); }, []);
 
   const handleJoinRoom = useCallback(() => {
@@ -5184,7 +5202,8 @@ export default function VoiceRoomScreen() {
         setTaskCenterOpen={setTaskCenterOpen}
         setGiftsOpen={setGiftsOpen}
         setGamesOpen={setGamesOpen}
-        onSayPress={() => setComposerOpen(true)}
+        onSayPress={handleSayPress}
+        isCommentBlocked={amChatBlocked}
         onSmileyPress={() => { Keyboard.dismiss(); setEmojiPanelOpen(true); }}
       />
       {/* 2026-10-23 (Sumon): message action sheet — long-press a user TEXT
@@ -5257,6 +5276,23 @@ export default function VoiceRoomScreen() {
             paddingHorizontal: 16, paddingVertical: 8 }}>
             <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>
               {t('voiceRoom.chat.copiedToast')}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Comment-blocked toast (boss 2026-11-11 20:59): tapping the blocked
+          Say pill explains the block. Same message as the send-block alert;
+          maxWidth so the long text wraps to two centred lines. */}
+      {blockedToast && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', left: 0, right: 0, bottom: BOTTOM_BAR_H + 76,
+          alignItems: 'center', zIndex: 60 }}>
+          <View style={{
+            backgroundColor: 'rgba(15,23,42,0.92)', borderRadius: 999,
+            paddingHorizontal: 16, paddingVertical: 8, maxWidth: '92%' }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+              {t('voiceRoom.screen.commentBlockedMsg')}
             </Text>
           </View>
         </View>

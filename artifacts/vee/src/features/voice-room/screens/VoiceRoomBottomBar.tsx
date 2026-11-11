@@ -20,6 +20,9 @@
  *               separate gear destination to wire. See report.
  *   Say pill  → opens the dark composer bar above the keyboard
  *               (onSayPress); typing @ still opens the mention dropdown.
+ *               Blocked (boss 2026-11-11 20:59): when the current user is
+ *               comment-blocked the pill shows red border + slash +
+ *               "Blocked" (smiley hidden) and the tap shows a toast.
  *   smiley    → existing EmojiPanel (reactions), same as before.
  *   calendar  → existing Task Center modal.
  *   speaker   → existing voice-output toggle (toggleSpeaker).
@@ -101,6 +104,8 @@
  */
 import React, { memo } from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import ScalePress from '@/components/ScalePress';
 // Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
@@ -142,6 +147,13 @@ export interface VoiceRoomBottomBarProps {
   setGamesOpen: (v: boolean) => void;
   /** Say pill tap → open the dark composer bar (VoiceRoomScreen). */
   onSayPress: () => void;
+  /** 2026-11-11 (boss 20:59): true when the CURRENT user is comment-
+      blocked in this room (Screen passes amChatBlocked). The Say pill
+      then shows the blocked state (red border + slash + "Blocked") and
+      its tap shows the blocked toast instead of opening the composer
+      (the Screen's onSayPress routes it). The smiley (reactions) is
+      hidden while blocked — the whole pill is the blocked indicator. */
+  isCommentBlocked?: boolean;
   /** Smiley tap → existing EmojiPanel (reactions). */
   onSmileyPress: () => void;
   /** Glass P1d: resolved room-theme glass (Candidate A) — the Say pill
@@ -152,11 +164,12 @@ export interface VoiceRoomBottomBarProps {
 }
 
 function VoiceRoomBottomBarInner(props: VoiceRoomBottomBarProps) {
+  const { t } = useTranslation();
   const {
     keyboardOpen, bottomPad, themeOnBg, isDarkTheme, isSeated, isMuted, speakerOn,
     handleMicBarPress, toggleSpeaker,
     setTaskCenterOpen, setGiftsOpen, setGamesOpen,
-    onSayPress, onSmileyPress, glass,
+    onSayPress, onSmileyPress, glass, isCommentBlocked,
   } = props;
   return (
     <>
@@ -193,19 +206,38 @@ function VoiceRoomBottomBarInner(props: VoiceRoomBottomBarProps) {
           variant="nav"
           mode="dark"
           resolved={glass ? { ...glass, mode: 'dark' } : undefined}
+          accentBorder={isCommentBlocked ? '#EF4444' : undefined}
           style={{ flex: 1, height: 48 }}
         >
           <View style={{
             flex: 1, flexDirection: 'row', alignItems: 'center',
             paddingLeft: 10, paddingRight: 4 }}>
-          <Pressable onPress={onSayPress} style={{ flex: 1 }}>
-            <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
-              Say...
-            </Text>
-          </Pressable>
-          <ScalePress onPress={onSmileyPress} style={{ padding: 2 }}>
-            <Image source={{ uri: BOTTOM_SMILEY }} style={{ width: 28, height: 28 }} />
-          </ScalePress>
+          {/* 2026-11-11 (boss 20:59): comment-blocked pill — red border
+              (accentBorder) + red slash + "Blocked", unmistakable at a
+              glance. "Comment blocked" + smiley truncates in the 95dp pill
+              on a 360dp phone, so the pill is slash + "Blocked" and the
+              smiley (reactions) is hidden while blocked. Tap still calls
+              onSayPress — the Screen shows the blocked toast instead of
+              opening the composer. */}
+          {isCommentBlocked ? (
+            <Pressable onPress={onSayPress} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+              <Feather name="slash" size={16} color="#EF4444" />
+              <Text numberOfLines={1} style={{ color: '#EF4444', fontSize: 14, fontWeight: '600', marginLeft: 6 }}>
+                {t('voiceRoom.screen.commentBlockedPill', { defaultValue: 'Blocked' })}
+              </Text>
+            </Pressable>
+          ) : (
+            <>
+              <Pressable onPress={onSayPress} style={{ flex: 1 }}>
+                <Text style={{ color: '#B8B8B8', fontSize: 16 }}>
+                  Say...
+                </Text>
+              </Pressable>
+              <ScalePress onPress={onSmileyPress} style={{ padding: 2 }}>
+                <Image source={{ uri: BOTTOM_SMILEY }} style={{ width: 28, height: 28 }} />
+              </ScalePress>
+            </>
+          )}
           </View>
         </GlassView>
 

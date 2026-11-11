@@ -195,6 +195,7 @@ const en = {
       members: '{{count}} Audience',
       messagePlaceholder: 'Message...',
       commentBlockedPlaceholder: 'Your Comment blocked',
+      commentBlockedPill: 'Blocked',
       accessDenied: 'Access Denied',
       accessDeniedMsg: 'You have been blocked from this room.',
       lockedSeat: 'Locked Seat',

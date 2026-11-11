@@ -195,6 +195,7 @@ const hi = {
       members: '{{count}} सदस्य',
       messagePlaceholder: 'संदेश...',
       commentBlockedPlaceholder: 'आपका कमेंट ब्लॉक किया गया',
+      commentBlockedPill: 'ब्लॉक्ड',
       accessDenied: 'एक्सेस अस्वीकृत',
       accessDeniedMsg: 'आपको इस रूम से ब्लॉक किया गया है।',
       lockedSeat: 'सीट लॉक है',
