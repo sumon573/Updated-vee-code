@@ -10,15 +10,27 @@
  * দেখায়, ফাঁকা যেনো না থাকে — যেসব আইডি popular, খুব active এরকম"):
  * Recommended is NO LONGER the inbox list. It is the popular / very-active
  * ranking — occupants of currently-live rooms first (by room occupancy,
- * then follower count), filled from this week's gift leaderboards — and it
- * is the MAIN content when Active is empty. When Active is empty the sheet
+ * then follower count) — and it is the MAIN content when Active is empty.
+ * (2026-11-11: the leaderboard fill is removed — see below.) When Active is empty the sheet
  * says so plainly ("No active followings", imo-style) and still shows
  * Recommended; when nothing at all can be loaded it shows the empty state
  * plus a Retry button — never a bare spinner, never a fake row. No demo
- * rows ever: every row comes from rooms / followers / leaderboard reads.
+ * rows ever: every row comes from rooms / followers reads.
  * One-shot get()s on open only — no polls or subscriptions, one 8s load
  * timeout (a hung get() ends in the empty state + Retry). The Active
  * sweep is shared with Recommended (one sweep per open, not two).
+ * 2026-11-11 (boss 22:47 + 22:49: ONLY people currently ACTIVE in a voice
+ * room appear — in BOTH sections — and polish the sheet beautifully):
+ * the 2026-11-09 leaderboard fill is GONE — Recommended is now live-room
+ * occupants ONLY (same sweep, same freshness: one-shot get()s on open,
+ * fresh heartbeat <150s). This SUPERSEDES the 2026-11-09 "fill from the
+ * weekly boards so it is never empty" order for the fill itself; the
+ * structure stays (Active empty -> "No active followings" + Recommended;
+ * both empty -> honest empty state + Retry). No live subscription was
+ * added: a person who leaves a room while the sheet is open still shows
+ * until the next open (same as before — the boss has not ordered live
+ * updates). Scroll: handleJoinRoom is ref-stabilised (see below) so the
+ * memo rows are not re-rendered on every home live-update mid-scroll.
  * 2026-11-09 (boss: "এটা imo, এটার মত" + "smooth scroll, polished"):
  * the sheet container is absolute bottom-anchored (LeaderboardModal
  * pattern) so it sizes to its content when short and caps at 85% when
@@ -33,10 +45,9 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { View, Text, Modal, Pressable, FlatList } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
-import { get, ref, query, orderByChild, limitToLast } from 'firebase/database';
+import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { followUser } from '@/src/services/followService';
-import { getCurrentWeekId } from '@/src/utils/weekId';
 import HeartbeatVoiceBars from './HeartbeatVoiceBars';
 
 export type ActiveFollowing = {
@@ -54,8 +65,9 @@ export type RecommendedFriend = {
   /** Set when the user is in a live room right now — row taps to join it. */
   roomId?: string;
   roomName?: string;
-  /** Where the row came from: live-room occupant, or weekly board fill. */
-  source?: 'live' | 'sender' | 'receiver';
+  /** Live-room occupant only (boss 2026-11-11: Recommended shows ONLY people
+      currently active in a voice room — the weekly-board fill is gone). */
+  source?: 'live';
 };
 
 type UserMini = { displayName?: string; name?: string; photoURL?: string };
@@ -214,95 +226,14 @@ export async function loadActiveFollowings(myUid: string, roomIds: string[]): Pr
   return deriveActive(candidates, sweep);
 }
 
-/** One weekly gift board, best first (limitToLast returns ascending). */
-async function readBoard(
-  path: string,
-  scoreKey: string,
-  source: 'sender' | 'receiver',
-): Promise<{ uid: string; name?: string; photoURL?: string; source: 'sender' | 'receiver' }[]> {
-  try {
-    const snap = await get(query(ref(database, path), orderByChild(scoreKey), limitToLast(30)));
-    if (!snap.exists()) return [];
-    const val = (snap.val() ?? {}) as Record<string, { name?: string; photoURL?: string } & Record<string, unknown>>;
-    type BoardRow = { uid: string; name?: string; photoURL?: string; source: 'sender' | 'receiver'; score: number };
-    const scored: BoardRow[] = Object.entries(val).map(([uid, v]) => ({
-      uid,
-      name: v?.name,
-      photoURL: v?.photoURL,
-      source,
-      score: typeof v?.[scoreKey] === 'number' ? (v[scoreKey] as number) : 0,
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    return scored.map(({ uid, name, photoURL, source: s }) => ({ uid, name, photoURL, source: s }));
-  } catch {
-    return [];
-  }
-}
-
 /**
- * Fill the remaining Recommended slots from this week's gift boards
- * (senders first, then receivers). Falls back to the prior week when the
- * current week is near-empty (fewer than 5 usable uids — early in the
- * week, before the boards fill up). Deduped, self / already-followed /
- * already-listed excluded, enriched via users/{uid} (board name/photo
- * as fallback — board rows always carry a name).
- */
-async function loadLeaderboardFill(
-  myUid: string,
-  followed: Set<string>,
-  listed: Set<string>,
-  limit: number,
-): Promise<RecommendedFriend[]> {
-  const currentWeek = getCurrentWeekId();
-  const priorWeek = getCurrentWeekId(new Date(Date.now() - 7 * 24 * 3600 * 1000));
-  const takeWeek = async (weekId: string) => {
-    const [senders, receivers] = await Promise.all([
-      readBoard(`leaderboard_senders/${weekId}`, 'weeklySent', 'sender'),
-      readBoard(`leaderboard/${weekId}`, 'weeklyEarned', 'receiver'),
-    ]);
-    return [...senders, ...receivers];
-  };
-  type BoardEntry = { uid: string; name?: string; photoURL?: string; source: 'sender' | 'receiver' };
-  const usable = (rows: BoardEntry[]): BoardEntry[] =>
-    rows.filter((r) => r.uid !== myUid && !followed.has(r.uid) && !listed.has(r.uid));
-  let pool = usable(await takeWeek(currentWeek));
-  if (pool.length < 5) {
-    const prior = usable(await takeWeek(priorWeek));
-    const seen = new Set(pool.map((r) => r.uid));
-    for (const r of prior) {
-      if (!seen.has(r.uid)) {
-        seen.add(r.uid);
-        pool.push(r);
-      }
-    }
-  }
-  const chosen = pool.slice(0, limit);
-  const rows = await Promise.all(
-    chosen.map(async (c) => {
-      const mini = await readUserMini(c.uid);
-      const name = mini?.displayName ?? mini?.name ?? c.name;
-      if (!name) return null;
-      return {
-        uid: c.uid,
-        name,
-        photoURL: mini?.photoURL ?? c.photoURL,
-        source: c.source,
-      } as RecommendedFriend;
-    }),
-  );
-  return rows.filter((r): r is RecommendedFriend => r !== null);
-}
-
-/**
- * Popular / very-active ranking (2026-11-09 boss order — replaces the old
- * inbox-only Recommended list):
- *  1. Occupants of currently-live rooms, by their room's live occupancy
- *     desc, then by follower count desc. Follower counts come from the
- *     LIVE followers/{uid} child count (never the stale users/{uid}/
- *     followers field) and are read only for the top-10 shortlist.
- *  2. Remaining slots filled from this week's leaderboard_senders +
- *     leaderboard top entries (prior week as fallback when near-empty).
- * Capped at 30, same cap as the old list.
+ * Recommended = occupants of currently-live rooms ONLY (boss 2026-11-11:
+ * ONLY people currently active in a voice room appear, in BOTH sections).
+ * Ranked by their room's live occupancy desc, then by follower count desc.
+ * Follower counts come from the LIVE followers/{uid} child count (never the
+ * stale users/{uid}/followers field) and are read only for the top-10
+ * shortlist. The 2026-11-09 weekly-leaderboard fill is REMOVED (it showed
+ * people NOT in a room — "Top gift sender this week" rows). Capped at 30.
  */
 async function deriveRecommended(
   myUid: string,
@@ -346,12 +277,7 @@ async function deriveRecommended(
       }),
     )
   ).filter((r): r is RecommendedFriend => r !== null);
-  const listed = new Set(occupantRows.map((r) => r.uid));
-  const out: RecommendedFriend[] = [...occupantRows];
-  if (out.length < RECOMMENDED_CAP) {
-    out.push(...(await loadLeaderboardFill(myUid, followed, listed, RECOMMENDED_CAP - out.length)));
-  }
-  return out;
+  return occupantRows;
 }
 
 /** Popular / very-active Recommended list (single sweep when roomIds given). */
@@ -480,7 +406,7 @@ const ActiveRow = memo(function ActiveRow({
     >
       <Avatar name={row.name} photoURL={row.photoURL} size={52} />
       <View style={{ flex: 1, marginLeft: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
             {row.name}
           </Text>
@@ -533,20 +459,14 @@ const RecommendedRow = memo(function RecommendedRow({
       >
         <Avatar name={item.name} photoURL={item.photoURL} size={52} />
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Text numberOfLines={1} style={{ flexShrink: 1, color: '#000000', fontSize: 16, fontWeight: '700' }}>
               {item.name}
             </Text>
             {inRoom && <HeartbeatVoiceBars color="#000000" maxHeight={11} barWidth={2} gap={2} />}
           </View>
           <Text numberOfLines={1} style={{ color: '#8E8E93', fontSize: 13, marginTop: 2 }}>
-            {inRoom
-              ? `in ${item.roomName}`
-              : item.source === 'sender'
-                ? 'Top gift sender this week'
-                : item.source === 'receiver'
-                  ? 'Top gift receiver this week'
-                  : 'Popular on Vee'}
+            in {item.roomName ?? 'Room'}
           </Text>
         </View>
         {inRoom && <Feather name="chevron-right" size={18} color="#C7C7CC" />}
@@ -558,8 +478,8 @@ const RecommendedRow = memo(function RecommendedRow({
           borderWidth: 1,
           borderColor: '#2196F3',
           borderRadius: 8,
-          paddingHorizontal: 12,
-          paddingVertical: 6,
+          paddingHorizontal: 10,
+          paddingVertical: 8,
           marginLeft: 8,
           opacity: pressed || isBusy ? 0.6 : followDisabled ? 0.5 : 1,
         })}
@@ -570,8 +490,8 @@ const RecommendedRow = memo(function RecommendedRow({
       </Pressable>
       <Pressable
         onPress={() => onDismiss(item.uid)}
-        hitSlop={8}
-        style={({ pressed }) => ({ marginLeft: 12, opacity: pressed ? 0.6 : 1 })}
+        hitSlop={10}
+        style={({ pressed }) => ({ marginLeft: 10, opacity: pressed ? 0.6 : 1 })}
       >
         <Feather name="x" size={18} color="#8E8E93" />
       </Pressable>
@@ -640,6 +560,18 @@ export function ActiveFollowingsSheet({
   const [retryNonce, setRetryNonce] = useState(0);
   const onActiveLoadedRef = useRef(onActiveLoaded);
   onActiveLoadedRef.current = onActiveLoaded;
+  // Scroll smoothness (boss 2026-11-11: check the sheet scrolls smoothly):
+  // VoiceRoomHome passes INLINE onClose / onJoinRoom arrows, so they get
+  // a new identity on every parent re-render — and the home re-renders on
+  // every live update. handleJoinRoom used to depend on them, so
+  // renderItem + listHeader were recreated on every home re-render and
+  // EVERY visible memo row re-rendered mid-scroll (memo defeated).
+  // Reading them through refs keeps handleJoinRoom stable forever, so the
+  // memo rows actually skip. Home itself is untouched (off-limits).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const onJoinRoomRef = useRef(onJoinRoom);
+  onJoinRoomRef.current = onJoinRoom;
   // Load once per open: parent room lists change identity on every live
   // update, and a reload mid-open would flash the spinner + reset rows.
   const loadedForOpenRef = useRef(false);
@@ -752,13 +684,10 @@ export function ActiveFollowingsSheet({
     setDismissed((prev) => new Set(prev).add(uid));
   }, []);
 
-  const handleJoinRoom = useCallback(
-    (roomId: string) => {
-      onClose();
-      onJoinRoom(roomId);
-    },
-    [onClose, onJoinRoom],
-  );
+  const handleJoinRoom = useCallback((roomId: string) => {
+    onCloseRef.current();
+    onJoinRoomRef.current(roomId);
+  }, []);
 
   const handleRetry = useCallback(() => {
     loadedForOpenRef.current = false;
@@ -806,8 +735,8 @@ export function ActiveFollowingsSheet({
         ))}
         {visibleRecommended.length > 0 && (
           <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 }}>
-              <Text style={{ flex: 1, color: '#8E8E93', fontSize: 15 }}>Recommended</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+              <Text style={{ flex: 1, color: '#8E8E93', fontSize: 15, fontWeight: '600' }}>Recommended</Text>
               <Pressable
                 onPress={() => setShowRecommended((v) => !v)}
                 hitSlop={8}
