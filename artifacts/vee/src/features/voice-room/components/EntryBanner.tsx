@@ -355,11 +355,18 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
             the dragon and the name row. Solid SVIP gold #E8B84B
             (theme-agnostic — reads on light and dark themes alike) with
             dark text. The white shimmer band sweeps across the gold pill
-            (under the text, so the dark text stays readable). */}
+            (under the text, so the dark text stays readable).
+            2026-11-11 (gap fix): the dragon art carries 24-40px transparent
+            padding at its bottom (avg ~34px, measured with PIL over all 16
+            frames), so the badge sat ~44dp below the dragon's real base.
+            marginTop -22 pulls the badge (and the name bar below it) up
+            into that transparent area: visual gap is now ~2dp on the
+            tightest frame (f2, 24px pad) and ~12dp on average — tight,
+            with NO overlap of the dragon's opaque pixels on any frame. */}
         <View
           style={{
             alignSelf: 'center',
-            marginTop: 10,
+            marginTop: -22,
             marginBottom: 2,
             borderRadius: 999,
             backgroundColor: '#E8B84B',
