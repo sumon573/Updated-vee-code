@@ -56,33 +56,40 @@ function MemberAvatar({ p }: { p: Participant }) {
   );
 }
 
-function RoleBadge({ role }: { role: 'host' | 'admin' | 'member' }) {
-  if (role === 'member') return null;
-  const isHost = role === 'host';
+// 2026-11-11 (boss, Live Audience redesign): the role is recognised by the
+// 👤 ICON before the name — never by text ("লেখা না আইকন এ চেনা যাবে").
+// Colours are the polished members-list colours (RoomInfoModal roleColor,
+// boss 18:46 reference — gold/blue/gray 👤 icons): GOLD = room owner ONLY,
+// BLUE = admin, GREY = regular member ("মেম্বার সাধারণ"). The icon is a
+// clean vector (Feather "user"), never a raw 👤 emoji glyph.
+// GOLD rule (boss 2026-10-27, CORRECTED): uid === ownerId OR role 'host' —
+// noble grants are NEVER consulted here (they made every row gold).
+const ROLE_ICON_GOLD = '#FFB300';
+const ROLE_ICON_BLUE = '#42A5F5';
+const ROLE_ICON_GREY = '#8A8A8E';
+
+function RoleIcon({ role, isOwner }: { role: 'host' | 'admin' | 'member'; isOwner: boolean }) {
+  const color = (isOwner || role === 'host') ? ROLE_ICON_GOLD
+    : (role === 'admin' ? ROLE_ICON_BLUE : ROLE_ICON_GREY);
   return (
-    <View style={{
-      backgroundColor: isHost ? 'rgba(245,166,35,0.18)' : 'rgba(139,92,246,0.18)',
-      borderWidth: 1, borderColor: isHost ? 'rgba(245,166,35,0.45)' : 'rgba(139,92,246,0.45)',
-      borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 8,
-    }}>
-      <Text style={{
-        fontSize: 10, fontWeight: '800',
-        color: isHost ? C.gold : '#7C3AED',
-      }}>
-        {isHost ? 'Owner' : 'Admin'}
-      </Text>
+    <View style={{ marginRight: 6, alignItems: 'center', justifyContent: 'center' }}>
+      <Feather name="user" size={15} color={color} />
     </View>
   );
 }
 
 const MemberRow = memo(function MemberRow({
-  item, onPress,
+  item, ownerId, onPress,
 }: {
   item: Participant;
+  ownerId: string;
   onPress: (p: Participant) => void;
 }) {
   // 2026-11-01 (batch56): King gold + shimmer on member names.
   const isKing = useIsKing((item as any).uid || item.id);
+  // 2026-11-11 (boss, Live Audience redesign): GOLD = this row IS the room
+  // owner (uid === ownerId) or role 'host' — same rule as RoomInfoModal.
+  const isOwner = item.id === ownerId;
   return (
     <Pressable
       onPress={() => onPress(item)}
@@ -95,6 +102,7 @@ const MemberRow = memo(function MemberRow({
       <MemberAvatar p={item} />
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <RoleIcon role={item.role} isOwner={isOwner} />
           <View style={{ flexShrink: 1 }}>
             <VerifiedName
               name={item.name}
@@ -104,7 +112,6 @@ const MemberRow = memo(function MemberRow({
             />
           </View>
           {isKing ? <KingSparkle /> : null}
-          <RoleBadge role={item.role} />
         </View>
         <Text style={{ color: C.sub, fontSize: 12, marginTop: 2 }}>
           {item.speaking ? 'Speaking…' : (item.muted || item.hostMuted) ? 'Muted' : 'In room'}
@@ -228,7 +235,7 @@ export default function RoomMembersModal({
                   {row.title.toUpperCase()}
                 </Text>
               ) : (
-                <MemberRow item={row.p} onPress={handleMemberPress} />
+                <MemberRow item={row.p} ownerId={ownerId} onPress={handleMemberPress} />
               )
             )}
             windowSize={9}
