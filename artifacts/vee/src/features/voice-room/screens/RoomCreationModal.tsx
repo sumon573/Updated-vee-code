@@ -197,6 +197,8 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
         // ক্ষেত্রে খালি থাকতে পারে) —
         // 2026-10-13 fix: photoURL-ও DB থেকে নাও; আগে শুধু auth photoURL
         // ব্যবহার হতো বলে Google user-দের seat 0-তে DP আসত না।
+        // 2026-11-11 (item 10): Auth photoURL fallback removed — no RTDB
+        // photo → no host photo (initials), never the Google picture.
         ...await (async () => {
           try {
             const { get: dbGet, ref: dbRef } = await import('firebase/database');
@@ -208,12 +210,12 @@ export default function RoomCreationModal({ visible, onClose, onRoomCreated }: P
                 // 2026-10-26 (boss: one name only): no Auth fallback.
                 hostName: p.name || p.displayName || t('voiceRoom.screen.defaultUserName'),
                 // P1 fix (2026-10-12): || not ?? — খালি-string photoURL অকেজো
-                hostPhotoURL: p.photoURL || user.photoURL || undefined };
+                hostPhotoURL: p.photoURL || undefined };
             }
           } catch { /* fallback */ }
           return {
             hostName: t('voiceRoom.screen.defaultUserName'),
-            hostPhotoURL: user.photoURL || undefined };
+            hostPhotoURL: undefined };
         })(),
         coverImageUrl,
         location,

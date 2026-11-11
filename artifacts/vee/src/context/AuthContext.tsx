@@ -502,8 +502,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .then((shared) => backfillVIdIfMissing(firebaseUser.uid, shared))
             .catch(() => {/* background: safe to swallow — Vee ID backfill retries on next login */});
           // FIX (2026-10-12): Backfill Google Auth profile data to DB if empty.
-          // Google users may have empty DB name/photoURL (only visible to themselves
-          // via Auth fallback). Others see empty. Copy from Auth if DB is empty.
+          // Google users may have empty DB name (only visible to themselves
+          // via Auth fallback). Others see empty. Copy the NAME from Auth if
+          // DB is empty — never the photo (2026-11-11 item 10: a missing Vee
+          // photo shows initials, never the Google picture).
           // FIX (2026-10-15, Sumon): CREATE the DB profile if it doesn't exist at
           // all (fail-open timeout can let users into home with no DB profile —
           // then everyone sees them as "Vee User" with no name/DP).
@@ -565,9 +567,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const updates: Record<string, string> = {};
                 if (!profile.name && firebaseUser.displayName) {
                   updates.name = firebaseUser.displayName;
-                }
-                if (!profile.photoURL && firebaseUser.photoURL) {
-                  updates.photoURL = firebaseUser.photoURL;
                 }
                 if (Object.keys(updates).length > 0) {
                   await updateUser(firebaseUser.uid, updates);

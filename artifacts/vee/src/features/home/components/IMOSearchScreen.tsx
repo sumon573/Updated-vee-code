@@ -25,7 +25,7 @@ import {
 } from '@/src/features/voice-room/services/pass2RestService';
 import { buildCallRoomId } from '@/src/features/audio-call/services/firebaseCallService';
 import { getMinimizedCall } from '@/src/features/audio-call/services/callMinimizeStore';
-import { subscribeLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
+import { subscribeLiveUserProfile, useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { useEffect } from 'react';
 
 // Tier inbox row -> Chat (same defaults as the Firebase sanitizeChat path:
@@ -64,6 +64,9 @@ function pass2InboxToChat(c: Pass2InboxChat, myUid: string): Chat {
 export default function IMOSearchScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  // 2026-11-11 (item 10): own DP from RTDB via the shared live-profile
+  // cache — never Auth's Google photo (the penguin bug).
+  const myLiveProfile = useLiveUserProfile(user?.uid);
   const [query, setQuery] = useState('');
   const [chats, setChats] = useState<Chat[]>([]);
   const [avatarCache, setAvatarCache] = useState<Record<string, string>>({});
@@ -144,9 +147,9 @@ export default function IMOSearchScreen() {
     const callRoomId = buildCallRoomId(user.uid, chat.participantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(chat.participantId)}&remoteName=${encodeURIComponent(chat.participantName || 'User')}&calleeUid=${encodeURIComponent(chat.participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName || 'Vee User')}`;
     if (chat.participantAvatar) url += `&remotePhotoURL=${encodeURIComponent(chat.participantAvatar)}`;
-    if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
+    if (myLiveProfile.avatar) url += `&myPhotoURL=${encodeURIComponent(myLiveProfile.avatar)}`;
     router.push(url as any);
-  }, [router, user]);
+  }, [router, user, myLiveProfile.avatar]);
 
   const handleChatPress = useCallback((chat: Chat) => {
     const params = new URLSearchParams({

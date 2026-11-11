@@ -376,10 +376,15 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
   // user.displayName (Firebase Auth) can be empty/stale (Google-login bug
   // class) — the source of truth is the RTDB profile `name`.
   const [myRealName, setMyRealName] = useState<string>('');
+  // 2026-11-11 (item 10): own DP comes from RTDB users/{uid}/photoURL —
+  // NEVER Auth's Google photo (the penguin bug). Same subscription as the
+  // name; no RTDB photo → null → initial-letter avatar, never Google.
+  const [myPhotoURL, setMyPhotoURL] = useState<string | null>(null);
   useEffect(() => {
     if (!user?.uid) return;
     return subscribeUser(user.uid, (profile) => {
       if (profile?.name) setMyRealName(profile.name);
+      setMyPhotoURL(profile?.photoURL || null);
     });
   }, [user?.uid]);
 
@@ -1696,7 +1701,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         onRetry={retryDmText}
         onMediaPress={handleMediaPress}
         peerPhotoURL={participantPhotoURL}
-        myPhotoURL={user?.photoURL ?? null}
+        myPhotoURL={myPhotoURL}
         isPeerOnline={isOnline}
         onCallBack={stableCallBack}
         onQuotePress={jumpToMessage}
@@ -1706,7 +1711,7 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
         isPinned={pinnedMessageId === msg.id}
       />
     );
-  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, user?.photoURL, isOnline, stableCallBack, jumpToMessage, highlightedId, handleForwardOpen, handleTogglePin, pinnedMessageId]);
+  }, [chatId, myUid, handleReply, retryDmText, handleMediaPress, participantPhotoURL, myPhotoURL, isOnline, stableCallBack, jumpToMessage, highlightedId, handleForwardOpen, handleTogglePin, pinnedMessageId]);
 
   const keyExtractor = useCallback((item: ChatRow) => (
     item.kind === 'sep' ? `sep-${item.dayKey}` : item.message.id
@@ -1757,9 +1762,9 @@ export default function InboxScreen({ chatId, participantId, participantName }: 
     const callRoomId = buildCallRoomId(myUid, effectiveParticipantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(effectiveParticipantId)}&remoteName=${encodeURIComponent(displayName)}&calleeUid=${encodeURIComponent(effectiveParticipantId)}&myUid=${encodeURIComponent(myUid)}&myName=${encodeURIComponent(myRealName || user.displayName || 'Vee User')}`;
     if (participantPhotoURL) url += `&remotePhotoURL=${encodeURIComponent(participantPhotoURL)}`;
-    if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
+    if (myPhotoURL) url += `&myPhotoURL=${encodeURIComponent(myPhotoURL)}`;
     router.push(url as never);
-  }, [user, myUid, effectiveParticipantId, displayName, participantPhotoURL, router]);
+  }, [user, myUid, effectiveParticipantId, displayName, participantPhotoURL, myPhotoURL, router]);
 
   // Fix #31: call-back ref assignment (see stableCallBack above renderItem).
   useEffect(() => { callBackRef.current = handleVoiceCall; }, [handleVoiceCall]);

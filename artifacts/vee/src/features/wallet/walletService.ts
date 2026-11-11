@@ -710,20 +710,29 @@ export async function sendGift({
       // 2026-10-15 (Sumon): permanent lifetime gift count (VPS primary path).
       recordGiftReceivedCount(toUid, giftId).catch(() => {});
       // Weekly leaderboard stats (best-effort, fire-and-forget; self-gifts excluded).
+      // 2026-11-11 (item 10): the sender photo MUST be the RTDB Vee photo —
+      // never Auth's Google photo. Resolve it from users/{uid} first; the
+      // receiver photo (toPhotoURL) already comes from room data (RTDB).
       {
         const me = auth.currentUser;
-        recordWeeklyLeaderboardStats({
-          fromUid: serverFromUid,
-          toUid,
-          price: serverPrice,
-          recipientAmount: Math.floor(serverPrice * 0.4),
-          senderName: me?.displayName,
-          senderPhotoURL: me?.photoURL,
-          receiverName: toName,
-          receiverPhotoURL: toPhotoURL,
-        }).catch(() => {
-          // Non-critical
-        });
+        import('@/src/services/userService').then(({ getUser }) =>
+          getUser(serverFromUid)
+            .then((senderProfile) =>
+              recordWeeklyLeaderboardStats({
+                fromUid: serverFromUid,
+                toUid,
+                price: serverPrice,
+                recipientAmount: Math.floor(serverPrice * 0.4),
+                senderName: me?.displayName,
+                senderPhotoURL: senderProfile?.photoURL ?? null,
+                receiverName: toName,
+                receiverPhotoURL: toPhotoURL,
+              }).catch(() => {
+                // Non-critical
+              }),
+            )
+            .catch(() => {}),
+        ).catch(() => {});
       }
       // Weekly Top Rooms stat (server path) — self-gifts count for rooms.
       if (roomId) {

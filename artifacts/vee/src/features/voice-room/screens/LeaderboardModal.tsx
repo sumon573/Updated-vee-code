@@ -724,11 +724,12 @@ export function LeaderboardModal({
   // 2026-10-19 polish: the pinned bar must show the viewer's LIVE profile
   // from users/{myUid} — auth.currentUser's displayName/photoURL go stale
   // (e.g. after an in-app profile edit) while the leaderboard rows are live.
-  // Falls back to the auth snapshot, then 'Vee User'.
   const myLiveProfile = useLiveUserProfile(myUid);
   // 2026-10-26 (boss: one name only): no Auth fallback.
+  // 2026-11-11 (item 10): photo is RTDB-only too — no Auth Google-photo
+  // fallback; missing photo → undefined → initials avatar.
   const myName = myLiveProfile.name || 'Vee User';
-  const myPhoto = myLiveProfile.avatar || auth.currentUser?.photoURL || undefined;
+  const myPhoto = myLiveProfile.avatar || undefined;
 
   const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [
     { key: 'rooms',     label: t('leaderboard.topRooms', { defaultValue: 'Top Rooms' }),         icon: 'home' },

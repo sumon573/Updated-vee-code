@@ -343,10 +343,12 @@ export default function VoiceRoomScreen() {
   // RTDB profile (nickname) ONLY — never Firebase Auth displayName (the
   // Google name that showed up next to nicknames). myProfile is already
   // sanitize-resolved, so it is never empty once loaded; before it loads
-  // the default shows briefly instead of a Google name. Photo fallback
-  // stays (a photo is not a name, and dropping it would blank avatars).
+  // the default shows briefly instead of a Google name.
+  // 2026-11-11 (item 10): the photo is RTDB-only too — NEVER Auth's Google
+  // photo. No RTDB photo → undefined → initial-letter avatar (never the
+  // Google picture). This feeds seat join, chat echoes, entry banner.
   const myName = myProfile?.name || t('voiceRoom.screen.defaultUserName');
-  const myPhotoURL = myProfile?.photoURL || user?.photoURL || undefined;
+  const myPhotoURL = myProfile?.photoURL || undefined;
   const myColor = getUserColor(myUid);
   const myInitials = getInitials(myName);
 
@@ -1449,6 +1451,27 @@ export default function VoiceRoomScreen() {
       fresh.speaking !== activeMember.speaking;
     if (changed) setActiveMember(fresh);
   }, [seats, audience, activeMember]);
+  // 2026-11-11 (boss, invite hardening): same fresh re-sync for the
+  // POPUP member (popupMember is otherwise a frozen snapshot — stale
+  // name/photo/role/frame). Mirrors the activeMember effect above;
+  // like it, a target found in neither seats nor audience is left
+  // alone (no auto-close) — the invite no longer depends on audience.
+  useEffect(() => {
+    if (!popupMember) return;
+    const fresh =
+      seats.find((s) => s?.id === popupMember.id) ??
+      audience.find((a) => a.id === popupMember.id) ??
+      null;
+    if (!fresh) return;
+    const changed =
+      (fresh as any).activeFrame !== (popupMember as any).activeFrame ||
+      fresh.name !== popupMember.name ||
+      fresh.photoURL !== popupMember.photoURL ||
+      fresh.role !== popupMember.role ||
+      fresh.muted !== popupMember.muted ||
+      fresh.speaking !== popupMember.speaking;
+    if (changed) setPopupMember(fresh);
+  }, [seats, audience, popupMember]);
   const [exitModalOpen,   setExitModalOpen]   = useState(false);
   const [emojiPanelOpen,  setEmojiPanelOpen]  = useState(false);
 
@@ -3168,7 +3191,10 @@ export default function VoiceRoomScreen() {
 
   const handleSeatPress = useCallback((seatIdx: number) => {
     const member = seatsRef.current[seatIdx];
-    if (member && member.id === myUid) { setActiveMember(member); return; }
+    // 2026-11-11 (boss, own-ID popup): tapping YOUR OWN seat opens YOUR
+    // profile popup too (was: self manage modal). Seat LONG-press on your
+    // own seat still opens the self manage modal (untouched, below).
+    if (member && member.id === myUid) { setPopupMember(member); return; }
     // 2026-11-11 (boss, imo mirror): tap on ANOTHER user's seat opens the
     // profile POPUP (not the manage modal / action sheet). Long-press keeps
     // the old sheets (see handleSeatLongPress below).
@@ -3843,12 +3869,16 @@ export default function VoiceRoomScreen() {
 
   // 2026-11-11 (boss, imo mirror): DIRECT seat invite for the popup /
   // profile 5-icon bar — no confirmation Alert (the caller shows the
-  // "Success to invite" toast). First empty UNLOCKED seat; the target must
-  // be in the audience (not already seated).
+  // "Success to invite" toast). First empty UNLOCKED seat; NO audience
+  // membership required (the write needs only the uid).
   const inviteToSeatDirect = useCallback(async (memberId: string): Promise<'ok' | 'no-seat' | 'already-seated' | 'error'> => {
     if (seats.find((s: Participant | null) => s?.id === memberId)) return 'already-seated';
-    const member = audience.find((m: Participant) => m.id === memberId);
-    if (!member) return 'error';
+    // 2026-11-11 (boss, invite-error fix): the audience.find guard used to
+    // return 'error' BEFORE sendSeatInvite ever ran when the (frozen)
+    // popup snapshot had left the audience (left room / ghost sweep /
+    // stale cache). The write itself needs only memberId, so the gate is
+    // deleted — memberId is used directly below. Already-seated check
+    // above + empty-seat scan + try/catch are unchanged.
     let targetIdx = -1;
     for (let i = 0; i < seats.length; i += 1) {
       if (!seats[i] && !lockedSeats.has(i)) { targetIdx = i; break; }
@@ -3856,9 +3886,9 @@ export default function VoiceRoomScreen() {
     if (targetIdx < 0) return 'no-seat';
     try {
       if (pass2PollActiveRef.current) {
-        await sendPass2RoomAction(roomId, 'seat_invite_send', { inviteeUid: member.id, seatIdx: targetIdx });
+        await sendPass2RoomAction(roomId, 'seat_invite_send', { inviteeUid: memberId, seatIdx: targetIdx });
       } else {
-        await sendSeatInvite(member.id, {
+        await sendSeatInvite(memberId, {
           roomId, roomName, seatIdx: targetIdx,
           inviterUid: myUid, inviterName: myName,
           ts: Date.now() });
@@ -3868,7 +3898,7 @@ export default function VoiceRoomScreen() {
     } catch {
       return 'error';
     }
-  }, [seats, audience, lockedSeats, roomId, roomName, myUid, myName]);
+  }, [seats, lockedSeats, roomId, roomName, myUid, myName]);
 
   const handleLeave = useCallback(() => {
     hasLeftRef.current = true;
@@ -4288,11 +4318,61 @@ export default function VoiceRoomScreen() {
     }, [handleMention, allMembers, roomId]),
   );
 
+  // ── 2026-11-11 (boss, chat DP): resolve a chat sender to their LIVE
+  // room member (seats/audience carry the live RTDB photoURL) so the row
+  // can show their small DP. No new subscription: the room already holds
+  // seats + audience. Departed senders (in neither list) fall back to a
+  // minimal Participant built from the message itself — the popup
+  // subscribes the live user record by id, so it still renders fully.
+  // Own messages resolve to your own live member (or your own profile
+  // photo when you are in neither list) -> YOUR popup (item 6). ───
+  const resolveChatSender = useCallback((msg: ChatMsg): Participant | null => {
+    const sid = msg.senderId;
+    if (sid) {
+      const found =
+        seats.find((p) => p?.id === sid) ??
+        audience.find((p) => p.id === sid) ??
+        null;
+      if (found) return found;
+    }
+    if (msg.isMe) {
+      return {
+        id: myUid, name: myName, initials: myInitials, color: myColor,
+        ...(myPhotoURL ? { photoURL: myPhotoURL } : {}),
+        speaking: false, muted: false, role: 'member',
+      };
+    }
+    return null;
+  }, [seats, audience, myUid, myName, myInitials, myColor, myPhotoURL]);
+
+  const handleChatSenderPress = useCallback((msg: ChatMsg) => {
+    const member = resolveChatSender(msg);
+    if (member) { setPopupMember(member); return; }
+    const sid = msg.senderId;
+    if (!sid) return;
+    // Sender left the room: open the popup from the message itself.
+    setPopupMember({
+      id: sid, name: msg.sender, initials: getInitials(msg.sender),
+      color: msg.color, speaking: false, muted: false, role: 'member',
+    });
+  }, [resolveChatSender]);
+
   const renderChatMessage = useCallback(
-    ({ item }: { item: ChatMsg }) => (
-      <RoomChatMessage item={item} accentColor={accentColor} onReply={setReplyingTo} onAction={setActionMsg} onRetry={retryChatEcho} />
-    ),
-    [accentColor],
+    ({ item }: { item: ChatMsg }) => {
+      const sender = resolveChatSender(item);
+      return (
+        <RoomChatMessage
+          item={item}
+          accentColor={accentColor}
+          photoURL={sender?.photoURL ?? item.gift?.senderAvatar ?? undefined}
+          onSenderPress={handleChatSenderPress}
+          onReply={setReplyingTo}
+          onAction={setActionMsg}
+          onRetry={retryChatEcho}
+        />
+      );
+    },
+    [accentColor, resolveChatSender, handleChatSenderPress],
   );
 
   

@@ -342,8 +342,8 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
             {/* User card — 2026-10-31 (boss): professional look, DP + name + rank */}
             <View style={{ marginHorizontal: 16, marginTop: 16, backgroundColor: '#FAFAFA', borderRadius: 16, borderWidth: 1, borderColor: '#EEEEEE', padding: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {profilePhoto || user?.photoURL ? (
-                  <Image source={{ uri: (profilePhoto || user?.photoURL) as string }} style={{ width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: '#C9A227' }} contentFit="cover" />
+                {profilePhoto ? (
+                  <Image source={{ uri: profilePhoto as string }} style={{ width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: '#C9A227' }} contentFit="cover" />
                 ) : (
                   <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: rank.color, borderWidth: 3, borderColor: '#C9A227', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff' }}>{(profileName || user?.displayName || 'V').trim().charAt(0).toUpperCase()}</Text>
@@ -490,7 +490,7 @@ export default function NobelScreen({ embedded = false }: { embedded?: boolean }
           rewardKey={rewardPreviewKey}
           rankIndex={selectedRankIdx}
           userName={profileName || user?.displayName || 'Vee User'}
-          userPhotoURL={profilePhoto || user?.photoURL}
+          userPhotoURL={profilePhoto}
           locked={rankIdx < selectedRankIdx}
           unlockXP={selectedRank.minXP}
         />

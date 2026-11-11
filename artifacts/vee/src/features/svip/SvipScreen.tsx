@@ -617,7 +617,7 @@ export default function SvipScreen() {
     || user?.displayName
     || (user?.email ? user.email.split('@')[0] : '');
   const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
-  const photoUrl = veeProfile?.photoURL || user?.photoURL || '';
+  const photoUrl = veeProfile?.photoURL || '';
   const activeLabel = (page.buyBar.activeLabel || 'You are {tierName}').replace('{tierName}', tier.name);
 
   // pricedTiers lives above the early returns (see above) — a hook

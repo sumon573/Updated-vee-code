@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
+import { router } from 'expo-router';
 import { C } from '../constants/theme';
 import { Avatar } from './Avatar';
 import { RoomUserActionBar } from './RoomUserActionBar';
@@ -15,7 +16,7 @@ import { RoomToast, useRoomToast } from './RoomToast';
 import { NameplateRow } from '@/src/components/NameplateRow';
 import { subscribeUser, type VeeUser } from '@/src/services/userService';
 import { subscribeFollowCounts, subscribeIsFollowing, followUser, unfollowUser } from '@/src/services/followService';
-import { subscribeBadges, subscribeNameplates, type GrantedNameplate } from '@/src/services/badgeService';
+import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
 import type { GrantedBadge } from '@/src/data/honor';
 import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
@@ -97,6 +98,11 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   const [showVidPopup, setShowVidPopup] = useState(false);
   const [vidCopied, setVidCopied] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  // 2026-11-11 (boss, popup fixes): bio expand state + length gate +
+  // frames owned (Decoration card count, same source as full profile).
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [bioIsLong, setBioIsLong] = useState(false);
+  const [grantedFrames, setGrantedFrames] = useState<GrantedFrame[]>([]);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isKing = useIsKing(member?.id);
   const liveFrameId = useActiveFrame(member?.id);
@@ -105,6 +111,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   useEffect(() => { if (!member?.id) return; return subscribeFollowCounts(member.id, setFollowCounts); }, [member?.id]);
   useEffect(() => { if (!member?.id || !myUid) return; return subscribeIsFollowing(myUid, member.id, setIsFollowingTarget); }, [member?.id, myUid]);
   useEffect(() => { if (!member?.id) return; return subscribeNameplates(member.id, setGrantedNameplates); }, [member?.id]);
+  useEffect(() => { if (!member?.id) return; return subscribeFrames(member.id, setGrantedFrames); }, [member?.id]);
   useEffect(() => { if (!member?.id) return; return subscribeNoble(member.id, setNobleState); }, [member?.id]);
   useEffect(() => { if (!member?.id) return; return subscribeSvip(member.id, setSvipState); }, [member?.id]);
   useEffect(() => { if (!member?.id) return; return subscribeBadges(member.id, setGrantedBadges); }, [member?.id]);
@@ -166,6 +173,8 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   const age = ageFromBirthday(extraFields.birthday);
   const location = extraFields.city || extraFields.country || '';
   const roleLabel = targetRole === 'host' ? 'Owner' : targetRole === 'admin' ? 'Admin' : 'Member';
+  // 2026-11-11 (boss, own-ID popup): tapping your OWN id opens YOUR popup.
+  const isSelf = member.id === myUid;
 
   // ── Handlers (plain functions — never hooks below the early return) ───
   const handleClose = () => {
@@ -175,6 +184,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
     onClose();
   };
   const handleFollow = async () => {
+    if (isSelf) return; // never follow yourself
     if (followBusy || !myUid) return;
     setFollowBusy(true);
     try {
@@ -189,8 +199,19 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   };
   const handleDpPress = () => {
     handleClose();
+    // Own DP -> YOUR full profile (own screen, no roomId); others ->
+    // the room full profile via the room's handler.
+    if (isSelf) { router.push('/profile'); return; }
     onViewFullProfile(member.id, displayName);
   };
+  // ── 2026-11-11 (boss, popup fixes): Privilege / Followers / Intimacy
+  // taps go to THEIR OWN pages (never the full profile). The popup
+  // closes first so the Modal never stays open over the new screen. ───
+  const handleHonorPress = () => { handleClose(); router.push(isSelf ? '/profile/honor' : `/profile/honor?uid=${member.id}`); };
+  const handleFollowersPress = () => { handleClose(); router.push({ pathname: '/profile/followers', params: { type: 'followers', uid: member.id } } as never); };
+  const handleGiftsPress = () => { handleClose(); router.push(isSelf ? '/profile/gifts' : `/profile/gifts?uid=${member.id}`); };
+  const handleDecorationPress = () => { handleClose(); router.push(isSelf ? '/profile/decoration' : `/profile/decoration?uid=${member.id}`); };
+  const handleIntimacyPress = () => { handleClose(); router.push(isSelf ? '/profile/intimacy' : `/profile/intimacy?uid=${member.id}`); };
   const handleMentionPress = () => {
     onMention(displayName);
     handleClose();
@@ -200,6 +221,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
     handleClose();
   };
   const handleSayHiSend = async (greeting: string, remark: string) => {
+    if (isSelf) return; // never say hi to yourself
     try {
       const chatId = await createOrGetChat(myUid, myName, member.id, displayName);
       await sendMessage(chatId, myUid, member.id, greeting + (remark ? `\n\n${remark}` : ''));
@@ -242,15 +264,15 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={handleClose}>
         <Pressable
           onPress={(e) => e.stopPropagation()}
-          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '88%', overflow: 'hidden' }}
+          style={{ backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '50%', overflow: 'hidden' }}
         >
-          <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} scrollEventThrottle={16} decelerationRate={0.997}>
             {/* Cover + overlay header: back, "@", "..." */}
             <View>
               {coverImageUrl ? (
-                <Image source={{ uri: coverImageUrl }} style={{ width: '100%', height: 120 }} contentFit="cover" />
+                <Image source={{ uri: coverImageUrl }} style={{ width: '100%', height: 180 }} contentFit="cover" />
               ) : (
-                <LinearGradient colors={['#8B5CF6', '#EC4899', '#FB923C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: '100%', height: 120 }} />
+                <LinearGradient colors={['#8B5CF6', '#EC4899', '#FB923C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: '100%', height: 180 }} />
               )}
               <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56 }}>
                 <Pressable onPress={handleClose} style={{ position: 'absolute', left: 4, top: 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
@@ -278,10 +300,12 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                         {vidCopied ? <Text style={{ fontSize: 13, color: C.mic, marginLeft: 8 }}>Copied</Text> : null}
                       </Pressable>
                     ) : null}
+                    {!isSelf ? (
                     <Pressable onPress={handleReport} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: vId ? 0.5 : 0, borderTopColor: C.border }}>
                       <Feather name="alert-triangle" size={16} color="#DC2626" />
                       <Text style={{ fontSize: 15, color: '#DC2626', marginLeft: 10 }}>Report</Text>
                     </Pressable>
+                    ) : null}
                   </View>
                 </View>
               )}
@@ -314,9 +338,9 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                 <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>{roleLabel}</Text>
                 </View>
-                <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
+                <Pressable onPress={handleFollowersPress} hitSlop={4} style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>⭐ {followCounts.followers} Followers</Text>
-                </View>
+                </Pressable>
                 {location ? (
                   <View style={{ borderWidth: 0.5, borderColor: C.border, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
                     <Text style={{ fontSize: 12, color: C.text, fontWeight: '500' }}>📍 {location}</Text>
@@ -329,7 +353,29 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                 ) : null}
               </View>
               {bio ? (
-                <Text style={{ fontSize: 14, color: C.text, marginTop: 8 }} numberOfLines={1}>{bio}</Text>
+                <View>
+                  <Text style={{ fontSize: 14, color: C.text, marginTop: 8 }} numberOfLines={bioExpanded ? undefined : 2}>{bio}</Text>
+                  {/* Hidden measurement copy (same text/style/width, zero
+                      height, invisible): onTextLayout reports the TRUE laid-out
+                      line count — "More" shows ONLY when the bio exceeds 2
+                      lines. No character-count heuristic. */}
+                  <Text
+                    style={{ fontSize: 14, color: C.text, height: 0, opacity: 0 }}
+                    onTextLayout={(e) => { const isLong = e.nativeEvent.lines.length > 2; setBioIsLong((prev) => (prev === isLong ? prev : isLong)); }}
+                  >{bio}</Text>
+                  {bioIsLong ? (
+                    <Pressable
+                      onPress={() => setBioExpanded((v) => !v)}
+                      hitSlop={6}
+                      style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+                    >
+                      <Feather name={bioExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text} />
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: C.text, marginLeft: 2 }}>
+                        {bioExpanded ? 'Collapse' : 'More'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               ) : null}
             </View>
 
@@ -345,33 +391,40 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                       backgrounds (blue Achievement / pink Honor / yellow Gift
                       Wall), large 32px art, horizontal layout (art left, label
                       + count right) so "Achievement" fits on ONE line. */}
-                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#E3F2FD', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <Pressable onPress={handleHonorPress} style={{ width: 156, marginRight: 10, backgroundColor: '#E3F2FD', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
                     <Feather name="award" size={32} color="#F59E0B" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Achievement</Text>
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(achievementCount, 'badge', 'badges')}</Text>
                     </View>
                   </Pressable>
-                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <Pressable onPress={handleHonorPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
                     <Feather name="shield" size={32} color="#3B82F6" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Honor</Text>
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedBadges.length, 'badge', 'badges')}</Text>
                     </View>
                   </Pressable>
-                  <Pressable onPress={handleDpPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <Pressable onPress={handleGiftsPress} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
                     <Feather name="gift" size={32} color="#EC4899" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Gift Wall</Text>
                       <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(giftTotal, 'gift', 'gifts')}</Text>
                     </View>
                   </Pressable>
+                  <Pressable onPress={handleDecorationPress} style={{ width: 156, marginRight: 10, backgroundColor: '#F3E5F5', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                    <Feather name="image" size={32} color="#8B5CF6" />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Decoration</Text>
+                      <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedFrames.length, 'frame', 'frames')}</Text>
+                    </View>
+                  </Pressable>
                 </View>
               </ScrollView>
             </View>
 
-            {/* Intimacy — tap → full profile */}
-            <Pressable onPress={handleDpPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 16 }}>
+            {/* Intimacy — tap → intimacy page */}
+            <Pressable onPress={handleIntimacyPress} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 14, paddingBottom: 16 }}>
               <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>Intimacy</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={{ fontSize: 14, color: C.muted, marginRight: 2 }}>{intimacyCount}</Text>
@@ -382,6 +435,8 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
 
           {/* Bottom buttons: + Follow / Say hi / gift */}
           <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+            {!isSelf ? (
+            <>
             <Pressable
               onPress={handleFollow}
               disabled={followBusy}
@@ -397,6 +452,8 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
               <Feather name="message-circle" size={18} color={C.primary} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: C.primary, marginLeft: 6 }} numberOfLines={1}>Say hi</Text>
             </Pressable>
+            </>
+            ) : null}
             <Pressable
               onPress={handleGiftPress}
               style={{ width: 52, backgroundColor: '#2196F3', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
@@ -406,6 +463,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
           </View>
 
           {/* 5-icon bar (role-gated) */}
+          {!isSelf ? (
           <RoomUserActionBar
             viewerRole={viewerRole}
             targetRole={targetRole}
@@ -415,6 +473,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
             onKick={handleKick}
             onOpenRoleSettings={() => setPermissionOpen(true)}
           />
+          ) : null}
           <RoomToast message={toast} />
         </Pressable>
 

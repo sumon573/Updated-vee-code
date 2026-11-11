@@ -451,7 +451,7 @@ export default function GiftDisplayScreen() {
   }, [contributorList, contributors]);
 
   const displayName = profile?.name || (isMe ? user?.displayName : (profile?.email ? profile.email.split('@')[0] : null)) || 'User';
-  const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
+  const photoURL = profile?.photoURL;
 
   const renderGiftCell = useCallback(
     ([giftId, count]: [string, number], dimmed: boolean) => {

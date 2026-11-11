@@ -429,7 +429,7 @@ export default function StoryShareScreen() {
       const privacy = audience === 'everyone' ? 'public' : 'contacts';
       // Real name/avatar from RTDB (2026-10-11): Auth fields may be unset/stale.
       let userName = user.displayName || 'Vee User';
-      let userAvatar = user.photoURL || undefined;
+      let userAvatar: string | undefined;
       try {
         const { get: dbGet, ref: dbRef } = await import('firebase/database');
         const { database } = await import('@/src/config/firebase');
@@ -437,7 +437,7 @@ export default function StoryShareScreen() {
         if (nameSnap.exists() && nameSnap.val()) userName = nameSnap.val() as string;
         const avatarSnap = await dbGet(dbRef(database, `users/${user.uid}/photoURL`));
         if (avatarSnap.exists() && avatarSnap.val()) userAvatar = avatarSnap.val() as string;
-      } catch { /* non-critical — fallback to Auth fields */ }
+      } catch { /* non-critical — name falls back to Auth; avatar stays unset (initials) */ }
       const style = TEXT_STYLES[textStyleIdx];
       const common = {
         bgGradient: [bgColor, bgColor] as [string, string],

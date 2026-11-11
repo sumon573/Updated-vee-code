@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, get, remove } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { useAuth } from '@/src/context/AuthContext';
+import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { VeeUser, sanitizeVeeUser } from '@/src/services/userService';
 import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
 import { update } from 'firebase/database';
@@ -278,6 +279,9 @@ type RequestSubTab = 'received' | 'sent';
 
 export default function ContactsScreen() {
   const { user: me } = useAuth();
+  // 2026-11-11 (item 10): own DP from RTDB via the shared live-profile
+  // cache — never Auth's Google photo (the penguin bug).
+  const myLiveProfile = useLiveUserProfile(me?.uid);
   const { t } = useTranslation();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('friends');
@@ -573,7 +577,7 @@ export default function ContactsScreen() {
     const meSnap = await get(ref(database, `users/${me.uid}`));
     const meProfile = meSnap.exists() ? sanitizeVeeUser(me.uid, meSnap.val()) : null;
     const myName = meProfile?.name || me.displayName || 'Vee User';
-    const myAvatar = meProfile?.photoURL || me.photoURL || '';
+    const myAvatar = meProfile?.photoURL || '';
 
     await Promise.all([
       update(ref(database, `userChats/${me.uid}/${chatId}`), {
@@ -631,9 +635,9 @@ export default function ContactsScreen() {
     const callRoomId = buildCallRoomId(me.uid, targetUser.uid);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(targetUser.uid)}&remoteName=${encodeURIComponent(targetUser.name)}&calleeUid=${encodeURIComponent(targetUser.uid)}&myUid=${encodeURIComponent(me.uid)}&myName=${encodeURIComponent(me.displayName || 'Vee User')}`;
     if (targetUser.photoURL) url += `&remotePhotoURL=${encodeURIComponent(targetUser.photoURL)}`;
-    if (me.photoURL) url += `&myPhotoURL=${encodeURIComponent(me.photoURL)}`;
+    if (myLiveProfile.avatar) url += `&myPhotoURL=${encodeURIComponent(myLiveProfile.avatar)}`;
     router.push(url as never);
-  }, [me, router]);
+  }, [me, router, myLiveProfile.avatar]);
 
   const handleViewProfile = useCallback((targetUser: VeeUser) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

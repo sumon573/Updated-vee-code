@@ -17,6 +17,13 @@ import { isStickerText, stickerLabel, stickerUrl } from '../services/stickerCata
 type Props = {
   item: ChatMsg;
   accentColor: string;
+  /** 2026-11-11 (boss, chat DP): the sender's LIVE photoURL, resolved by
+      the room screen from the live seats/audience member (ChatMsg carries
+      no photo). Undefined = no photo -> CardAvatar initials fallback. */
+  photoURL?: string | null;
+  /** Tap on the sender's DP or name -> the profile popup (same path as a
+      seat tap; own DP/name -> YOUR popup). */
+  onSenderPress?: (msg: ChatMsg) => void;
   onReply: (msg: ChatMsg) => void;
   /** Text messages only: long-press opens the Copy/Reply action sheet
       (2026-10-23, Sumon — copy applies to user-sent text, nothing else). */
@@ -74,7 +81,7 @@ function CardAvatar({ name, photoURL, color, size }: {
  * @mention tokens are highlighted in the accent color via MsgText.
  * Memoized: every incoming message would otherwise re-render the whole list.
  */
-function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Props) {
+function RoomChatMessage({ item, accentColor, photoURL, onSenderPress, onReply, onAction, onRetry }: Props) {
   const { t } = useTranslation();
   // 2026-11-01 (batch55, boss: King names gold + chik chik on comments):
   // plain-text comments only. Gift cards, stickers, system pills and the
@@ -236,15 +243,27 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
      chat as its designed animated sticker — character only, transparent,
      no bubble. Long-press → reply (stickers are not copyable text). */
   if (isStickerText(item.text)) {
-    return (
+    // 2026-11-11 (boss, chat DP): small 28dp sender DP beside the sticker
+    // (incoming: LEFT, own: RIGHT) + tappable DP and name -> popup.
+    // Long-press on DP/name forwards to the same reply action as the
+    // sticker itself, so hold-to-reply never breaks on those spots.
+    const handleStickerLongPress = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onReply(item);
+    };
+    const senderDp = (
       <Pressable
-        onLongPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onReply(item);
-        }}
-        style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
+        onPress={() => onSenderPress?.(item)}
+        onLongPress={handleStickerLongPress}
+        hitSlop={4}
+        style={{ flexShrink: 0 }}
       >
-        {!item.isMe && (isKing ? (
+        <CardAvatar name={item.sender} photoURL={photoURL ?? undefined} color={item.color} size={28} />
+      </Pressable>
+    );
+    const stickerName = !item.isMe ? (
+      <Pressable onPress={() => onSenderPress?.(item)} onLongPress={handleStickerLongPress} hitSlop={4} style={{ alignSelf: 'flex-start' }}>
+        {isKing ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3, marginLeft: 4 }}>
             <Text style={{
               color: KING_GOLD,
@@ -264,17 +283,31 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
           }}>
             {truncateTo12(item.sender)}
           </Text>
-        ))}
-        <Image
-          source={{ uri: stickerUrl(item.text)! }}
-          style={{ width: 64, height: 64 }}
-          contentFit="contain"
-          cachePolicy="memory-disk"
-          recyclingKey={item.text}
-        />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-          marginTop: 3, marginHorizontal: 4 }}>
-          <Text style={{ color: C.muted, fontSize: 9 }}>{fmt(item.ts)}</Text>
+        )}
+      </Pressable>
+    ) : null;
+    return (
+      <Pressable
+        onLongPress={handleStickerLongPress}
+        style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, width: '100%' }}>
+          {!item.isMe ? senderDp : null}
+          <View style={{ flex: 1, flexShrink: 1, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}>
+            {stickerName}
+            <Image
+              source={{ uri: stickerUrl(item.text)! }}
+              style={{ width: 64, height: 64 }}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+              recyclingKey={item.text}
+            />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              marginTop: 3, marginHorizontal: 4 }}>
+              <Text style={{ color: C.muted, fontSize: 9 }}>{fmt(item.ts)}</Text>
+            </View>
+          </View>
+          {item.isMe ? senderDp : null}
         </View>
       </Pressable>
     );
@@ -283,23 +316,29 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
   const bubbleBg    = item.isMe ? accentColor + '30' : '#F1F5F9';
   const borderColor = item.isMe ? accentColor + '55' : '#E2E8F0';
 
-  return (
+  // 2026-11-11 (boss, chat DP): small 28dp sender DP beside the bubble
+  // (incoming: LEFT, own: RIGHT) + tappable DP and name -> popup.
+  // Long-press on DP/name forwards to the same Copy/Reply action as the
+  // bubble itself, so hold-for-copy/reply never breaks on those spots.
+  const handleTextLongPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // User-sent TEXT only → action sheet (Copy / Reply). Gift cards
+    // and system pills never reach this branch.
+    if (onAction) onAction(item); else onReply(item);
+  };
+  const senderDp = (
     <Pressable
-      onPress={() => {
-        // Failed own echo: tap retries. Normal bubbles keep tap doing
-        // nothing, exactly as before.
-        if (item.isMe && item.sendState === 'failed' && onRetry) onRetry(item);
-      }}
-      onLongPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        // User-sent TEXT only → action sheet (Copy / Reply). Gift cards
-        // and system pills never reach this branch.
-        if (onAction) onAction(item); else onReply(item);
-      }}
-      style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
+      onPress={() => onSenderPress?.(item)}
+      onLongPress={handleTextLongPress}
+      hitSlop={4}
+      style={{ flexShrink: 0 }}
     >
-      {/* Sender name (other users only) */}
-      {!item.isMe && (isKing ? (
+      <CardAvatar name={item.sender} photoURL={photoURL ?? undefined} color={item.color} size={28} />
+    </Pressable>
+  );
+  const senderName = !item.isMe ? (
+    <Pressable onPress={() => onSenderPress?.(item)} onLongPress={handleTextLongPress} hitSlop={4} style={{ alignSelf: 'flex-start' }}>
+      {isKing ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3, marginLeft: 4 }}>
           <Text style={{
             color: KING_GOLD,
@@ -319,7 +358,25 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
         }}>
           {truncateTo12(item.sender)}
         </Text>
-      ))}
+      )}
+    </Pressable>
+  ) : null;
+
+  return (
+    <Pressable
+      onPress={() => {
+        // Failed own echo: tap retries. Normal bubbles keep tap doing
+        // nothing, exactly as before.
+        if (item.isMe && item.sendState === 'failed' && onRetry) onRetry(item);
+      }}
+      onLongPress={handleTextLongPress}
+      style={{ marginBottom: 10, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, width: '100%' }}>
+      {!item.isMe ? senderDp : null}
+      <View style={{ flex: 1, flexShrink: 1, alignItems: item.isMe ? 'flex-end' : 'flex-start' }}>
+      {/* Sender name (other users only) — tappable -> popup */}
+      {senderName}
 
       <View style={{
         backgroundColor: bubbleBg,
@@ -376,6 +433,9 @@ function RoomChatMessage({ item, accentColor, onReply, onAction, onRetry }: Prop
           {t('voiceRoom.chat.notSentRetry', { defaultValue: 'Not sent — tap to retry' })}
         </Text>
       )}
+      </View>
+      {item.isMe ? senderDp : null}
+      </View>
     </Pressable>
   );
 }

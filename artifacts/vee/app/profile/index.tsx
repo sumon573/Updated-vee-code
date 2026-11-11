@@ -752,6 +752,10 @@ export default function ProfileScreen({
   // overlay icons (cover reaches the screen top; icons sit below the bar).
   const insets = useSafeAreaInsets();
   const [bioExpanded, setBioExpanded] = useState(false);
+  // 2026-11-11 (boss, bio More): true only when the bio lays out to MORE
+  // than 2 lines (measured, never a character count) — the More/Collapse
+  // toggle renders only then; a short bio shows in full with no toggle.
+  const [bioIsLong, setBioIsLong] = useState(false);
   const [roleMap, setRoleMap] = useState<Record<string, string>>({});
   const [ownerCountryMap, setOwnerCountryMap] = useState<Record<string, string>>({});
   const [extraFields, setExtraFields] = useState<{
@@ -1385,7 +1389,7 @@ export default function ProfileScreen({
   }
 
   const displayName = profile?.name || (isMe ? user?.displayName : (targetName || (profile?.email ? profile.email.split('@')[0] : null))) || 'User';
-  const photoURL = profile?.photoURL || (isMe ? user?.photoURL : undefined);
+  const photoURL = profile?.photoURL;
   const vId = profile?.vId || '';
   const bio = profile?.bio || '';
   /* 2026-10-15 (Sumon): ONE active nameplate shows below the name on profile */
@@ -1780,16 +1784,27 @@ export default function ProfileScreen({
               >
                 {bio}
               </Text>
-              <Pressable
-                onPress={() => setBioExpanded((v) => !v)}
-                hitSlop={6}
-                style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+              {/* Hidden measurement copy (same text/style/width, zero height,
+                  invisible): onTextLayout reports the TRUE laid-out line
+                  count — "More" shows ONLY when the bio exceeds 2 lines. */}
+              <Text
+                style={{ fontSize: 14, color: C.muted, height: 0, opacity: 0 }}
+                onTextLayout={(e) => { const isLong = e.nativeEvent.lines.length > 2; setBioIsLong((prev) => (prev === isLong ? prev : isLong)); }}
               >
-                <Feather name={bioExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text} />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: C.text, marginLeft: 2 }}>
-                  {bioExpanded ? 'Collapse' : 'More'}
-                </Text>
-              </Pressable>
+                {bio}
+              </Text>
+              {bioIsLong ? (
+                <Pressable
+                  onPress={() => setBioExpanded((v) => !v)}
+                  hitSlop={6}
+                  style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+                >
+                  <Feather name={bioExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: C.text, marginLeft: 2 }}>
+                    {bioExpanded ? 'Collapse' : 'More'}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
             </View>
@@ -1874,7 +1889,12 @@ export default function ProfileScreen({
             Honor, Gift Wall, Decoration — HORIZONTALLY SCROLLABLE (swipe
             left-right), like Intimacy. All counts are real (event badges,
             granted badges, gifts received, frames owned). Tap a card → its
-            subpage. ─── */}
+            subpage.
+            2026-11-11 ITEM 8 (boss: own profile must stay EXACTLY as
+            before): this section is OTHER-USERS ONLY — the OWN profile
+            (isMe) renders the pre-7df5c0c3 layout with NO Privilege section
+            (VoiceClub Room → Gifts → Intimacy → Honor → Decoration). ─── */}
+        {!isMe ? (
         <View style={flatSectionStyle}>
           <SectionHeader title="Privilege" count={4} />
           <ScrollView
@@ -1922,6 +1942,7 @@ export default function ProfileScreen({
             </View>
           </ScrollView>
         </View>
+        ) : null}
 
         {/* ─── Intimacy section — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
             2026-10-27 (boss correction): intimacy pairs NEVER render here.
@@ -2242,6 +2263,17 @@ export default function ProfileScreen({
           mode="light"
           style={{ position: 'absolute', top: insets.top + 56, right: 16 }}
         >
+          {/* 2026-11-11 ITEM 8 (boss: own profile EXACTLY as before):
+              own "..." menu is the ORIGINAL single-row ID layout
+              (pre-7df5c0c3); other users keep the column layout + Report. */}
+          {isMe ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
+          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
+            <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
+          </Pressable>
+          </View>
+          ) : (
           <View style={{ flexDirection: 'column', paddingHorizontal: 16, paddingVertical: 4 }}>
           <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
             <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
@@ -2249,13 +2281,12 @@ export default function ProfileScreen({
           </Pressable>
           {/* 2026-11-11 (boss, imo mirror): Report — everyone (all roles)
               sees it on ANOTHER user's profile; never on your own. */}
-          {!isMe ? (
-            <Pressable onPress={handleReport} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: C.border }}>
-              <Feather name="alert-triangle" size={18} color="#DC2626" />
-              <Text style={{ fontSize: 16, color: '#DC2626', marginLeft: 8 }}>Report</Text>
-            </Pressable>
-          ) : null}
+          <Pressable onPress={handleReport} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: C.border }}>
+            <Feather name="alert-triangle" size={18} color="#DC2626" />
+            <Text style={{ fontSize: 16, color: '#DC2626', marginLeft: 8 }}>Report</Text>
+          </Pressable>
           </View>
+          )}
         </GlassView>
       </Modal>
 

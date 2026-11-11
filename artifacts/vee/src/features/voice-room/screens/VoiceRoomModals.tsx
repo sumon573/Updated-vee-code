@@ -187,8 +187,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         // The panel closes first, then the popup opens on top.
         onVisitProfile={(m) => {
           p.setRoomInfoOpen(false);
-          if (m.id === p.myUid) p.setActiveMember(m);
-          else p.setPopupMember(m);
+          // 2026-11-11 (boss, own-ID popup): own row opens YOUR popup too.
+          p.setPopupMember(m);
         }}
         myUid={p.myUid}
         myName={p.myName}
@@ -334,7 +334,8 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         audience={p.audience}
         // 2026-11-11 (boss, imo mirror): a member row opens the profile
         // popup (self rows still open the manage modal).
-        onManageMember={(m) => { p.setMembersOpen(false); if (m.id === p.myUid) p.setActiveMember(m); else p.setPopupMember(m); }}
+        // 2026-11-11 (boss, own-ID popup): own row opens YOUR popup too.
+        onManageMember={(m) => { p.setMembersOpen(false); p.setPopupMember(m); }}
       />
       {/* ── 2026-11-11 (boss, imo mirror): profile popup ──────────────
           Tap on a seat / audience member → popup; DP tap → full profile. */}

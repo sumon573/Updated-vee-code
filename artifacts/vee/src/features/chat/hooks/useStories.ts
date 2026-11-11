@@ -228,7 +228,9 @@ export function useStories(): UseStoriesResult {
     // Vee go to RTDB (users/{uid}/photoURL) and do NOT update Auth photoURL.
     // 2026-10-19 polish: ONE users/{uid} read for both fields — the old code
     // did two sequential reads (photoURL, then name).
-    let avatarUrl: string | undefined = user.photoURL || undefined;
+    // 2026-11-11 (item 10): Auth photo is NEVER the fallback — no RTDB
+    // photo → undefined → initials avatar.
+    let avatarUrl: string | undefined;
     let displayName = user.displayName || 'You';
     try {
       const profileSnap = await get(ref(database, `users/${user.uid}`));
@@ -270,7 +272,7 @@ export function useStories(): UseStoriesResult {
       // P1 fix (2026-10-12): || not ?? — empty-string displayName must fall back.
       userName: dbName || user.displayName || 'You',
       text,
-      userAvatar: dbAvatar || user.photoURL || undefined,
+      userAvatar: dbAvatar || undefined,
     });
   }, [user]);
 

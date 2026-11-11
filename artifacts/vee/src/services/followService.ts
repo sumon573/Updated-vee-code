@@ -34,6 +34,9 @@ import { getBlockDirection, BlockedInteractionError } from './blockService';
 
 /** Follow a user. Idempotent — repeated calls while already following are no-ops. */
 export async function followUser(myUid: string, targetUid: string): Promise<void> {
+  // 2026-11-11 (boss, own-ID popup): no legitimate self-follow exists —
+  // never write following/<me>/<me>. (The popup also guards handleFollow.)
+  if (myUid === targetUid) return;
   // ব্লক চেক (Sumon 2026-10-13): ব্লকড ইউজারকে ফলো করা যাবে না —
   // যে দিক থেকেই ব্লক থাকুক।
   const blockDir = await getBlockDirection(myUid, targetUid);

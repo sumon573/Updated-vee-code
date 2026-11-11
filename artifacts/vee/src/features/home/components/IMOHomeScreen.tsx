@@ -675,9 +675,9 @@ export default function IMOHomeScreen() {
     const callRoomId = buildCallRoomId(user.uid, participantId);
     let url = `/audio-call?roomId=${encodeURIComponent(callRoomId)}&role=caller&remoteUid=${encodeURIComponent(participantId)}&remoteName=${encodeURIComponent(name)}&calleeUid=${encodeURIComponent(participantId)}&myUid=${encodeURIComponent(user.uid)}&myName=${encodeURIComponent(user.displayName || 'Vee User')}`;
     if (photoURL) url += `&remotePhotoURL=${encodeURIComponent(photoURL)}`;
-    if (user.photoURL) url += `&myPhotoURL=${encodeURIComponent(user.photoURL)}`;
+    if (profile?.photoURL) url += `&myPhotoURL=${encodeURIComponent(profile.photoURL)}`;
     router.push(url as any);
-  }, [router, user]);
+  }, [router, user, profile]);
 
   const handleCallPress = useCallback((chat: IMOChat) => {
     if (!chat.participantId) return;
@@ -803,7 +803,7 @@ export default function IMOHomeScreen() {
           onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && !topBarMeasured.current) { topBarMeasured.current = true; topBarFullH.value = h; } }}
         >
           <IMOTopBar
-            profilePhotoURL={profile?.photoURL || user?.photoURL || null}
+            profilePhotoURL={profile?.photoURL || null}
             profileInitials={(user?.displayName || '?').trim().charAt(0).toUpperCase() || '?'}
             activeTab={activeTab === 'chats' ? 'chat' : activeTab === 'voice' ? 'voice' : activeTab === 'contacts' ? 'contacts' : activeTab === 'profile' ? 'profile' : 'none'}
             chatBadgeCount={totalUnread}
@@ -835,7 +835,7 @@ export default function IMOHomeScreen() {
         <StoriesTabScreen
           stories={stories}
           myUserId={user?.uid}
-          myAvatar={profile?.photoURL || user?.photoURL || null}
+          myAvatar={profile?.photoURL || null}
           onStoryPress={handleStoryPress}
           onAddStory={handleAddStory}
         />
