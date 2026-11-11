@@ -38,7 +38,7 @@ import {
   type GrantedRipple,
   type GrantedEntryEffect } from '@/src/services/badgeService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
-import { isSvipEntryEffect, reconcileActiveEntryEffect } from '@/src/services/entryEffectService';
+import { isSvipEntryEffect, reconcileActiveEntryEffect, setManualEntryEffectChoice } from '@/src/services/entryEffectService';
 import * as Haptics from 'expo-haptics';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
 
@@ -299,19 +299,25 @@ export default function DecorationScreen() {
   // 2026-11-11 (boss): entry effects auto-use by stars — on Decoration
   // load, the highest-ranked held entry effect becomes the active one
   // (SVIP 5-star beats Nobel 5-star beats other). Runs once per
-  // (uid, held ids, active id) — reconcile itself no-ops when the
-  // active one is already the highest, so no write loop, no polling.
+  // (uid, held ids, active id, manual choice) — reconcile itself no-ops
+  // when the active one is already the highest, so no write loop, no
+  // polling. 2026-11-11 (manual-choice override): the reconcile is
+  // passed the user's explicit "Use" choice, so a manual choice is
+  // never overridden here — only honoured, or cleared + auto-used when
+  // the chosen effect is gone/expired.
   const entryEffectReconcileKey = useRef('');
   useEffect(() => {
     if (!isMe || !user?.uid || loading) return;
     const activeId = (profile as any)?.activeEntryEffect;
-    const key = `${user.uid}|${entryEffects.map((e) => e.id).sort().join(',')}|${typeof activeId === 'string' ? activeId : ''}`;
+    const manualId = profile?.entryEffectManualChoice;
+    const key = `${user.uid}|${entryEffects.map((e) => e.id).sort().join(',')}|${typeof activeId === 'string' ? activeId : ''}|${typeof manualId === 'string' ? manualId : ''}`;
     if (entryEffectReconcileKey.current === key) return;
     entryEffectReconcileKey.current = key;
     void reconcileActiveEntryEffect(
       user.uid,
       entryEffects,
       typeof activeId === 'string' ? activeId : undefined,
+      typeof manualId === 'string' ? manualId : undefined,
     ).catch(() => {});
   }, [isMe, user?.uid, loading, entryEffects, profile]);
 
@@ -319,6 +325,14 @@ export default function DecorationScreen() {
     if (!isMe || !user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // 2026-11-11 (boss, manual-choice override): tapping "Use" on an
+      // entry effect records it as the manual choice (active + marker in
+      // one write) so auto-use never overrides it afterwards. Tapping
+      // "Use" on the already-active one is a no-op — same id re-written.
+      if (field === 'activeEntryEffect') {
+        await setManualEntryEffectChoice(user.uid, id);
+        return;
+      }
       await updateUser(user.uid, { [field]: id } as any);
     } catch (e) {
       setError(`Could not equip: ${getErrorCause(e)}`);
@@ -329,6 +343,13 @@ export default function DecorationScreen() {
     if (!isMe || !user?.uid) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // 2026-11-11: removing the active entry effect also drops the
+      // manual-choice marker, so the next reconcile auto-uses the
+      // highest remaining effect instead of re-asserting the removed one.
+      if (field === 'activeEntryEffect') {
+        await updateUser(user.uid, { [field]: null as unknown as undefined, entryEffectManualChoice: null as unknown as undefined } as any);
+        return;
+      }
       await updateUser(user.uid, { [field]: null as unknown as undefined } as any);
     } catch (e) {
       setError(`Could not remove: ${getErrorCause(e)}`);

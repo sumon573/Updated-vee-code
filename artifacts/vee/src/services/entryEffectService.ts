@@ -11,6 +11,16 @@
  * Within the same star count, SVIP beats Nobel beats other; a final
  * newest-first tie-break keeps the pick deterministic.
  *
+ * 2026-11-11 (boss, manual-choice override): auto-use is the DEFAULT,
+ * but an explicit "Use" tap is an OVERRIDE that sticks. The tap writes
+ * `users/{uid}/entryEffectManualChoice` = the chosen id alongside
+ * `activeEntryEffect`. Every reconcile checks the marker FIRST: while
+ * the manually-chosen effect is still held + valid, reconcile leaves
+ * `activeEntryEffect` alone (and re-asserts it if something else moved
+ * it) — a NEW higher grant, a noble re-grant, or a Decoration load must
+ * NOT override it. Only when the manual choice is gone/expired/removed
+ * does reconcile clear the marker and fall back to auto-use (highest).
+ *
  * Source is derived from the grant's `source` field OR the id prefix
  * (`svip*` vs `noble-effect-*`) — never hardcoded per item — so
  * client-granted SVIP rewards (stored with source 'official') rank
@@ -21,10 +31,13 @@
  * needed. It never runs on render, never polls, never loops — only
  * on grant and on Decoration load.
  */
-import { ref, get, set } from 'firebase/database';
+import { ref, get, set, update, remove } from 'firebase/database';
 import { database } from '../config/firebase';
 import { grantStars } from '../components/NobleStarPill';
 import { isStillValid } from './badgeService';
+
+/** RTDB field holding the user's explicit "Use" choice (an entry-effect id). */
+export const MANUAL_ENTRY_EFFECT_FIELD = 'entryEffectManualChoice' as const;
 
 /** Minimal shape an entry-effect grant carries (server + client grants). */
 export interface EntryEffectGrantLike {
@@ -74,13 +87,27 @@ export function rankEntryEffects<T extends EntryEffectGrantLike>(effects: T[]): 
  * no entry effects held, the highest-ranked one already active, or the
  * stored active id points at an effect no longer held (fall back to the
  * highest-ranked one actually held).
+ *
+ * Manual-choice override (2026-11-11): when `manualChoiceId` names a
+ * still-held + valid effect, THAT id is the answer — the manual choice
+ * wins over the highest-ranked one. A manual choice that is no longer
+ * held/valid is ignored here (reconcile clears the stale marker and
+ * falls back to auto-use below).
  */
 export function pickActiveEntryEffect(
   effects: EntryEffectGrantLike[],
   currentActiveId?: string | null,
+  manualChoiceId?: string | null,
 ): string | null {
   const held = effects.filter((e) => isStillValid(e.validity));
   if (held.length === 0) return null;
+  if (manualChoiceId) {
+    const chosen = held.find((e) => e.id === manualChoiceId);
+    if (chosen) {
+      if (currentActiveId === chosen.id) return null;
+      return chosen.id;
+    }
+  }
   const best = rankEntryEffects(held)[0];
   if (!best) return null;
   if (currentActiveId === best.id) return null;
@@ -88,17 +115,56 @@ export function pickActiveEntryEffect(
 }
 
 /**
+ * Record an explicit "Use" tap: the chosen effect becomes active AND
+ * is remembered as the manual choice, so later reconciles (new grant,
+ * noble re-grant, Decoration load) do not override it. One atomic
+ * multi-field write — active + marker can never disagree.
+ */
+export async function setManualEntryEffectChoice(uid: string, effectId: string): Promise<void> {
+  if (!uid || !effectId) return;
+  await update(ref(database, `users/${uid}`), {
+    activeEntryEffect: effectId,
+    entryEffectManualChoice: effectId,
+  });
+}
+
+/** Clear the manual-choice marker (used when the chosen effect is gone). */
+export async function clearManualEntryEffectChoice(uid: string): Promise<void> {
+  if (!uid) return;
+  try {
+    await remove(ref(database, `users/${uid}/${MANUAL_ENTRY_EFFECT_FIELD}`));
+  } catch { /* marker already gone — nothing to do */ }
+}
+
+/**
  * Set the highest-ranked held entry effect active when it is not
  * already. Returns the newly activated id, or null when no write
  * was needed. Never clears the active pointer when nothing is held.
+ *
+ * Manual-choice override (2026-11-11): a valid manual choice is
+ * honoured instead of auto-use — if the active pointer drifted away
+ * from it (e.g. a grant-time reconcile ran before the marker was
+ * read), it is re-asserted here. When the manual choice is no longer
+ * held/valid, the stale marker is cleared and auto-use picks the
+ * highest remaining effect as the fallback.
  */
 export async function reconcileActiveEntryEffect(
   uid: string,
   effects: EntryEffectGrantLike[],
   currentActiveId?: string | null,
+  manualChoiceId?: string | null,
 ): Promise<string | null> {
   if (!uid) return null;
-  const next = pickActiveEntryEffect(effects, currentActiveId);
+  const held = effects.filter((e) => isStillValid(e.validity));
+  const manualValid = !!manualChoiceId && held.some((e) => e.id === manualChoiceId);
+  if (manualChoiceId && !manualValid) {
+    await clearManualEntryEffectChoice(uid);
+  }
+  const next = pickActiveEntryEffect(
+    effects,
+    currentActiveId,
+    manualValid ? manualChoiceId : null,
+  );
   if (!next) return null;
   try {
     await set(ref(database, `users/${uid}/activeEntryEffect`), next);
@@ -111,13 +177,17 @@ export async function reconcileActiveEntryEffect(
 /**
  * Read the user's held entry effects + stored active id from the DB
  * and reconcile. Safe to call on grant and on Decoration load.
+ * Also reads the manual-choice marker so a grant-time reconcile
+ * (incl. the noble re-grant of a higher effect) never overrides an
+ * explicit "Use" choice.
  */
 export async function reconcileActiveEntryEffectFromDb(uid: string): Promise<string | null> {
   if (!uid) return null;
   try {
-    const [effectsSnap, activeSnap] = await Promise.all([
+    const [effectsSnap, activeSnap, manualSnap] = await Promise.all([
       get(ref(database, `users/${uid}/entryEffects`)),
       get(ref(database, `users/${uid}/activeEntryEffect`)),
+      get(ref(database, `users/${uid}/${MANUAL_ENTRY_EFFECT_FIELD}`)),
     ]);
     const raw = effectsSnap.exists() ? effectsSnap.val() : null;
     const arr: unknown[] = Array.isArray(raw)
@@ -131,7 +201,9 @@ export async function reconcileActiveEntryEffectFromDb(uid: string): Promise<str
     );
     const activeVal = activeSnap.val();
     const activeId = typeof activeVal === 'string' ? activeVal : undefined;
-    return await reconcileActiveEntryEffect(uid, effects, activeId);
+    const manualVal = manualSnap.val();
+    const manualId = typeof manualVal === 'string' ? manualVal : undefined;
+    return await reconcileActiveEntryEffect(uid, effects, activeId, manualId);
   } catch {
     return null;
   }

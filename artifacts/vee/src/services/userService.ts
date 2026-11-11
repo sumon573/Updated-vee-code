@@ -55,6 +55,13 @@ export type VeeUser = {
   /* 2026-10-15 (Sumon): Equipped sound ripple + entry effect IDs */
   activeRipple?: string;
   activeEntryEffect?: string;
+  /**
+   * 2026-11-11 (boss, manual-choice override): the entry-effect id the
+   * user explicitly tapped "Use" on in Decoration. While set and the
+   * effect is still held + valid, auto-use must not override it.
+   * Stored at users/{uid}/entryEffectManualChoice.
+   */
+  entryEffectManualChoice?: string;
   /** 4-digit premium Short ID (2026-10-09). Displayed in gold badge. */
   shortId?: string;
   /**
@@ -170,6 +177,7 @@ export function sanitizeVeeUser(uid: string, raw: any): VeeUser | null {
     activeNameplate: typeof raw.activeNameplate === 'string' ? raw.activeNameplate : undefined,
     activeRipple: typeof raw.activeRipple === 'string' ? raw.activeRipple : undefined,
     activeEntryEffect: typeof raw.activeEntryEffect === 'string' ? raw.activeEntryEffect : undefined,
+    entryEffectManualChoice: typeof raw.entryEffectManualChoice === 'string' ? raw.entryEffectManualChoice : undefined,
     // Short ID + official badge (2026-10-09)
     shortId: typeof raw.shortId === 'string' ? raw.shortId : undefined,
     officialBadge: raw.officialBadge && typeof raw.officialBadge === 'object'

@@ -430,11 +430,12 @@ async function revokeNobleRankItems(uid: string, rankIndex: number): Promise<voi
   ];
   await Promise.all(removals.map(p => p.catch(() => {})));
   try {
-    const [frameSnap, plateSnap, rippleSnap, effectSnap] = await Promise.all([
+    const [frameSnap, plateSnap, rippleSnap, effectSnap, manualSnap] = await Promise.all([
       get(ref(database, `users/${uid}/activeFrame`)),
       get(ref(database, `users/${uid}/activeNameplate`)),
       get(ref(database, `users/${uid}/activeRipple`)),
       get(ref(database, `users/${uid}/activeEntryEffect`)),
+      get(ref(database, `users/${uid}/entryEffectManualChoice`)),
     ]);
     const clears: Promise<void>[] = [];
     if (frameSnap.val() === `noble-frame-${key}`) clears.push(remove(ref(database, `users/${uid}/activeFrame`)).catch(() => {}));
@@ -447,6 +448,11 @@ async function revokeNobleRankItems(uid: string, rankIndex: number): Promise<voi
     const effectVal = effectSnap.val();
     const effectId = typeof effectVal === 'string' ? effectVal : effectVal?.id;
     if (effectId === `noble-effect-${key}`) clears.push(remove(ref(database, `users/${uid}/activeEntryEffect`)).catch(() => {}));
+    // 2026-11-11 (manual-choice override): if the revoked effect WAS the
+    // user's explicit "Use" choice, drop the marker too — otherwise it
+    // would dangle at a missing effect. Any other manual choice is left
+    // alone; the next reconcile falls back to auto-use (highest held).
+    if (manualSnap.val() === `noble-effect-${key}`) clears.push(remove(ref(database, `users/${uid}/entryEffectManualChoice`)).catch(() => {}));
     try {
       const badgeSnap = await get(ref(database, `users/${uid}/officialBadge`));
       const badgeVal = badgeSnap.val();
