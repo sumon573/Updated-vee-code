@@ -2089,6 +2089,17 @@ export type RoomEntryEvent = {
    * sender or a non-SVIP effect (receivers fall back to the noble path).
    */
   entryEffectArtUrl?: string | null;
+  /**
+   * 2026-11-11 (SVIP entry dismiss fix): the joiner's EQUIPPED SVIP
+   * entry-effect animation length in ms (their grant
+   * users/{uid}/entryEffects/{id}/durationMs — lion 1680, peacock 1920,
+   * dragon 3680). Sent ONLY with an SVIP effect, alongside
+   * entryEffectArtUrl. Receivers dismiss the banner at duration + a
+   * small buffer instead of the old fixed 3650ms. Absent = old sender
+   * or a missing field (receivers fall back to the per-effect map,
+   * then the fixed 3650ms).
+   */
+  entryEffectDurationMs?: number | null;
 };
 
 /**

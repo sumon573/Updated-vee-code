@@ -34,6 +34,11 @@ interface EntryBannerProps {
   /** SVIP entry-effect art URL (sender's grant icon), sent with the entry
       event. Only used when activeEntryEffect is an SVIP id. */
   entryEffectArtUrl?: string | null;
+  /** SVIP entry-effect animation length in ms (sender's grant
+      users/{uid}/entryEffects/{id}/durationMs), sent with the entry
+      event. Drives the SVIP dismiss timer; absent = fallback (see
+      svipDismissMs below). */
+  entryEffectDurationMs?: number | null;
   /** Called when the banner should be dismissed */
   onDismiss: () => void;
 }
@@ -171,7 +176,7 @@ function EntrySparkle({ size = 12, color = '#FFD700', delay = 0, top, left }: { 
   );
 }
 
-export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntryEffect, entryEffectArtUrl, onDismiss }: EntryBannerProps) {
+export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntryEffect, entryEffectArtUrl, entryEffectDurationMs, onDismiss }: EntryBannerProps) {
   // 2026-11-11 (SVIP entry effect): an SVIP id starts with 'svip'
   // (e.g. 'svip5-entry-effect'); noble ids start with 'noble-effect-'.
   // The SVIP branch renders ONLY when the id is SVIP *and* the sender
@@ -226,12 +231,35 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   const slideAnim = useRef(new Animated.Value(400)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
+  // 2026-11-11 (boss): SVIP dismiss is DYNAMIC — the art's own play
+  // length + a 250ms buffer, so the final pose registers briefly but
+  // never lingers. The lion is 1680ms (it was held ~2s on the old fixed
+  // 3650ms timer and looked frozen); the dragon is 3680ms (~the old
+  // timer, so its feel is unchanged); the peacock is 1920ms.
+  // Precedence: duration from the entry event (server-driven grant
+  // field users/{uid}/entryEffects/{id}/durationMs) > measured
+  // per-effect map (old sender / missing field) > the old fixed 3650ms
+  // (unknown effect). The noble/standard banner below is untouched
+  // (3000ms). Read once at mount — the banner mounts fresh per entry,
+  // so the mount-time props are the entry's own values.
+  const SVIP_ENTRY_EFFECT_DURATIONS_MS: Record<string, number> = {
+    'svip3-entry-effect': 1680,
+    'svip4-entry-effect': 1920,
+    'svip5-entry-effect': 3680,
+  };
+  const svipDismissMs = svipArtUrl
+    ? (typeof entryEffectDurationMs === 'number' && entryEffectDurationMs > 0
+      ? entryEffectDurationMs
+      : SVIP_ENTRY_EFFECT_DURATIONS_MS[activeEntryEffect ?? ''] ?? 3650) + 250
+    : 3650;
+
   useEffect(() => {
     if (svipArtUrl) {
       // 2026-11-11 (SVIP entry effect): the art animates itself — fade in
-      // fast, hold for the art's ~3.7s play, fade out. Same 3650ms dismiss
-      // as the noble art branch; NO new timer beyond this existing pattern.
-      // The banner unmounts on dismiss, so the WebP stops with it.
+      // fast, hold for the art's own play length (svipDismissMs: duration
+      // + 250ms buffer), fade out. NO new timer beyond this existing
+      // pattern — only WHEN it fires changed. The banner unmounts on
+      // dismiss, so the WebP stops with it.
       Animated.timing(opacityAnim, {
         toValue: 1,
         duration: 200,
@@ -243,7 +271,7 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
           duration: 300,
           useNativeDriver: true,
         }).start(() => onDismiss());
-      }, 3650);
+      }, svipDismissMs);
       return () => clearTimeout(timer);
     }
     if (hasEntryArt) {
@@ -352,7 +380,8 @@ export default function EntryBanner({ name, photoURL, nobleRankIndex, activeEntr
   // crimson #A71C32, other tiers their SVIP_TIER_COLORS colour). The
   // rest of the banner stays transparent and blends with the room
   // background. The art is 315x311 (near-square); the whole branch
-  // dismisses on the existing 3650ms timer above and unmounts with it.
+  // dismisses on the dynamic svipDismissMs timer above (duration +
+  // 250ms) and unmounts with it.
   if (svipArtUrl) {
     const dragonW = Math.min(Dimensions.get('window').width * 0.86, 320);
     const dragonH = (dragonW * 311) / 315;

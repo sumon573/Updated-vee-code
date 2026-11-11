@@ -112,8 +112,8 @@ export interface VoiceRoomModalsProps {
   submitPinGate: () => void;
   cancelPinGate: () => void;
   giftFlyRef: React.RefObject<GiftFlyHandle | null>;
-  entryBanner: { name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null } | null;
-  setEntryBanner: (b: { name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null } | null) => void;
+  entryBanner: { name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null; entryEffectDurationMs?: number | null } | null;
+  setEntryBanner: (b: { name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null; entryEffectDurationMs?: number | null } | null) => void;
   handleDisband: () => void;
   handleViewOtherProfile: (uid: string, name: string) => void;
   handleViewOwnProfile: () => void;
@@ -282,6 +282,7 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
           nobleRankIndex={p.entryBanner.nobleRankIndex}
           activeEntryEffect={p.entryBanner.activeEntryEffect}
           entryEffectArtUrl={p.entryBanner.entryEffectArtUrl}
+          entryEffectDurationMs={p.entryBanner.entryEffectDurationMs}
           onDismiss={() => p.setEntryBanner(null)}
         />
       ) : null}

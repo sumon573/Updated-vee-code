@@ -566,7 +566,7 @@ export default function VoiceRoomScreen() {
     ),
     [blockedRecs, myUid],
   );
-  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null } | null>(null);
+  const [entryBanner, setEntryBanner] = useState<{ name: string; photoURL?: string | null; nobleRankIndex?: number; activeEntryEffect?: string; entryEffectArtUrl?: string | null; entryEffectDurationMs?: number | null } | null>(null);
   const [pendingRequests, setPendingRequests] = useState<SeatRequest[]>([]);
   // 2026-10-19 (IMO waiting queue): 1-based position of my own pending seat
   // request in the time-ordered queue, or null when I'm not queued.
@@ -1054,31 +1054,41 @@ export default function VoiceRoomScreen() {
         const myEffect = (myProfile as any)?.activeEntryEffect;
         const effectField = myEffect !== undefined ? { activeEntryEffect: myEffect || '' } : {};
         // 2026-11-11 (SVIP entry effect): an SVIP id alone is not a URL —
-        // the art lives in the sender's own grant. Read our own grant icon
-        // ONCE per entry (no poll/loop) and send it with the entry event so
-        // receivers can render the animated WebP without a lookup.
+        // the art lives in the sender's own grant. Read our own grant
+        // ONCE per entry (no poll/loop) and send its icon + durationMs
+        // with the entry event so receivers can render the animated WebP
+        // without a lookup and dismiss when the animation ends.
+        // 2026-11-11 (dismiss fix): the whole grant node is read (not
+        // just /icon) so durationMs travels with the art URL.
         let myEntryEffectArtUrl: string | undefined;
+        let myEntryEffectDurationMs: number | undefined;
         if (typeof myEffect === 'string' && myEffect.startsWith('svip')) {
           try {
-            const snap = await get(ref(database, `users/${myUid}/entryEffects/${myEffect}/icon`));
-            const v = snap.val();
-            if (typeof v === 'string' && v) myEntryEffectArtUrl = v;
+            const snap = await get(ref(database, `users/${myUid}/entryEffects/${myEffect}`));
+            const g = snap.val();
+            if (g && typeof g === 'object') {
+              if (typeof g.icon === 'string' && g.icon) myEntryEffectArtUrl = g.icon;
+              if (typeof g.durationMs === 'number' && g.durationMs > 0) myEntryEffectDurationMs = g.durationMs;
+            }
           } catch { /* grant unreadable — banner falls back to the noble path */ }
         }
         const effectArtField = myEntryEffectArtUrl ? { entryEffectArtUrl: myEntryEffectArtUrl } : {};
+        const effectDurationField = myEntryEffectDurationMs != null ? { entryEffectDurationMs: myEntryEffectDurationMs } : {};
         setEntryBanner({
           name: displayName,
           photoURL: myPhotoURL || null,
           ...(myRank != null ? { nobleRankIndex: myRank } : {}),
           ...effectField,
-          ...effectArtField });
+          ...effectArtField,
+          ...effectDurationField });
         sendRoomEntryEvent(roomId, {
           uid: myUid,
           name: displayName,
           photoURL: myPhotoURL || null,
           ...(myRank != null ? { nobleRankIndex: myRank } : {}),
           ...effectField,
-          ...effectArtField }).catch(() => {});
+          ...effectArtField,
+          ...effectDurationField }).catch(() => {});
       })();
     }
   }, [myUid, myProfile, myName, myPhotoURL, roomId, pinGate, isReturnFromMinimize, isRestore]);
@@ -1098,7 +1108,8 @@ export default function VoiceRoomScreen() {
         photoURL: entry.photoURL || null,
         ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
         ...((entry as any).activeEntryEffect !== undefined ? { activeEntryEffect: (entry as any).activeEntryEffect } : {}),
-        ...(entry.entryEffectArtUrl ? { entryEffectArtUrl: entry.entryEffectArtUrl } : {}) });
+        ...(entry.entryEffectArtUrl ? { entryEffectArtUrl: entry.entryEffectArtUrl } : {}),
+        ...(entry.entryEffectDurationMs != null ? { entryEffectDurationMs: entry.entryEffectDurationMs } : {}) });
     });
   }, [roomId, myUid, pass2PollActive]);
 
@@ -2025,7 +2036,8 @@ export default function VoiceRoomScreen() {
           photoURL: entry.photoURL || null,
           ...(entry.nobleRankIndex != null ? { nobleRankIndex: entry.nobleRankIndex } : {}),
           ...((entry as any).activeEntryEffect !== undefined ? { activeEntryEffect: (entry as any).activeEntryEffect } : {}),
-          ...(entry.entryEffectArtUrl ? { entryEffectArtUrl: entry.entryEffectArtUrl } : {}) });
+          ...(entry.entryEffectArtUrl ? { entryEffectArtUrl: entry.entryEffectArtUrl } : {}),
+          ...(entry.entryEffectDurationMs != null ? { entryEffectDurationMs: entry.entryEffectDurationMs } : {}) });
       },
       onGift: (event) => {
         if (!event) return;
