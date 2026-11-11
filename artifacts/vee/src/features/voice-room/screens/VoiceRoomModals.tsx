@@ -18,6 +18,7 @@ import { LeaderboardModal } from './LeaderboardModal';
 import RoomMembersModal from '../components/RoomMembersModal';
 import { GiftsModal } from '../components/GiftsModal';
 import { MemberManageModal } from '../components/MemberManageModal';
+import { UserProfilePopup } from '../components/UserProfilePopup';
 import { ExitModal } from '../components/ExitModal';
 import { TaskCenterModal } from '../components/TaskCenterModal';
 import EntryBanner from '../components/EntryBanner';
@@ -98,6 +99,14 @@ export interface VoiceRoomModalsProps {
   setMembersOpen: (v: boolean) => void;
   activeMember: Participant | null;
   setActiveMember: (m: Participant | null) => void;
+  /** 2026-11-11 (boss, imo mirror): profile popup — tap on a seat /
+   * audience member opens the popup; long-press keeps the old sheets. */
+  popupMember: Participant | null;
+  setPopupMember: (m: Participant | null) => void;
+  popupTargetRole: Role;
+  popupIsCommentBlocked: boolean;
+  /** Direct seat invite (no confirmation Alert) for the popup's bar. */
+  inviteToSeatDirect: (memberId: string) => Promise<'ok' | 'no-seat' | 'already-seated' | 'error'>;
   exitModalOpen: boolean;
   setExitModalOpen: (v: boolean) => void;
   /** 2026-10-24 (Sumon): Task Center (server-driven `task_events`). */
@@ -315,7 +324,45 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         ownerId={p.ownerId}
         seats={p.seats}
         audience={p.audience}
-        onManageMember={(m) => { p.setMembersOpen(false); p.setActiveMember(m); }}
+        // 2026-11-11 (boss, imo mirror): a member row opens the profile
+        // popup (self rows still open the manage modal).
+        onManageMember={(m) => { p.setMembersOpen(false); if (m.id === p.myUid) p.setActiveMember(m); else p.setPopupMember(m); }}
+      />
+      {/* ── 2026-11-11 (boss, imo mirror): profile popup ──────────────
+          Tap on a seat / audience member → popup; DP tap → full profile. */}
+      <UserProfilePopup
+        member={p.popupMember}
+        myUid={p.myUid}
+        myName={p.myName}
+        viewerRole={p.myRole}
+        targetRole={p.popupTargetRole}
+        isCommentBlocked={p.popupIsCommentBlocked}
+        accent={p.accentColor}
+        onClose={() => p.setPopupMember(null)}
+        onViewFullProfile={p.handleViewOtherProfile}
+        onGift={(m) => { p.setGiftsRecipient(m); p.setGiftsOpen(true); }}
+        onMention={p.handleMention}
+        onToggleCommentBlock={() => {
+          if (!p.popupMember) return;
+          if (p.popupIsCommentBlocked) p.unblockUser(p.popupMember.id);
+          else p.blockUser(p.popupMember.id, 'comment-block');
+        }}
+        onInviteDirect={() => (p.popupMember ? p.inviteToSeatDirect(p.popupMember.id) : Promise.resolve('error' as const))}
+        onRemoveMember={() => { if (p.popupMember) p.removeMember(p.popupMember.id); }}
+        onSetAdmin={() => { if (p.popupMember) p.setAdminRole(p.popupMember.id); }}
+        onDismissAdmin={() => { if (p.popupMember) p.dismissAdmin(p.popupMember.id); }}
+        onReport={(memberId, memberName) => {
+          submitReport({
+            reporterUid: p.myUid,
+            reporterName: p.myName,
+            reportedUid: memberId,
+            reportedName: memberName,
+            reason: 'inappropriate',
+            roomId: p.roomId }).catch(() => {
+            Alert.alert(t('voiceRoom.screen.error'), t('voiceRoom.memberManage.reportError'));
+          });
+          p.setPopupMember(null);
+        }}
       />
       <MemberManageModal
         member={p.activeMember}

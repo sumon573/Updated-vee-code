@@ -13,7 +13,14 @@ import PremiumLoader from '@/src/components/PremiumLoader';
 // Glass P1c (Candidate A "Pod Glass" — the default; no B/C used on this
 // screen): GlassView is static translucent fill only, no expo-blur.
 import { GlassView } from '@/src/design/GlassView';
-import MistNameplate from '@/src/components/MistNameplate';
+import { NameplateRow } from '@/src/components/NameplateRow';
+import { RoomUserActionBar } from '@/src/features/voice-room/components/RoomUserActionBar';
+import { SayHiSheet } from '@/src/features/voice-room/components/SayHiSheet';
+import { PermissionSettingsSheet } from '@/src/features/voice-room/components/PermissionSettingsSheet';
+import { RoomToast, useRoomToast } from '@/src/features/voice-room/components/RoomToast';
+import { useRoomUserActions } from '@/src/features/voice-room/hooks/useRoomUserActions';
+import { requestRoomReturnAction } from '@/src/features/voice-room/services/roomReturnAction';
+import { submitReport } from '@/src/services/reportService';
 import { getActiveCatalog, resolveGrantedArt } from '@/src/services/nobleRewardsCatalog';
 import { subscribeLevel, getLevelFromXP } from '@/src/services/levelService';
 import { useIsKing } from '@/src/hooks/useNobleRank';
@@ -39,7 +46,7 @@ import { subscribeVisitors, recordVisit, countUnseenListed, countListed } from '
 import {
   sendFriendRequest, cancelFriendRequest, acceptFriendRequest, rejectFriendRequest,
   subscribeFriendStatus, FriendStatus } from '@/src/services/friendRequestService';
-import { buildChatId } from '@/src/features/chat/services/firebaseDmService';
+import { buildChatId, createOrGetChat, sendMessage } from '@/src/features/chat/services/firebaseDmService';
 import {
   unblockUser, getBlockDirection,
   subscribeBlockedUsers, BlockDirection } from '@/src/services/blockService';
@@ -292,18 +299,6 @@ function nobleSubLevel(xp: number, rankIdx: number): number {
   if (!Number.isFinite(span) || span <= 0) return 1;
   return Math.min(3, Math.floor(((xp - r.minXP) / span) * 3) + 1);
 }
-/** Lighten a hex color — second stop of the pill gradient. */
-function lightenHex(hex: string, amt: number): string {
-  const n = hex.replace('#', '');
-  const full = n.length === 3 ? n.split('').map((c) => c + c).join('') : n;
-  const num = parseInt(full, 16);
-  if (!Number.isFinite(num)) return hex;
-  const r = Math.min(255, ((num >> 16) & 0xff) + amt);
-  const g = Math.min(255, ((num >> 8) & 0xff) + amt);
-  const b = Math.min(255, (num & 0xff) + amt);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
 // 2026-10-16 (Sumon): compact count so the fixed 100px pill never overflows.
 function fmtCompact(n: number): string {
   if (n >= 1_000_000_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
@@ -312,27 +307,6 @@ function fmtCompact(n: number): string {
   return `${n}`;
 }
 
-// 2026-10-12 (Sumon): Premium gradient pills for Nobel & Follower —
-// gorgeous, premium look. Same size as LevelBadge.
-function PremiumPill({ label, icon, colors, padH = 8, fontSize = 11 }: { label: string; icon?: string; colors: [string, string]; padH?: number; fontSize?: number }) {
-  // 2026-10-30 (boss): short pill - hug content (no fixed width) + Lv Max size:
-  // height 20, radius 10, paddingHorizontal 8, icon 12, text 11/700. REPLACES the noble-plate banner.
-  return (
-    <View style={{ marginRight: 6 }}>
-      <LinearGradient
-        colors={colors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          height: 20, borderRadius: 10, paddingHorizontal: padH,
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-      >
-        {icon && <Text style={{ fontSize: 12, marginRight: 3 }}>{icon}</Text>}
-        <Text style={{ fontSize, fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>{label}</Text>
-      </LinearGradient>
-    </View>
-  );
-}
 
 
 // ─── 2026-10-29 (boss, profile mirror): shared profile helpers ───
@@ -656,6 +630,7 @@ export default function ProfileScreen({
   onNavigateToContacts,
   targetUid,
   targetName,
+  roomId,
   embedded }: {
   onNavigateToContacts?: () => void;
   /** 2026-10-30 (boss: profile as pager page): when true, this screen
@@ -674,6 +649,11 @@ export default function ProfileScreen({
    *  Used as fallback when the target's DB name is empty — NEVER falls
    *  back to the viewer's own name. */
   targetName?: string;
+  /** 2026-11-11 (boss, imo mirror): when set, the profile was opened
+   *  FROM a voice room — the bottom row becomes the imo room row
+   *  (+ Follow / Chat-or-Say-hi / gift) with the role-gated 5-icon bar
+   *  below it, and the header gains the "@" mention button. */
+  roomId?: string;
 } = {}) {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
@@ -1346,6 +1326,14 @@ export default function ProfileScreen({
     }
   }, [isMe, displayUid]);
 
+  // ── 2026-11-11 (boss, imo mirror): room context (profile opened from a
+  // voice room) — the 5-icon bar + Say hi / Permission sheets + toast.
+  // ALL hooks above the first early return (loading / blocked).
+  const roomActions = useRoomUserActions(roomId, user?.uid, displayUid, profile?.name || targetName || 'User', user?.displayName || 'User');
+  const { toast: roomToast, showToast } = useRoomToast();
+  const [sayHiOpen, setSayHiOpen] = useState(false);
+  const [permissionOpen, setPermissionOpen] = useState(false);
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -1422,13 +1410,11 @@ export default function ProfileScreen({
     if (list.length === 0 && effectiveActiveNameplate) list.push(effectiveActiveNameplate);
     return list;
   })();
-  /* Mist color for a Viscount+ nameplate — resolved per plate at render. */
-  const nameplateMistFor = (plateId: string): string | null => {
-    const entry = getActiveCatalog().find((r) => `noble-plate-${r.rankKey}` === plateId);
-    return entry?.nameplate.mistColor || null;
-  };
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
+  // 2026-11-11 (boss, imo mirror): Achievement = event-source badges
+  // (same split as the Honor screen).
+  const achievementCount = grantedBadges.filter((b) => b.source === 'event').length;
 
   // ─── Permanent Level System (levelService) ───
   // 2026-10-24 (Sumon): the old local estimate (sqrt(xp/50), Max at ~115k
@@ -1445,6 +1431,85 @@ export default function ProfileScreen({
   const goBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace('/home' as never);
+  };
+
+  // ── 2026-11-11 (boss, imo mirror): room-context actions. Plain
+  // functions (after the early returns — never hooks below them). ───
+  // Middle button in room context: friends → Chat (same block re-check as
+  // handleLeftAction); anyone else → the Say hi sheet.
+  const handleRoomMiddleAction = async () => {
+    if (!user?.uid || !displayUid || actionLoading) return;
+    if (friendStatus === 'friends') {
+      const dir = await getBlockDirection(user.uid, displayUid).catch(() => 'none' as BlockDirection);
+      setBlockDirection(dir);
+      if (dir !== 'none') {
+        Alert.alert(
+          t('userProfile.error', 'Error'),
+          dir === 'byMe' || dir === 'mutual'
+            ? t('userProfile.blockedByMeChat', 'You blocked this user. Unblock to chat.')
+            : t('userProfile.blockedByThemChat', 'This user has blocked you.'),
+        );
+        return;
+      }
+      router.push(`/inbox/${buildChatId(user.uid, displayUid)}`);
+      return;
+    }
+    setSayHiOpen(true);
+  };
+  const handleSayHiSend = async (greeting: string, remark: string) => {
+    if (!user?.uid || !displayUid) return;
+    try {
+      const chatId = await createOrGetChat(user.uid, user.displayName || 'User', displayUid, profile?.name || targetName || 'User');
+      await sendMessage(chatId, user.uid, displayUid, greeting + (remark ? `\n\n${remark}` : ''));
+      setSayHiOpen(false);
+      showToast('Greeting sent');
+    } catch (e) {
+      Alert.alert(t('userProfile.error', 'Error'), String(e));
+    }
+  };
+  // Gift / "@" act back IN the room (open GiftsModal / insert @name) — the
+  // profile requests the action, goes back, and the room consumes it once
+  // on focus (roomReturnAction; roomId-scoped, never replayed elsewhere).
+  const handleRoomGift = () => {
+    if (!roomId || !displayUid) return;
+    requestRoomReturnAction({ type: 'gift', roomId, uid: displayUid, name: profile?.name || targetName || 'User' });
+    if (router.canGoBack()) router.back();
+    else router.replace('/home' as never);
+  };
+  const handleMentionRoom = () => {
+    if (!roomId || !displayUid) return;
+    requestRoomReturnAction({ type: 'mention', roomId, uid: displayUid, name: profile?.name || targetName || 'User' });
+    if (router.canGoBack()) router.back();
+    else router.replace('/home' as never);
+  };
+  const handleRoomInvite = async () => {
+    const res = await roomActions.inviteDirect();
+    if (res === 'ok') showToast('Success to invite');
+    else if (res === 'no-seat') showToast('No empty seat');
+    else if (res === 'already-seated') showToast('Already on a seat');
+    else Alert.alert(t('voiceRoom.screen.error', 'Error'), t('voiceRoom.screen.inviteSendError', 'Could not send the invite.'));
+  };
+  const handleKickConfirm = () => {
+    Alert.alert('Remove the user from room?', '', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => { void roomActions.kickOut(); } },
+    ]);
+  };
+  const handleReport = async () => {
+    if (!user?.uid || !displayUid) return;
+    try {
+      await submitReport({
+        reporterUid: user.uid,
+        reporterName: user.displayName || 'User',
+        reportedUid: displayUid,
+        reportedName: profile?.name || targetName || 'User',
+        reason: 'inappropriate',
+        roomId: roomId ?? '' });
+      setShowVidPopup(false);
+      showToast('Reported');
+    } catch (e) {
+      Alert.alert(t('userProfile.error', 'Error'), String(e));
+    }
   };
 
   // ── 2026-10-29 (boss, imo mirror): derived profile values ───
@@ -1528,6 +1593,14 @@ export default function ProfileScreen({
           {vId ? (
             <Pressable onPress={() => setShowVidPopup(true)} style={{ position: 'absolute', right: 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
               <Feather name="more-horizontal" size={24} color="#FFFFFF" style={{ textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }} />
+            </Pressable>
+          ) : null}
+          {/* 2026-11-11 (boss, imo mirror): "@" in room context — inserts
+              @name into the room chat input (via the return action) and
+              goes back to the room. */}
+          {!isMe && roomId ? (
+            <Pressable onPress={handleMentionRoom} style={{ position: 'absolute', right: vId ? 44 : 4, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }} hitSlop={8}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#FFFFFF', textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>@</Text>
             </Pressable>
           ) : null}
         </View>
@@ -1639,117 +1712,8 @@ export default function ProfileScreen({
             {isKing ? <KingSparkle /> : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-            {displayNameplates.map((plate) => {
-              const isNoblePlate = plate.id.startsWith('noble-plate-');
-              const mist = nameplateMistFor(plate.id);
-              const iconUrl = /^https?:\/\//i.test(plate.icon || '');
-              // 2026-11-09 (boss): SVIP plate first, noble plate right after
-              // it. SVIP / other URL plates render the 74x20 banner (boss
-              // 2026-11-09 09:15: same King-size slot as noble plates, was
-              // 100x20 — the wide SVIP banner looked too big next to King);
-              // noble plates render the 74x20 art (or the rank pill) — same
-              // boxes as before. (Fixes the old latent bug: the banner mist
-              // branch read activeNameplate.icon instead of the shown plate's
-              // icon.)
-              if (!isNoblePlate) {
-                if (!iconUrl) return null;
-                // 2026-11-09 (boss, 09:19): SVIP nameplate animates EXACTLY
-                // like the Lv Max badge — same ShimmerOverlay (speed 900,
-                // opacity 0.8) + same 5 Sparkles (same delays/positions/
-                // sizes/colors) as LevelBadge's max tier. হুবহু, copied —
-                // no new effect invented. Noble plates stay static.
-                const isSvipPlate = plate.id.startsWith('svip');
-                // 2026-11-09 (boss): tapping the SVIP nameplate opens the
-                // SVIP page — mirrors the Noble plate tap below
-                // (router.push('/profile/nobel')). Non-SVIP non-Noble plates
-                // (fallback stored activeNameplate) stay a plain View — no
-                // dead tap target.
-                const plateView = (
-                  <View key={plate.id} style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                    {mist ? (
-                      <MistNameplate imageUrl={plate.icon} mistColor={mist} width={74} height={20} fit="cover" />
-                    ) : (
-                      <Image source={{ uri: plate.icon }} style={{ width: 74, height: 20 }} contentFit="cover" />
-                    )}
-                    {isSvipPlate && (
-                      <>
-                        <ShimmerOverlay speed={900} opacity={0.8} />
-                        <Sparkle delay={0} left={15} top={3} size={5} color="#FFD700" />
-                        <Sparkle delay={300} left={55} top={12} size={4} color="#FFFFFF" />
-                        <Sparkle delay={600} left={80} top={5} size={5} color="#FFD700" />
-                        <Sparkle delay={200} left={35} top={10} size={3} color="#FFE873" />
-                        <Sparkle delay={700} left={65} top={4} size={4} color="#FFD700" />
-                      </>
-                    )}
-                  </View>
-                );
-                if (isSvipPlate) {
-                  return (
-                    <Pressable key={plate.id} onPress={() => router.push('/svip')} hitSlop={4}>
-                      {plateView}
-                    </Pressable>
-                  );
-                }
-                return plateView;
-              }
-              // Noble plate — only the CURRENT rank's plate renders (a stale
-              // old-rank plate via the stored pointer stays hidden, as before).
-              // Tapping it opens the Nobel page (2026-10-31, boss).
-              const rankKey = plate.id.slice('noble-plate-'.length);
-              if (rankKey !== nobleRankKey) return null;
-              const rankIndex = NOBLE_RANKS.findIndex((r) => r.key === rankKey);
-              if (iconUrl && rankKey === 'count') {
-                return (
-                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-                    <View style={{ marginRight: 6 }}>
-                      <Image source={{ uri: plate.icon }} style={{ width: 74, height: 20 }} contentFit="contain" />
-                    </View>
-                  </Pressable>
-                );
-              }
-              if (iconUrl && rankKey === 'marquis') {
-                return (
-                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#EC407A'} width={74} height={20} fit="cover" />
-                    </View>
-                  </Pressable>
-                );
-              }
-              if (iconUrl && rankKey === 'duke') {
-                return (
-                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#FF7043'} width={74} height={20} fit="cover" />
-                    </View>
-                  </Pressable>
-                );
-              }
-              if (iconUrl && rankKey === 'king') {
-                return (
-                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-                    <View style={{ marginRight: 6, width: 74, height: 20, borderRadius: 10, overflow: 'hidden' }}>
-                      <MistNameplate imageUrl={plate.icon} mistColor={mist || '#FBC02D'} width={74} height={20} fit="cover" />
-                    </View>
-                  </Pressable>
-                );
-              }
-              if (rankIndex >= 0) {
-                const rank = NOBLE_RANKS[rankIndex];
-                return (
-                  <Pressable key={plate.id} onPress={() => router.push('/profile/nobel')} hitSlop={4}>
-                    <PremiumPill
-                      padH={rank.key === 'viscount' ? 5 : rank.key === 'knight' ? 7 : 8}
-                      fontSize={rank.key === 'viscount' ? 9 : 11}
-                      label={rank.name.toUpperCase()}
-                      icon={nobleThemeFor(rankIndex)?.entryIcon}
-                      colors={[rank.color, lightenHex(rank.color, 60)]}
-                    />
-                  </Pressable>
-                );
-              }
-              return null;
-            })}
+            {/* 2026-11-11 (boss, imo mirror): plates render via the shared NameplateRow — 'large' 74x20 own profile, 'small' 68x18 other-user (boss 13:53: smaller so they fit). Art stays whole, never cut. */}
+            <NameplateRow plates={displayNameplates} size={isMe ? 'large' : 'small'} nobleRankKey={nobleRankKey} />
             <LevelBadge level={userLevel} />
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
@@ -1896,6 +1860,45 @@ export default function ProfileScreen({
           </View>
         )}
 
+        {/* ─── Privilege section — 2026-11-11 (boss, imo mirror): Achievement,
+            Honor, Gift Wall, Decoration — HORIZONTALLY SCROLLABLE (swipe
+            left-right), like Intimacy. All counts are real (event badges,
+            granted badges, gifts received, frames owned). Tap a card → its
+            subpage. ─── */}
+        <View style={flatSectionStyle}>
+          <SectionHeader title="Privilege" count={4} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 15 }}
+            nestedScrollEnabled
+            directionalLockEnabled
+          >
+            <View style={{ flexDirection: 'row' }}>
+              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
+                <Feather name="award" size={22} color="#F59E0B" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Achievement</Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{achievementCount} badges</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
+                <Feather name="shield" size={22} color="#3B82F6" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Honor</Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{grantedBadges.length} badges</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
+                <Feather name="gift" size={22} color="#EC4899" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Gift Wall</Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{totalGifts} gifts</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} style={{ width: 96, marginRight: 10, backgroundColor: C.tile, borderRadius: 14, padding: 12 }}>
+                <Feather name="image" size={22} color="#8B5CF6" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: C.text, marginTop: 8 }}>Decoration</Text>
+                <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{grantedFrames.length} frames</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+
         {/* ─── Intimacy section — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
             2026-10-27 (boss correction): intimacy pairs NEVER render here.
             Own card: real friends (max 5) + (+) slots filling up to 5.
@@ -2022,6 +2025,51 @@ export default function ProfileScreen({
             <Feather name="edit-2" size={18} color={C.blue} />
             <Text style={{ fontSize: 17, fontWeight: '600', color: C.blue, marginLeft: 8 }}>Edit</Text>
           </Pressable>
+        ) : roomId ? (
+          /* 2026-11-11 (boss, imo mirror): room-context bottom row — imo
+             order: + Follow / Chat-or-Say-hi / gift. The non-room row below
+             is untouched. */
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Pressable
+              onPress={handleRightAction}
+              disabled={actionLoading}
+              style={{
+                flex: 1, backgroundColor: isFollowingTarget ? C.tile : C.blueLight,
+                borderRadius: 16, paddingVertical: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                opacity: actionLoading ? 0.6 : 1 }}
+            >
+              <Feather name={isFollowingTarget ? 'check' : 'plus'} size={16} color={C.blue} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
+                {isFollowingTarget ? t('userProfile.following', 'Following') : '+ Follow'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={handleRoomMiddleAction}
+              disabled={actionLoading}
+              style={{
+                flex: 1, backgroundColor: C.blueLight, borderRadius: 16, paddingVertical: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                opacity: actionLoading ? 0.6 : 1 }}
+            >
+              {actionLoading ? (
+                <PremiumLoader size="small" />
+              ) : (
+                <>
+                  <Feather name="message-circle" size={18} color={C.blue} />
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: C.blue, marginLeft: 6 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {friendStatus === 'friends' ? t('userProfile.chat', 'Chat') : 'Say hi'}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={handleRoomGift}
+              style={{ width: 52, backgroundColor: '#2196F3', borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Feather name="gift" size={20} color="#FFFFFF" />
+            </Pressable>
+          </View>
         ) : (
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <Pressable
@@ -2073,6 +2121,20 @@ export default function ProfileScreen({
           </View>
         )}
       </View>
+      {/* 2026-11-11 (boss, imo mirror): 5-icon bar, room context only —
+          role-gated inside (renders null when the matrix forbids it).
+          In-flow at the bottom of the scroll content, below the buttons. */}
+      {roomId && !isMe ? (
+        <RoomUserActionBar
+          viewerRole={roomActions.viewerRole ?? 'member'}
+          targetRole={roomActions.targetRole ?? 'member'}
+          isCommentBlocked={roomActions.isCommentBlocked}
+          onToggleCommentBlock={() => { void roomActions.toggleCommentBlock(); }}
+          onInvite={handleRoomInvite}
+          onKick={handleKickConfirm}
+          onOpenRoleSettings={() => setPermissionOpen(true)}
+        />
+      ) : null}
       </ScrollView>
 
       {/* ─── 2026-11-11 (boss, imo mirror): THIN TOP BAR on scroll ───
@@ -2152,17 +2214,40 @@ export default function ProfileScreen({
           mode="light"
           style={{ position: 'absolute', top: insets.top + 56, right: 16 }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
-          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'column', paddingHorizontal: 16, paddingVertical: 4 }}>
+          <Pressable onPress={handleCopyVid} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
             <Feather name={vidCopied ? 'check' : 'copy'} size={18} color={vidCopied ? C.blue : C.muted} />
             <Text style={{ fontSize: 16, color: C.text, marginLeft: 8 }}>ID: {vId}</Text>
           </Pressable>
+          {/* 2026-11-11 (boss, imo mirror): Report — everyone (all roles)
+              sees it on ANOTHER user's profile; never on your own. */}
+          {!isMe ? (
+            <Pressable onPress={handleReport} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: C.border }}>
+              <Feather name="alert-triangle" size={18} color="#DC2626" />
+              <Text style={{ fontSize: 16, color: '#DC2626', marginLeft: 8 }}>Report</Text>
+            </Pressable>
+          ) : null}
           </View>
         </GlassView>
       </Modal>
 
       {/* ─── PIN Dialog for Private Rooms (shared gate) ─── */}
       {pinDialog}
+
+      {/* ─── 2026-11-11 (boss, imo mirror): room-context sheets + toast ─── */}
+      <SayHiSheet visible={sayHiOpen} targetName={displayName} targetPhotoURL={photoURL} onClose={() => setSayHiOpen(false)} onSend={handleSayHiSend} />
+      <PermissionSettingsSheet
+        visible={permissionOpen}
+        targetName={displayName}
+        targetPhotoURL={photoURL}
+        targetRole={roomActions.targetRole ?? 'member'}
+        canSetAdmin={roomActions.viewerRole === 'host'}
+        onSetAdmin={() => { void roomActions.setAdmin(); setPermissionOpen(false); }}
+        onDismissAdmin={() => { void roomActions.dismissAdmin(); setPermissionOpen(false); }}
+        onRemoveFromMember={() => { setPermissionOpen(false); void roomActions.kickOut(); }}
+        onClose={() => setPermissionOpen(false)}
+      />
+      <RoomToast message={roomToast} />
 
     </SafeAreaView>
   );

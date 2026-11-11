@@ -141,6 +141,7 @@ import {
   isAnyPass2ModeActive,
   setPass2Seated } from '../services/pass2SessionMode';
 import { subscribeEdgeRoomChat } from '../services/edgeRoomChatService';
+import { consumeRoomReturnAction } from '../services/roomReturnAction';
 
 
 import { fbSeatToParticipant, fbAudToParticipant, fbChatToMsg, lastChatSendAt, addSentJoinMsgKey, sentJoinMsgKeys, LiveAudiencePill, LiveDateIcon, TwinkleSparkle, ObsidianGiftButton, ObsidianExitButton, OrbitSparkle, SapphireInviteButton, PulseRing, PulseMicButton, LiquidGoldSpeaker, formatMembersCount } from './VoiceRoomHelpers';
@@ -1343,6 +1344,9 @@ export default function VoiceRoomScreen() {
   const [announcement,     setAnnouncement]     = useState<RoomAnnouncement | null>(null);
   const [gameNav,         setGameNav]         = useState<{ kind: GameType; gameId: string | null } | null>(null);
   const [activeMember,    setActiveMember]    = useState<Participant | null>(null);
+  // 2026-11-11 (boss, imo mirror): profile popup member — tap on an
+  // occupied seat / audience row opens the popup (NOT the manage modal).
+  const [popupMember,     setPopupMember]     = useState<Participant | null>(null);
   // 2026-10-25 (boss): three-dot customize panel + room music state.
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [musicOpen,     setMusicOpen]     = useState(false);
@@ -2988,6 +2992,25 @@ export default function VoiceRoomScreen() {
   }, [seats, audience, myUid, ownerId, roomAdminUids]);
 
   const isOwnerOrAdmin = myRole === 'host' || myRole === 'admin';
+
+  // 2026-11-11 (boss, imo mirror): resolve ANY member's room role with the
+  // same order as myRole above (owner → registry admin → seat/audience
+  // label → member) — the popup + its 5-icon bar gate on this, never on a
+  // possibly-stale label alone.
+  const resolveMemberRole = useCallback((uid: string): Role => {
+    if (ownerId && ownerId === uid) return 'host';
+    if (roomAdminUids.has(uid)) return 'admin';
+    const seat = seats.find((s: Participant | null) => s?.id === uid);
+    if (seat?.role === 'host' || seat?.role === 'admin') return seat.role;
+    const aud = audience.find((m: Participant) => m.id === uid);
+    if (aud?.role === 'admin') return 'admin';
+    if (seat?.role) return seat.role;
+    return 'member';
+  }, [seats, audience, ownerId, roomAdminUids]);
+  const popupTargetRole: Role = popupMember ? resolveMemberRole(popupMember.id) : 'member';
+  const popupIsCommentBlocked = !!popupMember && blockedRecs.some(
+    (r: BlockRecord) => r.id === popupMember!.id && r.isActive && r.action === 'comment-block',
+  );
   // 2026-10-27 (boss, correction): the floating music icon is visible to
   // EVERYONE in the room while music plays/pauses. Only the sheet's
   // maintain actions are host-seat gated — STRICT seat 0 (mySeatIdx
@@ -3146,8 +3169,11 @@ export default function VoiceRoomScreen() {
   const handleSeatPress = useCallback((seatIdx: number) => {
     const member = seatsRef.current[seatIdx];
     if (member && member.id === myUid) { setActiveMember(member); return; }
+    // 2026-11-11 (boss, imo mirror): tap on ANOTHER user's seat opens the
+    // profile POPUP (not the manage modal / action sheet). Long-press keeps
+    // the old sheets (see handleSeatLongPress below).
+    if (member && member.id !== myUid) { setPopupMember(member); return; }
     if (!isOwnerOrAdmin) {
-      if (member && member.id !== myUid) { setActiveMember(member); return; }
       if (!member) {
         // HOST SEAT (2026-10-22, Sumon): seat 1 is host/admin only —
         // members get a clear message, never a request or a seat.
@@ -3225,6 +3251,39 @@ export default function VoiceRoomScreen() {
     for (let i = 0; i < 10; i += 1) map[i] = () => handleSeatPress(i);
     return map;
   }, [handleSeatPress]);
+
+  // 2026-11-11 (boss, imo mirror): LONG-press keeps the PREVIOUS seat
+  // actions — tap now opens the profile popup, so MemberManageModal
+  // (non-moderators + self) and the SeatActionSheet (owner/admin) stay
+  // reachable without losing any action (Mention, Down, Mute, Lock, Join,
+  // Room Block). Empty seats long-press exactly like a tap.
+  const handleSeatLongPress = useCallback((seatIdx: number) => {
+    const member = seatsRef.current[seatIdx];
+    if (member && member.id === myUid) { setActiveMember(member); return; }
+    if (member && member.id !== myUid) {
+      if (!isOwnerOrAdmin) { setActiveMember(member); return; }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setSeatActionIdx(seatIdx);
+      const cell = seatCellRefs.current[seatIdx];
+      if (cell) {
+        cell.measureInWindow((x, y, w, h) => {
+          setSeatActionAnchor({ x, y, width: w, height: h });
+          setSeatActionOpen(true);
+        });
+      } else {
+        setSeatActionAnchor(null);
+        setSeatActionOpen(true);
+      }
+      return;
+    }
+    handleSeatPress(seatIdx);
+  }, [isOwnerOrAdmin, myUid, handleSeatPress]);
+
+  const seatLongPressHandlers = useMemo(() => {
+    const map: Array<() => void> = [];
+    for (let i = 0; i < 10; i += 1) map[i] = () => handleSeatLongPress(i);
+    return map;
+  }, [handleSeatLongPress]);
 
   // 2026-10-24 (boss: host-mute must stick + owner can mute admin):
   // host/admin mute now writes ONLY the hostMuted flag — never the
@@ -3782,6 +3841,35 @@ export default function VoiceRoomScreen() {
     );
   }, [audience, seats, roomId, roomName, myUid, myName, t]);
 
+  // 2026-11-11 (boss, imo mirror): DIRECT seat invite for the popup /
+  // profile 5-icon bar — no confirmation Alert (the caller shows the
+  // "Success to invite" toast). First empty UNLOCKED seat; the target must
+  // be in the audience (not already seated).
+  const inviteToSeatDirect = useCallback(async (memberId: string): Promise<'ok' | 'no-seat' | 'already-seated' | 'error'> => {
+    if (seats.find((s: Participant | null) => s?.id === memberId)) return 'already-seated';
+    const member = audience.find((m: Participant) => m.id === memberId);
+    if (!member) return 'error';
+    let targetIdx = -1;
+    for (let i = 0; i < seats.length; i += 1) {
+      if (!seats[i] && !lockedSeats.has(i)) { targetIdx = i; break; }
+    }
+    if (targetIdx < 0) return 'no-seat';
+    try {
+      if (pass2PollActiveRef.current) {
+        await sendPass2RoomAction(roomId, 'seat_invite_send', { inviteeUid: member.id, seatIdx: targetIdx });
+      } else {
+        await sendSeatInvite(member.id, {
+          roomId, roomName, seatIdx: targetIdx,
+          inviterUid: myUid, inviterName: myName,
+          ts: Date.now() });
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return 'ok';
+    } catch {
+      return 'error';
+    }
+  }, [seats, audience, lockedSeats, roomId, roomName, myUid, myName]);
+
   const handleLeave = useCallback(() => {
     hasLeftRef.current = true;
     try {
@@ -4177,8 +4265,28 @@ export default function VoiceRoomScreen() {
   }, [roomId, myUid, myName, myColor]);
 
   const handleViewOtherProfile = useCallback((uid: string, name: string) => {
-    router.push({ pathname: '/user-profile', params: { uid, name } } as Parameters<typeof router.push>[0]);
-  }, []);
+    // 2026-11-11 (boss, imo mirror): roomId rides along so the full
+    // profile can resolve viewer/target roles for the 5-icon bar.
+    router.push({ pathname: '/user-profile', params: { uid, name, roomId } } as Parameters<typeof router.push>[0]);
+  }, [roomId]);
+
+  // 2026-11-11 (boss, imo mirror): consume the full profile's one-shot
+  // "return to room" action when the room regains focus — gift opens
+  // GiftsModal for the user, mention inserts @name into the chat input.
+  useFocusEffect(
+    useCallback(() => {
+      const action = consumeRoomReturnAction();
+      if (!action) return;
+      // Stale actions (another room) are dropped, never replayed.
+      if (action.roomId !== roomId) return;
+      if (action.type === 'mention') {
+        handleMention(action.name);
+      } else if (action.type === 'gift') {
+        const target = allMembers.find((m) => m.id === action.uid);
+        if (target) { setGiftsRecipient(target); setGiftsOpen(true); }
+      }
+    }, [handleMention, allMembers, roomId]),
+  );
 
   const renderChatMessage = useCallback(
     ({ item }: { item: ChatMsg }) => (
@@ -4730,6 +4838,7 @@ export default function VoiceRoomScreen() {
                 myId={myUid}
                 micDecorUrl={micDecorUrl}
                 onPress={seatPressHandlers[idx]}
+                onLongPress={seatLongPressHandlers[idx]}
                 reaction={member ? seatReactions[member.id] : undefined}
               />
             </View>
@@ -5118,6 +5227,11 @@ export default function VoiceRoomScreen() {
         setMembersOpen={setMembersOpen}
         activeMember={activeMember}
         setActiveMember={setActiveMember}
+        popupMember={popupMember}
+        setPopupMember={setPopupMember}
+        popupTargetRole={popupTargetRole}
+        popupIsCommentBlocked={popupIsCommentBlocked}
+        inviteToSeatDirect={inviteToSeatDirect}
         exitModalOpen={exitModalOpen}
         setExitModalOpen={setExitModalOpen}
         taskCenterOpen={taskCenterOpen}

@@ -112,12 +112,16 @@ function VibeHandFx({ artUrl }: { artUrl: string }) {
 }
 
 export const SeatCard = memo(function SeatCard({
-  seatIndex, member, onPress, reaction, isLocked, accentColor, micDecorUrl,
+  seatIndex, member, onPress, onLongPress, reaction, isLocked, accentColor, micDecorUrl,
   nameColor, labelColor, myId, selfMuted,
 }: {
   seatIndex: number;
   member: Participant | null | undefined;
   onPress: () => void;
+  /** 2026-11-11 (boss, imo mirror): long-press opens the PREVIOUS seat
+   * actions (MemberManageModal / SeatActionSheet) — tap now opens the
+   * profile popup, so the old sheets stay reachable via long-press. */
+  onLongPress?: () => void;
   reaction?: SeatReaction;
   isLocked?: boolean;
   accentColor: string;
@@ -178,6 +182,7 @@ export const SeatCard = memo(function SeatCard({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       style={{ alignItems: 'center', width: '100%', paddingVertical: 4, paddingHorizontal: 2 }}
     >
       {/* ── 2026-10-26 (boss: seated → no number; vacant → number BELOW) ──
