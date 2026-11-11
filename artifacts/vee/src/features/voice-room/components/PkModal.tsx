@@ -12,7 +12,9 @@ import {
   rematchPk,
   pkScoreOf,
   pkTopDonor,
+  pkMarginOf,
   formatPkScore,
+  formatPkFull,
   formatPkDuration,
   PK_CHALLENGE_TIMEOUT_MS,
   PK_DURATION_OPTIONS_MIN,
@@ -21,7 +23,8 @@ import {
 } from '../services/roomPkService';
 import type { Participant } from '../types/room';
 import { PkScoreBar } from './PkScoreBar';
-import { PkDigitalScore } from './PkDigitalScore';
+import { PkScore } from './PkScore';
+import { usePkBattlerPhotos } from './usePkBattlerPhotos';
 
 /* ─────────────────────────── 1v1 PK Modal ─────────────────────────── */
 
@@ -172,6 +175,16 @@ export function PkModal({
   };
 
   const seatOf = (uid: string) => seats.find((s) => s?.id === uid) ?? null;
+
+  // DPs resolve from users/{uid}/photoURL when the seat photo is missing
+  // (a battler whose seat entry has no photoURL showed only an initial).
+  const { challengerPhotoURL: challengerPhoto, opponentPhotoURL: opponentPhoto } =
+    usePkBattlerPhotos(
+      pk?.challenger.uid ?? '',
+      pk?.opponent.uid ?? '',
+      seatOf(pk?.challenger.uid ?? '')?.photoURL,
+      seatOf(pk?.opponent.uid ?? '')?.photoURL,
+    );
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -333,15 +346,15 @@ export function PkModal({
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  {avatar(pk.challenger.name, seatOf(pk.challenger.uid)?.color ?? '#7C3AED', 56, seatOf(pk.challenger.uid)?.photoURL)}
-                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
+                  {avatar(pk.challenger.name, seatOf(pk.challenger.uid)?.color ?? '#7C3AED', 56, challengerPhoto)}
+                  <Text numberOfLines={2} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8, textAlign: 'center' }}>
                     {pk.challenger.name}
                   </Text>
                   <View style={{ marginTop: 4 }}>
-                    <PkDigitalScore
+                    <PkScore
                       value={challengerScore}
-                      digitHeight={24}
-                      color={challengerScore > opponentScore ? '#FDE68A' : '#A5F3FC'}
+                      size={24}
+                      color={challengerScore > opponentScore ? '#B45309' : '#475569'}
                     />
                   </View>
                 </View>
@@ -352,15 +365,15 @@ export function PkModal({
                   </Text>
                 </View>
                 <View style={{ flex: 1, alignItems: 'center' }}>
-                  {avatar(pk.opponent.name, seatOf(pk.opponent.uid)?.color ?? '#05B5FA', 56, seatOf(pk.opponent.uid)?.photoURL)}
-                  <Text numberOfLines={1} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8 }}>
+                  {avatar(pk.opponent.name, seatOf(pk.opponent.uid)?.color ?? '#05B5FA', 56, opponentPhoto)}
+                  <Text numberOfLines={2} style={{ color: C.text, fontSize: 14, fontWeight: '800', marginTop: 8, textAlign: 'center' }}>
                     {pk.opponent.name}
                   </Text>
                   <View style={{ marginTop: 4 }}>
-                    <PkDigitalScore
+                    <PkScore
                       value={opponentScore}
-                      digitHeight={24}
-                      color={opponentScore > challengerScore ? '#FDE68A' : '#A5F3FC'}
+                      size={24}
+                      color={opponentScore > challengerScore ? '#B45309' : '#475569'}
                     />
                   </View>
                 </View>
@@ -413,31 +426,46 @@ export function PkModal({
           {/* ── Ended ── */}
           {pk?.status === 'ended' && (
             <View style={{ alignItems: 'center', paddingVertical: 12 }}>
-              <Text style={{ fontSize: 40 }}>👑</Text>
-              <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 8, textAlign: 'center' }}>
-                {pk.draw
-                  ? 'It\'s a draw!'
-                  : `${pk.winnerUid === pk.challenger.uid ? pk.challenger.name : pk.opponent.name} wins!`}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, gap: 8 }}>
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>
+              {pk.draw ? (
+                <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', textAlign: 'center' }}>
+                  It&apos;s a draw!
+                </Text>
+              ) : (
+                <>
+                  <View style={{ backgroundColor: '#FBC02D', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 }}>
+                    <Text style={{ color: '#713F12', fontSize: 11, fontWeight: '900', letterSpacing: 1 }}>
+                      WINNER
+                    </Text>
+                  </View>
+                  <Text style={{ color: '#B45309', fontSize: 18, fontWeight: '900', marginTop: 8, textAlign: 'center' }}>
+                    {pk.winnerUid === pk.challenger.uid ? pk.challenger.name : pk.opponent.name} wins!
+                  </Text>
+                </>
+              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, gap: 8 }}>
+                <Text numberOfLines={2} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1, textAlign: 'center' }}>
                   {pk.challenger.name}
                 </Text>
-                <PkDigitalScore
+                <PkScore
                   value={challengerScore}
-                  digitHeight={20}
-                  color={challengerScore > opponentScore ? '#FDE68A' : '#A5F3FC'}
+                  size={20}
+                  color={challengerScore > opponentScore ? '#B45309' : '#475569'}
                 />
                 <Text style={{ color: C.sub, fontSize: 14, fontWeight: '700' }}>—</Text>
-                <PkDigitalScore
+                <PkScore
                   value={opponentScore}
-                  digitHeight={20}
-                  color={opponentScore > challengerScore ? '#FDE68A' : '#A5F3FC'}
+                  size={20}
+                  color={opponentScore > challengerScore ? '#B45309' : '#475569'}
                 />
-                <Text numberOfLines={1} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>
+                <Text numberOfLines={2} style={{ color: C.sub, fontSize: 14, fontWeight: '700', flexShrink: 1, textAlign: 'center' }}>
                   {pk.opponent.name}
                 </Text>
               </View>
+              {!pk.draw && (
+                <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 6 }}>
+                  Won by {formatPkFull(pkMarginOf(pk))} diamonds
+                </Text>
+              )}
               {topDonor && (
                 <Text style={{ color: C.sub, fontSize: 13, fontWeight: '700', marginTop: 6 }}>
                   Top donor: {topDonor.name} • {formatPkScore(topDonor.total)}

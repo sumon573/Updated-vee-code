@@ -5735,6 +5735,8 @@ export default function VoiceRoomScreen() {
         visible={!!pkResult}
         pk={pkResult}
         onClose={() => setPkResult(null)}
+        myUid={myUid}
+        myName={myName}
         challengerPhotoURL={pkResult ? seats.find((s) => s?.id === pkResult.challenger.uid)?.photoURL : undefined}
         opponentPhotoURL={pkResult ? seats.find((s) => s?.id === pkResult.opponent.uid)?.photoURL : undefined}
         roomName={roomName}

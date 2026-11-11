@@ -536,6 +536,36 @@ export function pkTopDonor(pk: RoomPk | null): PkDonor | null {
   return best && best.total > 0 ? best : null;
 }
 
+/** Margin — by how many diamonds the winner beat the loser (0 = draw). */
+export function pkMarginOf(pk: RoomPk | null): number {
+  if (!pk) return 0;
+  return Math.abs(pkScoreOf(pk, pk.challenger.uid) - pkScoreOf(pk, pk.opponent.uid));
+}
+
+/** Full-number format with separators, e.g. 753,500 (for the margin row). */
+export function formatPkFull(n: number): string {
+  return Math.floor(n).toLocaleString('en-US');
+}
+
+/** The PK result as a shareable text message — winner, scores, margin,
+ * top donor, room. Used by the result popup's Share sheet (inbox + system
+ * share) so the outcome travels with the message, never a bare link. */
+export function formatPkResultMessage(pk: RoomPk | null, roomName?: string): string {
+  if (!pk) return '';
+  const c = pkScoreOf(pk, pk.challenger.uid);
+  const o = pkScoreOf(pk, pk.opponent.uid);
+  const where = roomName ? ` — ${roomName}` : '';
+  const scoreLine = `${pk.challenger.name} ${formatPkScore(c)} vs ${formatPkScore(o)} ${pk.opponent.name}`;
+  const donor = pkTopDonor(pk);
+  const donorLine = donor ? `\nTop donor: ${donor.name} (${formatPkScore(donor.total)})` : '';
+  if (pk.draw) {
+    return `PK Result${where}\n${scoreLine}\nIt's a draw!${donorLine}`;
+  }
+  const winnerName = pk.winnerUid === pk.challenger.uid ? pk.challenger.name : pk.opponent.name;
+  const margin = Math.abs(c - o);
+  return `PK Result${where}\n${winnerName} won! ${scoreLine}\nMargin: ${formatPkFull(margin)} diamonds${donorLine}`;
+}
+
 /** Rematch: clear the ended node FIRST, then challenge the same pair.
  * Ordering matters — the one-PK-per-room rules backstop rejects a
  * challenge while the ended node still exists, so the remove must
