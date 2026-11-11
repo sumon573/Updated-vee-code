@@ -1322,8 +1322,16 @@ export default function ProfileScreen({
   const THIN_BAR_FADE_START = 170;
   const THIN_BAR_FADE_END = 210;
   const THIN_BAR_TOGGLE_Y = 190;
+  // 2026-11-11 (white-screen hotfix): NO Animated.event + useNativeDriver
+  // on this ScrollView. That was the app's first-ever native-driver
+  // Animated.event on a ScrollView (no precedent in the codebase) and it
+  // blanked the whole profile to white on scroll (01a1c957/01a1c963).
+  // The scroll value is driven on the JS thread instead (setValue below)
+  // and the bar's opacity/transform interpolate from it — same gradual
+  // fade 170→210, same toggle at 190. Do NOT re-add Animated.event here.
   const handleProfileScroll = useCallback((e: any) => {
     const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    scrollY.setValue(y);
     const show = y > THIN_BAR_TOGGLE_Y;
     if (show !== thinBarVisibleRef.current) { thinBarVisibleRef.current = show; setThinBarVisible(show); }
   }, []);
@@ -1467,7 +1475,7 @@ export default function ProfileScreen({
           Header is the imo-style overlay (2026-10-30): NO bar, NO name text — white icons sit ON the cover and scroll away with it. Inline vId +
           short-ID badge were removed here — the ID now lives in the "..."
           popup + Room Profile row. */}
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} scrollEventThrottle={16} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: handleProfileScroll })}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} scrollEventThrottle={16} onScroll={handleProfileScroll}>
         <View>
         <Pressable
           onPress={isMe ? handleCoverTap : undefined}
