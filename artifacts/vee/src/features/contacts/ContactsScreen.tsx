@@ -50,13 +50,21 @@ const C = {
   subTabBg: '#F2F2F7' } as const;
 
 function UserAvatar({ user }: { user: VeeUser }) {
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the avatar was the
+  // one-time fetchUsers/get() photo — a friend who changed their photo
+  // kept the OLD row photo until the screen remounted. Live RTDB photo
+  // (ref-counted hub, one shared listener per uid) wins; the fetched
+  // profile is only the first-paint fallback. Fixes all three row types
+  // (friends, incoming, sent) in this one place.
+  const live = useLiveUserProfile(user.uid);
+  const photoURL = live.avatar ?? user.photoURL;
   const initials = user.name
     ? user.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
-  if (user.photoURL) {
+  if (photoURL) {
     return (
       <Image
-        source={{ uri: user.photoURL }}
+        source={{ uri: photoURL }}
         cachePolicy="memory-disk"
         style={{ width: 52, height: 52, borderRadius: 26 }}
       />

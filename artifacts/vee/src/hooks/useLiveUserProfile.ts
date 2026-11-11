@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../config/firebase';
 
@@ -131,4 +131,52 @@ export function displayName(liveName: string | null | undefined, fallbackName?: 
     return fallbackName.trim();
   }
   return 'Vee User';
+}
+
+/**
+ * 2026-11-11 (boss: photo change shows EVERYWHERE): live name + avatar for
+ * a WHOLE LIST of uids, from the same ref-counted hub above (one shared
+ * RTDB listener per uid, no matter how many rows use it). Delta-managed
+ * like LeaderboardModal's profile subs: only new uids subscribe, only
+ * departed uids unsubscribe; no teardown per uid-set change, no timers,
+ * no polls. Render `live[uid]?.avatar ?? snapshotPhotoURL` so a photo
+ * change lands on every row instantly — the one-time get() calls this
+ * replaces kept showing the OLD photo until the screen remounted.
+ */
+export function useLiveProfiles(uids: string[]): Record<string, LiveUserProfile> {
+  const [profiles, setProfiles] = useState<Record<string, LiveUserProfile>>({});
+  const subsRef = useRef(new Map<string, () => void>());
+  // Order-insensitive dep key (same pattern as IMOHomeScreen liveProfiles):
+  // re-runs only when the uid SET changes, never on reorder.
+  const key = [...new Set(uids.filter(Boolean))].sort().join(',');
+  useEffect(() => {
+    const wanted = new Set(key ? key.split(',') : []);
+    const subs = subsRef.current;
+    // Unsubscribe uids no longer on screen.
+    subs.forEach((unsub, uid) => {
+      if (!wanted.has(uid)) {
+        try { unsub(); } catch { /* noop */ }
+        subs.delete(uid);
+      }
+    });
+    // Subscribe only new uids.
+    for (const uid of wanted) {
+      if (subs.has(uid)) continue;
+      const unsub = subscribeLiveUserProfile(uid, (p) => {
+        setProfiles((prev) => {
+          const cur = prev[uid];
+          if (cur && cur.name === p.name && cur.avatar === p.avatar) return prev;
+          return { ...prev, [uid]: p };
+        });
+      });
+      subs.set(uid, unsub);
+    }
+    // NOTE: intentionally no per-run teardown — delta-managed above.
+  }, [key]);
+  // Unmount safety: never leak the delta-managed subscriptions.
+  useEffect(() => () => {
+    subsRef.current.forEach((u) => { try { u(); } catch { /* noop */ } });
+    subsRef.current.clear();
+  }, []);
+  return profiles;
 }

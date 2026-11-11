@@ -33,6 +33,7 @@ import {
   type FriendInvite,
 } from '@/src/features/intimacy/friendService';
 import { fetchPeerProfile } from '@/src/features/voice-room/services/intimacyService';
+import { useLiveProfiles } from '@/src/hooks/useLiveUserProfile';
 import { deleteStory } from '@/src/features/chat/services/firebaseStoryService';
 import { useStories, subscribeSharedUserChats } from '@/src/features/chat/hooks/useStories';
 import { useAuth } from '@/src/context/AuthContext';
@@ -153,6 +154,26 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
   const visibleFriendInvites = friendInvites.filter(
     (i) => i.status === 'pending' || actedFriendInviteIds.includes(i.id),
   );
+
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): invite sender
+  // photos were a one-time fetchPeerProfile per sender — a sender who
+  // changed their photo kept the OLD card photo until the list
+  // remounted. Live RTDB photo per sender (ref-counted hub) wins; the
+  // fetched profile is only the first-paint fallback.
+  const liveInviteSenders = useLiveProfiles([
+    ...visibleCoupleInvites.map((i) => i.senderUid),
+    ...visibleFriendInvites.map((i) => i.senderUid),
+  ]);
+  const withLiveSender = (
+    profile: { name: string; photoURL: string | null } | undefined,
+    uid: string,
+  ): { name: string; photoURL: string | null } => {
+    const live = liveInviteSenders[uid];
+    return {
+      name: live?.name || profile?.name || '',
+      photoURL: live?.avatar ?? profile?.photoURL ?? null,
+    };
+  };
 
   const handleAcceptCoupleInvite = useCallback(async (invite: CoupleInvite) => {
     if (!user?.uid) return;
@@ -442,7 +463,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               <CoupleInviteCard
                 key={`couple-invite:${invite.id}`}
                 invite={invite}
-                sender={coupleSenderProfiles[invite.senderUid] ?? { name: '', photoURL: null }}
+                sender={withLiveSender(coupleSenderProfiles[invite.senderUid], invite.senderUid)}
                 onAccept={() => handleAcceptCoupleInvite(invite)}
                 onReject={() => handleRejectCoupleInvite(invite)}
               />
@@ -463,7 +484,7 @@ export default function ChatScreen({ onOpenPlanet }: ChatScreenProps = {}) {
               <FriendInviteCard
                 key={`friend-invite:${invite.id}`}
                 invite={invite}
-                sender={friendSenderProfiles[invite.senderUid] ?? { name: '', photoURL: null }}
+                sender={withLiveSender(friendSenderProfiles[invite.senderUid], invite.senderUid)}
                 onAccept={() => handleAcceptFriendInvite(invite)}
                 onReject={() => handleRejectFriendInvite(invite)}
               />

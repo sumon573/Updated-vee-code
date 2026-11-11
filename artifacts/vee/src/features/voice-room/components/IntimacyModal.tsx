@@ -19,6 +19,7 @@ import {
   type IntimacyEntry,
 } from '../services/intimacyService';
 import { useIsKing } from '@/src/hooks/useNobleRank';
+import { useLiveProfiles } from '@/src/hooks/useLiveUserProfile';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
 
 
@@ -117,7 +118,20 @@ export function IntimacyModal({ visible, myUid, onClose }: Props) {
 
   const level = intimacyLevelFor(liveValue);
   const progress = intimacyProgress(liveValue);
-  const selPeer = selected ? peers[selected.otherUid] : undefined;
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): peer photos were
+  // a one-time fetchPeerProfile snapshot — live RTDB photo/name per peer
+  // (ref-counted hub) win at both render sites below; the snapshot stays
+  // first-paint.
+  const livePeers = useLiveProfiles((entries ?? []).map((e) => e.otherUid));
+  const livePeer = (uid: string, snap: PeerInfo | undefined): PeerInfo | undefined => {
+    const live = livePeers[uid];
+    if (!live && !snap) return undefined;
+    return {
+      name: live?.name || snap?.name || '',
+      photoURL: live?.avatar ?? snap?.photoURL ?? null,
+    };
+  };
+  const selPeer = selected ? livePeer(selected.otherUid, peers[selected.otherUid]) : undefined;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -213,7 +227,7 @@ export function IntimacyModal({ visible, myUid, onClose }: Props) {
                 </View>
               ) : (
                 entries.map((e) => {
-                  const p = peers[e.otherUid];
+                  const p = livePeer(e.otherUid, peers[e.otherUid]);
                   const lv = intimacyLevelFor(e.value);
                   return (
                     <Pressable

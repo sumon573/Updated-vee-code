@@ -6,9 +6,12 @@ import { memo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { useLiveProfiles } from '@/src/hooks/useLiveUserProfile';
 
 export interface IMOStory {
   id: string;
+  /** Author uid — the strip resolves the CURRENT photo live from RTDB. */
+  userId?: string;
   name: string;
   photoURL?: string | null;
   unreadCount?: number;
@@ -26,6 +29,13 @@ interface IMOStoryRowProps {
 // time. Props are stable (useMemo'd stories, stable callbacks), so
 // unrelated shell renders now skip the strip entirely.
 export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: IMOStoryRowProps) {
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the circle photo
+  // was the publish-time snapshot (story.userAvatar) — an author who
+  // changed their photo kept the OLD circle until the story expired.
+  // Live RTDB photo per author (ref-counted hub) wins; the snapshot is
+  // only the first-paint fallback. id is the author uid on the one caller
+  // (IMOHomeScreen), userId is the explicit field when set.
+  const liveProfiles = useLiveProfiles(stories.map((s) => s.userId ?? s.id));
   return (
     <View
       style={{
@@ -89,6 +99,8 @@ export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: 
         {/* Story items */}
         {stories.map((story) => {
           const hasUnread = (story.unreadCount ?? 0) > 0;
+          const authorUid = story.userId ?? story.id;
+          const livePhotoURL = liveProfiles[authorUid]?.avatar ?? story.photoURL ?? null;
           return (
           <TouchableOpacity
             key={story.id}
@@ -112,9 +124,9 @@ export default memo(function IMOStoryRow({ stories, onAddStory, onStoryPress }: 
                   : undefined
               }
             >
-              {story.photoURL ? (
+              {livePhotoURL ? (
                 <Image
-                  source={{ uri: story.photoURL }}
+                  source={{ uri: livePhotoURL }}
                   style={{ width: hasUnread ? 58 : 60, height: hasUnread ? 58 : 60, borderRadius: hasUnread ? 29 : 30 }}
                 />
               ) : (

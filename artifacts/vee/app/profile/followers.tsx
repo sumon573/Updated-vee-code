@@ -23,6 +23,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ref, get, onValue } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { VeeUser } from '@/src/services/userService';
+import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import * as Haptics from 'expo-haptics';
 
 const PAGE_SIZE = 50;
@@ -62,6 +63,13 @@ function TitleBar({ title, count }: { title: string; count?: number }) {
 }
 
 const UserRow = memo(function UserRow({ user, onPress, last }: { user: VeeUser; onPress: (u: VeeUser) => void; last?: boolean }) {
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the row photo was
+  // a one-time get(users/{uid}) at page load — a follower who changed
+  // their photo kept the OLD row photo until the screen remounted. Live
+  // RTDB photo per row (ref-counted hub) wins; the fetched profile is
+  // only the first-paint fallback.
+  const live = useLiveUserProfile(user.uid);
+  const photoURL = live.avatar ?? user.photoURL;
   const initials = user.name
     ? user.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
@@ -73,9 +81,9 @@ const UserRow = memo(function UserRow({ user, onPress, last }: { user: VeeUser; 
           flexDirection: 'row', alignItems: 'center',
           paddingVertical: 13, paddingHorizontal: 15 }}
       >
-        {user.photoURL ? (
+        {photoURL ? (
           <Image
-            source={{ uri: user.photoURL }}
+            source={{ uri: photoURL }}
             style={{ width: 48, height: 48, borderRadius: 24, marginRight: 12 }}
             cachePolicy="memory-disk"
             recyclingKey={user.uid}

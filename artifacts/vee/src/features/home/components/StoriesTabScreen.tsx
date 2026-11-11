@@ -9,6 +9,7 @@ import { View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserStories } from '@/src/features/chat/types';
+import { useLiveProfiles } from '@/src/hooks/useLiveUserProfile';
 
 interface StoriesTabScreenProps {
   stories: UserStories[];
@@ -86,9 +87,17 @@ export default function StoriesTabScreen({
   const myGroup = stories.find((s) => s.userId === myUserId);
   const others = stories.filter((s) => s.userId !== myUserId);
 
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): a row's avatar
+  // was the publish-time snapshot (item.userAvatar) — an author who
+  // changed their photo kept the OLD row photo until the story expired.
+  // Live RTDB photo per author (ref-counted hub) wins; the snapshot is
+  // only the first-paint fallback. Own row stays live via myAvatar prop.
+  const liveProfiles = useLiveProfiles(others.map((s) => s.userId));
+
   const renderGroup = ({ item }: { item: UserStories }) => {
     const latest = item.stories[item.stories.length - 1];
     const unseen = !item.allSeen;
+    const live = liveProfiles[item.userId];
     return (
       <TouchableOpacity
         onPress={() => onStoryPress(item.userId)}
@@ -102,14 +111,14 @@ export default function StoriesTabScreen({
           backgroundColor: '#FFFFFF',
         }}
       >
-        <StoryAvatar photoURL={item.userAvatar} name={item.userName} unseen={unseen} />
+        <StoryAvatar photoURL={live?.avatar ?? item.userAvatar} name={live?.name || item.userName} unseen={unseen} />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
             style={{ fontSize: 16, fontWeight: '500', color: '#000000' }}
           >
-            {item.userName || 'Vee User'}
+            {live?.name || item.userName || 'Vee User'}
           </Text>
           <Text style={{ fontSize: 13, color: '#7a7a7a', marginTop: 2 }}>
             {latest ? timeAgo(latest.createdAt) : ''}

@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
+import { useLiveProfiles } from '@/src/hooks/useLiveUserProfile';
 import {
   subscribeUser,
   getUser,
@@ -424,6 +425,11 @@ export default function GiftDisplayScreen() {
   }, [receivedTxs, uid]);
 
   // ── Fetch contributor profiles (cached, top 20 max) ─────────────────────
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the fetched profile
+  // is only the first-paint snapshot — a contributor who changed their
+  // photo kept the OLD board photo until the page remounted. Live RTDB
+  // photo/name per contributor (ref-counted hub) win at render below.
+  const liveContributors = useLiveProfiles(contributorList.map((c) => c.uid));
   useEffect(() => {
     let cancelled = false;
     const missing = contributorList.filter((c) => !(c.uid in contributors));
@@ -625,14 +631,15 @@ export default function GiftDisplayScreen() {
             updateCellsBatchingPeriod={50}
             renderItem={({ item, index }) => {
               const u = contributors[item.uid];
-              // Name fallback: DB name → email prefix → 'User'.
+              const live = liveContributors[item.uid];
+              // Name fallback: live name → DB name → email prefix → 'User'.
               // (Google/Gmail users may have empty DB name.)
-              const name = u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
+              const name = live?.name || u?.name || (u?.email ? u.email.split('@')[0] : null) || 'User';
               return (
                 <ContributorRow
                   rank={index}
                   name={name}
-                  avatar={u?.photoURL || undefined}
+                  avatar={live?.avatar ?? u?.photoURL ?? undefined}
                   count={item.count}
                   last={index === contributorList.length - 1}
                 />

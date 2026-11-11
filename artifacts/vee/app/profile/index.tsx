@@ -36,6 +36,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 import { subscribeUser, updateUser, getUser, VeeUser } from '@/src/services/userService';
+import { useLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 import { uploadProfilePhoto, uploadCoverPhoto, deleteCloudinaryAsset } from '@/src/services/cloudinaryService';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFrame, type GrantedNameplate } from '@/src/services/badgeService';
@@ -611,6 +612,12 @@ function CardFriendTile({ friendUid, peer, pairValue, onPress }: {
   onPress?: () => void;
 }) {
   const [totalLevel, setTotalLevel] = useState<number | null>(null);
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the tile photo was
+  // a one-time fetchPeerProfile snapshot — live RTDB photo (ref-counted
+  // hub) wins; the snapshot stays first-paint.
+  const livePeer = useLiveUserProfile(friendUid);
+  const photoURL = livePeer.avatar ?? peer?.photoURL ?? null;
+  const name = livePeer.name || peer?.name || '';
   useEffect(() => {
     if (!friendUid) return;
     return subscribeLevel(friendUid, (l) => setTotalLevel(l.totalLevel));
@@ -624,8 +631,8 @@ function CardFriendTile({ friendUid, peer, pairValue, onPress }: {
   const label = pairLabel ?? ownLabel;
   return (
     <IntimacyFriendTile
-      photoURL={peer?.photoURL ?? null}
-      name={peer?.name || ''}
+      photoURL={photoURL}
+      name={name}
       levelLabel={label}
       onPress={onPress}
     />
@@ -769,6 +776,11 @@ export default function ProfileScreen({
   const [intimacyEntries, setIntimacyEntries] = useState<IntimacyEntry[]>([]);
   const [intimacyPeers, setIntimacyPeers] = useState<Record<string, { name: string; photoURL: string | null }>>({});
   const [intimacyCouple, setIntimacyCouple] = useState<CoupleState | null>(null);
+  // 2026-11-11 (boss: photo change shows EVERYWHERE): the couple
+  // partner's photo/name are LIVE from RTDB (ref-counted hub) — the
+  // intimacyPeers map below is a one-time fetchPeerProfile snapshot.
+  // The hub wins at the CoupleTile below; the snapshot stays first-paint.
+  const liveCouplePartner = useLiveUserProfile(intimacyCouple?.partnerUid ?? null);
   // 2026-10-27 (boss correction): EXPLICIT friends only — intimacy pairs
   // NEVER render as Friend tiles. Empty (+) slots fill up to MAX_FRIENDS.
   const [intimacyFriends, setIntimacyFriends] = useState<FriendEntry[]>([]);
@@ -1966,8 +1978,8 @@ export default function ProfileScreen({
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
               <CoupleTile
                 coupled={!!intimacyCouple}
-                partnerPhotoURL={intimacyCouple?.partnerUid ? (intimacyPeers[intimacyCouple.partnerUid]?.photoURL ?? null) : null}
-                partnerName={intimacyCouple?.partnerUid ? (intimacyPeers[intimacyCouple.partnerUid]?.name || '') : ''}
+                partnerPhotoURL={intimacyCouple?.partnerUid ? (liveCouplePartner.avatar ?? intimacyPeers[intimacyCouple.partnerUid]?.photoURL ?? null) : null}
+                partnerName={intimacyCouple?.partnerUid ? (liveCouplePartner.name || intimacyPeers[intimacyCouple.partnerUid]?.name || '') : ''}
                 onPress={() => router.push((isMe ? '/profile/intimacy' : `/profile/intimacy?uid=${displayUid}`) as never)}
               />
               {intimacyFriends.map((f) => (

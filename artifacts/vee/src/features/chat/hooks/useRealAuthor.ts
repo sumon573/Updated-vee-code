@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
-import { get, ref } from 'firebase/database';
-import { database } from '@/src/config/firebase';
+import { subscribeLiveUserProfile } from '@/src/hooks/useLiveUserProfile';
 
-// Cache to avoid refetching the same user repeatedly.
-// 2026-10-19 polish: entries carry a timestamp — the old cache never
-// invalidated, so a profile rename/avatar change was invisible until app
-// restart. (clearAuthorCache still exists for explicit invalidation.)
-const authorCache = new Map<string, { name: string; avatar?: string; at: number }>();
-const AUTHOR_CACHE_TTL_MS = 10 * 60_000; // 10 minutes
-
+// 2026-11-11 (boss: photo change shows EVERYWHERE): the story author
+// name/avatar is LIVE now, not a publish-time snapshot. The old hook only
+// fetched users/{uid} when the stored name was a placeholder — and even
+// then it cached the result for 10 minutes — so an author who changed
+// their photo kept showing the OLD photo in the story viewer (and Planet)
+// until the story expired. Now the ref-counted live hub
+// (subscribeLiveUserProfile, one shared RTDB listener per uid) pushes
+// every name/photo change instantly; the stored snapshot stays ONLY as
+// the first-paint fallback until the live value arrives (the hub fires
+// nulls first when no listener exists yet, so nulls never overwrite it).
 const PLACEHOLDER_NAMES = new Set(['Vee User', 'You', '', 'Vee user', 'vee user']);
 
 /**
  * Resolve the real author name/avatar for a story.
- * Falls back to RTDB users/{uid} when the stored name is a placeholder
- * (old stories published before the 2026-10-11 publishing fix).
+ * Falls back to the stored snapshot (old stories published before the
+ * 2026-10-11 publishing fix) until the live profile arrives; the live
+ * RTDB users/{uid} name/photo then win, and keep winning on every change.
  */
 export function useRealAuthor(
   userId: string | undefined,
@@ -27,44 +30,21 @@ export function useRealAuthor(
   });
 
   useEffect(() => {
+    // Stored snapshot is the first paint — never a blank while live loads.
+    setResolved({ name: fallbackName, avatar: fallbackAvatar });
     if (!userId) return;
-    // Already have a real name — no fetch needed.
-    if (!PLACEHOLDER_NAMES.has(fallbackName)) {
-      setResolved({ name: fallbackName, avatar: fallbackAvatar });
-      return;
-    }
-    // Check cache (TTL-guarded).
-    const cached = authorCache.get(userId);
-    if (cached && Date.now() - cached.at < AUTHOR_CACHE_TTL_MS) {
-      setResolved({ name: cached.name, avatar: cached.avatar });
-      return;
-    }
-    // Fetch real name/avatar from RTDB.
-    let cancelled = false;
-    (async () => {
-      try {
-        const [nameSnap, avatarSnap] = await Promise.all([
-          get(ref(database, `users/${userId}/name`)),
-          get(ref(database, `users/${userId}/photoURL`)),
-        ]);
-        if (cancelled) return;
-        const name = nameSnap.exists() && nameSnap.val() ? (nameSnap.val() as string) : fallbackName;
-        const avatar = avatarSnap.exists() && avatarSnap.val() ? (avatarSnap.val() as string) : fallbackAvatar;
-        const result = { name, avatar, at: Date.now() };
-        authorCache.set(userId, result);
-        setResolved({ name, avatar });
-      } catch {
-        // Keep fallback on error.
-      }
-    })();
-    return () => { cancelled = true; };
+    return subscribeLiveUserProfile(userId, (live) => {
+      setResolved({
+        // Live name wins when real; a placeholder stored name must never
+        // overwrite it, and a null live name must never blank the stored one.
+        name: (live.name && !PLACEHOLDER_NAMES.has(live.name)) ? live.name : fallbackName,
+        avatar: live.avatar ?? fallbackAvatar,
+      });
+    });
   }, [userId, fallbackName, fallbackAvatar]);
 
   return resolved;
 }
 
-/** Clear the author cache (e.g. after profile update). */
-export function clearAuthorCache(userId?: string): void {
-  if (userId) authorCache.delete(userId);
-  else authorCache.clear();
-}
+/** Kept for import compatibility — the live hub owns invalidation now. */
+export function clearAuthorCache(_userId?: string): void {}

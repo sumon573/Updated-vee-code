@@ -362,6 +362,7 @@ export default function IMOHomeScreen() {
     })
     .map((s: any) => ({
       id: s.userId,
+      userId: s.userId,
       // Show "You" for the user's own story (like IMO)
       name: (s.userId === user?.uid) ? 'You' : (s.userName || 'Story'),
       photoURL: s.userAvatar || s.photoURL || avatarCache[s.userId] || null,
