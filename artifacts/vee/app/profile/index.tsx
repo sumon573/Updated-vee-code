@@ -1304,6 +1304,40 @@ export default function ProfileScreen({
     }
   }, [profile?.coverImageUrl, handleChangeCover]);
 
+  // HOIST NOTE (2026-11-11 crash hotfix): these hooks MUST stay ABOVE the
+  // early returns below (loading / blocked) — hooks below an early return
+  // change count between renders and React throws "Rendered more hooks".
+  // ── 2026-11-11 (boss, imo mirror): thin top bar on scroll ───
+  // When the user scrolls down the profile, a compact white bar fades in
+  // at the top (small avatar + name + the same right actions as the overlay
+  // header) — imo / Instagram collapsing-header pattern. Measured geometry:
+  // cover 180dp + DP block 140→232dp + panel marginTop 8 → name top ≈240dp,
+  // name bottom ≈264dp. So the bar fades in over scrollY 170→210 (cover gone,
+  // DP nearly gone, name about to leave) and is fully visible just as the
+  // name scrolls off. Toggle at the 190 midpoint. Transform/opacity ONLY,
+  // native driver — no layout thrash, no timers, no scroll-physics change.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [thinBarVisible, setThinBarVisible] = useState(false);
+  const thinBarVisibleRef = useRef(false);
+  const THIN_BAR_FADE_START = 170;
+  const THIN_BAR_FADE_END = 210;
+  const THIN_BAR_TOGGLE_Y = 190;
+  const handleProfileScroll = useCallback((e: any) => {
+    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+    const show = y > THIN_BAR_TOGGLE_Y;
+    if (show !== thinBarVisibleRef.current) { thinBarVisibleRef.current = show; setThinBarVisible(show); }
+  }, []);
+  const thinBarOpacity = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [0, 1], extrapolate: 'clamp' });
+  const thinBarTranslateY = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [-8, 0], extrapolate: 'clamp' });
+  // Same DP-viewer navigation as the main DP (thin-bar avatar tap).
+  const openDpViewer = useCallback(() => {
+    if (isMe) {
+      router.push('/profile/dp-viewer');
+    } else {
+      router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
+    }
+  }, [isMe, displayUid]);
+
   if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -1404,37 +1438,6 @@ export default function ProfileScreen({
     if (router.canGoBack()) router.back();
     else router.replace('/home' as never);
   };
-
-  // ── 2026-11-11 (boss, imo mirror): thin top bar on scroll ───
-  // When the user scrolls down the profile, a compact white bar fades in
-  // at the top (small avatar + name + the same right actions as the overlay
-  // header) — imo / Instagram collapsing-header pattern. Measured geometry:
-  // cover 180dp + DP block 140→232dp + panel marginTop 8 → name top ≈240dp,
-  // name bottom ≈264dp. So the bar fades in over scrollY 170→210 (cover gone,
-  // DP nearly gone, name about to leave) and is fully visible just as the
-  // name scrolls off. Toggle at the 190 midpoint. Transform/opacity ONLY,
-  // native driver — no layout thrash, no timers, no scroll-physics change.
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const [thinBarVisible, setThinBarVisible] = useState(false);
-  const thinBarVisibleRef = useRef(false);
-  const THIN_BAR_FADE_START = 170;
-  const THIN_BAR_FADE_END = 210;
-  const THIN_BAR_TOGGLE_Y = 190;
-  const handleProfileScroll = useCallback((e: any) => {
-    const y = e?.nativeEvent?.contentOffset?.y ?? 0;
-    const show = y > THIN_BAR_TOGGLE_Y;
-    if (show !== thinBarVisibleRef.current) { thinBarVisibleRef.current = show; setThinBarVisible(show); }
-  }, []);
-  const thinBarOpacity = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [0, 1], extrapolate: 'clamp' });
-  const thinBarTranslateY = scrollY.interpolate({ inputRange: [THIN_BAR_FADE_START, THIN_BAR_FADE_END], outputRange: [-8, 0], extrapolate: 'clamp' });
-  // Same DP-viewer navigation as the main DP (thin-bar avatar tap).
-  const openDpViewer = useCallback(() => {
-    if (isMe) {
-      router.push('/profile/dp-viewer');
-    } else {
-      router.push({ pathname: '/profile/dp-viewer', params: { uid: displayUid } } as never);
-    }
-  }, [isMe, displayUid]);
 
   // ── 2026-10-29 (boss, imo mirror): derived profile values ───
   const roleForRoom = (room: any): 'owner' | 'admin' | 'member' => {
