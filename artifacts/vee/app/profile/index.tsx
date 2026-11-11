@@ -54,7 +54,7 @@ import {
 import { subscribeMyRoomsCombined } from '@/src/features/voice-room/services/firebaseRoomService';
 import { usePrivateRoomGate } from '@/src/components/PrivateRoomGate';
 import AnimatedFrame from '@/src/components/AnimatedFrame';
-import { subscribeTransactionHistory } from '@/src/features/wallet/walletService';
+import { subscribeTransactionHistory, subscribeGiftCounts } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, nobleThemeFor, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
 import {
@@ -73,18 +73,6 @@ import { useTranslation } from 'react-i18next';
 const GIFTS: Record<string, string> = {
   '1': '💝', '2': '🌹', '3': '🎁', '4': '💎',
   '5': '🏆', '6': '🚀', '7': '👑', '8': '🎆' };
-
-// Gift diamond prices (for ranking "big gifts" in the 1-line preview)
-const GIFT_RANK_PRICE: Record<string, number> = {
-  '1': 10, '2': 25, '3': 50, '4': 100,
-  '5': 200, '6': 500, '7': 1000, '8': 2000,
-  // 2026-10-18 (Sumon): canonical string IDs (for legacy-resolved counts)
-  'heart': 1, 'pink-rose': 50, 'winter-dream': 100, 'golden-crown': 10,
-  'blossom-dream': 500, 'dream-rider': 2000, 'kiss': 1,
-  'rose-heart': 100, 'crystal-palace': 600, 'sakura-falls': 700,
-  'cloud-temple': 1000, 'fairy-princess': 1200, 'emerald-garden': 1500,
-  'wedding-kiss': 2500, 'first-dance': 3000, 'blind-love': 4000,
-  'pink-love': 500, 'vee-brand-castle': 1000, 'vee-dream-castle': 5000 };
 
 /**
  * 2026-10-18 (Sumon): PERMANENT legacy gift ID mapping.
@@ -307,14 +295,6 @@ function fmtCompact(n: number): string {
   if (n >= 1000) return `${parseFloat((n / 1000).toFixed(1))}k`;
   return `${n}`;
 }
-
-// 2026-11-11 (boss, polish): "1 badge" / "0 badges" / "2 gifts" — imo shows
-// the singular for 1 ("1 badges" on his phone was wrong).
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
-
 
 // ─── 2026-10-29 (boss, profile mirror): shared profile helpers ───
 // Age is ALWAYS calculated from the birthday, never typed (boss 20:01).
@@ -722,7 +702,14 @@ export default function ProfileScreen({
   const [loading, setLoading] = useState(true);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [rooms, setRooms] = useState<any[]>([]);
-  const [receivedGifts, setReceivedGifts] = useState<Record<string, number>>({});
+  // 2026-11-11 (boss, Gifts preview): the preview used to count ONLY the
+  // recent-50-tx window (2 types for Mh: dragon x30 + car x19 = "49") while
+  // the Gift Wall merges the lifetime aggregate (28 types, 2276 total).
+  // Same merged source as the Gift Wall (Fix #15) + the popup's first-gift
+  // fix (462be9e2): lifetime aggregate + recent-tx window, max per raw id,
+  // sum per canonical id. `receivedGifts` is derived (below) from these.
+  const [lifetimeGiftCounts, setLifetimeGiftCounts] = useState<Record<string, number>>({});
+  const [txGiftCounts, setTxGiftCounts] = useState<Record<string, number>>({});
   // 2026-10-17 (Sumon): server gift catalog for real gift images in preview
   const [giftCatalog, setGiftCatalog] = useState<Record<string, { name: string; thumbnailUrl?: string }>>({});
   // 2026-10-12 (Sumon): diamonds sent — primary XP driver for the slow,
@@ -1030,16 +1017,28 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!displayUid) return;
     return subscribeTransactionHistory(displayUid, (txs) => {
+      // Per-gift received counts from the recent-tx window (deduped by
+      // idempotencyKey, like the Gift Wall) — RAW ids here; the merge below
+      // takes max per raw id then sums per canonical id (Fix #15).
       const counts: Record<string, number> = {};
+      const seen = new Set<string>();
       for (const tx of txs) {
-        if (tx.type === 'gift_received' && tx.giftId) {
-          // 2026-10-18 (Sumon): PERMANENT — resolve legacy numeric IDs to canonical
-          const canonical = resolveGiftId(tx.giftId);
-          counts[canonical] = (counts[canonical] ?? 0) + 1;
-        }
+        if (!tx || tx.type !== 'gift_received' || typeof tx.giftId !== 'string' || tx.giftId.length === 0) continue;
+        const rawKey = (tx as unknown as { idempotencyKey?: unknown }).idempotencyKey;
+        const key = typeof rawKey === 'string' && rawKey.length > 0 ? rawKey : `tx:${tx.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts[tx.giftId] = (counts[tx.giftId] ?? 0) + 1;
       }
-      setReceivedGifts(counts);
+      setTxGiftCounts(counts);
     });
+  }, [displayUid]);
+
+  // 2026-11-11 (boss, Gifts preview): lifetime aggregate — the permanent
+  // per-gift counts the Gift Wall reads (wallets/{uid}/giftCounts).
+  useEffect(() => {
+    if (!displayUid) return;
+    return subscribeGiftCounts(displayUid, setLifetimeGiftCounts);
   }, [displayUid]);
 
   // 2026-10-17 (Sumon): load server gift catalog for real gift images (realtime)
@@ -1432,11 +1431,24 @@ export default function ProfileScreen({
     if (list.length === 0 && effectiveActiveNameplate) list.push(effectiveActiveNameplate);
     return list;
   })();
+  // 2026-11-11 (boss, Gifts preview): merged gift counts — lifetime
+  // aggregate + recent-tx window, max per raw id, then sum per canonical id
+  // (Gift Wall Fix #15 pattern, same as the popup's first-gift fix 462be9e2).
+  // Mh: 28 canonical types, 2276 total (was: recent-50 window only, 2 types).
+  // Plain derived value (not a hook) — same shape as giftEntries below.
+  const receivedGifts: Record<string, number> = (() => {
+    const perRaw: Record<string, number> = {};
+    for (const [id, count] of Object.entries(lifetimeGiftCounts)) perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    for (const [id, count] of Object.entries(txGiftCounts)) perRaw[id] = Math.max(perRaw[id] ?? 0, count);
+    const merged: Record<string, number> = {};
+    for (const [id, count] of Object.entries(perRaw)) {
+      const canonical = resolveGiftId(id);
+      merged[canonical] = (merged[canonical] ?? 0) + count;
+    }
+    return merged;
+  })();
   const giftEntries = Object.entries(receivedGifts);
   const totalGifts = giftEntries.reduce((s, [, c]) => s + c, 0);
-  // 2026-11-11 (boss, imo mirror): Achievement = event-source badges
-  // (same split as the Honor screen).
-  const achievementCount = grantedBadges.filter((b) => b.source === 'event').length;
 
   // ─── Permanent Level System (levelService) ───
   // 2026-10-24 (Sumon): the old local estimate (sqrt(xp/50), Max at ~115k
@@ -1849,7 +1861,10 @@ export default function ProfileScreen({
           </View>
         )}
 
-        {/* ─── Gifts section — 1 line: top 4 by diamond value ─── */}
+        {/* ─── Gifts section — 1 line: top 10 by quantity (Gift Wall default
+            order, 2026-11-11 boss: preview showed only the recent-50-tx
+            window — 2 gifts + blank — while the Gift Wall shows the merged
+            lifetime counts; counts now merged above, same as the Gift Wall) ─── */}
         {giftEntries.length > 0 && (
           <View style={flatSectionStyle}>
             <SectionHeader title="Gifts" count={totalGifts} onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} />
@@ -1865,8 +1880,8 @@ export default function ProfileScreen({
               <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)}>
                 <View style={{ flexDirection: 'row' }}>
                 {[...giftEntries]
-                  .sort((a, b) => (GIFT_RANK_PRICE[b[0]] || 0) * b[1] - (GIFT_RANK_PRICE[a[0]] || 0) * a[1])
-                  .slice(0, 4)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
                   .map(([giftId, count]) => (
                   <View key={giftId} style={{ width: 80, padding: 4, alignItems: 'center' }}>
                     {/* Glass P1c: gift tile is a glass `card` — the fill sits
@@ -1897,64 +1912,49 @@ export default function ProfileScreen({
           </View>
         )}
 
-        {/* ─── Privilege section — 2026-11-11 (boss, imo mirror): Achievement,
-            Honor, Gift Wall, Decoration — HORIZONTALLY SCROLLABLE (swipe
-            left-right), like Intimacy. All counts are real (event badges,
-            granted badges, gifts received, frames owned). Tap a card → its
-            subpage.
-            2026-11-11 ITEM 8 (boss: own profile must stay EXACTLY as
-            before): this section is OTHER-USERS ONLY — the OWN profile
-            (isMe) renders the pre-7df5c0c3 layout with NO Privilege section
-            (VoiceClub Room → Gifts → Intimacy → Honor → Decoration). ─── */}
-        {!isMe ? (
+        {/* ─── Honor section — real granted badges only (sacred: official badge stays next to name) ─── */}
         <View style={flatSectionStyle}>
-          <SectionHeader title="Privilege" count={4} />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 15 }}
-            nestedScrollEnabled
-            directionalLockEnabled
-            decelerationRate={0.997}
-            overScrollMode="never"
-          >
-            <View style={{ flexDirection: 'row' }}>
-              {/* 2026-11-11 (boss, polish): imo-style rich cards — coloured
-                  backgrounds (blue Achievement / pink Honor / yellow Gift Wall /
-                  purple Decoration), large 32px art, horizontal layout (art left,
-                  label + count right) so "Achievement" fits on ONE line. */}
-              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#E3F2FD', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                <Feather name="award" size={32} color="#F59E0B" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Achievement</Text>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(achievementCount, 'badge', 'badges')}</Text>
-                </View>
+          <SectionHeader
+            title="Honor"
+            count={grantedBadges.length}
+            onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
+          />
+          {grantedBadges.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 15 }}
+              nestedScrollEnabled
+              directionalLockEnabled
+              decelerationRate={0.997}
+              overScrollMode="never"
+            >
+              <Pressable
+                onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
+                style={{ flexDirection: 'row' }}
+              >
+                {grantedBadges.map((h) => (
+                  <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
+                    <View style={{ width: 72, aspectRatio: 1, backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      {/^https?:\/\//i.test(h.icon || '') ? (
+                        <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
+                      ) : (
+                        <Text style={{ fontSize: 36 }}>{h.icon}</Text>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
+                  </View>
+                ))}
               </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#FCE4EC', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                <Feather name="shield" size={32} color="#3B82F6" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Honor</Text>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedBadges.length, 'badge', 'badges')}</Text>
-                </View>
-              </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/gifts' : `/profile/gifts?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                <Feather name="gift" size={32} color="#EC4899" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Gift Wall</Text>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(totalGifts, 'gift', 'gifts')}</Text>
-                </View>
-              </Pressable>
-              <Pressable onPress={() => router.push(isMe ? '/profile/decoration' : `/profile/decoration?uid=${displayUid}`)} style={{ width: 156, marginRight: 10, backgroundColor: '#F3E5F5', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
-                <Feather name="image" size={32} color="#8B5CF6" />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit>Decoration</Text>
-                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }} numberOfLines={1}>{plural(grantedFrames.length, 'frame', 'frames')}</Text>
-                </View>
-              </Pressable>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          ) : (
+            <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}>
+              <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
+                No badges yet
+              </Text>
+            </Pressable>
+          )}
         </View>
-        ) : null}
 
         {/* ─── Intimacy section — couple tile first, then EXPLICIT friend tiles + (+) slots (always rendered, Honor shape) ───
             2026-10-27 (boss correction): intimacy pairs NEVER render here.
@@ -2006,50 +2006,6 @@ export default function ProfileScreen({
               )}
             </View>
           </ScrollView>
-        </View>
-
-        {/* ─── Honor section — real granted badges only (sacred: official badge stays next to name) ─── */}
-        <View style={flatSectionStyle}>
-          <SectionHeader
-            title="Honor"
-            count={grantedBadges.length}
-            onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
-          />
-          {grantedBadges.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 15 }}
-              nestedScrollEnabled
-              directionalLockEnabled
-              decelerationRate={0.997}
-              overScrollMode="never"
-            >
-              <Pressable
-                onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}
-                style={{ flexDirection: 'row' }}
-              >
-                {grantedBadges.map((h) => (
-                  <View key={h.id} style={{ width: 80, padding: 4, alignItems: 'center' }}>
-                    <View style={{ width: 72, aspectRatio: 1, backgroundColor: C.goldBg, borderWidth: 1, borderColor: C.goldBorder, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                      {/^https?:\/\//i.test(h.icon || '') ? (
-                        <Image source={{ uri: h.icon }} style={{ width: 48, height: 48 }} resizeMode="contain" />
-                      ) : (
-                        <Text style={{ fontSize: 36 }}>{h.icon}</Text>
-                      )}
-                    </View>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 4 }} numberOfLines={1}>{h.name}</Text>
-                  </View>
-                ))}
-              </Pressable>
-            </ScrollView>
-          ) : (
-            <Pressable onPress={() => router.push(isMe ? '/profile/honor' : `/profile/honor?uid=${displayUid}`)}>
-              <Text style={{ textAlign: 'center', color: C.mutedLight, fontSize: 13, paddingVertical: 14, paddingHorizontal: 40 }}>
-                No badges yet
-              </Text>
-            </Pressable>
-          )}
         </View>
 
         {/* ─── Decoration section ─── */}
