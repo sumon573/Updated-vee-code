@@ -1625,10 +1625,14 @@ export default function ProfileScreen({
           {/* 2026-11-12 (boss, Profile Screen reward): the owner's SVIP
               Profile Screen art as the background of this region (cover
               bottom → VoiceClub). Absolute-fill, behind the DP + glass
-              panel; the panel's 62% white fill keeps the text clear, so
-              no extra scrim here. pointerEvents none — taps pass through. */}
+              panel; the panel's 62% white fill keeps the text clear.
+              2026-11-12 22:29 (boss polish — more blur so the text reads
+              clearly): scrimOpacity 0.3 (was 0) — hazes the whole
+              background incl. the top strip above the panel. The tint
+              behind the art lives in ProfileScreenBackground itself.
+              pointerEvents none — taps pass through. */}
           {profileScreen ? (
-            <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0} />
+            <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0.3} />
           ) : null}
           <View style={{ marginTop: -67, paddingHorizontal: 16 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable

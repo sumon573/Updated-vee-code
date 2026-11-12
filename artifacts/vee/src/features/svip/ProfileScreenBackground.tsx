@@ -24,17 +24,31 @@
  * 2026-11-12 20:57 (boss quality standard — "সব কিছু স্পষ্ট"): the
  * text must stay CLEAR. The art is a background; the content sits on
  * top. The full profile's GlassView panel fill (62% white) mutes the
- * art behind the text, so the profile passes scrimOpacity 0. The
- * popup's identity block has no glass, so it passes a 0.6 white scrim
- * (the same 0.62 balance). The DP area (no text) shows the art at
- * full strength. Verified in the mockups at 45% art opacity (stronger
- * than the real 38–40%) — name, plates, chips, info, bio all legible.
+ * art behind the text. The popup's identity block has no glass, so it
+ * passes a 0.6 white scrim (the same 0.62 balance). Verified in the
+ * mockups at 45% art opacity (stronger than the real 38–40%) — name,
+ * plates, chips, info, bio all legible.
  *
- * Animation: the WebP plays as encoded (T1–T4 loop=1 play-once then
- * hold the last frame; T5 dragon loop=0 infinite). ExpoImage animates
- * WebP natively. NO JS timer / interval / poll / subscription here —
- * one-shot grant read only (heat gate). If the art fails to load the
- * background stays plain (expo-image, never an emoji fallback).
+ * 2026-11-12 22:28/22:29 (boss polish): (a) WHITE STRIP — the art is
+ * ~80% transparent and its top ~40 rows are 92–100% transparent, so
+ * the top of the region showed the stark white screen background as a
+ * thin long white strip just below the cover. Fix: a hazy light-blue
+ * tint (#E9EFF6) BEHIND the art (on this root View) fills the art's
+ * transparent areas with haze, not white. Repositioning cannot fix it
+ * (the art is mostly transparent). (b) MORE BLUR — the full profile
+ * now passes scrimOpacity 0.30 (was 0) so the whole background is a
+ * bit hazier and the text reads clearly; the popup keeps its 0.6.
+ * The tint + scrim are in this shared component, so both places get
+ * the fix. The GlassView panel fill itself is untouched (shared).
+ *
+ * Animation: the WebP plays as encoded. The Profile Screen art is
+ * loop=0 (infinite) for all tiers 1–5 (boss 2026-11-12 22:26/22:30 —
+ * continuous, একটানা; the loop=0 files are Profile Screen only, new
+ * media). The entry-effect banner keeps its separate loop=1 art
+ * (play once + dismiss). ExpoImage animates WebP natively. NO JS
+ * timer / interval / poll / subscription here — one-shot grant read
+ * only (heat gate). If the art fails to load the background stays
+ * plain (expo-image, never an emoji fallback).
  *
  * pointerEvents="none" — the background never intercepts a tap; all
  * touches pass through to the content / ScrollView below it.
@@ -109,8 +123,10 @@ export type ProfileScreenBackgroundProps = {
   tier: number;
   /**
    * White scrim opacity between the art and the content (0 = none).
-   * Full profile passes 0 (the GlassView panel fill already mutes the
-   * art behind the text); the popup passes 0.6 (no glass there).
+   * Full profile passes 0.3 (boss 2026-11-12 22:29 — more blur so the
+   * text reads clearly; the GlassView panel fill already mutes the art
+   * behind the text, the scrim hazes the whole background incl. the
+   * top strip above the panel); the popup passes 0.6 (no glass there).
    */
   scrimOpacity?: number;
 };
@@ -128,7 +144,20 @@ export function ProfileScreenBackground({
   scrimOpacity = 0,
 }: ProfileScreenBackgroundProps): React.JSX.Element {
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        // 2026-11-12 22:28 (boss): hazy tint BEHIND the art. The art is
+        // ~80% transparent and its top ~40 rows are 92–100% transparent,
+        // so without this the top showed the stark white screen background
+        // as a thin long white strip just below the cover. The tint fills
+        // the transparent areas with haze (#E9EFF6, very light blue-grey,
+        // neutral for all 5 tiers) instead of white. Both places get it
+        // (shared component). The scrim (above) hazes the art itself.
+        { backgroundColor: '#E9EFF6' },
+      ]}
+    >
       <ExpoImage
         source={{ uri: artUrl }}
         style={StyleSheet.absoluteFill}
