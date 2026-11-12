@@ -224,17 +224,24 @@ export async function purchaseSvip(uid: string, tier: number): Promise<SvipPurch
 
 export interface SvipPageReward {
   id: string;
-  kind: 'frame' | 'nameplate' | 'badge' | 'entryEffect';
+  kind: 'frame' | 'nameplate' | 'badge' | 'entryEffect' | 'profileScreen';
   label: string;
   art: string;
 }
 
-const SVIP_REWARD_NODE: Record<SvipPageReward['kind'], 'frames' | 'nameplates' | 'badges' | 'entryEffects'> = {
+const SVIP_REWARD_NODE: Record<SvipPageReward['kind'], 'frames' | 'nameplates' | 'badges' | 'entryEffects' | 'profileScreens'> = {
   frame: 'frames',
   nameplate: 'nameplates',
   badge: 'badges',
   entryEffect: 'entryEffects',
+  profileScreen: 'profileScreens',
 };
+
+// 2026-11-12 (Profile Screen reward): stars + effect duration per tier —
+// the SAME values as the live entry-effect grants (verified live
+// 2026-11-12). The Profile Screen grant mirrors the entry-effect shape.
+const SVIP_EFFECT_STARS: Record<number, number> = { 1: 2, 2: 2, 3: 3, 4: 4, 5: 5 };
+const SVIP_EFFECT_DURATION_MS: Record<number, number> = { 1: 1440, 2: 2160, 3: 1680, 4: 1920, 5: 3680 };
 
 export async function loadSvipPageRewards(tier: number): Promise<SvipPageReward[]> {
   try {
@@ -249,7 +256,7 @@ export async function loadSvipPageRewards(tier: number): Promise<SvipPageReward[
       if (!r || typeof r !== 'object') continue;
       const rec = r as Record<string, unknown>;
       if (typeof rec.id !== 'string' || !rec.id) continue;
-      if (rec.kind !== 'frame' && rec.kind !== 'nameplate' && rec.kind !== 'badge' && rec.kind !== 'entryEffect') continue;
+      if (rec.kind !== 'frame' && rec.kind !== 'nameplate' && rec.kind !== 'badge' && rec.kind !== 'entryEffect' && rec.kind !== 'profileScreen') continue;
       if (typeof rec.label !== 'string' || !rec.label) continue;
       if (typeof rec.art !== 'string' || !rec.art) continue;
       out.push({ id: rec.id, kind: rec.kind, label: rec.label, art: rec.art });
@@ -295,7 +302,13 @@ export async function grantSvipTierRewards(
           if (typeof anim === 'string' && anim) icon = anim;
         } catch { /* catalog unreadable — keep reward.art */ }
       }
-      await set(ref(database, `users/${uid}/${node}/${reward.id}`), {
+      // 2026-11-12 (Profile Screen reward): effect grants (entryEffect +
+      // profileScreen) carry stars + durationMs, mirroring the live
+      // entry-effect grant shape. Frames / nameplates / badges carry
+      // neither. The Profile Screen icon is reward.art directly — the
+      // single animated WebP (never the sprite sheet; see the 2026-11-08
+      // sprite-as-icon bug) — so it needs no honors_catalog resolution.
+      const grant: Record<string, unknown> = {
         id: reward.id,
         name: reward.label,
         icon,
@@ -304,7 +317,12 @@ export async function grantSvipTierRewards(
         source: 'official',
         description: `SVIP privilege — SVIP ${tier} membership reward.`,
         grantedBy: 'svip-system',
-      });
+      };
+      if (reward.kind === 'entryEffect' || reward.kind === 'profileScreen') {
+        grant.stars = SVIP_EFFECT_STARS[tier] ?? 0;
+        grant.durationMs = SVIP_EFFECT_DURATION_MS[tier] ?? 0;
+      }
+      await set(ref(database, `users/${uid}/${node}/${reward.id}`), grant);
       granted.push(reward.id);
       if (reward.kind === 'entryEffect') grantedEntryEffect = true;
     } catch {

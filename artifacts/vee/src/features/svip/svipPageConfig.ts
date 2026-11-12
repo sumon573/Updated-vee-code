@@ -36,7 +36,7 @@ export interface SvipSpriteSpec {
 
 export interface SvipRewardSlot {
   slot: number;
-  kind: string; // 'nameplate' | 'frame' | 'badge' | 'empty' (other kinds render as empty)
+  kind: string; // 'nameplate' | 'frame' | 'badge' | 'entryEffect' | 'profileScreen' | 'empty' (other kinds render as empty)
   id?: string;
   label?: string;
   art?: string;
@@ -264,7 +264,7 @@ function sanitizeReward(raw: any): SvipRewardSlot | null {
   const artW = Math.floor(num(raw.artW, 0, 1, 10000));
   const artH = Math.floor(num(raw.artH, 0, 1, 10000));
   if (artW && artH) { out.artW = artW; out.artH = artH; }
-  if (kind === 'frame' || kind === 'entryEffect') {
+  if (kind === 'frame' || kind === 'entryEffect' || kind === 'profileScreen') {
     const sprite = sanitizeSprite(raw.sprite);
     if (sprite) out.sprite = sprite;
   }

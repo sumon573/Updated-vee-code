@@ -21,6 +21,7 @@ import { subscribeBadges, subscribeFrames, subscribeNameplates, type GrantedFram
 import type { GrantedBadge } from '@/src/data/honor';
 import { subscribeNoble, NOBLE_RANKS, type NobleState } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
+import { useProfileScreenArt, ProfileScreenBackground } from '@/src/features/svip/ProfileScreenBackground';
 import { subscribeTransactionHistory, subscribeGiftCounts } from '@/src/features/wallet/walletService';
 import { subscribeGiftCatalog, type CatalogGift } from '@/src/features/voice-room/services/giftCatalogService';
 import { subscribeCoupleState, type CoupleState } from '@/src/features/intimacy/coupleLevels';
@@ -196,6 +197,10 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isKing = useIsKing(member?.id);
   const liveFrameId = useActiveFrame(member?.id);
+  // 2026-11-12 (boss, Profile Screen reward): the profile OWNER's SVIP
+  // Profile Screen art as the background from the cover bottom to
+  // Privilege. Tier-keyed — the owner's tier, not the viewer's.
+  const profileScreen = useProfileScreenArt(member?.id, svipState?.tier, isSvipActive(svipState));
   // 2026-11-11 (boss, Intimacy tiles): the couple partner's live photo/name
   // (null = no couple; the hook accepts null and subscribes to nothing).
   const liveCouplePartner = useLiveUserProfile(intimacyCouple?.partnerUid ?? null);
@@ -477,6 +482,16 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
             </View>
 
             {/* DP (tap → full profile) + name + plates + chips + bio */}
+            {/* 2026-11-12 (boss, Profile Screen reward): parent wrapper so
+                the Profile Screen art fills cover-bottom → Privilege as
+                the background of the identity block. The art is
+                absolute-fill behind the DP/name/plates/chips/bio; the
+                0.6 white scrim keeps the text clear (no glass here).
+                pointerEvents none — taps pass through. */}
+            <View>
+              {profileScreen ? (
+                <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0.6} />
+              ) : null}
             <View style={{ marginTop: -40, paddingHorizontal: 16 }}>
               <Pressable onPress={handleDpPress} hitSlop={6} style={{ alignSelf: 'flex-start' }}>
                 <Avatar
@@ -548,6 +563,7 @@ export function UserProfilePopup({ member, myUid, myName, viewerRole, targetRole
                   ) : null}
                 </View>
               ) : null}
+            </View>
             </View>
 
             {/* Privilege — horizontally scrollable */}

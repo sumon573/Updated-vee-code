@@ -716,10 +716,13 @@ export default function SvipScreen() {
         />
       );
     }
-    if (reward.kind === 'entryEffect' && reward.art) {
-      // Entry effect (e.g. SVIP 5 dragon): animated via sprite sheet
-      // when the server supplies a sprite config (same pattern as
-      // frames); otherwise a plain still image (never blank).
+    if ((reward.kind === 'entryEffect' || reward.kind === 'profileScreen') && reward.art) {
+      // Entry effect (e.g. SVIP 5 dragon) and Profile Screen (2026-11-12,
+      // slot 5 — the SAME art as the entry effect): animated via sprite
+      // sheet when the server supplies a sprite config (same pattern as
+      // frames); otherwise a plain still image (never blank). The
+      // Profile Screen server art is the single animated WebP, so it
+      // renders here via ExpoImage (WebP animates natively).
       if (reward.sprite) {
         return (
           <SvipSpriteFrame

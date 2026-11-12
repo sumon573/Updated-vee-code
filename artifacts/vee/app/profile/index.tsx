@@ -57,6 +57,7 @@ import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory, subscribeGiftCounts } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, nobleThemeFor, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
+import { useProfileScreenArt, ProfileScreenBackground } from '@/src/features/svip/ProfileScreenBackground';
 import {
   subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
   type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
@@ -694,6 +695,10 @@ export default function ProfileScreen({
   // 2026-11-09 (boss): SVIP state for the auto nameplate — the current SVIP
   // tier's plate shows first on the profile while membership is active.
   const [svipState, setSvipState] = useState<SvipState | null>(null);
+  // 2026-11-12 (boss, Profile Screen reward): the profile OWNER's SVIP
+  // Profile Screen art (their tier's entry-effect art) as the background
+  // between the cover photo and VoiceClub. Tier-keyed — no active marker.
+  const profileScreen = useProfileScreenArt(displayUid, svipState?.tier, isSvipActive(svipState));
   // PIN gate for private rooms (enforced from EVERYWHERE)
   const { requestRoomAccess, pinDialog } = usePrivateRoomGate();
   // (Gift History section removed 2026-10-10 per Sumon: gifts live ONLY inside
@@ -1617,6 +1622,14 @@ export default function ProfileScreen({
             same 92 box, same frame geometry); the panel holds name/badges/
             chips/bio only. Glass never covers the DP, the frame, or art. */}
         <View>
+          {/* 2026-11-12 (boss, Profile Screen reward): the owner's SVIP
+              Profile Screen art as the background of this region (cover
+              bottom → VoiceClub). Absolute-fill, behind the DP + glass
+              panel; the panel's 62% white fill keeps the text clear, so
+              no extra scrim here. pointerEvents none — taps pass through. */}
+          {profileScreen ? (
+            <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0} />
+          ) : null}
           <View style={{ marginTop: -67, paddingHorizontal: 16 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable
                 stretches to the full header width (column parent defaults to
