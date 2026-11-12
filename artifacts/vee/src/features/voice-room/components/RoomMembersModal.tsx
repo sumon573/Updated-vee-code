@@ -43,6 +43,16 @@
  * name are the user's top 2 granted badges (one-shot users/{uid}/badges,
  * Honor badge-order rule, expired/icon-less filtered out).
  *
+ * 2026-11-12 17:27 (boss, Rank page polish) + 17:34 clarification:
+ * the sheet is FIXED at 61% of the screen so its top edge sits at the
+ * last seat row (PIL-measured from his screenshot 1000230905_4_8w23.jpg:
+ * last seat-row labels bottom y≈790, old sheet top y=1267, screen 2048);
+ * the list scrolls smoothly (EMPTY_BADGES + stable renderItem — memo was
+ * defeated by a fresh [] per render); the verified checkmark after the
+ * name is GONE on this page only (the official badge still shows in the
+ * badges row below the name); the verified badge next to the name STAYS
+ * on the profile popup (popup + shared VerifiedName untouched).
+ *
  * Dark sheet (#000000, exactly like imo) — this supersedes the
  * 2026-10-23 light-theme order for this page. Sheet structure follows
  * RoomRankModal (Modal transparent + backdrop tap to close + drag
@@ -57,7 +67,7 @@ import {
   memo, useCallback, useEffect, useMemo, useState,
 } from 'react';
 import {
-  View, Text, Modal, Pressable, FlatList,
+  View, Text, Modal, Pressable, FlatList, Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -67,7 +77,6 @@ import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { DiamondIcon } from '@/src/components/DiamondIcon';
 import type { Participant } from '@/src/features/voice-room/types/room';
-import { VerifiedName } from '@/src/components/VerifiedName';
 import { useIsKing } from '@/src/hooks/useNobleRank';
 import { KingSparkle, KING_GOLD } from './KingShimmerName';
 import type { GrantedBadge } from '@/src/data/honor';
@@ -103,6 +112,25 @@ const SHEET_GOLD = '#F59E0B';
 const SHEET_PINNED_BG = '#1C1C1E';
 const SHEET_MIC = '#4ADE80';
 const SHEET_MIC_OFF = '#EF4444';
+
+// 2026-11-12 17:27 (boss, Rank page polish): the sheet's top edge must sit
+// at the last seat row (seats 6–10). PIL-measured from his screenshot
+// (921x2048): last seat-row labels bottom y≈790, current sheet top y=1267,
+// so the sheet must be 2048-800 = 1248px = 60.9% of the screen. A FIXED
+// height (not maxHeight) so the top edge stays at the seat row even with
+// 1 user — and even with many users, the list scrolls inside. A
+// screen-height fraction (not a dp number) so it lands correctly on his
+// phone and stays close on other sizes. The "Mh joined the room" toast
+// (y≈870–940) sits below the new top edge and is covered — it is
+// transient; the seat grid itself stays visible above the sheet.
+const SHEET_HEIGHT_FRACTION = 0.61;
+
+// 2026-11-12 17:27 (boss, smooth scroll): module-level shared empty
+// badges array. `badgeMap.get(id) ?? []` created a NEW array identity on
+// every parent render for badge-less rows, defeating memo on MemberRow
+// (every visible row re-rendered on every parent re-render — scroll jank
+// with many users). A single shared reference keeps memo working.
+const EMPTY_BADGES: GrantedBadge[] = [];
 
 const RANK_MEDAL_COLORS = ['#F59E0B', '#94A3B8', '#B45309'];
 
@@ -218,7 +246,7 @@ const MemberRow = memo(function MemberRow({
       onPress={() => onPress(item)}
       style={{
         flexDirection: 'row', alignItems: 'center',
-        paddingVertical: 10, paddingHorizontal: 16,
+        paddingVertical: 12, paddingHorizontal: 16,
         borderBottomWidth: 1, borderBottomColor: SHEET_DIVIDER,
       }}
     >
@@ -231,13 +259,22 @@ const MemberRow = memo(function MemberRow({
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <RoleIcon role={item.role} isOwner={isOwner} />
+          {/* 2026-11-12 17:27 (boss): NO verified checkmark after the name
+              on THIS page — an Official's badge showed twice (after the
+              name AND in the badges row below). Plain Text keeps the same
+              name style (King gold / white, 15/700). The shared
+              VerifiedName component is NOT touched (Inbox, Contacts, chat
+              list, home, AudienceModal still use it) and the profile popup
+              is NOT touched (boss 17:34: the verified badge next to the
+              name STAYS on the popup). The badges row below still shows
+              the official badge. The 👤 role icon + King sparkle stay. */}
           <View style={{ flexShrink: 1 }}>
-            <VerifiedName
-              name={item.name}
-              uid={(item as any).uid || (item as any).id}
-              nameStyle={{ color: isKing ? KING_GOLD : SHEET_TEXT, fontSize: 15, fontWeight: '700', flexShrink: 1 }}
-              logoSize={15}
-            />
+            <Text
+              style={{ color: isKing ? KING_GOLD : SHEET_TEXT, fontSize: 15, fontWeight: '700', flexShrink: 1 }}
+              numberOfLines={1}
+            >
+              {item.name}
+            </Text>
           </View>
           {isKing ? <KingSparkle /> : null}
         </View>
@@ -517,6 +554,26 @@ export default function RoomMembersModal({
     setTab(k);
   }, []);
 
+  // 2026-11-12 17:27 (boss, smooth scroll): a stable renderItem callback
+  // (the old inline arrow was recreated on every parent render) + the
+  // shared EMPTY_BADGES reference (see above) — together they let
+  // MemberRow's memo actually skip re-renders while scrolling. The
+  // FlatList config was already good (windowSize 9, 20/20, clipped
+  // subviews) and is untouched. Removing VerifiedName also removes a
+  // per-row hook + async icon fetch + a per-row Modal mount.
+  const renderRankRow = useCallback(({ item, index }: { item: RankRowData; index: number }) => (
+    <MemberRow
+      item={item.p}
+      rank={index + 1}
+      sent={item.sent}
+      isLive={item.isLive}
+      badges={badgeMap.get(item.p.id) ?? EMPTY_BADGES}
+      ownerId={ownerId}
+      onPress={handleMemberPress}
+      notInRoomText={t('voiceRoom.rank.not_in_room')}
+    />
+  ), [badgeMap, ownerId, handleMemberPress, t]);
+
   return (
     <Modal
       visible={visible}
@@ -527,7 +584,8 @@ export default function RoomMembersModal({
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
       {/* Bottom sheet over the room (RoomRankModal pattern) — black, like imo. */}
       <View style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '75%',
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        height: Dimensions.get('screen').height * SHEET_HEIGHT_FRACTION,
         backgroundColor: SHEET_BG, borderTopLeftRadius: 24, borderTopRightRadius: 24,
       }}>
         <View style={{ paddingBottom: 28 }}>
@@ -542,8 +600,8 @@ export default function RoomMembersModal({
                 key={k}
                 onPress={() => handleTabPress(k)}
                 style={{
-                  flex: 1, alignItems: 'center', paddingVertical: 8,
-                  borderBottomWidth: 2,
+                  flex: 1, alignItems: 'center', paddingVertical: 10,
+                  borderBottomWidth: 3,
                   borderBottomColor: tab === k ? SHEET_TAB_BLUE : 'transparent',
                 }}
               >
@@ -577,18 +635,7 @@ export default function RoomMembersModal({
           <FlatList
             data={ranked}
             keyExtractor={(r) => `m:${r.p.id}`}
-            renderItem={({ item, index }) => (
-              <MemberRow
-                item={item.p}
-                rank={index + 1}
-                sent={item.sent}
-                isLive={item.isLive}
-                badges={badgeMap.get(item.p.id) ?? []}
-                ownerId={ownerId}
-                onPress={handleMemberPress}
-                notInRoomText={t('voiceRoom.rank.not_in_room')}
-              />
-            )}
+            renderItem={renderRankRow}
             windowSize={9}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
