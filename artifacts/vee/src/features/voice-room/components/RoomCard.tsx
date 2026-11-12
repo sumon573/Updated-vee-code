@@ -33,22 +33,25 @@ const ROLE_ICON_COLOR: Record<StripRole, string> = {
   member: ROLE_ICON_GREY,
 };
 
-// The role badge: a 22px white circle (reads on ANY cover) + the 15px
+// The role badge: a 20px white circle (reads on ANY cover) + the 13px
 // Feather "user" in the role colour, at the bottom-left corner of the
 // cover (left: 6, bottom: 6 — the exact spot the boss marked, same 6px
 // inset as the count pill on the opposite corner).
+// 2026-11-12 (boss 08:42, device-test verdict on OTA 01a1cd80): the 22px
+// circle / 15px icon looked beautiful but a bit big — shrunk to the
+// recorded fallback 20px/13px ("একটু ছোট কর").
 function TileRoleIcon({ role }: { role: StripRole }) {
   return (
     <View style={{
       position: 'absolute', left: 6, bottom: 6,
-      width: 22, height: 22, borderRadius: 11,
+      width: 20, height: 20, borderRadius: 10,
       backgroundColor: '#FFFFFF',
       borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
       alignItems: 'center', justifyContent: 'center',
       shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.30, shadowRadius: 3, elevation: 2,
     }}>
-      <Feather name="user" size={15} color={ROLE_ICON_COLOR[role]} />
+      <Feather name="user" size={13} color={ROLE_ICON_COLOR[role]} />
     </View>
   );
 }
