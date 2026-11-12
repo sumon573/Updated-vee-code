@@ -122,6 +122,14 @@ export type ProfileScreenBackgroundProps = {
   /** The owner's SVIP tier (1–5) — shown in the gold pill. */
   tier: number;
   /**
+   * Whether to render the gold "SVIP N" pill (default true).
+   * 2026-11-13 (boss, glass seam fix): the full profile renders the
+   * pill SEPARATELY, after the GlassView panel (showPill={false} here),
+   * because the extended panel would otherwise paint over the pill and
+   * wash it out. The popup keeps showPill (no glass there).
+   */
+  showPill?: boolean;
+  /**
    * White scrim opacity between the art and the content (0 = none).
    * Full profile passes 0.3 (boss 2026-11-12 22:29 — more blur so the
    * text reads clearly; the GlassView panel fill already mutes the art
@@ -130,6 +138,35 @@ export type ProfileScreenBackgroundProps = {
    */
   scrimOpacity?: number;
 };
+
+/**
+ * The gold "SVIP N" tier pill (top-right, 8dp below the cover — the
+ * parent wrapper's top IS the cover bottom). Shared so both surfaces
+ * render the identical pill: the popup keeps it inside the background
+ * (showPill), while the full profile renders it AFTER the GlassView
+ * panel so it stays crisp on top of the extended glass (see
+ * showPill). pointerEvents none — taps pass through.
+ */
+export function ProfileScreenPill({ tier }: { tier: number }): React.JSX.Element {
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 8,
+        right: 12,
+        backgroundColor: '#E8B84B',
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+      }}
+    >
+      <Text style={{ color: '#231A00', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 }}>
+        SVIP {tier}
+      </Text>
+    </View>
+  );
+}
 
 /**
  * Absolute-fill background: the tier's creature art (cover) + an
@@ -142,6 +179,7 @@ export function ProfileScreenBackground({
   artUrl,
   tier,
   scrimOpacity = 0,
+  showPill = true,
 }: ProfileScreenBackgroundProps): React.JSX.Element {
   return (
     <View
@@ -169,21 +207,7 @@ export function ProfileScreenBackground({
           style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', opacity: scrimOpacity }]}
         />
       ) : null}
-      <View
-        style={{
-          position: 'absolute',
-          top: 8,
-          right: 12,
-          backgroundColor: '#E8B84B',
-          borderRadius: 999,
-          paddingHorizontal: 10,
-          paddingVertical: 4,
-        }}
-      >
-        <Text style={{ color: '#231A00', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 }}>
-          SVIP {tier}
-        </Text>
-      </View>
+      {showPill ? <ProfileScreenPill tier={tier} /> : null}
     </View>
   );
 }

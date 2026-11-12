@@ -57,7 +57,7 @@ import AnimatedFrame from '@/src/components/AnimatedFrame';
 import { subscribeTransactionHistory, subscribeGiftCounts } from '@/src/features/wallet/walletService';
 import { subscribeNoble, NOBLE_RANKS, nobleThemeFor, type NobleState , checkNobleMaintenance } from '@/src/services/nobleService';
 import { subscribeSvip, isSvipActive, type SvipState } from '@/src/features/svip/svipService';
-import { useProfileScreenArt, ProfileScreenBackground } from '@/src/features/svip/ProfileScreenBackground';
+import { useProfileScreenArt, ProfileScreenBackground, ProfileScreenPill } from '@/src/features/svip/ProfileScreenBackground';
 import {
   subscribeMyIntimacies, fetchPeerProfile, intimacyLevelFor,
   type IntimacyEntry } from '@/src/features/voice-room/services/intimacyService';
@@ -1631,10 +1631,22 @@ export default function ProfileScreen({
               background incl. the top strip above the panel. The tint
               behind the art lives in ProfileScreenBackground itself.
               pointerEvents none — taps pass through. */}
+          {/* 2026-11-13 (boss, glass seam fix): showPill={false} — the
+              pill is rendered separately, AFTER the GlassView panel
+              (below), so the extended panel does not paint over it and
+              wash it out. The popup keeps showPill (no glass there).
+              (Comment lives ABOVE the ternary — a comment inside the
+              parens would be a second JSX node and break the parse.) */}
           {profileScreen ? (
-            <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0.3} />
+            <ProfileScreenBackground artUrl={profileScreen.artUrl} tier={profileScreen.tier} scrimOpacity={0.3} showPill={false} />
           ) : null}
-          <View style={{ marginTop: -67, paddingHorizontal: 16 }}>
+          {/* 2026-11-13 (boss, glass seam fix): zIndex 10 (iOS) +
+              elevation 10 (Android, above the panel's elevation 3) — the
+              panel is a LATER sibling and extends up to the cover bottom,
+              so without this it would paint over the DP's bottom 25dp
+              (and the frame's bottom 34dp). This View has no
+              backgroundColor, so the elevation casts no visible shadow. */}
+          <View style={{ marginTop: -67, paddingHorizontal: 16, zIndex: 10, elevation: 10 }}>
             {/* FIX #39: alignSelf flex-start — without a style this Pressable
                 stretches to the full header width (column parent defaults to
                 stretch), so taps on the EMPTY space right of the DP opened the
@@ -1717,8 +1729,15 @@ export default function ProfileScreen({
               highlight rendered as a white banner-like streak at the top
               of the profile card, just above the name. The sheen is NOT
               in the frame art; it is this panel's own highlight. */}
-          <GlassView variant="panel" mode="light" sheen={false}>
-            <View style={{ paddingHorizontal: 16, paddingBottom: 15 }}>
+          {/* 2026-11-13 (boss, glass seam fix): the panel's top edge cut
+              across the background and left an empty strip above it, so
+              the effect looked "two different ways". marginTop -25 pulls
+              the panel's top up to the wrapper top (the cover bottom) —
+              one continuous glass surface, no seam, top filled. The DP
+              block (above, zIndex 10 + elevation 10) still paints on
+              top; the name row stays put via paddingTop 25 below. */}
+          <GlassView variant="panel" mode="light" sheen={false} style={{ marginTop: -25 }}>
+            <View style={{ paddingHorizontal: 16, paddingTop: 25, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
             <Text style={{ fontSize: 18, fontWeight: '500', color: isKing ? KING_GOLD : C.text, flexShrink: 1 }} numberOfLines={1}>{displayName}</Text>
             {/* 2026-11-09 (boss): NO SVIP level text next to the name — the
@@ -1821,6 +1840,13 @@ export default function ProfileScreen({
           ) : null}
             </View>
           </GlassView>
+          {/* 2026-11-13 (boss, glass seam fix): the "SVIP N" pill, on top
+              of the extended glass. It lives here (after the panel, inside
+              the wrapper) instead of inside the background, because the
+              panel would otherwise paint over it and wash it out. Same
+              position as before (absolute top 8 / right 12, wrapper top
+              IS the cover bottom). pointerEvents none (in the component). */}
+          {profileScreen ? <ProfileScreenPill tier={profileScreen.tier} /> : null}
         </View>
 
         {/* ─── VoiceClub Room section ─── */}
