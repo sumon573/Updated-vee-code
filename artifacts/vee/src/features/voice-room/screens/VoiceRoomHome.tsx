@@ -23,7 +23,7 @@ import { get, ref } from 'firebase/database';
 import { database } from '@/src/config/firebase';
 import { getErrorCause } from '@/src/utils/errorDisplay';
 import ScalePress from '@/components/ScalePress';
-import RoomCard from '../components/RoomCard';
+import RoomCard, { type StripRole } from '../components/RoomCard';
 import RoomListItem from '../components/RoomListItem';
 import { ActiveFollowingsBar, ActiveFollowingsSheet, loadActiveFollowings, type ActiveFollowing } from '../components/ActiveFollowingsSheet';
 // Glass P1b: Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
@@ -386,6 +386,74 @@ export default function VoiceRoomHome({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pass2HomeActive, user?.uid, refreshTick]);
+
+  // 2026-11-11 (boss, room role badge): each strip tile shows the current
+  // user's role in that room (👤 gold = owner, blue = admin, grey =
+  // member) and the strip sorts owner → admin → member.
+  // — Owner is free: room.ownerId === user.uid (RoomInfo carries it).
+  // — Admin comes from the admins registry (rooms/{rid}/admins/{uid}) — the
+  //   source of truth (subscribeRoomAdmins reads the same node). userRooms
+  //   role is written at join time and NEVER updated on grant/revoke, so it
+  //   is stale and is NOT used here.
+  // — One-shot get()s only, for non-owned strip rooms (the joined list is
+  //   capped at 20): no new subscription, no poll, no timer. Re-resolves on
+  //   pull-to-refresh (refreshTick) so a grant/revoke is picked up.
+  // — Skipped in pass2 home mode (Firebase is offline there): owner-gold
+  //   still shows (ownerId is in the tier data); non-owned rooms show no
+  //   badge until Firebase is back. Recorded limitation.
+  // — Unknown role shows NO badge and sorts as member (rank 2): the tile
+  //   can only move UP when its admin status resolves — never a wrong badge.
+  const [adminOf, setAdminOf] = useState<Record<string, boolean>>({});
+  const myRoomIdsKey = useMemo(() => myRooms.map((r) => r.id).join(','), [myRooms]);
+  useEffect(() => {
+    if (pass2HomeActive || !user?.uid) return;
+    const uid = user.uid;
+    const unknown = myRooms
+      .filter((r) => r.ownerId !== uid && !(r.id in adminOf))
+      .map((r) => r.id);
+    if (unknown.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, boolean> = {};
+      for (const id of unknown) {
+        try {
+          const snap = await get(ref(database, `rooms/${id}/admins/${uid}`));
+          next[id] = snap.exists() && snap.val() === true;
+        } catch {
+          // Leave unknown — no badge until it resolves.
+        }
+      }
+      if (!cancelled && Object.keys(next).length > 0) {
+        setAdminOf((prev) => ({ ...prev, ...next }));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRoomIdsKey, refreshTick, pass2HomeActive, user?.uid]);
+
+  // Role per strip room (owner is immediate; admin/member once the
+  // one-shot check resolves; unknown = no entry = no badge).
+  const stripRoles = useMemo(() => {
+    const m = new Map<string, StripRole>();
+    for (const r of myRooms) {
+      if (user?.uid && r.ownerId === user.uid) m.set(r.id, 'owner');
+      else if (r.id in adminOf) m.set(r.id, adminOf[r.id] ? 'admin' : 'member');
+    }
+    return m;
+  }, [myRooms, adminOf, user?.uid]);
+
+  // The strip, sorted by role: owner first, then admin, then member.
+  // Same ranks as RoomInfoModal roleRank (owner 0, admin 1, member 2).
+  // Stable sort — within a role the existing order is kept (owned:
+  // createdAt desc; joined: joinedAt desc). The "+" create tile is not a
+  // room and stays first (it is rendered before this list).
+  const sortedMyRooms = useMemo(() => {
+    const rank = (id: string) => {
+      const r = stripRoles.get(id);
+      return r === 'owner' ? 0 : r === 'admin' ? 1 : 2;
+    };
+    return [...myRooms].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [myRooms, stripRoles]);
 
   // Perf (2026-10-22 audit): stable per-room VoiceRoom objects + press
   // handlers, so memoized RoomCard/RoomListItem rows only re-render when
@@ -1112,9 +1180,9 @@ export default function VoiceRoomHome({
                   onMomentumScrollEnd={onUnlockParentScroll}
                 >
                   <CreateRoomTile onPress={() => setCreateModalOpen(true)} />
-                  {myRooms.map((r) => (
+                  {sortedMyRooms.map((r) => (
                     <View key={r.id} style={{ marginRight: 10 }}>
-                      <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} />
+                      <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} role={stripRoles.get(r.id)} />
                     </View>
                   ))}
                 </GHScrollView>

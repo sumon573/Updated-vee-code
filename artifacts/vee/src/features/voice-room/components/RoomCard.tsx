@@ -13,12 +13,52 @@ import { VoiceRoom } from '../types/room';
 // hairline border, so the My Rooms row looks clean and light.
 const SIZE = 68;
 
-type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number };
+// 2026-11-11 (boss, room role badge): the role is recognised by the 👤
+// ICON in the bottom-left corner of the tile — never by text ("লেখা না
+// আইকন এ চেনা যাবে"). Colours are the polished members-list colours
+// (RoomInfoModal roleColor / RoomMembersModal RoleIcon, boss 18:46
+// reference): GOLD = room owner ONLY, BLUE = admin, GREY = regular member
+// ("মেম্বার সাধারণ"). The icon is a clean vector (Feather "user"), never
+// a raw 👤 emoji glyph. Do NOT name this RoleBadge — that was the deleted
+// text pill (Live Audience redesign).
+const ROLE_ICON_GOLD = '#FFB300';
+const ROLE_ICON_BLUE = '#42A5F5';
+const ROLE_ICON_GREY = '#8A8A8E';
+
+export type StripRole = 'owner' | 'admin' | 'member';
+
+const ROLE_ICON_COLOR: Record<StripRole, string> = {
+  owner: ROLE_ICON_GOLD,
+  admin: ROLE_ICON_BLUE,
+  member: ROLE_ICON_GREY,
+};
+
+// The role badge: a 22px white circle (reads on ANY cover) + the 15px
+// Feather "user" in the role colour, at the bottom-left corner of the
+// cover (left: 6, bottom: 6 — the exact spot the boss marked, same 6px
+// inset as the count pill on the opposite corner).
+function TileRoleIcon({ role }: { role: StripRole }) {
+  return (
+    <View style={{
+      position: 'absolute', left: 6, bottom: 6,
+      width: 22, height: 22, borderRadius: 11,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.30, shadowRadius: 3, elevation: 2,
+    }}>
+      <Feather name="user" size={15} color={ROLE_ICON_COLOR[role]} />
+    </View>
+  );
+}
+
+type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number; role?: StripRole };
 
 // Perf (2026-10-22 audit): memoized — VoiceRoomHome passes stable room
 // objects + stable press handlers, so cards re-render only when their own
 // room's visible data or live count changes.
-export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
+export default memo(function RoomCard({ room, onPress, liveCount, role }: Props) {
   // 2026-10-26 (weak network): a failed cover load used to leave blank
   // space until remount. Fall back to the mic placeholder, and retry on
   // the next feed refresh (URL change resets the failure).
@@ -56,10 +96,11 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
             </>
           )}
 
-          {/* Member DPs row — bottom left */}
+          {/* Member DPs row — TOP left (2026-11-11: moved from bottom-left
+              so the role badge owns the corner the boss marked). */}
           {previews.length > 0 && (
             <View style={{
-              position: 'absolute', left: 6, bottom: 6,
+              position: 'absolute', left: 6, top: 6,
               flexDirection: 'row',
             }}>
               {previews.map((p, i) => (
@@ -77,6 +118,11 @@ export default memo(function RoomCard({ room, onPress, liveCount }: Props) {
               ))}
             </View>
           )}
+
+          {/* Role badge — bottom left, the corner the boss marked
+              (2026-11-11). Only when the role is resolved; an unknown
+              role shows NO badge (never a wrong one). */}
+          {role !== undefined && <TileRoleIcon role={role} />}
 
           {/* Member count — bottom right */}
           <View style={{
