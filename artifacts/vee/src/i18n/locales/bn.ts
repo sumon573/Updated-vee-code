@@ -297,6 +297,17 @@ removedMsg: 'হোস্ট আপনাকে এই রুম থেকে �
       empty: 'এই রুমে এখনো কোনো গিফট পাঠানো হয়নি',
       unknown: 'কেউ একজন',
       you: 'আপনি',
+      // 2026-11-12 (boss, Live Audience → Room Rank): the rank page tabs.
+      tab_online_rank: 'অনলাইন র‍্যাংক',
+      tab_weekly_rank: 'সাপ্তাহিক র‍্যাংক',
+      tab_total_rank: 'মোট র‍্যাংক',
+      subtitle_online: 'অনলাইন ব্যবহারকারীদের পাঠানো গিফটের মূল্য অনুযায়ী র‍্যাংক',
+      subtitle_weekly: 'এই সপ্তাহে পাঠানো গিফটের মূল্য অনুযায়ী র‍্যাংক',
+      subtitle_total: 'মোট পাঠানো গিফটের মূল্য অনুযায়ী র‍্যাংক',
+      empty_online: 'রুমে এখন কেউ নেই',
+      empty_weekly: 'এই সপ্তাহে এই রুমে কোনো গিফট পাঠানো হয়নি',
+      your_rank: 'আপনার র‍্যাংক',
+      not_in_room: 'রুমে নেই',
     },
     props: {
       title: 'রুম প্রপস',

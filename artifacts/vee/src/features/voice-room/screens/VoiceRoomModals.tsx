@@ -330,6 +330,12 @@ export function VoiceRoomModals(props: VoiceRoomModalsProps) {
         visible={p.membersOpen}
         onClose={() => p.setMembersOpen(false)}
         ownerId={p.ownerId}
+        // 2026-11-12 (boss, Live Audience → Room Rank): the rank page
+        // needs the room id (giftEvents / roomMembers reads) + the
+        // viewer's uid/name (pinned own-rank bar).
+        roomId={p.roomId}
+        myUid={p.myUid}
+        myName={p.myName}
         seats={p.seats}
         audience={p.audience}
         // 2026-11-11 (boss, imo mirror): a member row opens the profile

@@ -292,6 +292,17 @@ removedMsg: 'होस्ट ने आपको इस रूम से नि�
       empty: 'इस रूम में अभी कोई गिफ्ट नहीं भेजा गया',
       unknown: 'कोई एक',
       you: 'आप',
+      // 2026-11-12 (boss, Live Audience → Room Rank): the rank page tabs.
+      tab_online_rank: 'ऑनलाइन रैंक',
+      tab_weekly_rank: 'साप्ताहिक रैंक',
+      tab_total_rank: 'कुल रैंक',
+      subtitle_online: 'ऑनलाइन उपयोगकर्ताओं द्वारा योगदान किए गए उपहारों के मूल्य के अनुसार रैंक',
+      subtitle_weekly: 'इस सप्ताह योगदान किए गए उपहारों के मूल्य के अनुसार रैंक',
+      subtitle_total: 'कुल योगदान किए गए उपहारों के मूल्य के अनुसार रैंक',
+      empty_online: 'रूम में अभी कोई नहीं है',
+      empty_weekly: 'इस सप्ताह इस रूम में कोई गिफ्ट नहीं भेजा गया',
+      your_rank: 'आपकी रैंक',
+      not_in_room: 'रूम में नहीं है',
     },
     props: {
       title: 'रूम प्रॉप्स',

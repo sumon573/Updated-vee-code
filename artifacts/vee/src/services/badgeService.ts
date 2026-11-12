@@ -182,7 +182,7 @@ function svipTier(b: { id: string; name?: string }): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-function rankBadges<T extends { id: string; name?: string; source?: string; obtainedAt?: number; stars?: number }>(items: T[]): T[] {
+export function rankBadges<T extends { id: string; name?: string; source?: string; obtainedAt?: number; stars?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
     const ca = badgeCategory(a);
     const cb = badgeCategory(b);

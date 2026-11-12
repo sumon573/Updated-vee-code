@@ -251,6 +251,17 @@ removedMsg: 'تمت إزالتك من هذه الغرفة بواسطة المض�
       empty: 'لم تُرسل هدايا في هذه الغرفة بعد',
       unknown: 'شخص ما',
       you: 'أنت',
+      // 2026-11-12 (boss, Live Audience → Room Rank): the rank page tabs.
+      tab_online_rank: 'الترتيب المتصل',
+      tab_weekly_rank: 'الترتيب الأسبوعي',
+      tab_total_rank: 'الترتيب الإجمالي',
+      subtitle_online: 'مرتبة حسب قيمة الهدايا التي ساهم بها المستخدمون المتصلون',
+      subtitle_weekly: 'مرتبة حسب قيمة الهدايا المساهمة هذا الأسبوع',
+      subtitle_total: 'مرتبة حسب قيمة الهدايا المساهمة إجمالاً',
+      empty_online: 'لا يوجد أحد في الغرفة الآن',
+      empty_weekly: 'لم تُرسل هدايا في هذه الغرفة هذا الأسبوع',
+      your_rank: 'ترتيبك',
+      not_in_room: 'ليس في الغرفة',
     },
     props: {
       title: 'إكسسوارات الغرفة',
